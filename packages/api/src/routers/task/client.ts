@@ -12,7 +12,7 @@ import { and, asc, EmptyFilter, eq, gte, inArray } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
-import { generateOccurrences } from "../../lib/recurrence";
+import { generateOccurrences, sameRecurrence } from "../../lib/recurrence";
 import type { DeleteScope, TaskListParams, UpdateScope } from "./contract";
 import { InvalidTaskError, TaskNotFoundError } from "./errors";
 
@@ -281,14 +281,6 @@ function getDueDateForOccurrence(params: {
   return params.occurrenceDate.add(offset).toString();
 }
 
-/** Compare recurrence objects (undefined treated as null). */
-function isSameRecurrence(
-  a: TaskRecurrence | null | undefined,
-  b: TaskRecurrence | null | undefined
-): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}
-
 /**
  * Occurrence rows in a recurring series may store recurrence as null while the
  * master stores the actual pattern. When an occurrence edit submits null
@@ -340,7 +332,7 @@ const changesSeriesRecurrence = (
       userId,
       task
     );
-    return !isSameRecurrence(input.recurrence, comparableRecurrence);
+    return !sameRecurrence(input.recurrence, comparableRecurrence);
   });
 
 /** Remove per-occurrence fields when updating a series in bulk. */
@@ -636,6 +628,37 @@ function buildOccurrenceRowsFromTask(params: {
   }));
 }
 
+/** Writes an update's rows for its scope (no tags), returning them. */
+const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
+  dbInput: TaskUpdateInput;
+  hasDbUpdates: boolean;
+  recurrenceChanged: boolean;
+  scope: UpdateScope;
+  task: TaskSelect;
+  userId: string;
+}) {
+  const { dbInput, task, userId } = params;
+  if (task.seriesMasterId && params.scope === "following") {
+    return yield* updateFollowing(
+      userId,
+      task,
+      dbInput,
+      params.recurrenceChanged
+    );
+  }
+  if (!task.seriesMasterId && dbInput.recurrence) {
+    return yield* convertToRecurring(userId, task, dbInput);
+  }
+  if (params.hasDbUpdates) {
+    // Edit this task alone, marked as an exception to its series.
+    return yield* dbUpdate(userId, task.id, {
+      ...dbInput,
+      isException: true,
+    });
+  }
+  return [task];
+});
+
 /** A series occurrence with a start date, which "following" edits need. */
 type DatedSeriesTask = TaskSelect & {
   seriesMasterId: string;
@@ -891,12 +914,18 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
 
       const { tagIds, ...unsafeDbInput } = input;
-      const dbInput = stripSystemManagedTaskFields(unsafeDbInput);
-      const hasDbUpdates = Object.keys(dbInput).length > 0;
+      const sent = stripSystemManagedTaskFields(unsafeDbInput);
       const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
-      const recurrenceChanged =
-        scope === "following" &&
-        (yield* changesSeriesRecurrence(userId, task, dbInput));
+      const changesPattern =
+        task.seriesMasterId !== null &&
+        (yield* changesSeriesRecurrence(userId, task, sent));
+      // A series' pattern sent along unchanged is no edit: only its master
+      // carries it, so it must not be written onto an occurrence.
+      const { recurrence: _unchangedPattern, ...withoutPattern } = sent;
+      const dbInput: TaskUpdateInput =
+        task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
+      const hasDbUpdates = Object.keys(dbInput).length > 0;
+      const recurrenceChanged = changesPattern && scope === "following";
 
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.
@@ -907,25 +936,14 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
             ) ?? [])
           : [];
 
-      let updatedTasks: TaskSelect[];
-      if (task.seriesMasterId && scope === "following") {
-        updatedTasks = yield* updateFollowing(
-          userId,
-          task,
-          dbInput,
-          recurrenceChanged
-        );
-      } else if (!task.seriesMasterId && dbInput.recurrence) {
-        updatedTasks = yield* convertToRecurring(userId, task, dbInput);
-      } else if (hasDbUpdates) {
-        // Edit this task alone, marked as an exception to its series.
-        updatedTasks = yield* dbUpdate(userId, taskId, {
-          ...dbInput,
-          isException: true,
-        });
-      } else {
-        updatedTasks = [task];
-      }
+      const updatedTasks = yield* writeTaskUpdate({
+        dbInput,
+        hasDbUpdates,
+        recurrenceChanged,
+        scope,
+        task,
+        userId,
+      });
 
       const tagIdsToSet =
         normalizedTagIds ??

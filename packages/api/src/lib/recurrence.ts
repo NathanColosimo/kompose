@@ -16,8 +16,42 @@ const DAY_MAP: Record<string, number> = {
 const DEFAULT_MAX_OCCURRENCES = 52; // ~1 year of weekly occurrences
 
 /**
+ * Whether two patterns repeat the same way (a missing pattern counts as
+ * none, a missing or undefined field as unset). Keys and days are compared
+ * in a fixed order: Postgres jsonb returns keys in its own order, not the
+ * order a request sent them in.
+ */
+export function sameRecurrence(
+  a: TaskRecurrence | null | undefined,
+  b: TaskRecurrence | null | undefined
+): boolean {
+  return canonicalRecurrence(a) === canonicalRecurrence(b);
+}
+
+function canonicalRecurrence(
+  recurrence: TaskRecurrence | null | undefined
+): string {
+  if (!recurrence) {
+    return "null";
+  }
+  const fields: Record<string, unknown> = { ...recurrence };
+  if ("byDay" in recurrence && recurrence.byDay) {
+    fields.byDay = [...recurrence.byDay].sort();
+  }
+  // A key set to undefined is a key left out, as it is once sent as JSON.
+  return JSON.stringify(
+    Object.entries(fields)
+      .filter(([, value]) => value !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
+}
+
+/**
  * Generate dates on or after startDate, stopping at the count (or safety cap)
- * or the inclusive until date, whichever comes first.
+ * or the inclusive until date, whichever comes first. The start date is
+ * always the first, and counts toward the count, even when the pattern
+ * wouldn't land on it (a Thursday start for "weekly on Monday"), as with
+ * RFC 5545's DTSTART and Google: the task the user placed there stays.
  */
 export function generateOccurrences(
   recurrence: TaskRecurrence,
@@ -74,7 +108,22 @@ export function generateOccurrences(
       throw new Error("Unsupported recurrence frequency");
   }
 
-  return occurrences;
+  return withStartFirst(occurrences, startDate, limit, untilDate);
+}
+
+function withStartFirst(
+  occurrences: Temporal.PlainDate[],
+  startDate: Temporal.PlainDate,
+  limit: number,
+  untilDate: Temporal.PlainDate | null
+): Temporal.PlainDate[] {
+  if (occurrences[0]?.equals(startDate)) {
+    return occurrences;
+  }
+  if (untilDate && Temporal.PlainDate.compare(startDate, untilDate) > 0) {
+    return occurrences;
+  }
+  return [startDate, ...occurrences].slice(0, limit);
 }
 
 function shouldStop(
