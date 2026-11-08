@@ -16,10 +16,6 @@ import {
   visibleCalendarsHydratedAtom,
 } from "./visible-calendars";
 
-function toCalendarKey(calendar: CalendarIdentifier) {
-  return `${calendar.accountId}:${calendar.calendarId}`;
-}
-
 const linkedAccountsAtom = atomWithQuery<Account[]>((get) => {
   const { authClient } = getStateConfig(get);
 
@@ -96,7 +92,6 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       return [];
     }
 
-    const accounts = get(googleAccountsDataAtom);
     const calendars = get(googleCalendarsDataAtom);
     const allCalendarIds = calendars.map((calendar) => ({
       accountId: calendar.accountId,
@@ -127,23 +122,13 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
       linkedAccountIds.has(calendar.accountId)
     );
 
-    // Filter the live view without rewriting preferences. An empty account
-    // response during sign-out or a failed refresh must not erase saved choices.
-
-    const allCalendarQueriesResolved = accounts.every((account) => {
-      const query = get(googleCalendarsAtomFamily(account.accountId));
-      return query.data !== undefined || query.isError;
+    return accountFiltered.filter(({ accountId, calendarId }) => {
+      const query = get(googleCalendarsAtomFamily(accountId));
+      return (
+        !query.isSuccess ||
+        query.data.some(({ calendar }) => calendar.id === calendarId)
+      );
     });
-    if (!allCalendarQueriesResolved) {
-      return accountFiltered;
-    }
-
-    const validKeys = new Set(
-      allCalendarIds.map((calendar) => toCalendarKey(calendar))
-    );
-    return accountFiltered.filter((calendar) =>
-      validKeys.has(toCalendarKey(calendar))
-    );
   }
 );
 
