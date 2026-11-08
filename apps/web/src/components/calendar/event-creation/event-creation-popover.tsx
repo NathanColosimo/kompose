@@ -258,6 +258,7 @@ export function EventCreationPopover() {
                 closeSaveRequestRef={eventCloseSaveRequestRef}
                 createInteropRef={eventInteropRef}
                 end={endDate}
+                isSaving={isSaving}
                 mode="create"
                 onDelete={() => undefined}
                 onSave={handleSave}
@@ -273,6 +274,7 @@ export function EventCreationPopover() {
             >
               <TaskEditForm
                 createInteropRef={taskInteropRef}
+                externalSaving={isSaving}
                 initialValues={initialTaskValues}
                 mode="create"
                 onClose={handleCancel}

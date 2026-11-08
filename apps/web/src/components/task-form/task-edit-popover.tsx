@@ -77,6 +77,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { DurationPicker } from "@/components/ui/duration-picker";
+import { HeldFieldset } from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -369,6 +370,11 @@ function TaskEditorCloseActions({
   );
 }
 
+/** Whether the editor holds for a save: its own, or the caller's. */
+function isHolding(saving: "done" | "save" | null, externalSaving: boolean) {
+  return saving !== null || externalSaving;
+}
+
 /** What a repeat change will do; it saves with no scope question. */
 function RepeatChangeNote({ note }: { note: string | null }) {
   return note ? <p className="text-muted-foreground text-xs">{note}</p> : null;
@@ -425,6 +431,7 @@ export function TaskEditForm({
   onSavingChange,
   open,
   createInteropRef,
+  externalSaving = false,
 }: {
   task?: TaskSelectDecoded;
   initialValues?: Partial<TaskFormValues>;
@@ -432,10 +439,12 @@ export function TaskEditForm({
   /** When provided, the parent controls save (e.g. creation popover). Otherwise the form shows its own Save/Cancel buttons. */
   submitRef?: React.Ref<() => boolean | Promise<boolean>>;
   onClose: () => void;
-  /** Mark done is saving: the popover holds (no Escape or outside close). */
+  /** A save is running: the popover holds (no Escape or outside close). */
   onSavingChange?: (saving: boolean) => void;
   open: boolean;
   createInteropRef?: React.Ref<CalendarCreateFormInterop>;
+  /** The caller is saving this form's values (the create popover holds). */
+  externalSaving?: boolean;
 }) {
   const showActionButtons = !submitRef;
   const { createTask, updateTask, deleteTask, tasksQuery, parseLink } =
@@ -452,7 +461,7 @@ export function TaskEditForm({
    * ("save"). It closes when the save succeeds and keeps the draft if not.
    */
   const [saving, setSaving] = useState<"done" | "save" | null>(null);
-  const isSavingStatus = saving !== null;
+  const isSavingStatus = isHolding(saving, externalSaving);
   useEffect(() => {
     onSavingChange?.(isSavingStatus);
   }, [isSavingStatus, onSavingChange]);
@@ -842,7 +851,7 @@ export function TaskEditForm({
       {/* While a save runs, the fields are read-only too: a change typed
           then would be dropped when the editor closes. (A block, not
           display: contents, so the form's spacing still reaches the fields.) */}
-      <fieldset className="min-w-0 space-y-3" disabled={isSavingStatus}>
+      <HeldFieldset className="min-w-0 space-y-3" saving={isSavingStatus}>
         <Input
           onChange={(e) =>
             setValue("title", e.target.value, { shouldDirty: true })
@@ -1223,7 +1232,7 @@ export function TaskEditForm({
             value={tagScope}
           />
         )}
-      </fieldset>
+      </HeldFieldset>
     </form>
   );
 }

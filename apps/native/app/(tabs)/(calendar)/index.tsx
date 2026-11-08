@@ -1462,6 +1462,8 @@ export default function CalendarTab() {
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
         failureMessage: SAVE_FAILURE_MESSAGE,
+        // The editor holds on the save; the cache changes once it's in.
+        optimistic: false,
         event: {
           ...draft.sourceEvent,
           ...eventPayload,

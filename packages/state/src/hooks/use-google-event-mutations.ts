@@ -105,7 +105,18 @@ export function useGoogleEventMutations() {
   });
 
   const updateEvent = useMutation({
-    mutationFn: async (variables: UpdateGoogleEventInput & HeldSave) =>
+    mutationFn: async (
+      variables: UpdateGoogleEventInput &
+        HeldSave & {
+          /**
+           * False to wait for the server instead of updating the cache
+           * first. An editor that holds open on the save needs this: an
+           * optimistic move would re-render (or unmount) it mid-save, and
+           * the rollback would reset its fields.
+           */
+          optimistic?: boolean;
+        }
+    ) =>
       orpc.googleCal.events.update({
         accountId: variables.accountId,
         calendarId: variables.calendarId,
@@ -128,7 +139,7 @@ export function useGoogleEventMutations() {
         queryKey,
       });
 
-      if (scope === "this") {
+      if (scope === "this" && variables.optimistic !== false) {
         for (const [cachedKey, cachedEvents] of previousQueries) {
           if (Array.isArray(cachedEvents)) {
             queryClient.setQueryData<Event[]>(
@@ -151,6 +162,26 @@ export function useGoogleEventMutations() {
           queryClient.setQueryData(queryKey, data);
         }
       }
+    },
+    onSuccess: (saved, variables) => {
+      // A held save shows the server's copy as soon as it's in; other
+      // scopes change more events, so the refetch below brings them.
+      if (
+        variables.optimistic !== false ||
+        variables.recurrenceScope !== "this"
+      ) {
+        return;
+      }
+      queryClient.setQueriesData<Event[]>(
+        {
+          queryKey: getGoogleEventsByCalendarQueryKey({
+            accountId: variables.accountId,
+            calendarId: variables.calendarId,
+          }),
+        },
+        (cached) =>
+          cached?.map((event) => (event.id === saved.id ? saved : event))
+      );
     },
     onSettled: (_data, _error, variables) => {
       if (!variables) {

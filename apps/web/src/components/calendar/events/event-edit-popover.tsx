@@ -92,6 +92,7 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
+import { HeldFieldset } from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -684,6 +685,7 @@ export function EventEditPopover({
         await updateEvent.mutateAsync({
           ...edits.variables,
           failureMessage: SAVE_FAILURE_MESSAGE,
+          optimistic: false,
           recurrenceScope: scope,
         });
       }
@@ -2237,8 +2239,7 @@ export function EventEditForm({
   }
 
   return (
-    // Read-only while a save runs: a change typed then wouldn't be saved.
-    <fieldset className="min-w-0 space-y-3" disabled={isSaving}>
+    <HeldFieldset className="min-w-0 space-y-3" saving={isSaving}>
       {headerContent ? <div>{headerContent}</div> : null}
       {readOnly && readOnlyReason ? (
         <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
@@ -2451,6 +2452,6 @@ export function EventEditForm({
           saving={isSaving}
         />
       ) : null}
-    </fieldset>
+    </HeldFieldset>
   );
 }
