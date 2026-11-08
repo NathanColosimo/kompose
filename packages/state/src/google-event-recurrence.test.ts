@@ -1014,6 +1014,44 @@ describe("seriesRecurrenceForSave", () => {
     ]);
   });
 
+  test("never leaves an all-day start's own day skipped", () => {
+    // The same series moved onto Tue Nov 10 and made all day: the start
+    // takes the whole day, so the 15:00 skip, now a date, goes with it.
+    const saved = seriesRecurrenceForSave({
+      editedStart: { date: "2026-11-10" },
+      masterRecurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261110T150000",
+        "EXDATE;TZID=America/New_York:20261110T150000",
+      ],
+      occurrence: {
+        originalStartTime: { dateTime: "2026-11-09T09:00:00-05:00" },
+        recurringEventId: "series",
+        start: { dateTime: "2026-11-09T09:00:00-05:00" },
+      },
+      recurrence: undefined,
+      timeZone: "America/New_York",
+    });
+    expect(saved?.some((line) => line.startsWith("EXDATE"))).toBe(false);
+    // Made all day without moving: a skip at another time on the start's
+    // day goes, one on another day becomes that date, and the first
+    // meeting itself, deleted, stays deleted.
+    const allDay = (exdates: string) =>
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          `EXDATE;TZID=America/New_York:${exdates}`,
+        ],
+        { date: "2026-11-09" },
+        "America/New_York",
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      ).at(-1);
+    expect(allDay("20261109T150000,20261116T090000")).toBe(
+      "EXDATE;VALUE=DATE:20261116"
+    );
+    expect(allDay("20261109T090000")).toBe("EXDATE;VALUE=DATE:20261109");
+  });
+
   test("keeps a retimed skip off another rule's real meeting", () => {
     // Mondays at the start's time plus Mondays fixed at 9:00 and 10:00,
     // Nov 16 9:00 skipped; the occurrence moved 9:00 -> 10:00 for the

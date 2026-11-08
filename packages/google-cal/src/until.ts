@@ -334,7 +334,9 @@ function matchDateList(
       ) => Temporal.PlainTime[])
     | null = null,
   /** The series' added (RDATE) meetings, as epoch milliseconds. */
-  added: Set<number> = new Set()
+  added: Set<number> = new Set(),
+  /** The series' time before the edit, when known. */
+  base: Temporal.PlainTime | null = null
 ): string {
   const list = parseDateList(line, seriesZone);
   if (!list) {
@@ -348,9 +350,36 @@ function matchDateList(
   }
   const values = read as RecurrenceValue[];
   if (start.date) {
-    return values.every((value) => value.instant === null)
-      ? line
-      : `${list.name};VALUE=DATE:${values.map((v) => compactDate(v.day)).join(",")}`;
+    if (values.every((value) => value.instant === null)) {
+      return line;
+    }
+    // A timed skip on the start's own day becomes a date that cancels the
+    // whole first day. It stays only as the first meeting itself, deleted
+    // (once a day, at the series' time); an added meeting's, another
+    // time's, or one of several that day goes.
+    const cancelsFirstDay = (value: RecurrenceValue) => {
+      if (
+        list.name !== "EXDATE" ||
+        !value.instant ||
+        value.day.toString() !== start.date
+      ) {
+        return false;
+      }
+      const time = value.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
+      return (
+        severalADay ||
+        added.has(value.instant.epochMilliseconds) ||
+        Boolean(base && Temporal.PlainTime.compare(time, base) !== 0)
+      );
+    };
+    const days = [
+      ...new Set(
+        values
+          .filter((value) => !cancelsFirstDay(value))
+          .map((value) => compactDate(value.day))
+      ),
+    ];
+    return days.length > 0 ? `${list.name};VALUE=DATE:${days.join(",")}` : "";
   }
   // Times of their own stay theirs: an RDATE's, or any in a rule with
   // several times a day (moving a skipped 15:00 to the start's 9:00 would
@@ -602,7 +631,7 @@ export function matchRecurrenceToStart(
           timeZone,
           severalADay
         )
-      : matchDateList(line, start, timeZone, severalADay, retime, added);
+      : matchDateList(line, start, timeZone, severalADay, retime, added, base);
     changed ||= matched !== line;
     // A list whose every value went (onto the new start) goes too.
     return matched ? [matched] : [];
@@ -938,9 +967,10 @@ export function moveSkippedDays(params: {
     const time = wallTime(value);
     // A skip at another time that day is its own: in a series several
     // times a day, or an added meeting's (cancelled, it stays cancelled).
+    // An all-day start takes the whole day: every skip on it goes.
     return (
-      !time ||
-      Boolean(toTime && Temporal.PlainTime.compare(time, toTime) === 0) ||
+      !(time && toTime) ||
+      Temporal.PlainTime.compare(time, toTime) === 0 ||
       !(severalADay || isAdded(value.day, time))
     );
   };
