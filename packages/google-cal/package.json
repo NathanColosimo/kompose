@@ -4,7 +4,10 @@
   "exports": {
     "./client": "./src/client.ts",
     "./recurrence-utils": "./src/recurrence-utils.ts",
-    "./schema": "./src/schema.ts"
+    "./rule-days": "./src/rule-days.ts",
+    "./schema": "./src/schema.ts",
+    "./series-times": "./src/series-times.ts",
+    "./until": "./src/until.ts"
   },
   "scripts": {
     "lint": "biome check .",
@@ -12,6 +15,7 @@
   },
   "dependencies": {
     "effect": "catalog:",
+    "temporal-polyfill": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
