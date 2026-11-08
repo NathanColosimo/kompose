@@ -1317,6 +1317,18 @@ describe("seriesRecurrenceForSave", () => {
       ]);
     });
 
+    test("counts a several-a-day COUNT meeting by meeting", () => {
+      // 9:00 and 15:00 five times from Nov 9 9:00: the fifth is Nov 11
+      // 9:00, so that day's only meeting, skipped, keeps it skipped; and
+      // the all-day rule keeps the series' three days (COUNT=3).
+      expect(
+        allDay([
+          "RRULE:FREQ=DAILY;BYHOUR=9,15;COUNT=5",
+          "EXDATE;TZID=America/New_York:20261111T090000",
+        ])
+      ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", "EXDATE;VALUE=DATE:20261111"]);
+    });
+
     test("keeps a several-a-day day unless all its times were skipped", () => {
       // 9:00 and 15:00: only Nov 16's 15:00 skipped keeps Nov 16; both of
       // Nov 17's skipped skips the day. The rule loses its times.

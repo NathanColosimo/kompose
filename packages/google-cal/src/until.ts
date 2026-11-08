@@ -19,6 +19,9 @@ const SEVERAL_A_DAY =
 
 const INTERVAL_PART = /INTERVAL=(\d+)/;
 const COUNT_VALUE = /[:;]COUNT=(\d+)/;
+const COUNT_SWAP = /([:;])COUNT=\d+/;
+/** How far a COUNT rule's meetings are walked: fifty years of days. */
+const MAX_COUNT_DAYS = 366 * 50;
 const CLOCK_PART_NAME = /^BY(?:HOUR|MINUTE|SECOND)=/;
 /** A rule that repeats within a day: its times don't follow the start's. */
 const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
@@ -446,6 +449,118 @@ function matchDateList(
 }
 
 /**
+ * The times of day a rule meets, parts it leaves out from the series'
+ * time `base`; null when they can't be listed (a sub-daily rule, or a
+ * part left out with no `base`).
+ */
+function ruleTimesOf(
+  rule: string,
+  base: Temporal.PlainTime | null
+): Temporal.PlainTime[] | null {
+  if (SUB_DAILY.test(rule)) {
+    return null;
+  }
+  const parts = new Map(
+    [...rule.matchAll(CLOCK_PART)].map((match) => [
+      match[1],
+      (match[2] ?? "").split(",").map(Number),
+    ])
+  );
+  const fill = (name: string, own: number | undefined) =>
+    parts.get(name) ?? (own === undefined ? null : [own]);
+  const hours = fill("BYHOUR", base?.hour);
+  const minutes = fill("BYMINUTE", base?.minute);
+  const seconds = fill("BYSECOND", base?.second);
+  if (!(hours && minutes && seconds)) {
+    return null;
+  }
+  return hours.flatMap((hour) =>
+    minutes.flatMap((minute) =>
+      seconds.map((second) => Temporal.PlainTime.from({ hour, minute, second }))
+    )
+  );
+}
+
+/**
+ * An all-day rule made from one that met several times a day keeps its
+ * length in days: its COUNT becomes the days its counted meetings fell on
+ * (9:00 and 15:00 five times is three days). The line as is when it can't
+ * be counted.
+ */
+function countInDays(
+  line: string,
+  base: Temporal.PlainTime | null,
+  from: Temporal.PlainDate | null,
+  timeZone: string
+): string {
+  const count = Number(COUNT_VALUE.exec(line)?.[1]);
+  const times = ruleTimesOf(line, base);
+  if (!(from && Number.isFinite(count) && times && times.length > 1)) {
+    return line;
+  }
+  const meetings = countedRuleMeetings({
+    base,
+    count,
+    from,
+    rule: line,
+    times,
+    timeZone,
+  });
+  if (!meetings) {
+    return line;
+  }
+  const days = new Set(
+    [...meetings].map((ms) =>
+      Temporal.Instant.fromEpochMilliseconds(ms)
+        .toZonedDateTimeISO(timeZone)
+        .toPlainDate()
+        .toString()
+    )
+  );
+  return line.replace(COUNT_SWAP, `$1COUNT=${days.size}`);
+}
+
+/**
+ * A COUNT rule's meetings as moments, every time of every day counted in
+ * order from the series' first day `from` (from its start time `base`
+ * that day), up to `count`; null when its days can't be read.
+ */
+function countedRuleMeetings(params: {
+  base: Temporal.PlainTime | null;
+  count: number;
+  from: Temporal.PlainDate;
+  rule: string;
+  times: Temporal.PlainTime[];
+  timeZone: string;
+}): Set<number> | null {
+  const { base, count, from, rule, timeZone } = params;
+  const times = [...params.times].sort(Temporal.PlainTime.compare);
+  const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
+    day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
+  const first = base ? at(from, base) : null;
+  const meetings = new Set<number>();
+  for (let offset = 0; offset < MAX_COUNT_DAYS; offset += 1) {
+    const day = from.add({ days: offset });
+    const onRuleDay = isRuleDay(rule, from, day);
+    if (onRuleDay === null) {
+      return null;
+    }
+    const moments = onRuleDay
+      ? times
+          .map((time) => at(day, time))
+          .filter((ms) => !(first && ms < first))
+      : [];
+    for (const moment of moments) {
+      meetings.add(moment);
+      if (meetings.size === count) {
+        return meetings;
+      }
+    }
+  }
+  return meetings;
+}
+
+/**
  * Turning a timed series all day, which of its timed added (RDATE) and
  * skipped (EXDATE) values become dates. A date skips or adds the whole
  * day, so: an added meeting that was cancelled goes from both lists; a
@@ -486,61 +601,64 @@ function allDayDates(params: {
   const at = (day: Temporal.PlainDate, time: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: time, timeZone }).epochMilliseconds;
   // The times a rule meets on a day, or null when they can't be listed.
-  const ruleTimes = (rule: string): Temporal.PlainTime[] | null => {
-    if (SUB_DAILY.test(rule)) {
-      return null;
+  const ruleTimes = (rule: string) => ruleTimesOf(rule, base);
+  const countedCache = new Map<string, Set<number> | null>();
+  const countedMeetings = (
+    rule: string,
+    times: Temporal.PlainTime[],
+    count: number,
+    from: Temporal.PlainDate
+  ) => {
+    if (!countedCache.has(rule)) {
+      countedCache.set(
+        rule,
+        countedRuleMeetings({ base, count, from, rule, times, timeZone })
+      );
     }
-    const parts = new Map(
-      [...rule.matchAll(CLOCK_PART)].map((match) => [
-        match[1],
-        (match[2] ?? "").split(",").map(Number),
-      ])
-    );
-    const fill = (name: string, own: number | undefined) =>
-      parts.get(name) ?? (own === undefined ? null : [own]);
-    const hours = fill("BYHOUR", base?.hour);
-    const minutes = fill("BYMINUTE", base?.minute);
-    const seconds = fill("BYSECOND", base?.second);
-    if (!(hours && minutes && seconds)) {
-      return null;
-    }
-    return hours.flatMap((hour) =>
-      minutes.flatMap((minute) =>
-        seconds.map((second) =>
-          Temporal.PlainTime.from({ hour, minute, second })
-        )
-      )
-    );
+    return countedCache.get(rule) ?? null;
   };
-  // The rules' meetings on a day, as moments; null when they can't be listed.
+  // One rule's meetings on a day, as moments; null when they can't be listed.
+  const meetingsOf = (
+    rule: string,
+    day: Temporal.PlainDate
+  ): number[] | null => {
+    if (isRuleDay(rule, anchor, day) === false) {
+      return [];
+    }
+    const times = ruleTimes(rule);
+    const count = COUNT_VALUE.exec(rule)?.[1];
+    // A COUNT counted from a day that isn't the series' first can't say
+    // when the rule ends.
+    if (!times || (count && !countFrom)) {
+      return null;
+    }
+    // COUNT ends after its last meeting, maybe partway through a day.
+    const counted =
+      count && countFrom
+        ? countedMeetings(rule, times, Number(count), countFrom)
+        : undefined;
+    if (counted === null) {
+      return null;
+    }
+    // UNTIL ends at a moment: a later time that day doesn't meet.
+    const until = UNTIL_PART.exec(rule)?.[2];
+    const last = until ? untilMoment(until, timeZone)?.epochMilliseconds : null;
+    return times
+      .map((time) => at(day, time))
+      .filter((ms) => !(last && ms > last) && (!counted || counted.has(ms)));
+  };
   const ruleMeetings = (day: Temporal.PlainDate): number[] | null => {
-    const meetings: number[] = [];
     // Before the day the rules count from, they can't say.
     if (Temporal.PlainDate.compare(day, anchor) < 0) {
       return null;
     }
+    const meetings: number[] = [];
     for (const rule of rules) {
-      if (isRuleDay(rule, anchor, day) === false) {
-        continue;
-      }
-      const times = ruleTimes(rule);
-      const count = COUNT_VALUE.exec(rule)?.[1];
-      // A COUNT counted from a day that isn't the series' first can't say
-      // when the rule ends.
-      if (!times || (count && !countFrom)) {
+      const own = meetingsOf(rule, day);
+      if (!own) {
         return null;
       }
-      if (countFrom && endedBefore(rule, countFrom, day, timeZone)) {
-        continue;
-      }
-      // UNTIL ends at a moment: a later time that day doesn't meet.
-      const until = UNTIL_PART.exec(rule)?.[2];
-      const last = until ? untilMoment(until, timeZone) : null;
-      meetings.push(
-        ...times
-          .map((time) => at(day, time))
-          .filter((ms) => !last || ms <= last.epochMilliseconds)
-      );
+      meetings.push(...own);
     }
     return meetings;
   };
@@ -738,15 +856,19 @@ export function matchRecurrenceToStart(
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const baseDay = seriesStart ? dayOfStart(seriesStart, timeZone) : null;
   const added = addedMoments(recurrence, timeZone);
+  // Where COUNT counts from: without word from the caller, the new start
+  // is the series' first (on the server it is the series' own start).
+  let countFrom: Temporal.PlainDate | null = null;
+  if (start.date) {
+    countFrom = days ? days.firstDay : Temporal.PlainDate.from(start.date);
+  }
   const keepAsDate = start.date
     ? allDayDates({
         // Rules that take their day from the start count from the new
         // one (followStart has moved them and their skips there), unless
         // the caller says they didn't move.
         anchor: days?.rulesFrom ?? Temporal.PlainDate.from(start.date),
-        // Without word from the caller, the new start is the series' first
-        // (on the server it is the series' own start).
-        countFrom: days ? days.firstDay : Temporal.PlainDate.from(start.date),
+        countFrom,
         base,
         recurrence,
         rules,
@@ -815,7 +937,11 @@ export function matchRecurrenceToStart(
   const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchClock(
-          matchUntil(line, allDay, timeZone),
+          matchUntil(
+            start.date ? countInDays(line, base, countFrom, timeZone) : line,
+            allDay,
+            timeZone
+          ),
           start,
           timeZone,
           severalADay
