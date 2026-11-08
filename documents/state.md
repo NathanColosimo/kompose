@@ -22,7 +22,7 @@
 - `atoms/visible-calendars.ts`: Visible calendar selection atoms, a persisted-storage hydration flag, and toggle helpers. Missing persisted state remains `null` as "no explicit preference yet".
 - `atoms/whoop-data.ts`: WHOOP account derivation from the shared linked-account query, month-anchored day summaries query atom with ±7 day padding and `keepPreviousData`, and derived `whoopSummariesByDayAtom` map. Components read directly via `useAtomValue` — no prop drilling needed.
 - `event-creation.ts`: Why a new event can't be made yet (`eventCreationBlockedReason`: calendars loading, or no Google account), in the same words on web and iOS.
-- `event-recurrence-words.ts`: A series' repeat in words (`describeEventRecurrence`: "Weekly on Mon, Wed", "Monthly on the 1st Sat"), and the monthly day choices an editor offers (`monthlyDayOptions`), with a rule set another way kept first, selected, and "Custom days" where it can't be put in words.
+- `event-recurrence-words.ts`: A series' repeat in words (`describeEventRecurrence`: "Repeats weekly on Mon, Wed", "Repeats monthly on the 1st Sat"), and the monthly day choices an editor offers (`monthlyDayOptions`), with a rule set another way kept first, selected, and "Custom days" where it can't be put in words.
 - `config.ts`: Shared config atom plus helpers for accessing `orpc` and auth client.
 - `hooks/use-google-accounts.ts`: Query hook for Google-linked Better Auth `Account` records derived from the shared linked-account query.
 - `hooks/use-google-event-mutations.ts`: Create/update/delete Google event mutations with optimistic updates. An editor that stays open while saving passes `HeldSave` (`quiet`, `failureMessage`, reported through `reportHeldSaveFailure`) and, for an update, `optimistic: false`, so the event isn't moved under it mid-save. After every write the calendar's series masters are invalidated too (`invalidateGoogleEventQueries` in `google-calendar-query-keys.ts`), so the next save never reads a stale rule.
@@ -41,5 +41,5 @@
 - `soft-hyphens.ts`: `withSoftHyphens`, which lets long words in narrow calendar blocks break with a hyphen, three letters kept on each side.
 - `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh. It also declares the typed query meta (`quietError`) both apps' query error handlers read.
 - `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
-- `temporal-utils.ts`: Shared Temporal helpers for date math.
+- `temporal-utils.ts`: Shared Temporal helpers for date math, and the time and range words web and iOS both show (`formatEventWhen`, `formatAllDayWhen`, `formatTimeRange`, `formatClockTime`/`formatClockRange`, `formatDuration`, `formatScheduledAt`, with a fallback where Hermes lacks `Intl.RelativeTimeFormat`). It also snaps a touch to the nearest slot (`nearestSlotMinutes`), and `moveEventStart` keeps an event's length when its start moves.
 - `types.ts`: Shared auth client types.

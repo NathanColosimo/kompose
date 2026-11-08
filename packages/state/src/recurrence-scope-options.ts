@@ -1109,41 +1109,35 @@ function splitBlockedDescription(
   const then = SCOPE_DIALOG_COPY.splitBlockedThen;
   const { patternChanged } = changes;
   const off = entireSeriesOff(changes);
-  const line = (() => {
-    switch (off?.reason) {
-      case undefined:
-        return sentences(why, patternChanged && then.repeat);
-      case "newDay":
-        return newDayLine(changes, { why });
-      case "repeatDay":
-        return sentences(why, then.repeatOffDay);
-      case "repeatEnd":
-        return sentences(why, then.repeatEndOff);
-      case "changedMeeting":
-        return sentences(
-          why,
-          changedMeetingLine(off.cost),
-          patternChanged && SCOPE_DIALOG_COPY.repeatNotAlone
-        );
-      case "refused":
-        return sentences(
-          why,
-          patternChanged && SCOPE_DIALOG_COPY.repeatNotAlone
-        );
-      case "severalRulesTime":
-        return sentences(
-          why,
-          patternChanged
-            ? SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason
-            : `${SCOPE_DIALOG_COPY.severalRulesTimeReason} ${then.severalRulesTime}`
-        );
-      case "seriesPending":
-        return seriesPendingDescription(changes);
-      default:
-        return off satisfies never;
-    }
-  })();
-  return line;
+  switch (off?.reason) {
+    case undefined:
+      return sentences(why, patternChanged && then.repeat);
+    case "newDay":
+      return newDayLine(changes, { why });
+    case "repeatDay":
+      return sentences(why, then.repeatOffDay);
+    case "repeatEnd":
+      return sentences(why, then.repeatEndOff);
+    case "changedMeeting":
+      return sentences(
+        why,
+        changedMeetingLine(off.cost),
+        patternChanged && SCOPE_DIALOG_COPY.repeatNotAlone
+      );
+    case "refused":
+      return sentences(why, patternChanged && SCOPE_DIALOG_COPY.repeatNotAlone);
+    case "severalRulesTime":
+      return sentences(
+        why,
+        patternChanged
+          ? SCOPE_DIALOG_COPY.severalRulesTimeAndRepeatReason
+          : `${SCOPE_DIALOG_COPY.severalRulesTimeReason} ${then.severalRulesTime}`
+      );
+    case "seriesPending":
+      return seriesPendingDescription(changes);
+    default:
+      return off satisfies never;
+  }
 }
 
 /**
