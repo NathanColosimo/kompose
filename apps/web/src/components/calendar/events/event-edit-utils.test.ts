@@ -8,7 +8,12 @@ import {
   eventSaveDisabledScopes,
 } from "@kompose/state/recurrence-scope-options";
 import { ORPCError } from "@orpc/client";
-import { saveScopeDialog, seriesRefusal, seriesSave } from "./event-edit-utils";
+import {
+  refuse,
+  saveScopeDialog,
+  seriesRefusal,
+  seriesSave,
+} from "./event-edit-utils";
 
 const zone = "America/New_York";
 const at = (dateTime: string) => ({ dateTime, timeZone: zone });
@@ -99,9 +104,20 @@ describe("saveScopeDialog", () => {
   test("turns the refused scope off and leads with the server's reason", () => {
     const message =
       "This would undo changes made to single occurrences (Nov 24), so it wasn't saved.";
-    const dialog = saveScopeDialog(retimed, { message, scope: "all" });
+    const dialog = saveScopeDialog(retimed, refuse(null, "all", message));
     expect(eventSaveDisabledScopes(retimed).all).toBeFalsy();
     expect(dialog.disabled.all).toBe(true);
     expect(dialog.description.startsWith(message)).toBe(true);
+  });
+
+  test("keeps every scope refused in a row off, led by the latest reason", () => {
+    const first = refuse(null, "all", "Entire series would undo Nov 24.");
+    const second = refuse(first, "following", "This and following would too.");
+    const dialog = saveScopeDialog(retimed, second);
+    expect(dialog.disabled.all).toBe(true);
+    expect(dialog.disabled.following).toBe(true);
+    expect(dialog.description.startsWith("This and following would too.")).toBe(
+      true
+    );
   });
 });

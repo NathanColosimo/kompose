@@ -4,7 +4,7 @@ import {
   formatTimeRange,
 } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react";
-import { type CSSProperties, Fragment, type ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
@@ -44,20 +44,6 @@ interface BlockContentProps {
    * text fits that part, top-aligned, so it isn't cut off mid-line.
    */
   uncoveredMinutes?: number;
-}
-
-/**
- * Words that wrap whole, each cut with an ellipsis only if it alone is
- * wider than the line.
- */
-function WordsCutToFit({ text }: { text: string }) {
-  return text.split(" ").map((word, index) => (
-    // biome-ignore lint/suspicious/noArrayIndexKey: a title's words in order
-    <Fragment key={index}>
-      {index > 0 ? " " : null}
-      <span className="inline-block max-w-full truncate align-top">{word}</span>
-    </Fragment>
-  ));
 }
 
 /**
@@ -192,15 +178,13 @@ export function BlockContent({
         >
           {/* Wide: words move down whole. Narrow: long words break with a
               hyphen. Narrowest (about four letters a line, where hyphens
-              read as "Roa-d-…"): words still wrap whole, and only one too
-              long for a line is cut short ("Road…"). */}
+              read as "Roa-d-…" and a clamped second line loses its
+              ellipsis): one line, cut with an ellipsis ("Revi…"). */}
           <span className="@max-[5.5rem]:hidden">{title}</span>
           <span className="@max-[5.5rem]:inline @max-[4rem]:hidden hidden">
             {withSoftHyphens(title)}
           </span>
-          <span className="@max-[4rem]:inline hidden">
-            <WordsCutToFit text={title} />
-          </span>
+          <span className="@max-[4rem]:block hidden truncate">{title}</span>
         </span>
         {/* The time comes first: icons that don't fit beside it wrap onto
             a hidden second line. A tall block has room to wrap the range
