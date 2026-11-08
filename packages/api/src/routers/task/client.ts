@@ -18,6 +18,7 @@ import { InvalidTaskError, TaskNotFoundError } from "./errors";
 import {
   buildOccurrenceRowsFromTask,
   getDueDateForOccurrence,
+  heirPattern,
   keepsEditedOccurrence,
   parsePlainDate,
   regeneratedOccurrenceRows,
@@ -144,15 +145,15 @@ const dbDelete = (userId: string, taskId: string) =>
 /**
  * Delete a series master on its own. The master holds the series' pattern
  * (a done occurrence can be one after a pattern change), so the next
- * remaining occurrence takes over its role and pattern, one fewer in its
- * count, and the rest of the series keeps a master to read it from.
+ * remaining occurrence takes over its role and pattern (counting the rows
+ * left), and the rest of the series keeps a master to read it from.
  */
 const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
   userId: string,
   master: TaskSelect
 ) {
   const db = yield* Database;
-  const [heir] = yield* db
+  const rest = yield* db
     .select()
     .from(taskTable)
     .where(
@@ -162,8 +163,8 @@ const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
         ne(taskTable.id, master.id)
       )
     )
-    .orderBy(asc(taskTable.startDate))
-    .limit(1);
+    .orderBy(asc(taskTable.startDate));
+  const [heir] = rest;
   if (heir) {
     yield* db
       .update(taskTable)
@@ -174,11 +175,8 @@ const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
           eq(taskTable.seriesMasterId, master.id)
         )
       );
-    const pattern = master.recurrence;
     yield* dbUpdate(userId, heir.id, {
-      recurrence: pattern?.count
-        ? { ...pattern, count: Math.max(1, pattern.count - 1) }
-        : pattern,
+      recurrence: heirPattern(master.recurrence, rest.length),
     });
   }
   yield* dbDelete(userId, master.id);

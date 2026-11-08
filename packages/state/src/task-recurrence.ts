@@ -390,7 +390,8 @@ export function markStatusFailureMessage(
     : "Couldn't reopen the task. Your changes are still here.";
 }
 
-/** A repeat whose end comes before the task's start has no occurrences. */
+const SPACES = / /g;
+
 /**
  * The blocking note, naming both dates so it says what to fix: "The repeat
  * ends Nov 13, before the task starts on Nov 14."
@@ -399,11 +400,15 @@ function repeatEndsBeforeStartText(
   until: string,
   startDate: Temporal.PlainDate
 ): string {
+  // A non-breaking space keeps "Nov 14" together when the note wraps.
   const day = (date: Temporal.PlainDate) =>
-    date.toLocaleString(undefined, { day: "numeric", month: "short" });
+    date
+      .toLocaleString(undefined, { day: "numeric", month: "short" })
+      .replace(SPACES, "\u00A0");
   return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
 }
 
+/** A repeat whose end comes before the task's start has no occurrences. */
 export function repeatEndsBeforeStart(
   recurrence: TaskRecurrence | null | undefined,
   startDate: Temporal.PlainDate | null | undefined

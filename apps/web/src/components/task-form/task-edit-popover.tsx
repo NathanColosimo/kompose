@@ -722,7 +722,7 @@ export function TaskEditForm({
    */
   const submit = useCallback(
     (values: TaskFormValues): boolean | Promise<boolean> => {
-      // The editor says why ("The repeat ends before the task starts.").
+      // The note under Repeat says why ("The repeat ends Nov 10, before...").
       if (
         repeatBlocksSave({
           next: values.recurrence,

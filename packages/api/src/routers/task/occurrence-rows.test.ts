@@ -3,6 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import type { TaskSelect } from "@kompose/db/schema/task";
 import {
+  heirPattern,
   keepsEditedOccurrence,
   regeneratedOccurrenceRows,
   repeatEndsBeforeStart,
@@ -74,6 +75,29 @@ describe("regeneratedOccurrenceRows", () => {
     });
     expect(rowsKept.every((r) => r.seriesMasterId === "nov9")).toBe(true);
     expect(rowsKept.every((r) => r.recurrence === null)).toBe(true);
+  });
+
+  test("leaves the master role to an exception already on the start", () => {
+    // Nov 16 done alone; Nov 9 (ordinary, replaced) moved onto it, Daily x3:
+    // Nov 16 is the master (the caller gives it the pattern), 17 and 18 join.
+    const rowsOnKept = regeneratedOccurrenceRows({
+      input: {
+        recurrence: { count: 3, freq: "DAILY", interval: 1 },
+        startDate: "2026-11-16",
+      },
+      keepEdited: false,
+      keptDates: new Set(["2026-11-16"]),
+      masterIsKept: true,
+      seriesMasterId: "nov16",
+      task: nov9,
+      userId: "user",
+    });
+    expect(rowsOnKept.map((r) => `${r.startDate} ${r.seriesMasterId}`)).toEqual(
+      ["2026-11-17 nov16", "2026-11-18 nov16"]
+    );
+    expect(rowsOnKept.some((r) => r.id === "nov16" || r.recurrence)).toBe(
+      false
+    );
   });
 
   test("starts every new occurrence open, even from a done one", () => {
@@ -181,5 +205,15 @@ describe("repeatEndsBeforeStart", () => {
       repeatEndsBeforeStart({ ...daily, until: "2026-11-12" }, "2026-11-12")
     ).toBe(false);
     expect(repeatEndsBeforeStart(daily, "2026-11-12")).toBe(false);
+  });
+});
+
+describe("heirPattern", () => {
+  test("counts the occurrences left for the next master", () => {
+    const daily4 = { count: 4, freq: "DAILY" as const, interval: 1 };
+    // Nov 9 (master) deleted, Nov 10 deleted earlier: Nov 11 and 12 left.
+    expect(heirPattern(daily4, 2)).toEqual({ ...daily4, count: 2 });
+    const open = { freq: "DAILY" as const, interval: 1 };
+    expect(heirPattern(open, 2)).toEqual(open);
   });
 });

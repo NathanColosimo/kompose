@@ -176,3 +176,18 @@ export function repeatEndsBeforeStart(
     recurrence?.until && startDate && recurrence.until < startDate
   );
 }
+
+/**
+ * The pattern a series' next occurrence takes when its master is deleted
+ * alone: the same rule, with a count of the occurrences actually left (an
+ * earlier one may have been deleted, or moved), so "after N times" still
+ * matches the rows.
+ */
+export function heirPattern(
+  pattern: TaskSelect["recurrence"],
+  remaining: number
+): TaskSelect["recurrence"] {
+  return pattern?.count
+    ? { ...pattern, count: Math.max(1, remaining) }
+    : pattern;
+}
