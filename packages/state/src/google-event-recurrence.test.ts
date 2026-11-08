@@ -1955,6 +1955,77 @@ describe("changedMeetingDropped", () => {
     ).toBe("2026-12-09");
   });
 
+  test("reads the rule as the server writes it with the new time", () => {
+    // Daily at BYHOUR=9, moved to 10:00 for the series: the server writes
+    // BYHOUR=10, and the renamed Dec 7 9:00 meeting has no slot left.
+    const byHour = { ...master, recurrence: ["RRULE:FREQ=DAILY;BYHOUR=9"] };
+    expect(
+      changedMeetingDropped({
+        edited: {
+          end: at("2026-12-03T10:30:00-05:00"),
+          start: at("2026-12-03T10:00:00-05:00"),
+        },
+        loaded: [opened, renamed],
+        master: byHour,
+        occurrence: opened,
+        recurrence: undefined,
+        timeZone: zone,
+      })?.toString()
+    ).toBe("2026-12-07");
+  });
+
+  test("through the series' first meeting, its new time is the series'", () => {
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    expect(
+      dropped({
+        edited: {
+          end: at("2026-12-01T10:30:00-05:00"),
+          start: at("2026-12-01T10:00:00-05:00"),
+        },
+        loaded: [first, renamed],
+        occurrence: first,
+      })
+    ).toBe("2026-12-07");
+  });
+
+  test("an all-day series' slots are its days", () => {
+    // Mondays and Wednesdays all day from Mon Nov 30; Wed Dec 9 renamed.
+    const allDay = {
+      end: { date: "2026-12-01" },
+      id: "series",
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+      start: { date: "2026-11-30" },
+      summary: "Offsite",
+    };
+    const wednesday = {
+      end: { date: "2026-12-10" },
+      id: "series_20261209",
+      originalStartTime: { date: "2026-12-09" },
+      recurringEventId: "series",
+      start: { date: "2026-12-09" },
+      summary: "Offsite, room B",
+    };
+    const monday = {
+      ...wednesday,
+      end: { date: "2026-12-08" },
+      id: "series_20261207",
+      originalStartTime: { date: "2026-12-07" },
+      start: { date: "2026-12-07" },
+      summary: "Offsite",
+    };
+    const drops = (rule: string) =>
+      changedMeetingDropped({
+        edited: { end: monday.end, start: monday.start },
+        loaded: [monday, wednesday],
+        master: allDay,
+        occurrence: monday,
+        recurrence: [rule],
+        timeZone: zone,
+      })?.toString();
+    expect(drops("RRULE:FREQ=WEEKLY;BYDAY=MO")).toBe("2026-12-09");
+    expect(drops("RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR")).toBeUndefined();
+  });
+
   test("another series' meetings aren't this one's", () => {
     const other = { ...renamed, recurringEventId: "other" };
     expect(

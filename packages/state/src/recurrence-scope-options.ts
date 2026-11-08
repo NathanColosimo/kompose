@@ -426,8 +426,11 @@ function changedMeetingLine(
   return `The new ${repeatOrTime(changes)} would undo your changes to the ${shortDay(day)} meeting, so it can't apply to the entire series.`;
 }
 
-/** What the save changes for the series: "repeat", else "time". */
+/** What the save changes for the series: its repeat, its time, or both. */
 function repeatOrTime(changes: EventSaveChanges): string {
+  if (changes.patternChanged && changes.retimed) {
+    return "repeat and time";
+  }
   return changes.patternChanged ? "repeat" : "time";
 }
 

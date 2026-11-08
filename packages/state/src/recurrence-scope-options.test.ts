@@ -448,6 +448,16 @@ describe("a save that would undo a meeting's own changes", () => {
     );
   });
 
+  test("names both when the save changes the repeat and the time", () => {
+    const both = { ...changes, retimed: true };
+    expect(eventSaveDescription(both)).toBe(
+      "The new repeat and time would undo your changes to the Dec 7 meeting, so it can't apply to the entire series."
+    );
+    expect(eventSaveDescription({ ...both, calendarChanged: true })).toBe(
+      "Moving to another calendar moves the whole series, but the new repeat and time would undo your changes to the Dec 7 meeting. Move the calendar and change the repeat and time in two saves."
+    );
+  });
+
   test("says it after why This and following is off too", () => {
     const blocked = { ...changes, splitBlocked: "addedOccurrence" as const };
     expect(off(blocked)).toEqual(["all", "following", "this"]);

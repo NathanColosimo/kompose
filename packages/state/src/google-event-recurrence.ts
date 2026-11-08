@@ -599,15 +599,15 @@ export function repeatSkipsOccurrence(params: {
 }
 
 /**
- * The series' first meeting changed on its own (moved, renamed, any field
- * the series doesn't share), among those `loaded` (the opened one too),
- * whose changes an Entire series save would drop, as the server reads it:
- * when the save moves the series' slots (a new repeat, or new times), the
- * server refuses it if the new series has no meeting at such a one's
- * original slot, since Google keeps its changes only there. The day it's
- * on now in `timeZone` (the app's), for the scope dialog to name; null
- * when none would go. Only the meetings the app has loaded are seen; the
- * server checks them all.
+ * The earliest meeting of the series changed on its own (moved, renamed,
+ * any field the series doesn't share), among those `loaded` (the opened
+ * one too), whose changes an Entire series save would drop, as the server
+ * reads it: when the save moves the series' slots (a new repeat, or new
+ * times), the server refuses it if the new series has no meeting at such
+ * a one's original slot, since Google keeps its changes only there. The
+ * day it's on now in `timeZone` (the app's), for the scope dialog to
+ * name; null when none would go. Only the meetings the app has loaded are
+ * seen; the server checks them all.
  */
 export function changedMeetingDropped(params: {
   /** The edited start and end, as the save sends them. */
@@ -631,7 +631,15 @@ export function changedMeetingDropped(params: {
   const zone =
     master.start.timeZone ?? eventTimeZone(occurrence, params.timeZone);
   const start = entireSeriesStart({ edited, master, occurrence, zone });
-  const recurrence = params.recurrence ?? master.recurrence ?? [];
+  const seriesZone = master.start.timeZone ?? start.timeZone ?? zone;
+  // As the server writes it with the series' new start (its ruleForStart):
+  // a rule's own hour follows a new time.
+  const recurrence = matchRecurrenceToStart(
+    params.recurrence ?? master.recurrence ?? [],
+    start,
+    seriesZone,
+    master.start
+  );
   const movesSlots =
     !sameTime(start, master.start, zone) ||
     JSON.stringify(recurrence) !== JSON.stringify(master.recurrence ?? []);
@@ -649,7 +657,7 @@ export function changedMeetingDropped(params: {
       Object.keys(own).length === 0 ||
       seriesMeetsAt({
         recurrence,
-        seriesZone: master.start.timeZone ?? start.timeZone ?? zone,
+        seriesZone,
         slot,
         start,
       }) === true;
