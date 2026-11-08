@@ -1897,6 +1897,7 @@ export default function CalendarTab() {
         } else {
           setEventDialog(null);
           setPendingEventSaveDraft(null);
+          setRefusedMovedDay(null);
         }
       } finally {
         setIsSavingEvent(false);

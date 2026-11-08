@@ -1761,6 +1761,7 @@ export function EventEditorSheet({
           />
 
           <Input
+            accessibilityLabel="Title"
             containerStyle={{ flex: 1 }}
             onChangeText={(value) =>
               setValue("summary", value, { shouldDirty: true })
