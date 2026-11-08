@@ -8,6 +8,7 @@ import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
 import {
   type QueryClient,
+  replaceEqualDeep,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -140,7 +141,7 @@ export function createGoogleEventMutationOptions(
       context: CreateContext | undefined
     ) => {
       const optimisticId = context?.optimisticId;
-      if (!(optimisticId && createdEvent)) {
+      if (!optimisticId) {
         return;
       }
       editCachedEvents(queryClient, variables, (events) =>
@@ -174,19 +175,21 @@ export function createGoogleEventMutationOptions(
   };
 }
 
+/** The scope an update saves with: one occurrence unless it says. */
+function scopeOf(variables: UpdateGoogleEventVariables) {
+  return variables.recurrenceScope ?? "this";
+}
+
 /** Whether an update changes the cached event before the server answers. */
 function updatesAtOnce(variables: UpdateGoogleEventVariables): boolean {
-  return (
-    (variables.recurrenceScope ?? "this") === "this" &&
-    variables.optimistic !== false
-  );
+  return scopeOf(variables) === "this" && variables.optimistic !== false;
 }
 
 /**
  * An update: for one occurrence, unless the editor holds the save
- * (`optimistic: false`), the event changes in the cached lists at once and
- * its old copy comes back on failure (only it). A failure is reported unless the editor says it
- * (`quiet`).
+ * (`optimistic: false`), the event changes in the cached lists at once,
+ * and on failure its old copy comes back where the edit still shows. A
+ * failure is reported unless the editor says it (`quiet`).
  */
 export function updateGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -199,7 +202,7 @@ export function updateGoogleEventMutationOptions(
         calendarId: variables.calendarId,
         eventId: variables.eventId,
         event: sanitizeEventPayload(variables.event),
-        scope: variables.recurrenceScope ?? "this",
+        scope: scopeOf(variables),
       }),
     onMutate: async (variables: UpdateGoogleEventVariables) => {
       // Only one occurrence, saved without holding, changes the cache
@@ -228,9 +231,14 @@ export function updateGoogleEventMutationOptions(
       reportHeldSaveFailure(notifyError, err, variables);
       const previous = context?.previous;
       if (previous) {
+        // Only where the edit still shows: a newer copy a refetch brought
+        // stays (`replaceEqualDeep` keeps the cached copy when it's equal).
         editCachedEvents(queryClient, variables, (events) =>
           events.map((event) =>
-            event.id === variables.eventId ? previous : event
+            event.id === variables.eventId &&
+            replaceEqualDeep(event, variables.event) === event
+              ? previous
+              : event
           )
         );
       }
@@ -238,21 +246,11 @@ export function updateGoogleEventMutationOptions(
     onSuccess: (saved: Event, variables: UpdateGoogleEventVariables) => {
       // A held save shows the server's copy as soon as it's in; other
       // scopes change more events, so the refetch below brings them.
-      if (
-        variables.optimistic !== false ||
-        (variables.recurrenceScope ?? "this") !== "this"
-      ) {
+      if (variables.optimistic !== false || scopeOf(variables) !== "this") {
         return;
       }
-      queryClient.setQueriesData<Event[]>(
-        {
-          queryKey: getGoogleEventsByCalendarQueryKey({
-            accountId: variables.accountId,
-            calendarId: variables.calendarId,
-          }),
-        },
-        (cached) =>
-          cached?.map((event) => (event.id === saved.id ? saved : event))
+      editCachedEvents(queryClient, variables, (events) =>
+        events.map((event) => (event.id === saved.id ? saved : event))
       );
     },
     onSettled: (
@@ -268,10 +266,10 @@ export function updateGoogleEventMutationOptions(
 }
 
 /**
- * A delete: the event leaves the cached lists at once and comes back on
- * failure (only it: what a refetch brought meanwhile stays), which is
- * reported unless the dialog holding it says it (`quiet`), as for a held
- * save.
+ * A delete: the event leaves the cached lists at once and, on failure,
+ * comes back to those it left (only it: what a refetch brought meanwhile
+ * stays). A failure is reported unless the dialog holding it says it
+ * (`quiet`), as for a held save.
  */
 export function deleteGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -287,26 +285,37 @@ export function deleteGoogleEventMutationOptions(
       const queryKey = getGoogleEventsByCalendarQueryKey(variables);
       await queryClient.cancelQueries({ queryKey });
 
-      const removed = cachedEvent(queryClient, queryKey, variables.eventId);
+      // The lists it leaves, each with its copy, to put back on failure.
+      const removedFrom = queryClient
+        .getQueriesData<Event[]>({ queryKey })
+        .flatMap(([key, events]) => {
+          const removed = Array.isArray(events)
+            ? events.find((event) => event.id === variables.eventId)
+            : undefined;
+          return removed ? [{ key, removed }] : [];
+        });
       editCachedEvents(queryClient, variables, (events) =>
         events.filter((event) => event.id !== variables.eventId)
       );
 
-      return { removed };
+      return { removedFrom };
     },
     onError: (
       err: Error,
       variables: DeleteEventInput & HeldSave,
-      context: { removed: Event | undefined } | undefined
+      context:
+        | { removedFrom: { key: readonly unknown[]; removed: Event }[] }
+        | undefined
     ) => {
       reportHeldSaveFailure(notifyError, err, variables);
-      const removed = context?.removed;
-      if (removed) {
-        // Back in each list it's missing from; the refetch then orders it.
-        editCachedEvents(queryClient, variables, (events) =>
-          events.some((event) => event.id === removed.id)
-            ? events
-            : [...events, removed]
+      // Back in each list it left, unless a refetch already brought it;
+      // the refetch after then orders it.
+      for (const { key, removed } of context?.removedFrom ?? []) {
+        queryClient.setQueryData<Event[]>(key, (events) =>
+          Array.isArray(events) &&
+          !events.some((event) => event.id === removed.id)
+            ? [...events, removed]
+            : events
         );
       }
     },
