@@ -1,13 +1,19 @@
 import { Temporal } from "temporal-polyfill";
 import type { EventDraft } from "@/components/calendar/calendar-editor-types";
 
-/** An all-day event's dates (the end exclusive), or a timed one's instants. */
+/** A timed start or end: an instant, in the zone the event keeps. */
+interface TimedTime {
+  dateTime: string;
+  timeZone: string;
+}
+
+/**
+ * An all-day event's dates (the end exclusive), or a timed one's instants.
+ * `allDay` tells them apart; a save sends only `start` and `end`.
+ */
 export type DraftTimes =
-  | { end: { date: string }; start: { date: string } }
-  | {
-      end: { dateTime: string; timeZone: string };
-      start: { dateTime: string; timeZone: string };
-    };
+  | { allDay: true; end: { date: string }; start: { date: string } }
+  | { allDay: false; end: TimedTime; start: TimedTime };
 
 /** A Google start or end as loaded. */
 interface SourceTime {
@@ -36,6 +42,7 @@ export function draftTimes(
 ): DraftTimes {
   if (draft.allDay) {
     return {
+      allDay: true,
       end: { date: draft.endDate.add({ days: 1 }).toString() },
       start: { date: draft.startDate.toString() },
     };
@@ -44,7 +51,7 @@ export function draftTimes(
     date: Temporal.PlainDate,
     time: Temporal.PlainTime,
     own: SourceTime | undefined
-  ): { dateTime: string; timeZone: string } => {
+  ): TimedTime => {
     const shown = own?.dateTime
       ? Temporal.Instant.from(own.dateTime).toZonedDateTimeISO(appTimeZone)
       : null;
@@ -57,6 +64,7 @@ export function draftTimes(
     return { dateTime: instant.toString(), timeZone: eventZone };
   };
   return {
+    allDay: false,
     end: at(draft.endDate, draft.endTime ?? DEFAULT_END_TIME, source?.end),
     start: at(
       draft.startDate,

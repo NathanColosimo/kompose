@@ -816,16 +816,12 @@ function EndsBeforeStartNote({
  * save, so the hour a DST change repeats can't make them disagree.
  */
 function endsAfterStart(times: DraftTimes): boolean {
-  if ("date" in times.start && "date" in times.end) {
+  if (times.allDay) {
     return Temporal.PlainDate.compare(times.end.date, times.start.date) > 0;
   }
-  if ("dateTime" in times.start && "dateTime" in times.end) {
-    return (
-      Temporal.Instant.compare(times.end.dateTime, times.start.dateTime) >= 0
-    );
-  }
-  // draftTimes gives both ends the same form.
-  return false;
+  return (
+    Temporal.Instant.compare(times.end.dateTime, times.start.dateTime) >= 0
+  );
 }
 
 /** When a read-only event happens, in words: "Thu, Nov 12 · All day". */

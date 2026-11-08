@@ -723,20 +723,23 @@ function savedSeriesRecurrence(
 }
 
 /**
- * A write the server won't make to a series (its typed refusal, sent as a
- * BAD_REQUEST with the reason in `data`), or null for any other failure.
+ * Whether a failed save is a write the server won't make to a series: its
+ * typed refusal, sent as a BAD_REQUEST with the reason in `data` and the
+ * words for the user in its message.
  */
-function seriesRefusalOf(error: unknown): { reason: string } | null {
+function isSeriesRefusal(
+  error: unknown
+): error is ORPCError<"BAD_REQUEST", { reason: string }> {
   if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
-    return null;
+    return false;
   }
   const data: unknown = error.data;
-  return typeof data === "object" &&
+  return (
+    typeof data === "object" &&
     data !== null &&
     "reason" in data &&
     typeof data.reason === "string"
-    ? { reason: data.reason }
-    : null;
+  );
 }
 
 /**
@@ -1664,7 +1667,7 @@ export default function CalendarTab() {
         .catch((error: Error) => {
           // A refusal is shown where the save was asked for (the scope
           // dialog, or the editor); anything else as a failed save.
-          if (!seriesRefusalOf(error)) {
+          if (!isSeriesRefusal(error)) {
             notifyError?.(heldSaveError(error, SAVE_FAILURE_MESSAGE));
           }
           throw error;
@@ -1822,8 +1825,8 @@ export default function CalendarTab() {
       // A new repeat on a one-off event can be refused too (it would end
       // before it starts): the server's words, over the editor.
       await commitEventUpdate(draft, "this").catch((error: unknown) => {
-        if (seriesRefusalOf(error)) {
-          notifyError?.(error as Error);
+        if (isSeriesRefusal(error)) {
+          notifyError?.(error);
         }
         throw error;
       });
@@ -1854,8 +1857,8 @@ export default function CalendarTab() {
         // the dialog leads with the server's reason, which names any meeting
         // it would have undone, as on web. Any other failure returns to the
         // editor with the edits.
-        if (seriesRefusalOf(error)) {
-          const message = (error as Error).message;
+        if (isSeriesRefusal(error)) {
+          const { message } = error;
           setSaveRefusals((refused) => ({
             message,
             scopes: { ...refused?.scopes, [scope]: true },
