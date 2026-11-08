@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildGoogleEventRecurrenceRule,
-  byDayForFrequency,
   describeEventRecurrence,
+  type EventRecurrencePattern,
   getPrimaryRecurrenceRule,
+  monthlyWeekdayOf,
+  ordinalDayLabel,
   parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
+  untilRuleForDay,
+  untilRuleToDate,
 } from "./google-event-recurrence";
 
 describe("describeEventRecurrence", () => {
@@ -32,6 +37,13 @@ describe("describeEventRecurrence", () => {
         rules: ["RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH"],
       })
     ).toBe("Repeats yearly on the 4th Thu of Nov");
+    expect(
+      describeEventRecurrence({ rules: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=15"] })
+    ).toBe("Repeats monthly on day 15");
+    // The 4th Thursday of the year, not of a month: not put in words.
+    expect(
+      describeEventRecurrence({ rules: ["RRULE:FREQ=YEARLY;BYDAY=4TH"] })
+    ).toBe("Repeats yearly");
   });
 
   test("still says an instance repeats when its rule isn't loaded", () => {
@@ -91,79 +103,99 @@ describe("setPrimaryRecurrenceRule", () => {
 });
 
 describe("buildGoogleEventRecurrenceRule", () => {
-  const biweekly = "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU";
+  /** Parse `rule`, apply an edit, and build it back, as the editors do. */
+  const edit = (
+    rule: string,
+    change: (pattern: EventRecurrencePattern) => EventRecurrencePattern
+  ) =>
+    buildGoogleEventRecurrenceRule(
+      change(parseGoogleEventRecurrenceRule(rule)),
+      rule
+    );
+  const endAfter5 = (pattern: EventRecurrencePattern) => ({
+    ...pattern,
+    end: { count: 5, type: "count" } as const,
+  });
 
   test("keeps the parts an edit doesn't set", () => {
-    // "Ends after 10" on an every-2-weeks series stays every 2 weeks.
-    expect(
-      buildGoogleEventRecurrenceRule(
-        "WEEKLY",
-        ["TU"],
-        { count: 10, type: "count" },
-        biweekly
-      )
-    ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU;COUNT=10");
-  });
-
-  test("drops parts tied to a frequency when it changes", () => {
-    expect(
-      buildGoogleEventRecurrenceRule(
-        "WEEKLY",
-        ["MO"],
-        { type: "none" },
-        "RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;WKST=SU"
-      )
-    ).toBe("RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=MO");
-  });
-
-  test("picking a frequency keeps what still applies", () => {
-    const pick = (
-      rule: string,
-      to: Parameters<typeof byDayForFrequency>[2]
-    ) => {
-      const { byDay, end, freq } = parseGoogleEventRecurrenceRule(rule);
-      return buildGoogleEventRecurrenceRule(
-        to,
-        byDayForFrequency(byDay, freq, to),
-        end,
-        rule
-      );
-    };
-    // Re-picking the current frequency changes nothing.
-    for (const rule of [
-      "RRULE:FREQ=MONTHLY;BYDAY=2TU",
-      "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
-      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE",
-    ]) {
-      const { freq } = parseGoogleEventRecurrenceRule(rule);
-      expect(pick(rule, freq)).toBe(rule);
-    }
-    // "2nd Tuesday" means nothing weekly; it repeats on the start's weekday.
-    expect(pick("RRULE:FREQ=MONTHLY;BYDAY=2TU", "WEEKLY")).toBe(
-      "RRULE:FREQ=WEEKLY"
-    );
-    expect(pick("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", "MONTHLY")).toBe(
-      "RRULE:FREQ=MONTHLY"
-    );
-  });
-
-  test("keeps a yearly schedule when only its end changes", () => {
+    // "Ends after 5" on an every-2-weeks series stays every 2 weeks.
     for (const [rule, expected] of [
+      [
+        "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU",
+        "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU;COUNT=5",
+      ],
       ["RRULE:FREQ=YEARLY;INTERVAL=2", "RRULE:FREQ=YEARLY;INTERVAL=2;COUNT=5"],
       [
         "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
         "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH;COUNT=5",
       ],
     ] as const) {
-      const { byDay, freq } = parseGoogleEventRecurrenceRule(rule);
-      expect(
-        buildGoogleEventRecurrenceRule(
-          freq,
-          byDay,
-          { count: 5, type: "count" },
-          rule
-        )
-      ).toBe(expected);
+      expect(edit(rule, endAfter5)).toBe(expected);
     }
+  });
+
+  test("sets the interval", () => {
+    expect(
+      edit("RRULE:FREQ=WEEKLY;BYDAY=TU", (p) => ({ ...p, interval: 2 }))
+    ).toBe("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU");
+    expect(
+      edit("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", (p) => ({
+        ...p,
+        interval: 1,
+      }))
+    ).toBe("RRULE:FREQ=WEEKLY;BYDAY=TU");
+  });
+
+  test("picking a frequency keeps what still applies", () => {
+    const pick = (rule: string, to: EventRecurrencePattern["freq"]) =>
+      edit(rule, (p) => pickRecurrenceFrequency(p, to));
+    // Re-picking the current frequency changes nothing.
+    for (const rule of [
+      "RRULE:FREQ=MONTHLY;BYDAY=2TU",
+      "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE",
+    ]) {
+      expect(pick(rule, parseGoogleEventRecurrenceRule(rule).freq)).toBe(rule);
+    }
+    // "2nd Tuesday" means nothing weekly; it repeats on the start's weekday.
+    expect(pick("RRULE:FREQ=MONTHLY;BYDAY=2TU", "WEEKLY")).toBe(
+      "RRULE:FREQ=WEEKLY"
+    );
+    // A new frequency starts at every 1, without the old one's day parts.
+    expect(pick("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU", "MONTHLY")).toBe(
+      "RRULE:FREQ=MONTHLY"
+    );
+    expect(
+      pick("RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15;WKST=SU", "WEEKLY")
+    ).toBe("RRULE:FREQ=WEEKLY;WKST=SU");
+  });
+
+  test("a weekday of the month replaces a day of the month", () => {
+    expect(
+      edit("RRULE:FREQ=MONTHLY;BYMONTHDAY=10", (p) => ({
+        ...p,
+        byDay: ["2TU"],
+      }))
+    ).toBe("RRULE:FREQ=MONTHLY;BYDAY=2TU");
+  });
+});
+
+describe("monthlyWeekdayOf", () => {
+  test("names the weekday of the month, a 5th as the last", () => {
+    // Nov 10, 2026 is the 2nd Tuesday; Dec 29 the 5th (last) Tuesday.
+    expect(monthlyWeekdayOf({ day: 10, dayOfWeek: 2 })).toBe("2TU");
+    expect(monthlyWeekdayOf({ day: 29, dayOfWeek: 2 })).toBe("-1TU");
+    expect(ordinalDayLabel("-1TU")).toBe("last Tue");
+  });
+});
+
+describe("untilRuleForDay", () => {
+  test("ends after the picked day's occurrence", () => {
+    const day = new Date(2026, 11, 5);
+    expect(untilRuleForDay(day, true)).toBe("20261205");
+    // The day's last second, so a 10 AM meeting on Dec 5 is still in.
+    const until = untilRuleToDate(untilRuleForDay(day, false));
+    expect(until?.getDate()).toBe(5);
+    expect(until && until > new Date(2026, 11, 5, 23, 58)).toBe(true);
   });
 });

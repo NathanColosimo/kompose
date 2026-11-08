@@ -107,13 +107,20 @@ function resolveEnd(
   return { type: "none" };
 }
 
-export function parseGoogleEventRecurrenceRule(rule?: string): {
-  freq: EventRecurrenceFrequency;
+/** What the repeat editors set on a rule; the rest of it is kept as is. */
+export interface EventRecurrencePattern {
   byDay: string[];
   end: EventRecurrenceEnd;
-} {
+  freq: EventRecurrenceFrequency;
+  /** Every how many days, weeks, months or years (1: every one). */
+  interval: number;
+}
+
+export function parseGoogleEventRecurrenceRule(
+  rule?: string
+): EventRecurrencePattern {
   if (!rule?.startsWith("RRULE:")) {
-    return { byDay: [], end: { type: "none" }, freq: "none" };
+    return { byDay: [], end: { type: "none" }, freq: "none", interval: 1 };
   }
 
   const body = rule.replace("RRULE:", "");
@@ -123,6 +130,7 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
   let byDay: string[] = [];
   let until: string | null = null;
   let count: number | null = null;
+  let interval = 1;
 
   for (const part of parts) {
     const [key, value] = part.split("=");
@@ -149,22 +157,25 @@ export function parseGoogleEventRecurrenceRule(rule?: string): {
         }
         break;
       }
+      case "INTERVAL": {
+        const parsed = Number.parseInt(value, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          interval = parsed;
+        }
+        break;
+      }
       default:
         break;
     }
   }
 
-  return { byDay, end: resolveEnd(until, count), freq };
+  return { byDay, end: resolveEnd(until, count), freq, interval };
 }
 
 /** The rule parts the repeat editors set; the rest of a rule is kept. */
-const EDITED_PARTS = new Set(["FREQ", "BYDAY", "UNTIL", "COUNT"]);
-/**
- * Parts tied to a frequency, dropped when the frequency changes: picking
- * Monthly on an "every 2 weeks" series means every month, not every 2.
- */
+const EDITED_PARTS = new Set(["FREQ", "INTERVAL", "BYDAY", "UNTIL", "COUNT"]);
+/** Parts tied to a frequency, dropped when the frequency changes. */
 const FREQUENCY_PARTS = new Set([
-  "INTERVAL",
   "BYMONTHDAY",
   "BYMONTH",
   "BYSETPOS",
@@ -174,12 +185,12 @@ const FREQUENCY_PARTS = new Set([
 
 /**
  * The parts of `baseRule` an edit keeps: everything the editors don't set
- * (INTERVAL, WKST...), so changing a biweekly series' end keeps it
- * biweekly; parts tied to the frequency go when it changes.
+ * (WKST, BYMONTH...); parts tied to the frequency go when it changes, and
+ * a day of the month goes when a weekday of the month ("2nd Tue") is set.
  */
 function keptRuleParts(
   baseRule: string | undefined,
-  freq: EventRecurrenceFrequency
+  { byDay, freq }: EventRecurrencePattern
 ): string[] {
   if (!baseRule?.startsWith("RRULE:")) {
     return [];
@@ -193,6 +204,9 @@ function keptRuleParts(
     if (!part || EDITED_PARTS.has(key)) {
       return false;
     }
+    if (key === "BYMONTHDAY" && byDay.some((day) => ORDINAL_DAY.test(day))) {
+      return false;
+    }
     return baseFreq === freq || !FREQUENCY_PARTS.has(key);
   });
 }
@@ -200,34 +214,46 @@ function keptRuleParts(
 const PLAIN_WEEKDAY = /^[A-Z]{2}$/;
 
 /**
- * The BYDAY a repeat keeps when its frequency is picked: all of it for the
- * same frequency (re-picking Monthly keeps "2nd Tuesday"); the plain
- * weekdays when moving to Weekly ("2TU" isn't valid there, and none left
- * means the start's weekday); nothing for any other frequency.
+ * The pattern after picking frequency `to`. The same frequency changes
+ * nothing (re-picking Monthly keeps "2nd Tuesday"). A new one starts at
+ * every 1 (every 2 weeks, then Monthly, is every month) and keeps only the
+ * days that mean something there: plain weekdays for Weekly ("2TU" isn't
+ * valid weekly, and none left means the start's weekday), none otherwise.
  */
-export function byDayForFrequency(
-  byDay: string[],
-  from: EventRecurrenceFrequency,
+export function pickRecurrenceFrequency(
+  pattern: EventRecurrencePattern,
   to: EventRecurrenceFrequency
-): string[] {
-  if (from === to) {
-    return byDay;
+): EventRecurrencePattern {
+  if (pattern.freq === to) {
+    return pattern;
   }
-  return to === "WEEKLY" ? byDay.filter((day) => PLAIN_WEEKDAY.test(day)) : [];
+  return {
+    ...pattern,
+    byDay:
+      to === "WEEKLY"
+        ? pattern.byDay.filter((day) => PLAIN_WEEKDAY.test(day))
+        : [],
+    freq: to,
+    interval: 1,
+  };
 }
 
+/** The rule for `pattern`, keeping `baseRule`'s other parts. */
 export function buildGoogleEventRecurrenceRule(
-  freq: EventRecurrenceFrequency,
-  byDay: string[],
-  end: EventRecurrenceEnd,
+  pattern: EventRecurrencePattern,
   /** The rule being edited, whose other parts are kept. */
   baseRule?: string
 ): string | null {
+  const { byDay, end, freq, interval } = pattern;
   if (freq === "none") {
     return null;
   }
 
-  const parts: string[] = [`FREQ=${freq}`, ...keptRuleParts(baseRule, freq)];
+  const parts: string[] = [`FREQ=${freq}`];
+  if (interval > 1) {
+    parts.push(`INTERVAL=${interval}`);
+  }
+  parts.push(...keptRuleParts(baseRule, pattern));
   if (byDay.length > 0) {
     parts.push(`BYDAY=${byDay.join(",")}`);
   }
@@ -239,6 +265,48 @@ export function buildGoogleEventRecurrenceRule(
   }
 
   return `RRULE:${parts.join(";")}`;
+}
+
+/** RRULE weekday codes by dayOfWeek (1 Monday to 7 Sunday). */
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+/**
+ * The weekday of the month `date` falls on, as BYDAY: "2TU" for the 2nd
+ * Tuesday; a 5th is "-1TU", the last (not every month has a 5th).
+ * `dayOfWeek` runs 1 Monday to 7 Sunday.
+ */
+export function monthlyWeekdayOf(date: {
+  day: number;
+  dayOfWeek: number;
+}): string {
+  const nth = Math.ceil(date.day / 7);
+  return `${nth >= 5 ? -1 : nth}${WEEKDAY_CODES[date.dayOfWeek - 1] ?? "MO"}`;
+}
+
+/**
+ * UNTIL for a series that ends on `date`'s local day, that day's
+ * occurrence included: the date itself for an all-day series, otherwise
+ * the day's last second in UTC (midnight would drop a 10 AM meeting).
+ */
+export function untilRuleForDay(date: Date, allDay: boolean): string {
+  const ymd = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+  if (allDay) {
+    return ymd;
+  }
+  const end = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    23,
+    59,
+    59
+  );
+  return `${end.getUTCFullYear()}${pad(end.getUTCMonth() + 1)}${pad(end.getUTCDate())}T${pad(end.getUTCHours())}${pad(end.getUTCMinutes())}${pad(end.getUTCSeconds())}Z`;
+}
+
+/** The end date "On date" starts at: three months after the series starts. */
+export function defaultUntilDay(start: Date): Date {
+  return new Date(start.getFullYear(), start.getMonth() + 3, start.getDate());
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
@@ -299,8 +367,8 @@ const DAY_NAMES: Record<string, string> = {
   WE: "Wed",
 };
 
-const INTERVAL_PATTERN = /INTERVAL=(\d+)/;
 const BY_MONTH_PATTERN = /BYMONTH=(\d{1,2})(?:;|$)/;
+const BY_MONTH_DAY_PATTERN = /BYMONTHDAY=(-?\d{1,2})(?:;|$)/;
 const MONTH_NAMES = [
   "Jan",
   "Feb",
@@ -326,34 +394,49 @@ const ORDINAL_WORDS: Record<string, string> = {
   "5": "5th",
 };
 
-/** "on the 4th Thu of Nov" for a yearly rule with BYMONTH=11;BYDAY=4TH. */
-function ordinalWhen(
+/**
+ * Which day of the month or year a monthly or yearly rule falls on, in
+ * words: "on the 2nd Tue", "on day 15", "on the 4th Thu of Nov". Null when
+ * the rule doesn't say (it then repeats on the start's day) or says it in
+ * a way not put in words here.
+ */
+function dayOfPeriod(
   rule: string | undefined,
   freq: EventRecurrenceFrequency,
   byDay: string[]
 ): string | null {
-  const ordinal = ordinalDays(byDay);
+  const weekdays = byDay.map(ordinalDayLabel);
+  const ordinal =
+    weekdays.length > 0 && weekdays.every(Boolean)
+      ? `on the ${weekdays.join(", ")}`
+      : null;
+  const monthDay = BY_MONTH_DAY_PATTERN.exec(rule ?? "")?.[1];
+  if (freq === "MONTHLY") {
+    if (ordinal || !monthDay) {
+      return ordinal;
+    }
+    return monthDay === "-1" ? "on the last day" : `on day ${monthDay}`;
+  }
+  // Yearly "4th Thu" with no month is the 4th Thursday of the year.
   const month = MONTH_NAMES[Number(BY_MONTH_PATTERN.exec(rule ?? "")?.[1]) - 1];
-  return ordinal && month && freq === "YEARLY"
-    ? `${ordinal} of ${month}`
-    : ordinal;
-}
-
-/** "on the 2nd Tue" for a monthly or yearly rule's BYDAY=2TU. */
-function ordinalDays(byDay: string[]): string | null {
-  const words = byDay.map((code) => {
-    const match = ORDINAL_DAY.exec(code);
-    const ordinal = match ? ORDINAL_WORDS[match[1] ?? ""] : undefined;
-    const day = match ? DAY_NAMES[match[2] ?? ""] : undefined;
-    return ordinal && day ? `${ordinal} ${day}` : null;
-  });
-  return words.length > 0 && words.every(Boolean)
-    ? `on the ${words.join(", ")}`
+  if (freq !== "YEARLY" || !month) {
+    return null;
+  }
+  if (ordinal) {
+    return `${ordinal} of ${month}`;
+  }
+  return monthDay && !monthDay.startsWith("-")
+    ? `on ${month} ${monthDay}`
     : null;
 }
 
-/** RRULE weekday codes by Temporal dayOfWeek (1 Monday to 7 Sunday). */
-const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+/** "2nd Tue" for BYDAY=2TU; null for a plain or unknown code. */
+export function ordinalDayLabel(code: string): string | null {
+  const match = ORDINAL_DAY.exec(code);
+  const ordinal = match ? ORDINAL_WORDS[match[1] ?? ""] : undefined;
+  const day = match ? DAY_NAMES[match[2] ?? ""] : undefined;
+  return ordinal && day ? `${ordinal} ${day}` : null;
+}
 
 const FREQUENCY_WORDS: Record<string, [string, string] | undefined> = {
   DAILY: ["daily", "days"],
@@ -379,7 +462,7 @@ export function describeEventRecurrence(params: {
   startWeekday?: number;
 }): string | null {
   const rule = getPrimaryRecurrenceRule(params.rules ?? []) ?? undefined;
-  const { byDay, freq } = parseGoogleEventRecurrenceRule(rule);
+  const { byDay, freq, interval } = parseGoogleEventRecurrenceRule(rule);
   const words = FREQUENCY_WORDS[freq];
   if (!words) {
     if (params.eventType === "birthday") {
@@ -388,10 +471,6 @@ export function describeEventRecurrence(params: {
     // A rule this app can't put in words (hourly, say) still repeats.
     return params.recurringEventId || rule ? "Repeats" : null;
   }
-  const interval = Number.parseInt(
-    INTERVAL_PATTERN.exec(rule ?? "")?.[1] ?? "1",
-    10
-  );
   const base =
     interval > 1
       ? `Repeats every ${interval} ${words[1]}`
@@ -407,6 +486,6 @@ export function describeEventRecurrence(params: {
   if (freq === "WEEKLY") {
     return days ? `${base} on ${days}` : base;
   }
-  const when = ordinalWhen(rule, freq, byDay);
+  const when = dayOfPeriod(rule, freq, byDay);
   return when ? `${base} ${when}` : base;
 }

@@ -13,11 +13,18 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
-  byDayForFrequency,
-  dateToUntilRule,
+  buildGoogleEventRecurrenceRule,
+  defaultUntilDay,
   describeEventRecurrence,
+  type EventRecurrencePattern,
+  type EventRecurrenceFrequency as Frequency,
   getPrimaryRecurrenceRule,
+  monthlyWeekdayOf,
+  ordinalDayLabel,
+  parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
+  untilRuleForDay,
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import {
@@ -123,14 +130,7 @@ import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
-import {
-  buildRecurrenceRule,
-  buildTemporalPayload,
-  type Frequency,
-  parseRecurrence,
-  type RecurrenceEnd,
-  WEEKDAYS,
-} from "./event-edit-utils";
+import { buildTemporalPayload, WEEKDAYS } from "./event-edit-utils";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -162,25 +162,6 @@ interface EventFormValues {
   startDate: Date | null;
   startTime: string;
   summary: string;
-}
-
-interface RecurrenceEditorValues {
-  byDay: string[];
-  count: number;
-  endType: RecurrenceEnd["type"];
-  freq: Frequency;
-  /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
-  untilRule: string;
-}
-
-function buildRecurrenceEnd(values: RecurrenceEditorValues): RecurrenceEnd {
-  if (values.endType === "until" && values.untilRule) {
-    return { date: values.untilRule, type: "until" };
-  }
-  if (values.endType === "count" && values.count > 0) {
-    return { count: values.count, type: "count" };
-  }
-  return { type: "none" };
 }
 
 /**
@@ -296,94 +277,99 @@ function getSharedFieldsFromEventValues(
   };
 }
 
+/**
+ * A whole number typed freely: the draft can be empty or half-typed while
+ * the field has focus; only a valid number is passed on, and leaving the
+ * field shows the last one.
+ */
+function CountField({
+  label,
+  max = 999,
+  onValue,
+  value,
+}: {
+  label: string;
+  max?: number;
+  onValue: (value: number) => void;
+  value: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      aria-label={label}
+      className="h-8 w-14 px-2 text-center text-xs"
+      inputMode="numeric"
+      onBlur={() => setDraft(null)}
+      onChange={(e) => {
+        const next = e.target.value.replace(NON_DIGITS, "");
+        setDraft(next);
+        const parsed = Number.parseInt(next, 10);
+        if (parsed >= 1 && parsed <= max) {
+          onValue(parsed);
+        }
+      }}
+      value={draft ?? String(value)}
+    />
+  );
+}
+
+const NON_DIGITS = /\D/g;
+
+const UNIT_WORDS: Record<Exclude<Frequency, "none">, [string, string]> = {
+  DAILY: ["day", "days"],
+  MONTHLY: ["month", "months"],
+  WEEKLY: ["week", "weeks"],
+  YEARLY: ["year", "years"],
+};
+
 function RecurrenceEditor({
-  visible,
+  allDay,
   recurrenceRule,
   onChange,
-  startWeekday,
+  start,
 }: {
-  visible: boolean;
+  /** An all-day series ends on a date; a timed one after that day. */
+  allDay: boolean;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
-  /** The start's weekday (1 Monday to 7 Sunday), lit when no days are picked. */
-  startWeekday?: number;
+  /** The series' start: its weekday and day of the month are the defaults. */
+  start: Date;
 }) {
-  const parsedRecurrence = useMemo(
-    () => parseRecurrence(recurrenceRule),
+  const pattern = useMemo(
+    () => parseGoogleEventRecurrenceRule(recurrenceRule),
     [recurrenceRule]
   );
 
-  const values = useMemo<RecurrenceEditorValues>(() => {
-    const endType = parsedRecurrence.end.type;
-    return {
-      byDay: parsedRecurrence.byDay,
-      count: endType === "count" ? parsedRecurrence.end.count : 5,
-      endType,
-      freq: parsedRecurrence.freq,
-      untilRule: endType === "until" ? parsedRecurrence.end.date : "",
-    };
-  }, [parsedRecurrence.byDay, parsedRecurrence.end, parsedRecurrence.freq]);
-
-  const emitChanges = (changes: Partial<RecurrenceEditorValues>) => {
-    const nextValues = { ...values, ...changes };
-    const end = buildRecurrenceEnd(nextValues);
-    const nextRule = buildRecurrenceRule(
-      nextValues.freq,
-      nextValues.byDay,
-      end,
-      recurrenceRule
-    );
-    const normalizedNext = nextRule ?? null;
-    if (normalizedNext === (recurrenceRule ?? null)) {
-      return;
+  const emit = (next: EventRecurrencePattern) => {
+    const nextRule = buildGoogleEventRecurrenceRule(next, recurrenceRule);
+    if (nextRule !== (recurrenceRule ?? null)) {
+      onChange(nextRule);
     }
-    onChange(nextRule);
   };
 
-  // Weekly with no days picked repeats on the start's weekday: show it lit.
-  const startDay = startWeekday ? WEEKDAYS[startWeekday - 1]?.value : undefined;
-  const shownDays =
-    values.byDay.length > 0 || !startDay ? values.byDay : [startDay];
-
-  const untilDate = useMemo(
-    () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
-    [values.untilRule]
-  );
-
-  if (!visible) {
-    return null;
-  }
+  const startWeekday = start.getDay() || 7;
+  const summary = recurrenceRule
+    ? describeEventRecurrence({ rules: [recurrenceRule], startWeekday })
+    : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          <Repeat className="size-4" />
-          <span>Recurrence</span>
-        </div>
-        {/* In words, so a part no control here sets (every 2 weeks) shows. */}
-        {recurrenceRule ? (
-          <span className="truncate text-muted-foreground text-xs">
-            {describeEventRecurrence({ rules: [recurrenceRule], startWeekday })}
-          </span>
-        ) : null}
+      {/* The rule in words, wrapping, so a long one reads in full. */}
+      <div className="flex items-start gap-2 text-xs">
+        <Repeat className="mt-px size-3.5 shrink-0 text-muted-foreground" />
+        <span className={summary ? "" : "text-muted-foreground"}>
+          {summary ?? "Doesn't repeat"}
+        </span>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Label className="font-normal text-muted-foreground text-xs">
-          Repeat
-        </Label>
+      <div className="flex items-center gap-2 text-xs">
         <Select
-          onValueChange={(v) => {
-            const nextFreq = v as Frequency;
-            emitChanges({
-              byDay: byDayForFrequency(values.byDay, values.freq, nextFreq),
-              freq: nextFreq,
-            });
-          }}
-          value={values.freq}
+          onValueChange={(v) =>
+            emit(pickRecurrenceFrequency(pattern, v as Frequency))
+          }
+          value={pattern.freq}
         >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
+          <SelectTrigger aria-label="Repeat" className="h-8 w-[110px] text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -394,9 +380,56 @@ function RecurrenceEditor({
             <SelectItem value="YEARLY">Yearly</SelectItem>
           </SelectContent>
         </Select>
+        {pattern.freq === "none" ? null : (
+          <>
+            <span className="text-muted-foreground">every</span>
+            <CountField
+              label="Repeat every"
+              max={99}
+              onValue={(interval) => emit({ ...pattern, interval })}
+              value={pattern.interval}
+            />
+            <span className="text-muted-foreground">
+              {UNIT_WORDS[pattern.freq][pattern.interval === 1 ? 0 : 1]}
+            </span>
+          </>
+        )}
       </div>
 
-      {values.freq === "WEEKLY" && (
+      <RepeatDays emit={emit} pattern={pattern} start={start} />
+      {/* A series that doesn't repeat has no end to pick. */}
+      {pattern.freq === "none" ? null : (
+        <RepeatEnds
+          allDay={allDay}
+          emit={emit}
+          pattern={pattern}
+          start={start}
+        />
+      )}
+    </div>
+  );
+}
+
+interface RepeatPartProps {
+  emit: (next: EventRecurrencePattern) => void;
+  pattern: EventRecurrencePattern;
+  start: Date;
+}
+
+/** Which days a weekly or monthly series repeats on. */
+function RepeatDays({ emit, pattern, start }: RepeatPartProps) {
+  const startWeekday = start.getDay() || 7;
+  // Weekly with no days picked repeats on the start's weekday: show it lit.
+  const startDay = WEEKDAYS[startWeekday - 1]?.value;
+  const shownDays =
+    pattern.byDay.length > 0 || !startDay ? pattern.byDay : [startDay];
+  // Monthly on the start's day of the month, or on its weekday ("2nd Tue").
+  const weekdayOfMonth =
+    pattern.byDay[0] ??
+    monthlyWeekdayOf({ day: start.getDate(), dayOfWeek: startWeekday });
+  return (
+    <>
+      {pattern.freq === "WEEKLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
           <div className="flex gap-1">
@@ -404,6 +437,8 @@ function RecurrenceEditor({
               const active = shownDays.includes(day.value);
               return (
                 <Button
+                  aria-label={day.label}
+                  aria-pressed={active}
                   className={cn(
                     "size-8 rounded-full p-0 text-xs",
                     active &&
@@ -411,11 +446,10 @@ function RecurrenceEditor({
                   )}
                   key={day.value}
                   onClick={() => {
-                    const current = shownDays;
-                    const next = active
-                      ? current.filter((d) => d !== day.value)
-                      : [...current, day.value];
-                    emitChanges({ byDay: next });
+                    const byDay = active
+                      ? shownDays.filter((d) => d !== day.value)
+                      : [...shownDays, day.value];
+                    emit({ ...pattern, byDay });
                   }}
                   size="icon"
                   type="button"
@@ -429,98 +463,141 @@ function RecurrenceEditor({
         </div>
       )}
 
-      {/* A series that doesn't repeat has no end to pick. */}
-      {values.freq === "none" ? null : (
+      {pattern.freq === "MONTHLY" && (
         <div className="space-y-2">
-          <span className="text-muted-foreground text-xs">Ends</span>
-          {/* Three equal options in one row, as on the phone; the date or
-              count for the picked one goes below. */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {RECURRENCE_ENDS.map((option) => (
-              <Button
-                className="h-8 text-xs"
-                key={option.value}
-                onClick={() => {
-                  if (option.value === "none") {
-                    emitChanges({ endType: "none", untilRule: "" });
-                  } else if (option.value === "until") {
-                    const fallback =
-                      values.untilRule ||
-                      dateToUntilRule(new Date()) ||
-                      `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
-                    emitChanges({ endType: "until", untilRule: fallback });
-                  } else {
-                    const nextCount =
-                      Number.isFinite(values.count) && values.count > 0
-                        ? values.count
-                        : 5;
-                    emitChanges({ count: nextCount, endType: "count" });
-                  }
-                }}
-                size="sm"
-                type="button"
-                variant={
-                  values.endType === option.value ? "default" : "outline"
-                }
-              >
-                {option.label}
-              </Button>
-            ))}
+          <span className="text-muted-foreground text-xs">On</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Button
+              className="h-8 text-xs"
+              onClick={() => emit({ ...pattern, byDay: [] })}
+              size="sm"
+              type="button"
+              variant={pattern.byDay.length === 0 ? "default" : "outline"}
+            >
+              Day {start.getDate()}
+            </Button>
+            <Button
+              className="h-8 text-xs"
+              onClick={() => emit({ ...pattern, byDay: [weekdayOfMonth] })}
+              size="sm"
+              type="button"
+              variant={pattern.byDay.length > 0 ? "default" : "outline"}
+            >
+              The {ordinalDayLabel(weekdayOfMonth) ?? "weekday"}
+            </Button>
           </div>
-
-          {values.endType === "until" ? (
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button className="h-8 gap-1.5 px-2 text-xs" variant="outline">
-                  <CalendarIcon className="size-3.5" />
-                  {untilDate
-                    ? formatPlainDate(pickerDateToTemporal(untilDate), {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })
-                    : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  onSelect={(date) => {
-                    if (!date) {
-                      emitChanges({ endType: "none", untilRule: "" });
-                      return;
-                    }
-                    const rule = dateToUntilRule(date);
-                    if (rule) {
-                      emitChanges({ untilRule: rule });
-                    }
-                  }}
-                  selected={untilDate ?? undefined}
-                />
-              </PopoverContent>
-            </Popover>
-          ) : null}
-
-          {values.endType === "count" ? (
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label="Occurrences"
-                className="h-8 w-16 px-2 text-xs"
-                min={1}
-                onChange={(e) => {
-                  const parsed = Number.parseInt(e.target.value, 10);
-                  if (Number.isFinite(parsed) && parsed > 0) {
-                    emitChanges({ count: parsed });
-                  }
-                }}
-                type="number"
-                value={values.count}
-              />
-              <span className="text-muted-foreground text-xs">times</span>
-            </div>
-          ) : null}
         </div>
       )}
+    </>
+  );
+}
+
+/** When the series ends: never, on a date, or after a number of times. */
+function RepeatEnds({
+  allDay,
+  emit,
+  pattern,
+  start,
+}: RepeatPartProps & { allDay: boolean }) {
+  const [untilOpen, setUntilOpen] = useState(false);
+  const untilDate =
+    pattern.end.type === "until" ? untilRuleToDate(pattern.end.date) : null;
+  return (
+    <div className="space-y-2">
+      <span className="text-muted-foreground text-xs">Ends</span>
+      {/* Three equal options in one row, as on the phone; the date or
+              count for the picked one goes below. */}
+      <div className="grid grid-cols-3 gap-1.5">
+        {RECURRENCE_ENDS.map((option) => (
+          <Button
+            className="h-8 text-xs"
+            key={option.value}
+            onClick={() => {
+              if (option.value === pattern.end.type) {
+                setUntilOpen(option.value === "until");
+                return;
+              }
+              if (option.value === "none") {
+                emit({ ...pattern, end: { type: "none" } });
+              } else if (option.value === "until") {
+                // Three months on, opened to change at once.
+                emit({
+                  ...pattern,
+                  end: {
+                    date: untilRuleForDay(defaultUntilDay(start), allDay),
+                    type: "until",
+                  },
+                });
+                setUntilOpen(true);
+              } else {
+                emit({ ...pattern, end: { count: 10, type: "count" } });
+              }
+            }}
+            size="sm"
+            type="button"
+            variant={pattern.end.type === option.value ? "default" : "outline"}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+
+      {pattern.end.type === "until" ? (
+        <Popover onOpenChange={setUntilOpen} open={untilOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              className="h-8 gap-1.5 px-2 text-xs"
+              type="button"
+              variant="outline"
+            >
+              <CalendarIcon className="size-3.5" />
+              {untilDate
+                ? formatPlainDate(pickerDateToTemporal(untilDate), {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "Pick a date"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0">
+            <Calendar
+              defaultMonth={untilDate ?? undefined}
+              // A series can't end before it starts.
+              disabled={{ before: start }}
+              mode="single"
+              onSelect={(date) => {
+                if (date) {
+                  emit({
+                    ...pattern,
+                    end: {
+                      date: untilRuleForDay(date, allDay),
+                      type: "until",
+                    },
+                  });
+                  setUntilOpen(false);
+                }
+              }}
+              selected={untilDate ?? undefined}
+            />
+          </PopoverContent>
+        </Popover>
+      ) : null}
+
+      {pattern.end.type === "count" ? (
+        <div className="flex items-center gap-2 text-xs">
+          <CountField
+            label="Occurrences"
+            onValue={(count) =>
+              emit({ ...pattern, end: { count, type: "count" } })
+            }
+            value={pattern.end.count}
+          />
+          <span className="text-muted-foreground">
+            {pattern.end.count === 1 ? "time" : "times"}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1287,7 +1364,7 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading,
   readOnly = false,
   recurrenceRule,
-  startWeekday,
+  startDate,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1299,8 +1376,8 @@ function EventAllDayAndRecurrenceRow({
   recurrenceLoading: boolean;
   readOnly?: boolean;
   recurrenceRule: string | undefined;
-  /** The start's weekday (1 Monday to 7 Sunday), for the rule's words. */
-  startWeekday: number | undefined;
+  /** The series' start, for the rule's words and the editor's defaults. */
+  startDate: Date | null;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1313,7 +1390,10 @@ function EventAllDayAndRecurrenceRow({
 }) {
   // "Repeats weekly on Mon" reads as "Weekly on Mon" on the button.
   const repeats = recurrenceRule
-    ? describeEventRecurrence({ rules: [recurrenceRule], startWeekday })
+    ? describeEventRecurrence({
+        rules: [recurrenceRule],
+        startWeekday: startDate ? startDate.getDay() || 7 : undefined,
+      })
     : null;
   const repeatLabel = repeats
     ? repeats
@@ -1366,10 +1446,10 @@ function EventAllDayAndRecurrenceRow({
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[360px]">
           <RecurrenceEditor
+            allDay={allDay}
             onChange={onRecurrenceChange}
             recurrenceRule={recurrenceRule}
-            startWeekday={startWeekday}
-            visible
+            start={startDate ?? new Date()}
           />
         </PopoverContent>
       </Popover>
@@ -2347,11 +2427,7 @@ export function EventEditForm({
         readOnly={readOnly}
         recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
-        startWeekday={
-          watchedValues.startDate
-            ? watchedValues.startDate.getDay() || 7
-            : undefined
-        }
+        startDate={watchedValues.startDate ?? null}
       />
       <div className="grid grid-cols-2 gap-2">
         <Controller

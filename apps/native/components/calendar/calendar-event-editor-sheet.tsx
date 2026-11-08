@@ -10,15 +10,18 @@ import {
 } from "@kompose/state/atoms/google-colors";
 import {
   buildGoogleEventRecurrenceRule,
-  byDayForFrequency,
-  dateToUntilRule,
+  defaultUntilDay,
   describeEventRecurrence,
-  type EventRecurrenceEnd,
   type EventRecurrenceFrequency,
+  type EventRecurrencePattern,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
+  monthlyWeekdayOf,
+  ordinalDayLabel,
   parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
   setPrimaryRecurrenceRule,
+  untilRuleForDay,
   untilRuleToDate,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
@@ -40,6 +43,8 @@ import {
   ChevronUp,
   Lock,
   MapPin,
+  Minus,
+  Plus,
   Repeat2,
   Trash2,
   Video,
@@ -134,21 +139,15 @@ function findCalendarOptionByValue(
   );
 }
 
+type RecurrencePatch = Partial<EventRecurrencePattern>;
+
+/** The current rule with `patch` applied; its other parts are kept. */
 function buildRecurrenceRuleFromCurrent(
   currentRule: string | undefined,
-  patch: {
-    freq?: EventRecurrenceFrequency;
-    byDay?: string[];
-    end?: EventRecurrenceEnd;
-  }
+  patch: RecurrencePatch
 ): string | null {
-  const parsed = parseGoogleEventRecurrenceRule(currentRule);
-  const freq = patch.freq ?? parsed.freq;
-  const byDay = patch.byDay ?? parsed.byDay;
-  const end = patch.end ?? parsed.end;
-  // Keeps the parts the editor doesn't set (INTERVAL...), so an "every 2
-  // weeks" series stays one.
-  return buildGoogleEventRecurrenceRule(freq, byDay, end, currentRule);
+  const pattern = parseGoogleEventRecurrenceRule(currentRule);
+  return buildGoogleEventRecurrenceRule({ ...pattern, ...patch }, currentRule);
 }
 
 /**
@@ -204,19 +203,18 @@ function RecurrenceRow({
 const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 function RecurrenceEditorSection({
+  allDay,
   parsedRecurrence,
   startDate,
   updateRecurrence,
   applyPrimaryRecurrenceRule,
 }: {
-  parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
-  /** Its weekday is the one a weekly series repeats on by default. */
+  /** An all-day series ends on a date; a timed one after that day. */
+  allDay: boolean;
+  parsedRecurrence: EventRecurrencePattern;
+  /** Its weekday and day of the month are the series' defaults. */
   startDate: Temporal.PlainDate;
-  updateRecurrence: (patch: {
-    freq?: EventRecurrenceFrequency;
-    byDay?: string[];
-    end?: EventRecurrenceEnd;
-  }) => void;
+  updateRecurrence: (patch: RecurrencePatch) => void;
   applyPrimaryRecurrenceRule: (rule: string | null) => void;
 }) {
   // With no days picked, a weekly series repeats on the start's weekday.
@@ -245,14 +243,9 @@ function RecurrenceEditorSection({
                 }
                 // Weekly with no days picked repeats on the start's weekday
                 // (no BYDAY), so moving the start moves the series with it.
-                updateRecurrence({
-                  byDay: byDayForFrequency(
-                    parsedRecurrence.byDay,
-                    parsedRecurrence.freq,
-                    frequency.value
-                  ),
-                  freq: frequency.value,
-                });
+                updateRecurrence(
+                  pickRecurrenceFrequency(parsedRecurrence, frequency.value)
+                );
               }}
               size="sm"
               style={{ borderRadius: 999 }}
@@ -263,6 +256,14 @@ function RecurrenceEditorSection({
           );
         })}
       </View>
+
+      {parsedRecurrence.freq === "none" ? null : (
+        <IntervalStepper
+          freq={parsedRecurrence.freq}
+          interval={parsedRecurrence.interval}
+          onChange={(interval) => updateRecurrence({ interval })}
+        />
+      )}
 
       {parsedRecurrence.freq === "WEEKLY" ? (
         <View className="mt-3">
@@ -299,12 +300,118 @@ function RecurrenceEditorSection({
         </View>
       ) : null}
 
+      {parsedRecurrence.freq === "MONTHLY" ? (
+        <MonthlyDayChoice
+          byDay={parsedRecurrence.byDay}
+          onChange={(byDay) => updateRecurrence({ byDay })}
+          startDate={startDate}
+        />
+      ) : null}
+
       {parsedRecurrence.freq === "none" ? null : (
         <RecurrenceEndSection
+          allDay={allDay}
           parsedRecurrence={parsedRecurrence}
+          startDate={startDate}
           updateRecurrence={updateRecurrence}
         />
       )}
+    </View>
+  );
+}
+
+const UNIT_WORDS: Record<string, [string, string]> = {
+  DAILY: ["day", "days"],
+  MONTHLY: ["month", "months"],
+  WEEKLY: ["week", "weeks"],
+  YEARLY: ["year", "years"],
+};
+
+const STEP_STYLE = {
+  borderRadius: 999,
+  height: 32,
+  paddingHorizontal: 0,
+  width: 32,
+};
+
+/** "Every − 2 + weeks": how many days, weeks... apart the series repeats. */
+function IntervalStepper({
+  freq,
+  interval,
+  onChange,
+}: {
+  freq: EventRecurrenceFrequency;
+  interval: number;
+  onChange: (interval: number) => void;
+}) {
+  const unit = UNIT_WORDS[freq]?.[interval === 1 ? 0 : 1] ?? "";
+  return (
+    <View className="mt-3 flex-row items-center gap-2">
+      <Text className="text-muted-foreground text-xs">Every</Text>
+      <Button
+        accessibilityLabel="Decrease interval"
+        disabled={interval <= 1}
+        onPress={() => onChange(interval - 1)}
+        size="sm"
+        style={STEP_STYLE}
+        variant="outline"
+      >
+        <Icon as={Minus} className="text-foreground" size={14} />
+      </Button>
+      <Text
+        accessibilityLabel={`Every ${interval} ${unit}`}
+        className="min-w-6 text-center text-foreground text-sm"
+        style={{ fontVariant: ["tabular-nums"] }}
+      >
+        {interval}
+      </Text>
+      <Button
+        accessibilityLabel="Increase interval"
+        disabled={interval >= 99}
+        onPress={() => onChange(interval + 1)}
+        size="sm"
+        style={STEP_STYLE}
+        variant="outline"
+      >
+        <Icon as={Plus} className="text-foreground" size={14} />
+      </Button>
+      <Text className="text-foreground text-sm">{unit}</Text>
+    </View>
+  );
+}
+
+/** Monthly on the start's day of the month, or on its weekday ("2nd Tue"). */
+function MonthlyDayChoice({
+  byDay,
+  onChange,
+  startDate,
+}: {
+  byDay: string[];
+  onChange: (byDay: string[]) => void;
+  startDate: Temporal.PlainDate;
+}) {
+  const weekdayOfMonth = byDay[0] ?? monthlyWeekdayOf(startDate);
+  return (
+    <View className="mt-3">
+      <Text className="text-muted-foreground text-xs">On</Text>
+      <View className="mt-1 flex-row gap-1.5">
+        <Button
+          onPress={() => onChange([])}
+          size="sm"
+          style={CHIP_STYLE}
+          variant={byDay.length === 0 ? "default" : "outline"}
+        >
+          <ChipLabel>{`Day ${startDate.day}`}</ChipLabel>
+        </Button>
+        <Button
+          onPress={() => onChange([weekdayOfMonth])}
+          size="sm"
+          style={CHIP_STYLE}
+          variant={byDay.length > 0 ? "default" : "outline"}
+        >
+          <ChipLabel>{`The ${ordinalDayLabel(weekdayOfMonth) ?? "weekday"}`}</ChipLabel>
+        </Button>
+      </View>
     </View>
   );
 }
@@ -321,12 +428,18 @@ function ChipLabel({ children }: { children: string }) {
 }
 
 function RecurrenceEndSection({
+  allDay,
   parsedRecurrence,
+  startDate,
   updateRecurrence,
 }: {
-  parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
-  updateRecurrence: (patch: { end?: EventRecurrenceEnd }) => void;
+  allDay: boolean;
+  parsedRecurrence: EventRecurrencePattern;
+  startDate: Temporal.PlainDate;
+  updateRecurrence: (patch: RecurrencePatch) => void;
 }) {
+  const start = plainDateToPickerDate(startDate);
+  const { end } = parsedRecurrence;
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">Ends</Text>
@@ -336,99 +449,125 @@ function RecurrenceEndSection({
           onPress={() => updateRecurrence({ end: { type: "none" } })}
           size="sm"
           style={CHIP_STYLE}
-          variant={parsedRecurrence.end.type === "none" ? "default" : "outline"}
+          variant={end.type === "none" ? "default" : "outline"}
         >
           <ChipLabel>Never</ChipLabel>
         </Button>
         <Button
           onPress={() => {
-            const fallbackUntil =
-              parsedRecurrence.end.type === "until"
-                ? parsedRecurrence.end.date
-                : (dateToUntilRule(new Date()) ?? undefined);
+            if (end.type === "until") {
+              return;
+            }
+            // Three months after the series starts.
             updateRecurrence({
-              end: fallbackUntil
-                ? { date: fallbackUntil, type: "until" }
-                : { type: "none" },
+              end: {
+                date: untilRuleForDay(defaultUntilDay(start), allDay),
+                type: "until",
+              },
             });
           }}
           size="sm"
           style={CHIP_STYLE}
-          variant={
-            parsedRecurrence.end.type === "until" ? "default" : "outline"
-          }
+          variant={end.type === "until" ? "default" : "outline"}
         >
           <ChipLabel>On date</ChipLabel>
         </Button>
         <Button
-          onPress={() =>
-            updateRecurrence({
-              end: {
-                count:
-                  parsedRecurrence.end.type === "count"
-                    ? parsedRecurrence.end.count
-                    : 5,
-                type: "count",
-              },
-            })
-          }
+          onPress={() => {
+            if (end.type !== "count") {
+              updateRecurrence({ end: { count: 10, type: "count" } });
+            }
+          }}
           size="sm"
           style={CHIP_STYLE}
-          variant={
-            parsedRecurrence.end.type === "count" ? "default" : "outline"
-          }
+          variant={end.type === "count" ? "default" : "outline"}
         >
           <ChipLabel>After…</ChipLabel>
         </Button>
       </View>
 
-      {parsedRecurrence.end.type === "until" ? (
+      {end.type === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
-            mode="datetime"
+            displayValue={untilDisplay(end.date)}
+            minimumDate={start}
+            mode="date"
             onChange={(date) => {
-              if (!date) {
-                updateRecurrence({ end: { type: "none" } });
-                return;
+              if (date) {
+                updateRecurrence({
+                  end: { date: untilRuleForDay(date, allDay), type: "until" },
+                });
               }
-              const untilRule = dateToUntilRule(date);
-              updateRecurrence({
-                end: untilRule
-                  ? { date: untilRule, type: "until" }
-                  : { type: "none" },
-              });
             }}
             placeholder="Until"
-            value={untilRuleToDate(parsedRecurrence.end.date) ?? undefined}
+            value={untilRuleToDate(end.date) ?? undefined}
             variant="outline"
           />
         </View>
       ) : null}
 
-      {parsedRecurrence.end.type === "count" ? (
+      {end.type === "count" ? (
         <View className="mt-2 flex-row items-center gap-2">
-          <Input
-            className="h-9 w-20"
-            keyboardType="number-pad"
-            onChangeText={(value) => {
-              const nextCount = Number.parseInt(value, 10);
-              updateRecurrence({
-                end: {
-                  count:
-                    Number.isFinite(nextCount) && nextCount > 0 ? nextCount : 1,
-                  type: "count",
-                },
-              });
-            }}
-            value={String(parsedRecurrence.end.count)}
-            variant="outline"
+          <CountInput
+            onValue={(count) =>
+              updateRecurrence({ end: { count, type: "count" } })
+            }
+            value={end.count}
           />
-          <Text className="text-foreground text-xs">times</Text>
+          <Text className="text-foreground text-xs">
+            {end.count === 1 ? "time" : "times"}
+          </Text>
         </View>
       ) : null}
     </View>
   );
 }
+
+/** "Feb 7, 2027", as on web. */
+function untilDisplay(rule: string): string | undefined {
+  const date = untilRuleToDate(rule);
+  return date
+    ? new Intl.DateTimeFormat(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }).format(date)
+    : undefined;
+}
+
+/**
+ * A count typed freely: the draft can be empty while editing; only a valid
+ * number is passed on, and leaving the field shows the last one.
+ */
+function CountInput({
+  onValue,
+  value,
+}: {
+  onValue: (value: number) => void;
+  value: number;
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+  return (
+    <Input
+      accessibilityLabel="Occurrences"
+      className="h-9 w-20"
+      keyboardType="number-pad"
+      onBlur={() => setDraft(null)}
+      onChangeText={(text) => {
+        const next = text.replace(NON_DIGITS, "");
+        setDraft(next);
+        const parsed = Number.parseInt(next, 10);
+        if (parsed >= 1 && parsed <= 999) {
+          onValue(parsed);
+        }
+      }}
+      value={draft ?? String(value)}
+      variant="outline"
+    />
+  );
+}
+
+const NON_DIGITS = /\D/g;
 
 function EventMeetingButton({
   meetingLink,
@@ -1210,11 +1349,7 @@ export function EventEditorSheet({
   );
 
   const updateRecurrence = React.useCallback(
-    (patch: {
-      freq?: EventRecurrenceFrequency;
-      byDay?: string[];
-      end?: EventRecurrenceEnd;
-    }) => {
+    (patch: RecurrencePatch) => {
       const currentRule = getPrimaryRecurrenceRule(getValues("recurrence"));
       const nextRule = buildRecurrenceRuleFromCurrent(currentRule, patch);
       applyPrimaryRecurrenceRule(nextRule);
@@ -1224,6 +1359,7 @@ export function EventEditorSheet({
 
   const recurrenceEditor = (
     <RecurrenceRow
+      allDay={values.allDay}
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
       disabled={recurrenceDisabled}
       isExpanded={isRecurrenceExpanded}
