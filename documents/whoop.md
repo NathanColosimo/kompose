@@ -126,7 +126,7 @@ WHOOP data uses the same `atomWithQuery` pattern as Google Calendar data. Compon
 | `whoopSummariesByDayAtom` | `Map<string, WhoopDaySummary>` keyed by `YYYY-MM-DD` |
 
 - Month-anchored query window with ±7 day padding (stable key for intra-month navigation)
-- `keepPreviousData` for smooth month transitions
+- Previous month data stays visible only for the same account and time zone; unlinking clears the day map immediately. Account ID and time zone are part of the query key.
 - 10-minute client `staleTime`
 
 ## Calendar UI
