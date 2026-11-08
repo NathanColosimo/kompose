@@ -149,6 +149,7 @@ export function BlockContent({
   }
 
   const isTall = minutes >= 60;
+  const timeRange = formatTimeRange(shownStart ?? start, shownEnd ?? end);
   // From 45 minutes (60px) a two-line title still leaves room for the time.
   const hasTwoTitleLines = minutes >= 45;
   const detailIcons = details.map((detail) =>
@@ -202,16 +203,20 @@ export function BlockContent({
           </span>
         </span>
         {/* The time comes first: icons that don't fit beside it wrap onto
-            a hidden second line. */}
+            a hidden second line. A tall block has room to wrap the range
+            at its dash ("11:00 AM –" / "12:15 PM") instead of cutting it. */}
         <span
           className={cn(
-            "flex @max-[5.5rem]:hidden h-[14px] min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden tabular-nums leading-[14px]",
+            "flex @max-[5.5rem]:hidden min-w-0 flex-wrap items-center gap-x-1.5 tabular-nums leading-[14px]",
+            isTall ? null : "h-[14px] overflow-hidden",
             META
           )}
         >
-          <span className="max-w-full truncate">
-            {formatTimeRange(shownStart ?? start, shownEnd ?? end)}
-          </span>
+          {isTall ? (
+            <TimeRangeWrapping range={timeRange} />
+          ) : (
+            <span className="max-w-full truncate">{timeRange}</span>
+          )}
           {isTall ? null : detailIcons}
         </span>
         {/* A narrow block's start time, once there's room under the title
@@ -238,5 +243,19 @@ export function BlockContent({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** A time range that wraps whole at its dash, each end kept on one line. */
+function TimeRangeWrapping({ range }: { range: string }) {
+  const [from, to] = range.split(" – ");
+  if (!to) {
+    return <span className="max-w-full truncate">{range}</span>;
+  }
+  return (
+    <span className="flex min-w-0 flex-wrap gap-x-1">
+      <span className="whitespace-nowrap">{from} –</span>
+      <span className="whitespace-nowrap">{to}</span>
+    </span>
   );
 }

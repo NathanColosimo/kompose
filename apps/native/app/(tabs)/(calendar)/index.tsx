@@ -45,8 +45,10 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
   matchUntilToStart,
+  occurrenceDayMoved,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
   SAVE_FAILURE_MESSAGE,
@@ -57,6 +59,10 @@ import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
+  allowedEventSaveScope,
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
 } from "@kompose/state/recurrence-scope-options";
@@ -786,8 +792,7 @@ function EventDeleteDialogs({
  * and Apply holds "Saving…" until the save ends.
  */
 function EventSaveScopeDialog({
-  draft,
-  patternChanged,
+  changes,
   isVisible,
   onCancel,
   onConfirm,
@@ -795,9 +800,8 @@ function EventSaveScopeDialog({
   pending,
   scope,
 }: {
-  draft: EditEventDraft | null;
-  /** The repeat pattern changed, so "Only this occurrence" can't apply. */
-  patternChanged: boolean;
+  /** What the save changes, for the scopes it can use. */
+  changes: EventSaveChanges | null;
   isVisible: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -805,18 +809,14 @@ function EventSaveScopeDialog({
   pending: boolean;
   scope: RecurrenceScope;
 }) {
-  // Google can only move a whole series to another calendar, so "this" and
-  // "following" are disabled when the calendar changes.
-  const isMoving =
-    draft != null &&
-    draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
+  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
   return (
     <AlertDialog
       closeOnConfirm={false}
       confirmText="Apply"
       description={
-        isMoving
-          ? SCOPE_DIALOG_COPY.moveEvent
+        changes
+          ? eventSaveDescription(changes)
           : SCOPE_DIALOG_COPY.saveEvent.description
       }
       isVisible={isVisible}
@@ -831,10 +831,7 @@ function EventSaveScopeDialog({
         <RadioGroup
           onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
           options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-            disabled:
-              (isMoving &&
-                (option.value === "this" || option.value === "following")) ||
-              (patternChanged && option.value === "this"),
+            disabled: Boolean(disabled[option.value]),
             label: option.label,
             value: option.value,
           }))}
@@ -1522,14 +1519,8 @@ export default function CalendarTab() {
           ...draft.sourceEvent,
           ...eventPayload,
           recurrence,
-          end: {
-            ...draft.sourceEvent.end,
-            ...eventPayload.end,
-          },
-          start: {
-            ...draft.sourceEvent.start,
-            ...eventPayload.start,
-          },
+          end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
+          start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
         },
         eventId: draft.eventId,
         recurrenceScope: scope,
@@ -1555,6 +1546,24 @@ export default function CalendarTab() {
       timeZone,
       updateEvent,
     ]
+  );
+
+  /** What a save changes, for the scopes its dialog offers. */
+  const eventSaveChanges = useCallback(
+    (draft: EditEventDraft): EventSaveChanges => ({
+      calendarChanged:
+        draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
+      dateMoved: occurrenceDayMoved({
+        editedStart: buildEventPayload(draft).start,
+        occurrence: draft.sourceEvent,
+        timeZone,
+      }),
+      patternChanged: recurrenceToSend(draft, masterRecurrence) !== undefined,
+      seriesRuleLoaded: Boolean(
+        draft.sourceEvent.recurrence?.length || recurringMasterEvent.data
+      ),
+    }),
+    [buildEventPayload, masterRecurrence, recurringMasterEvent.data, timeZone]
   );
 
   const [isSavingEvent, setIsSavingEvent] = useState(false);
@@ -1586,22 +1595,21 @@ export default function CalendarTab() {
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
       if (recurring) {
-        // Google API doesn't allow moving individual recurring instances,
-        // so force scope to "all" when a calendar move is pending.
-        const hasCalendarChange =
-          draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
-        const suggested = hasCalendarChange
+        const changes = eventSaveChanges(draft);
+        // A calendar move applies to the whole series; one occurrence can't
+        // repeat differently from its series.
+        const suggested = changes.calendarChanged
           ? "all"
           : getDefaultRecurrenceScopeForEvent({
               event: draft.sourceEvent,
               masterRecurrence: masterSeriesRecurrence,
             });
-        // One occurrence can't repeat differently from its series.
-        const defaultScope =
-          suggested === "this" &&
-          recurrenceToSend(draft, masterRecurrence) !== undefined
+        const defaultScope = allowedEventSaveScope(
+          suggested === "this" && changes.patternChanged
             ? "following"
-            : suggested;
+            : suggested,
+          eventSaveDisabledScopes(changes)
+        );
         // The scope dialog opens over the editor, which stays open.
         setPendingEventSaveDraft(draft);
         setEventSaveScope(defaultScope);
@@ -1616,6 +1624,7 @@ export default function CalendarTab() {
       closeEventModal,
       commitEventUpdate,
       createEvent,
+      eventSaveChanges,
       masterRecurrence,
     ]
   );
@@ -2239,18 +2248,17 @@ export default function CalendarTab() {
                 scope={eventDeleteScope}
               />
               <EventSaveScopeDialog
-                draft={pendingEventSaveDraft}
+                changes={
+                  pendingEventSaveDraft
+                    ? eventSaveChanges(pendingEventSaveDraft)
+                    : null
+                }
                 isVisible={eventDialog === "save"}
                 onCancel={dismissEventSaveDialog}
                 onConfirm={() => {
                   confirmScopedEventSave().catch(() => null);
                 }}
                 onScopeChange={setEventSaveScope}
-                patternChanged={
-                  pendingEventSaveDraft !== null &&
-                  recurrenceToSend(pendingEventSaveDraft, masterRecurrence) !==
-                    undefined
-                }
                 pending={isSavingEvent}
                 scope={eventSaveScope}
               />

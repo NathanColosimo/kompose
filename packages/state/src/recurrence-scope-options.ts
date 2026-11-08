@@ -26,6 +26,8 @@ export const SCOPE_DIALOG_COPY = {
     description: "This can't be undone.",
     title: "Delete task?",
   },
+  /** Shown instead of the description when an occurrence's day moves. */
+  moveDate: "A new day applies to this occurrence, or from it on.",
   /** Shown instead of the description when the event changes calendar. */
   moveEvent: "Moving to another calendar moves the whole series.",
   saveEvent: {
@@ -49,3 +51,63 @@ export const TASK_UPDATE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<UpdateSco
 
 export const TASK_DELETE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<DeleteScope>[] =
   TASK_SCOPE_OPTIONS;
+
+/** What a recurring event's save changes, for the scopes it can use. */
+export interface EventSaveChanges {
+  /** It moves to another calendar. */
+  calendarChanged: boolean;
+  /** It moves an occurrence to another day. */
+  dateMoved: boolean;
+  /** The user changed the repeat. */
+  patternChanged: boolean;
+  /** The series' rule has loaded (an occurrence's lives on its master). */
+  seriesRuleLoaded: boolean;
+}
+
+/**
+ * Scopes a recurring event's save can't use. A calendar move applies to
+ * the whole series. One occurrence can't repeat differently from its
+ * series. A day moved through one occurrence can't apply to the whole
+ * series (it keeps its first date; Google's editor offers the same two),
+ * and applies from that occurrence on only once the series' rule is known,
+ * since the rule follows the new day.
+ */
+export function eventSaveDisabledScopes(
+  changes: EventSaveChanges
+): Partial<Record<RecurrenceScope, boolean>> {
+  if (changes.calendarChanged) {
+    return { following: true, this: true };
+  }
+  return {
+    ...(changes.patternChanged ? { this: true } : {}),
+    ...(changes.dateMoved
+      ? { all: true, ...(changes.seriesRuleLoaded ? {} : { following: true }) }
+      : {}),
+  };
+}
+
+/** `preferred`, or the narrowest scope the save can use when it can't. */
+export function allowedEventSaveScope(
+  preferred: RecurrenceScope,
+  disabled: Partial<Record<RecurrenceScope, boolean>>
+): RecurrenceScope {
+  if (!disabled[preferred]) {
+    return preferred;
+  }
+  return (
+    RECURRENCE_SCOPE_OPTIONS.find((option) => !disabled[option.value])?.value ??
+    preferred
+  );
+}
+
+/** The scope dialog's line for a save. */
+export function eventSaveDescription(
+  changes: Pick<EventSaveChanges, "calendarChanged" | "dateMoved">
+): string {
+  if (changes.calendarChanged) {
+    return SCOPE_DIALOG_COPY.moveEvent;
+  }
+  return changes.dateMoved
+    ? SCOPE_DIALOG_COPY.moveDate
+    : SCOPE_DIALOG_COPY.saveEvent.description;
+}

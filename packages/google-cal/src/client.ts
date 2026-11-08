@@ -13,11 +13,10 @@ import {
   RecurrenceScope,
 } from "./schema";
 import {
-  daysBetweenStarts,
   sanitizeEventPayload,
-  shiftEventTime,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
+import { seriesTimesForEdit } from "./series-times";
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -30,102 +29,6 @@ interface GoogleWatchChannelResult {
   channelId: string;
   expiration?: string;
   resourceId: string;
-}
-
-function pickTimeZone(
-  edited?: { timeZone?: string },
-  master?: { timeZone?: string }
-): string | undefined {
-  return edited?.timeZone ?? master?.timeZone;
-}
-
-function extractDatePart(dateTime: string): string | null {
-  const idx = dateTime.indexOf("T");
-  return idx > 0 ? dateTime.slice(0, idx) : null;
-}
-
-function combineDateAndTime(
-  master: { dateTime?: string; date?: string; timeZone?: string },
-  edited: { dateTime?: string; date?: string; timeZone?: string }
-): { dateTime?: string; date?: string; timeZone?: string } {
-  // All-day: keep the master date
-  if (master.date) {
-    return { date: master.date };
-  }
-  if (!master.dateTime || !edited.dateTime) {
-    return {
-      dateTime: edited.dateTime ?? master.dateTime,
-      date: edited.date ?? master.date,
-      timeZone: pickTimeZone(edited, master),
-    };
-  }
-
-  const masterDatePart = extractDatePart(master.dateTime);
-  if (!masterDatePart) {
-    return {
-      dateTime: edited.dateTime,
-      timeZone: pickTimeZone(edited, master),
-    };
-  }
-  const timePartWithOffset = edited.dateTime.slice(11);
-  return {
-    dateTime: `${masterDatePart}T${timePartWithOffset}`,
-    timeZone: pickTimeZone(edited, master),
-  };
-}
-
-function computeDurationMs(
-  start?: { dateTime?: string },
-  end?: { dateTime?: string }
-): number | null {
-  if (start?.dateTime && end?.dateTime) {
-    const s = Date.parse(start.dateTime);
-    const e = Date.parse(end.dateTime);
-    if (!Number.isNaN(s) && !Number.isNaN(e)) {
-      return e - s;
-    }
-  }
-  return null;
-}
-
-function mergeStartEnd(
-  masterStart: { dateTime?: string; date?: string; timeZone?: string },
-  masterEnd: { dateTime?: string; date?: string; timeZone?: string },
-  editedStart: { dateTime?: string; date?: string; timeZone?: string },
-  editedEnd: { dateTime?: string; date?: string; timeZone?: string }
-): {
-  start: { dateTime?: string; date?: string; timeZone?: string };
-  end: { dateTime?: string; date?: string; timeZone?: string };
-} {
-  // All-day: keep master dates
-  if (masterStart.date || masterEnd.date) {
-    return {
-      start: { date: masterStart.date },
-      end: { date: masterEnd.date },
-    };
-  }
-
-  const mergedStart = combineDateAndTime(masterStart, editedStart);
-  const durationMs =
-    computeDurationMs(editedStart, editedEnd) ??
-    computeDurationMs(masterStart, masterEnd);
-
-  if (durationMs !== null && mergedStart.dateTime) {
-    const startDate = new Date(mergedStart.dateTime);
-    const endDate = new Date(startDate.getTime() + durationMs);
-    return {
-      start: mergedStart,
-      end: {
-        dateTime: endDate.toISOString(),
-        timeZone: mergedStart.timeZone ?? pickTimeZone(editedEnd, masterEnd),
-      },
-    };
-  }
-
-  return {
-    start: mergedStart,
-    end: combineDateAndTime(masterEnd, editedEnd),
-  };
 }
 
 function getConferenceDataVersion(event: { conferenceData?: unknown }): number | undefined {
@@ -595,31 +498,37 @@ export function makeGoogleCalendarService(
       return yield* parseEventResponse(response);
     });
 
-  const updateEventAll = (calendarId: string, event: CreateEvent, currentEvent: Event) =>
+  const updateEventAll = (
+    calendarId: string,
+    event: CreateEvent,
+    currentEvent: Event,
+    /**
+     * The edit is to the series' own first date (the master itself, or its
+     * first occurrence), so its date moves the series. Through any other
+     * occurrence the series keeps its first date; a date move there is
+     * "This and following" only.
+     */
+    editsFirstDate = !currentEvent.recurringEventId
+  ) =>
     Effect.gen(function* () {
       const master = yield* getMasterRecurrence(calendarId, currentEvent);
 
-      // The series moves as many days as the edited occurrence did (moving
-      // this Tuesday's to Wednesday moves the series a day), and takes the
-      // edited times and duration.
-      const movedDays = daysBetweenStarts(
-        currentEvent.originalStartTime ?? currentEvent.start,
-        event.start
-      );
-      const { start: mergedStart, end: mergedEnd } = mergeStartEnd(
-        shiftEventTime(master.start, movedDays),
-        shiftEventTime(master.end, movedDays),
-        event.start,
-        event.end
-      );
+      const times = editsFirstDate
+        ? { end: event.end, start: event.start }
+        : (seriesTimesForEdit({
+            editedEnd: event.end,
+            editedStart: event.start,
+            masterEnd: master.end,
+            masterStart: master.start,
+          }) ?? { end: master.end, start: master.start });
 
       // Left out keeps the series' pattern; an empty list ends it ("Repeat: None").
       const recurrence = event.recurrence === undefined ? master.recurrence : event.recurrence;
       const payload = sanitizeEventPayload({
         ...master,
         ...event,
-        start: mergedStart,
-        end: mergedEnd,
+        start: times.start,
+        end: times.end,
         recurrence,
       });
       yield* Effect.annotateCurrentSpan("eventType", payload.eventType ?? "default");
@@ -677,9 +586,10 @@ export function makeGoogleCalendarService(
       const occurrenceStart = new Date(startIso);
       const masterStart = new Date(masterStartIso);
 
-      // First occurrence → "following" is the same as "all"
+      // First occurrence → "following" is the same as "all", from its
+      // (possibly moved) date.
       if (occurrenceStart.getTime() <= masterStart.getTime()) {
-        return yield* updateEventAll(calendarId, event, currentEvent);
+        return yield* updateEventAll(calendarId, event, currentEvent, true);
       }
 
       const originalRecurrence = [...master.recurrence];

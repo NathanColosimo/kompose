@@ -24,6 +24,7 @@ import {
   followStart,
   getPrimaryRecurrenceRule,
   matchUntilToStart,
+  occurrenceDayMoved,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   seriesRecurrenceForSave,
@@ -32,6 +33,7 @@ import {
   untilRuleToDay,
   weekdayCodeOf,
 } from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
   SAVE_FAILURE_MESSAGE,
@@ -49,7 +51,13 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
-import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
+import {
+  allowedEventSaveScope,
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+  SCOPE_DIALOG_COPY,
+} from "@kompose/state/recurrence-scope-options";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -169,17 +177,14 @@ interface EventFormValues {
   summary: string;
 }
 
-/**
- * Scopes a pending save can't use: a calendar move applies to the whole
- * series, and one occurrence can't repeat differently from its series.
- */
-function saveDisabledScopes(
-  pendingSave: { calendarChanged?: unknown; patternChanged: boolean } | null
-): Partial<Record<RecurrenceScope, boolean>> | undefined {
-  if (pendingSave?.calendarChanged) {
-    return { following: true, this: true };
-  }
-  return pendingSave?.patternChanged ? { this: true } : undefined;
+/** What a pending save changes, for the scopes the dialog offers. */
+function saveChanges(pendingSave: PendingSave | null): EventSaveChanges {
+  return {
+    calendarChanged: Boolean(pendingSave?.calendarChanged),
+    dateMoved: pendingSave?.dateMoved ?? false,
+    patternChanged: pendingSave?.patternChanged ?? false,
+    seriesRuleLoaded: pendingSave?.seriesRuleLoaded ?? true,
+  };
 }
 
 export type CloseSaveRequest =
@@ -200,6 +205,10 @@ export type CloseSaveRequest =
       calendarChanged?: { destinationCalendarId: string };
       /** The repeat pattern changed: it can't apply to one occurrence. */
       patternChanged: boolean;
+      /** An occurrence moved to another day. */
+      dateMoved: boolean;
+      /** The series' rule is loaded, so it can follow a moved day. */
+      seriesRuleLoaded: boolean;
       /**
        * The series' rule after a moved occurrence's date (followStart),
        * sent only when the save applies to the series.
@@ -640,10 +649,12 @@ const RECURRENCE_ENDS = [
 /** A recurring event's save, waiting on the scope dialog. */
 interface PendingSave {
   calendarChanged?: { destinationCalendarId: string };
+  dateMoved: boolean;
   defaultScope: RecurrenceScope;
   hasDataEdits: boolean;
   patternChanged: boolean;
   seriesRecurrence?: string[];
+  seriesRuleLoaded: boolean;
   variables: UpdateGoogleEventInput;
 }
 
@@ -926,14 +937,23 @@ export function EventEditPopover({
       // A recurring event asks for the scope over the editor, which stays
       // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
-        const forceAll = Boolean(request.calendarChanged);
-        const scope = forceAll ? "all" : request.defaultScope;
+        const scope = allowedEventSaveScope(
+          request.calendarChanged ? "all" : request.defaultScope,
+          eventSaveDisabledScopes({
+            calendarChanged: Boolean(request.calendarChanged),
+            dateMoved: request.dateMoved,
+            patternChanged: request.patternChanged,
+            seriesRuleLoaded: request.seriesRuleLoaded,
+          })
+        );
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
+            dateMoved: request.dateMoved,
             defaultScope: scope,
             hasDataEdits: request.hasDataEdits,
             patternChanged: request.patternChanged,
+            seriesRuleLoaded: request.seriesRuleLoaded,
             seriesRecurrence: request.seriesRecurrence,
             variables: request.variables,
           },
@@ -1020,12 +1040,8 @@ export function EventEditPopover({
 
       {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={
-          pendingSave?.calendarChanged
-            ? SCOPE_DIALOG_COPY.moveEvent
-            : SCOPE_DIALOG_COPY.saveEvent.description
-        }
-        disabledScopes={saveDisabledScopes(pendingSave)}
+        description={eventSaveDescription(saveChanges(pendingSave))}
+        disabledScopes={eventSaveDisabledScopes(saveChanges(pendingSave))}
         onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
@@ -1219,10 +1235,7 @@ function buildEditPayload(
       colorId: values.colorId ?? undefined,
       conferenceData: ctx.conferenceData ?? undefined,
       description: values.description ?? "",
-      end: {
-        ...ctx.event?.end,
-        ...temporalPayload.endPayload,
-      },
+      end: withEditedTime(ctx.event?.end, temporalPayload.endPayload),
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
       // An all-day series ends on a date, a timed one on a date-time.
@@ -1233,10 +1246,7 @@ function buildEditPayload(
             ctx.timeZone
           )
         : undefined,
-      start: {
-        ...ctx.event?.start,
-        ...temporalPayload.startPayload,
-      },
+      start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
       summary: values.summary.trim(),
     },
     eventId: ctx.event?.id ?? "",
@@ -1248,8 +1258,18 @@ function buildEditPayload(
       : undefined,
     defaultScope,
     hasDataEdits: ctx.hasEdits,
+    dateMoved: ctx.event
+      ? occurrenceDayMoved({
+          editedStart: variables.event.start,
+          occurrence: ctx.event,
+          timeZone: ctx.timeZone,
+        })
+      : false,
     isRecurring,
     patternChanged,
+    seriesRuleLoaded: Boolean(
+      ctx.event?.recurrence?.length || ctx.masterRecurrence
+    ),
     seriesRecurrence:
       ctx.event &&
       seriesRecurrenceForSave({

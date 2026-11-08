@@ -462,6 +462,27 @@ function dayOfStart(
   }
 }
 
+/** Whether a save moves an occurrence to another day (not just its time). */
+export function occurrenceDayMoved(params: {
+  editedStart: { date?: string | null; dateTime?: string | null };
+  occurrence: Pick<
+    GoogleEvent,
+    "originalStartTime" | "recurringEventId" | "start"
+  >;
+  timeZone: string;
+}): boolean {
+  const { editedStart, occurrence, timeZone } = params;
+  if (!occurrence.recurringEventId) {
+    return false;
+  }
+  const from = dayOfStart(
+    occurrence.originalStartTime ?? occurrence.start,
+    timeZone
+  );
+  const to = dayOfStart(editedStart, timeZone);
+  return Boolean(from && to && Temporal.PlainDate.compare(from, to) !== 0);
+}
+
 /**
  * `recurrence` with its UNTIL in the form the series' start takes: a date
  * for an all-day series, a date-time (that day's last second) for a timed
