@@ -4,6 +4,7 @@ import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
+import type { EditEventDraft, EventDraft } from "@kompose/state/event-editor";
 import {
   buildGoogleEventRecurrenceRule,
   dateToUntilRule,
@@ -27,13 +28,16 @@ import { useAtomValue } from "jotai";
 import { Check, MapPin, Repeat2, Trash2, Video, X } from "lucide-react-native";
 import React from "react";
 import { type UseFormSetValue, useForm } from "react-hook-form";
-import { Linking, Pressable, Switch as RNSwitch, View } from "react-native";
+import {
+  Keyboard,
+  Linking,
+  Pressable,
+  Switch as RNSwitch,
+  View,
+} from "react-native";
 import { Temporal } from "temporal-polyfill";
-import type {
-  CalendarOption,
-  EditEventDraft,
-  EventDraft,
-} from "@/components/calendar/calendar-editor-types";
+import type { CalendarOption } from "@/components/calendar/calendar-editor-types";
+import { hydrateEventRecurrence } from "@/components/calendar/event-editor-form";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -357,12 +361,14 @@ function EventMeetingButton({
 function EventEditorHeaderRight({
   canSubmit,
   showDelete,
+  submitting,
   onDelete,
   onSubmit,
   submitLabel,
 }: {
   canSubmit: boolean;
   showDelete: boolean;
+  submitting: boolean;
   onDelete?: () => void;
   onSubmit: () => void;
   submitLabel: string;
@@ -370,7 +376,12 @@ function EventEditorHeaderRight({
   return (
     <View className="flex-row items-center gap-2">
       {showDelete && onDelete ? (
-        <Button onPress={onDelete} size="icon" variant="ghost">
+        <Button
+          disabled={submitting}
+          onPress={onDelete}
+          size="icon"
+          variant="ghost"
+        >
           <Icon as={Trash2} className="text-red-500" size={18} />
         </Button>
       ) : null}
@@ -774,38 +785,53 @@ function useEventMeeting(ctx: {
 interface EventEditorSheetProps {
   calendarOptions: CalendarOption[];
   draft: EventDraft;
+  failed?: boolean;
+  masterRecurrence?: string[];
   onClose: () => void;
+  onCloseStart: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onSubmit: (draft: EventDraft) => void;
+  overlay?: React.ComponentProps<typeof BottomSheet>["overlay"];
+  submitting: boolean;
 }
 
-/**
- * Create / edit sheet for a Google event. Render it only while a draft is
- * open; it is always visible when mounted.
- */
 export function EventEditorSheet({
   draft,
+  overlay,
+  masterRecurrence,
+  submitting,
+  failed,
   onClose,
+  onCloseStart,
   onSubmit,
   onDelete,
   calendarOptions,
 }: EventEditorSheetProps) {
-  const { getValues, handleSubmit, reset, setValue, watch } =
-    useForm<EventDraft>({ defaultValues: draft });
+  const {
+    getFieldState,
+    getValues,
+    handleSubmit,
+    register,
+    resetField,
+    setValue,
+    watch,
+  } = useForm<EventDraft>({ defaultValues: draft });
+  register("recurrence");
   const values = watch();
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isLocationSuggestionsOpen, setIsLocationSuggestionsOpen] =
     React.useState(false);
 
   React.useEffect(() => {
-    reset(draft);
-    setIsRecurrenceExpanded(false);
-    setIsLocationSuggestionsOpen(false);
-  }, [draft, reset]);
+    hydrateEventRecurrence(
+      { getFieldState, getValues, resetField },
+      masterRecurrence
+    );
+  }, [getFieldState, getValues, masterRecurrence, resetField]);
 
   const { summary, description, location, recurrence, allDay } = values;
 
-  const canSubmit = summary.trim().length > 0;
+  const canSubmit = !submitting && summary.trim().length > 0;
   const isCreateMode = draft.mode === "create";
   const submitLabel = isCreateMode ? "Create" : "Save";
   const sheetTitle = isCreateMode ? "New event" : "Edit event";
@@ -880,7 +906,10 @@ export function EventEditorSheet({
         getValues("recurrence"),
         rule
       );
-      setValue("recurrence", nextRecurrence, { shouldDirty: true });
+      setValue("recurrence", nextRecurrence, {
+        shouldDirty: true,
+        shouldTouch: true,
+      });
     },
     [getValues, setValue]
   );
@@ -932,11 +961,15 @@ export function EventEditorSheet({
     [calendarOptions, setValue]
   );
 
-  const handleSheetSubmit = handleSubmit(onSubmit);
+  const handleSheetSubmit = handleSubmit((submittedDraft) => {
+    Keyboard.dismiss();
+    return onSubmit(submittedDraft);
+  });
 
   const handleDelete = React.useCallback(() => {
     const currentDraft = getValues();
     if (currentDraft.mode === "edit" && onDelete) {
+      Keyboard.dismiss();
       onDelete(currentDraft);
     }
   }, [getValues, onDelete]);
@@ -948,6 +981,7 @@ export function EventEditorSheet({
       onSubmit={handleSheetSubmit}
       showDelete={draft.mode === "edit" && Boolean(onDelete)}
       submitLabel={submitLabel}
+      submitting={submitting}
     />
   );
 
@@ -956,9 +990,16 @@ export function EventEditorSheet({
       headerRight={headerRight}
       isVisible
       onClose={onClose}
+      onCloseStart={onCloseStart}
+      overlay={overlay}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >
+      {failed ? (
+        <Text accessibilityRole="alert" className="mb-3 text-red-500 text-sm">
+          The request failed. Your changes are kept. Try saving again.
+        </Text>
+      ) : null}
       <EventDateTimeRow
         allDay={allDay}
         canEditRecurrence={canEditRecurrence}
