@@ -4,6 +4,7 @@ import {
   parseDateList,
   type RecurrenceValue,
   readRecurrenceValue,
+  untilRuleForDay,
 } from "./until";
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
@@ -130,11 +131,7 @@ function hasAddedDays(recurrence: string[]): boolean {
 
 /** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
 function asValue(start: string, seriesZone: string): RecurrenceValue | null {
-  return readRecurrenceValue(
-    DATE_ONLY.test(start) ? start.replace(/-/g, "") : start,
-    seriesZone,
-    seriesZone
-  );
+  return readRecurrenceValue(start, seriesZone, seriesZone);
 }
 
 /** A value's place in time: its moment, or its day's start (UTC). */
@@ -170,9 +167,12 @@ export function carryCount(
     seriesZone: string;
     /** Every occurrence's original start, as Google lists them. */
     starts: string[];
+    /** The new part's start (it may move off the split's day or time). */
+    newStart: string;
   }
 ): string[] {
-  const { masterRecurrence, originalStart, seriesZone, starts } = params;
+  const { masterRecurrence, newStart, originalStart, seriesZone, starts } =
+    params;
   const listed = starts
     .map((start) => asValue(start, seriesZone))
     .filter((value): value is RecurrenceValue => value !== null);
@@ -195,7 +195,22 @@ export function carryCount(
         !latest || order(value) > order(latest) ? value : latest,
       null
     );
-    return last ? countToUntil(recurrence, last) : recurrence;
+    // The new part may start a day (or days) off the split; its last
+    // occurrence is that far off the old rule's last one. UNTIL is that
+    // day's end, so a later time that day still counts.
+    const from = asValue(originalStart, seriesZone);
+    const to = asValue(newStart, seriesZone);
+    const shift = from && to ? from.day.until(to.day).days : 0;
+    return last
+      ? untilInstead(
+          recurrence,
+          untilRuleForDay(
+            last.day.add({ days: shift }),
+            DATE_ONLY.test(newStart),
+            seriesZone
+          )
+        )
+      : recurrence;
   }
   const before = (value: RecurrenceValue) =>
     beforeSplit(value, originalStart, seriesZone);
@@ -204,11 +219,8 @@ export function carryCount(
   return withRemainingCount(recurrence, used);
 }
 
-/** The rule with its COUNT swapped for an UNTIL at `last` (inclusive). */
-function countToUntil(recurrence: string[], last: RecurrenceValue): string[] {
-  const until = last.instant
-    ? `${last.instant.toString().slice(0, 19).replace(/[-:]/g, "")}Z`
-    : last.day.toString().replace(/-/g, "");
+/** The rule with its COUNT swapped for `until`. */
+function untilInstead(recurrence: string[], until: string): string[] {
   return recurrence.map((line) =>
     line.startsWith("RRULE:")
       ? `RRULE:${[

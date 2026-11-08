@@ -573,7 +573,9 @@ export function makeGoogleCalendarService(
     master: Event,
     kept: string[] | undefined,
     edited: string[] | undefined,
-    originalStart: string
+    originalStart: string,
+    /** The new part's start. */
+    newStart: string
   ) =>
     Effect.gen(function* () {
       const rule = edited ?? kept;
@@ -588,6 +590,7 @@ export function makeGoogleCalendarService(
       const starts = yield* listOccurrenceStarts(calendarId, master.id);
       return carryCount(fromSplit, {
         masterRecurrence: master.recurrence ?? [],
+        newStart,
         originalStart,
         seriesZone: zone,
         starts,
@@ -705,7 +708,8 @@ export function makeGoogleCalendarService(
           master,
           master.recurrence,
           event.recurrence,
-          startIso
+          startIso,
+          event.start.dateTime ?? event.start.date ?? startIso
         ),
         master,
         event.start
@@ -1051,6 +1055,7 @@ export function makeGoogleCalendarService(
           master,
           master.recurrence,
           undefined,
+          originalStartIso,
           originalStartIso
         );
 

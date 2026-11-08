@@ -73,6 +73,7 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "EXDATE;VALUE=DATE:20261102",
         ],
+        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesZone: "America/New_York",
         starts: ["2026-11-01", "2026-11-03", "2026-11-04", "2026-11-05"],
@@ -89,6 +90,7 @@ describe("splitting a series", () => {
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261102,20261120",
         ],
+        newStart: "2026-11-03",
         originalStart: "2026-11-03",
         seriesZone: "America/New_York",
         starts: [
@@ -101,5 +103,38 @@ describe("splitting a series", () => {
         ],
       })
     ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261105"]);
+  });
+
+  // Google's own date-times: New York's offset is negative.
+  const nyDaily = (day: number, hour = 9) =>
+    `2026-11-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00-05:00`;
+
+  test("counts timed occurrences written with a negative offset", () => {
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
+        newStart: nyDaily(3),
+        originalStart: nyDaily(3),
+        seriesZone: "America/New_York",
+        starts: [1, 2, 3, 4, 5].map((day) => nyDaily(day)),
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+  });
+
+  test("ends a moved new part after its last day, at any time that day", () => {
+    // With an added day, moved from 9:00 to 10:00 and a day later: the
+    // old rule's last day (Nov 5) becomes Nov 6, through its last second.
+    expect(
+      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+        masterRecurrence: [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "RDATE;TZID=America/New_York:20261120T090000",
+        ],
+        newStart: nyDaily(4, 10),
+        originalStart: nyDaily(3),
+        seriesZone: "America/New_York",
+        starts: [1, 2, 3, 4, 5, 20].map((day) => nyDaily(day)),
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261107T045959Z"]);
   });
 });

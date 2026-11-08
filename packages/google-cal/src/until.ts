@@ -12,8 +12,9 @@ const UNTIL_DATE_TIME =
 const UNTIL_PART = /([:;])UNTIL=([^;]+)/;
 const DATE_LIST = /^(EXDATE|RDATE)([^:]*):(.+)$/;
 const TZID_PARAM = /;TZID=([^;:]+)/;
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
 const SEVERAL_A_DAY =
-  /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BYHOUR=|BYMINUTE=|BYSECOND=)/;
+  /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
 /**
  * UNTIL for a series that ends on `day` in `timeZone`, that day's
@@ -104,6 +105,19 @@ export function readRecurrenceValue(
   valueZone: string,
   seriesZone: string
 ): RecurrenceValue | null {
+  // A Google date-time ("2026-11-01T09:00:00-05:00"): read as is, since
+  // stripping its dashes would strip an offset's minus sign too.
+  if (ISO_DATE_TIME.test(value)) {
+    try {
+      const instant = Temporal.Instant.from(value);
+      return {
+        day: instant.toZonedDateTimeISO(seriesZone).toPlainDate(),
+        instant,
+      };
+    } catch {
+      return null;
+    }
+  }
   const cleaned = value.replace(/[-:]/g, "");
   const date = UNTIL_DATE.exec(cleaned);
   if (date) {

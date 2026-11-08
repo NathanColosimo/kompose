@@ -149,4 +149,17 @@ describe("skipped occurrences on the series' days", () => {
       )
     ).toBe(rule);
   });
+
+  test("still moves a skipped time with a single BYHOUR", () => {
+    expect(
+      matchRecurrenceToStart(
+        ["RRULE:FREQ=DAILY;BYHOUR=9", "EXDATE:20261104T140000Z"],
+        { dateTime: "2026-11-01T10:00:00-05:00" },
+        "America/New_York"
+      )
+    ).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=9",
+      "EXDATE;TZID=America/New_York:20261104T100000",
+    ]);
+  });
 });
