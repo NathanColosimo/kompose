@@ -300,6 +300,57 @@ const DAY_NAMES: Record<string, string> = {
 };
 
 const INTERVAL_PATTERN = /INTERVAL=(\d+)/;
+const BY_MONTH_PATTERN = /BYMONTH=(\d{1,2})(?:;|$)/;
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+const ORDINAL_DAY = /^(-?\d)([A-Z]{2})$/;
+const ORDINAL_WORDS: Record<string, string> = {
+  "-1": "last",
+  "-2": "second-to-last",
+  "1": "1st",
+  "2": "2nd",
+  "3": "3rd",
+  "4": "4th",
+  "5": "5th",
+};
+
+/** "on the 4th Thu of Nov" for a yearly rule with BYMONTH=11;BYDAY=4TH. */
+function ordinalWhen(
+  rule: string | undefined,
+  freq: EventRecurrenceFrequency,
+  byDay: string[]
+): string | null {
+  const ordinal = ordinalDays(byDay);
+  const month = MONTH_NAMES[Number(BY_MONTH_PATTERN.exec(rule ?? "")?.[1]) - 1];
+  return ordinal && month && freq === "YEARLY"
+    ? `${ordinal} of ${month}`
+    : ordinal;
+}
+
+/** "on the 2nd Tue" for a monthly or yearly rule's BYDAY=2TU. */
+function ordinalDays(byDay: string[]): string | null {
+  const words = byDay.map((code) => {
+    const match = ORDINAL_DAY.exec(code);
+    const ordinal = match ? ORDINAL_WORDS[match[1] ?? ""] : undefined;
+    const day = match ? DAY_NAMES[match[2] ?? ""] : undefined;
+    return ordinal && day ? `${ordinal} ${day}` : null;
+  });
+  return words.length > 0 && words.every(Boolean)
+    ? `on the ${words.join(", ")}`
+    : null;
+}
 
 /** RRULE weekday codes by Temporal dayOfWeek (1 Monday to 7 Sunday). */
 const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
@@ -353,5 +404,9 @@ export function describeEventRecurrence(params: {
     .map((code) => DAY_NAMES[code.slice(-2)])
     .filter(Boolean)
     .join(", ");
-  return freq === "WEEKLY" && days ? `${base} on ${days}` : base;
+  if (freq === "WEEKLY") {
+    return days ? `${base} on ${days}` : base;
+  }
+  const when = ordinalWhen(rule, freq, byDay);
+  return when ? `${base} ${when}` : base;
 }

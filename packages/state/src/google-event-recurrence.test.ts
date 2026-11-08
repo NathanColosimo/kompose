@@ -18,6 +18,22 @@ describe("describeEventRecurrence", () => {
     ).toBe("Repeats every 2 days");
   });
 
+  test("names the day of a monthly or yearly series", () => {
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=2TU"],
+      })
+    ).toBe("Repeats every 2 months on the 2nd Tue");
+    expect(
+      describeEventRecurrence({ rules: ["RRULE:FREQ=MONTHLY;BYDAY=-1FR"] })
+    ).toBe("Repeats monthly on the last Fri");
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH"],
+      })
+    ).toBe("Repeats yearly on the 4th Thu of Nov");
+  });
+
   test("still says an instance repeats when its rule isn't loaded", () => {
     expect(
       describeEventRecurrence({ recurringEventId: "series", rules: [] })

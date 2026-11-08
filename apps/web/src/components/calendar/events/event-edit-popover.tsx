@@ -300,10 +300,13 @@ function RecurrenceEditor({
   visible,
   recurrenceRule,
   onChange,
+  startWeekday,
 }: {
   visible: boolean;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
+  /** The start's weekday (1 Monday to 7 Sunday), lit when no days are picked. */
+  startWeekday?: number;
 }) {
   const parsedRecurrence = useMemo(
     () => parseRecurrence(recurrenceRule),
@@ -337,6 +340,11 @@ function RecurrenceEditor({
     onChange(nextRule);
   };
 
+  // Weekly with no days picked repeats on the start's weekday: show it lit.
+  const startDay = startWeekday ? WEEKDAYS[startWeekday - 1]?.value : undefined;
+  const shownDays =
+    values.byDay.length > 0 || !startDay ? values.byDay : [startDay];
+
   const untilDate = useMemo(
     () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
     [values.untilRule]
@@ -353,15 +361,18 @@ function RecurrenceEditor({
           <Repeat className="size-4" />
           <span>Recurrence</span>
         </div>
+        {/* In words, so a part no control here sets (every 2 weeks) shows. */}
         {recurrenceRule ? (
-          <span className="max-w-[160px] truncate text-[10px] text-muted-foreground">
-            {recurrenceRule}
+          <span className="truncate text-muted-foreground text-xs">
+            {describeEventRecurrence({ rules: [recurrenceRule], startWeekday })}
           </span>
         ) : null}
       </div>
 
       <div className="flex items-center gap-2">
-        <Label className="text-xs">Repeat</Label>
+        <Label className="font-normal text-muted-foreground text-xs">
+          Repeat
+        </Label>
         <Select
           onValueChange={(v) => {
             const nextFreq = v as Frequency;
@@ -390,7 +401,7 @@ function RecurrenceEditor({
           <span className="text-muted-foreground text-xs">On days</span>
           <div className="flex gap-1">
             {WEEKDAYS.map((day) => {
-              const active = values.byDay.includes(day.value);
+              const active = shownDays.includes(day.value);
               return (
                 <Button
                   className={cn(
@@ -400,7 +411,7 @@ function RecurrenceEditor({
                   )}
                   key={day.value}
                   onClick={() => {
-                    const current = values.byDay;
+                    const current = shownDays;
                     const next = active
                       ? current.filter((d) => d !== day.value)
                       : [...current, day.value];
@@ -418,113 +429,107 @@ function RecurrenceEditor({
         </div>
       )}
 
-      <div className="space-y-2">
-        <span className="text-muted-foreground text-xs">Ends</span>
+      {/* A series that doesn't repeat has no end to pick. */}
+      {values.freq === "none" ? null : (
         <div className="space-y-2">
-          <Button
-            className="h-8 w-full justify-start text-xs"
-            onClick={() => {
-              emitChanges({ endType: "none", untilRule: "" });
-            }}
-            size="sm"
-            type="button"
-            variant={values.endType === "none" ? "default" : "outline"}
-          >
-            Never
-          </Button>
-
-          <div className="flex items-center gap-2">
-            <Button
-              className="h-8 shrink-0 text-xs"
-              onClick={() => {
-                const fallback =
-                  values.untilRule ||
-                  dateToUntilRule(new Date()) ||
-                  `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
-                emitChanges({ endType: "until", untilRule: fallback });
-              }}
-              size="sm"
-              type="button"
-              variant={values.endType === "until" ? "default" : "outline"}
-            >
-              On
-            </Button>
-            {values.endType === "until" && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    variant="outline"
-                  >
-                    <CalendarIcon className="size-3" />
-                    {untilDate
-                      ? formatPlainDate(pickerDateToTemporal(untilDate), {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : "Select date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    onSelect={(date) => {
-                      if (!date) {
-                        emitChanges({ endType: "none", untilRule: "" });
-                        return;
-                      }
-                      const rule = dateToUntilRule(date);
-                      if (rule) {
-                        emitChanges({ untilRule: rule });
-                      }
-                    }}
-                    selected={untilDate ?? undefined}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
+          <span className="text-muted-foreground text-xs">Ends</span>
+          {/* Three equal options in one row, as on the phone; the date or
+              count for the picked one goes below. */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {RECURRENCE_ENDS.map((option) => (
+              <Button
+                className="h-8 text-xs"
+                key={option.value}
+                onClick={() => {
+                  if (option.value === "none") {
+                    emitChanges({ endType: "none", untilRule: "" });
+                  } else if (option.value === "until") {
+                    const fallback =
+                      values.untilRule ||
+                      dateToUntilRule(new Date()) ||
+                      `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
+                    emitChanges({ endType: "until", untilRule: fallback });
+                  } else {
+                    const nextCount =
+                      Number.isFinite(values.count) && values.count > 0
+                        ? values.count
+                        : 5;
+                    emitChanges({ count: nextCount, endType: "count" });
+                  }
+                }}
+                size="sm"
+                type="button"
+                variant={
+                  values.endType === option.value ? "default" : "outline"
+                }
+              >
+                {option.label}
+              </Button>
+            ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              className="h-8 shrink-0 text-xs"
-              onClick={() => {
-                const nextCount =
-                  Number.isFinite(values.count) && values.count > 0
-                    ? values.count
-                    : 5;
-                emitChanges({ count: nextCount, endType: "count" });
-              }}
-              size="sm"
-              type="button"
-              variant={values.endType === "count" ? "default" : "outline"}
-            >
-              After
-            </Button>
-            {values.endType === "count" && (
-              <>
-                <Input
-                  className="h-7 w-16 px-2 text-xs"
-                  min={1}
-                  onChange={(e) => {
-                    const parsed = Number.parseInt(e.target.value, 10);
-                    if (Number.isFinite(parsed) && parsed > 0) {
-                      emitChanges({ count: parsed });
+          {values.endType === "until" ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button className="h-8 gap-1.5 px-2 text-xs" variant="outline">
+                  <CalendarIcon className="size-3.5" />
+                  {untilDate
+                    ? formatPlainDate(pickerDateToTemporal(untilDate), {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : "Pick a date"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  onSelect={(date) => {
+                    if (!date) {
+                      emitChanges({ endType: "none", untilRule: "" });
+                      return;
+                    }
+                    const rule = dateToUntilRule(date);
+                    if (rule) {
+                      emitChanges({ untilRule: rule });
                     }
                   }}
-                  type="number"
-                  value={values.count}
+                  selected={untilDate ?? undefined}
                 />
-                <span className="text-muted-foreground text-xs">times</span>
-              </>
-            )}
-          </div>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+
+          {values.endType === "count" ? (
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label="Occurrences"
+                className="h-8 w-16 px-2 text-xs"
+                min={1}
+                onChange={(e) => {
+                  const parsed = Number.parseInt(e.target.value, 10);
+                  if (Number.isFinite(parsed) && parsed > 0) {
+                    emitChanges({ count: parsed });
+                  }
+                }}
+                type="number"
+                value={values.count}
+              />
+              <span className="text-muted-foreground text-xs">times</span>
+            </div>
+          ) : null}
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
+const RECURRENCE_ENDS = [
+  { label: "Never", value: "none" },
+  { label: "On date", value: "until" },
+  { label: "After", value: "count" },
+] as const;
 
 /** A recurring event's save, waiting on the scope dialog. */
 interface PendingSave {
@@ -1363,6 +1368,7 @@ function EventAllDayAndRecurrenceRow({
           <RecurrenceEditor
             onChange={onRecurrenceChange}
             recurrenceRule={recurrenceRule}
+            startWeekday={startWeekday}
             visible
           />
         </PopoverContent>
