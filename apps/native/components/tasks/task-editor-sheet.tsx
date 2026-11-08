@@ -612,7 +612,7 @@ function TaskScheduleChips({
   // Each chip is as wide as its widest value at 1x in Sentient 13pt, plus
   // 10pt of padding and border ("May 20" 45, "10:00 AM" 58, "Due May 20"
   // 73), scaled with the text, so nothing truncates. One row down to 375pt
-  // at the default size (64 + 56 + 70 + 86 + 44 + gaps = 332); as the text
+  // at the default size (64 + 56 + 70 + 86 + 44 + gaps = 336); as the text
   // grows, the row wraps.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
