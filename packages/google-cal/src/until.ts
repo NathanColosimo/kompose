@@ -14,8 +14,6 @@ const UNTIL_PART = /([:;])UNTIL=([^;]+)/;
 const DATE_LIST = /^(EXDATE|RDATE)([^:]*):(.+)$/;
 const TZID_PARAM = /;TZID=([^;:]+)/;
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
-const SEVERAL_A_DAY =
-  /(?:[:;])(?:FREQ=(?:HOURLY|MINUTELY|SECONDLY)|BY(?:HOUR|MINUTE|SECOND)=[^;]*,)/;
 
 const INTERVAL_PART = /INTERVAL=(\d+)/;
 const COUNT_VALUE = /[:;]COUNT=(\d+)/;
@@ -30,7 +28,12 @@ const BY_MONTH_PART = /BYMONTH=([^;]*)/;
 const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
 const BY_DAY_PART = /BYDAY=([^;]*)/;
 const WEEK_START_PART = /WKST=([A-Z]{2})/;
-const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
+/**
+ * A time part a rule sets: one value. Google meets a rule once a day, at
+ * the start's time, and ignores a list ("BYHOUR=9,15" meets at the
+ * start's hour), so a list reads as left out.
+ */
+const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
 
 /**
  * The time of day a rule meets, "9:0:0": its BYHOUR / BYMINUTE / BYSECOND,
@@ -103,7 +106,7 @@ function endedBefore(
  * `own`'s parts that `rule` sets (its BYHOUR, BYMINUTE, BYSECOND), the
  * rest `start`'s: where a rule's meeting moves when the start does.
  */
-export function withRuleClock(
+function withRuleClock(
   rule: string,
   own: Temporal.PlainTime,
   start: Temporal.PlainTime
@@ -117,21 +120,21 @@ export function withRuleClock(
 }
 
 /**
- * Whether a series meets more than once a day: a rule with several times
- * (BYHOUR=9,15) or a sub-daily frequency, or rules at different times
- * (one at 9:00, another at 15:00). Its times are then its own: they
- * aren't lined up with the start, and a skipped time stays that time.
+ * Whether a series meets more than once a day: a sub-daily rule, or rules
+ * at different times (one at 9:00, another at 15:00; a list of times in
+ * one rule Google ignores). Its times are then its own: they aren't
+ * lined up with the start, and a skipped time stays that time.
  * With the series' start time (`base`), a part a rule leaves out is that
  * time's ("BYHOUR=9" and "BYHOUR=9;BYMINUTE=0" are one time for a 9:00
  * series); without it, rules written differently count as different.
  */
-function meetsSeveralTimesADay(
+export function meetsSeveralTimesADay(
   recurrence: string[],
   base: Temporal.PlainTime | null = null
 ): boolean {
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   return (
-    rules.some((line) => SEVERAL_A_DAY.test(line)) ||
+    rules.some((line) => SUB_DAILY.test(line)) ||
     new Set(rules.map((line) => ruleTime(line, base))).size > 1
   );
 }
@@ -241,14 +244,15 @@ interface StartTime {
   timeZone?: string | null;
 }
 
-const OFFSET = /(?:[+-]\d{2}:\d{2}|Z)$/;
+/** A date-time's offset ("-05:00" or "Z"), at its end. */
+export const OFFSET = /([+-]\d{2}:\d{2}|Z)$/;
 
 /**
  * The moment a Google dateTime names. Google also takes one without an
  * offset when a time zone comes with it, read in that zone; null for one
  * that doesn't parse.
  */
-export function instantOf(
+function instantOf(
   dateTime: string,
   timeZone: string
 ): Temporal.Instant | null {
