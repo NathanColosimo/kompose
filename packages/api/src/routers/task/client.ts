@@ -273,7 +273,8 @@ const dbDeleteNonExceptionsBySeriesFrom = (
           eq(taskTable.isException, false),
           keepId ? ne(taskTable.id, keepId) : undefined
         )
-      );
+      )
+      .returning({ id: taskTable.id });
   });
 
 /** Dates from `fromDate` on that keep an exception (an occurrence edited alone). */
@@ -824,12 +825,23 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     input.startDate && input.startDate < task.startDate
       ? input.startDate
       : task.startDate;
-  yield* dbDeleteNonExceptionsBySeriesFrom(
-    userId,
-    task.seriesMasterId,
-    boundary,
-    keepEdited ? task.id : undefined
+  // The earlier part of the series stops before the edit, so its master no
+  // longer claims to repeat past it. First, while the master is still
+  // there: a split before it deletes it below, and its undated and earlier
+  // occurrences need it to move to a series of their own.
+  const ended = yield* endSeriesBefore(userId, task, boundary);
+  const deletedIds = new Set(
+    ids(
+      yield* dbDeleteNonExceptionsBySeriesFrom(
+        userId,
+        task.seriesMasterId,
+        boundary,
+        keepEdited ? task.id : undefined
+      )
+    )
   );
+  // Rows the delete removed don't go back to clients.
+  const endedMaster = ended.filter((row) => !deletedIds.has(row.id));
 
   // A kept edited occurrence is where the new series starts, so it becomes
   // its master and carries the pattern (even when the pattern adds no other
@@ -849,10 +861,6 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
         isException: !ending,
       })
     : [];
-
-  // The earlier part of the series stops the day before the edit, so its
-  // master no longer claims to repeat past it.
-  const endedMaster = yield* endSeriesBefore(userId, task, boundary);
 
   if (!recurrence) {
     // Exceptions after the boundary (moved, renamed, or done alone) become
@@ -952,7 +960,11 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
     ];
   }
   const [master] = yield* dbSelectById(userId, task.seriesMasterId);
-  if (!master?.recurrence) {
+  // A master already gone (older data): its undated occurrences stand alone.
+  if (!master) {
+    return yield* dbDetachUndated(userId, task.seriesMasterId);
+  }
+  if (!master.recurrence) {
     return [] as TaskSelect[];
   }
   // The master was moved to the inbox: it can't carry the earlier part's
@@ -1085,7 +1097,7 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
     : moved;
 });
 
-function ids(rows: TaskSelect[]): string[] {
+function ids(rows: Pick<TaskSelect, "id">[]): string[] {
   return rows.map((row) => row.id);
 }
 
