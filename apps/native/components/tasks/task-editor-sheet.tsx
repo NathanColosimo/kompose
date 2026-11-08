@@ -1076,72 +1076,87 @@ function NativeLinkListEditor({
 
   return (
     <>
-      {links.map((meta, index) => (
-        <View
-          className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
-          key={meta.url}
-        >
-          {meta.thumbnailUrl ? (
+      {links.map((meta, index) => {
+        const providerLabel = getProviderLabel(meta.provider);
+        const durationMinutes = getLinkDurationMinutes(meta);
+        const wordCount = getLinkWordCount(meta);
+        return (
+          <View
+            className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
+            key={meta.url}
+          >
+            {meta.thumbnailUrl ? (
+              <Pressable
+                // The title beside it opens the same link, so VoiceOver reads
+                // that one only. 40pt; the slop (inside the card's padding)
+                // makes the target 44pt.
+                accessibilityElementsHidden
+                hitSlop={2}
+                importantForAccessibility="no-hide-descendants"
+                onPress={() => Linking.openURL(meta.url)}
+              >
+                <Image
+                  source={{ uri: meta.thumbnailUrl }}
+                  style={{ borderRadius: 4, height: 40, width: 40 }}
+                />
+              </Pressable>
+            ) : null}
             <Pressable
-              // The title beside it opens the same link, so VoiceOver reads
-              // that one only. 40pt; the slop (inside the card's padding)
-              // makes the target 44pt.
-              accessibilityElementsHidden
-              hitSlop={2}
-              importantForAccessibility="no-hide-descendants"
+              // Spoken as one link; "12m" would be read as meters.
+              accessibilityLabel={[
+                meta.title ?? "Untitled",
+                providerLabel,
+                durationMinutes === null
+                  ? null
+                  : spokenDuration(durationMinutes),
+                wordCount === null
+                  ? null
+                  : `${wordCount.toLocaleString()} words`,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+              accessibilityRole="link"
+              className="min-w-0 flex-1"
+              // About 38pt tall; the slop (inside the card's padding) makes 44.
+              hitSlop={{ bottom: 3, top: 3 }}
               onPress={() => Linking.openURL(meta.url)}
             >
-              <Image
-                source={{ uri: meta.thumbnailUrl }}
-                style={{ borderRadius: 4, height: 40, width: 40 }}
-              />
+              <Text
+                className="font-semibold text-foreground text-sm"
+                numberOfLines={1}
+              >
+                {meta.title ?? "Untitled"}
+              </Text>
+              <Text className="mt-0.5 text-muted-foreground text-xs">
+                {providerLabel}
+                {durationMinutes === null ? "" : ` · ${durationMinutes}m`}
+                {wordCount === null
+                  ? ""
+                  : ` · ${wordCount.toLocaleString()} words`}
+              </Text>
             </Pressable>
-          ) : null}
-          <Pressable
-            accessibilityHint="Opens the link"
-            accessibilityRole="link"
-            className="min-w-0 flex-1"
-            onPress={() => Linking.openURL(meta.url)}
-          >
-            <Text
-              className="font-semibold text-foreground text-sm"
-              numberOfLines={1}
+            <Pressable
+              accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
+              accessibilityRole="button"
+              onPress={() => onRemoveLink(index)}
+              // 44pt to touch around the 16pt icon, laid out as before (16pt,
+              // 2pt down) by the negative margins; hitSlop would be clipped
+              // at the card's edge.
+              style={{
+                alignItems: "center",
+                height: 44,
+                justifyContent: "center",
+                marginBottom: -14,
+                marginHorizontal: -14,
+                marginTop: -12,
+                width: 44,
+              }}
             >
-              {meta.title ?? "Untitled"}
-            </Text>
-            <Text className="mt-0.5 text-muted-foreground text-xs">
-              {getProviderLabel(meta.provider)}
-              {(() => {
-                const dur = getLinkDurationMinutes(meta);
-                return dur === null ? "" : ` · ${dur}m`;
-              })()}
-              {(() => {
-                const wc = getLinkWordCount(meta);
-                return wc === null ? "" : ` · ${wc.toLocaleString()} words`;
-              })()}
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
-            accessibilityRole="button"
-            onPress={() => onRemoveLink(index)}
-            // 44pt to touch around the 16pt icon, laid out as before (16pt,
-            // 2pt down) by the negative margins; hitSlop would be clipped
-            // at the card's edge.
-            style={{
-              alignItems: "center",
-              height: 44,
-              justifyContent: "center",
-              marginBottom: -14,
-              marginHorizontal: -14,
-              marginTop: -12,
-              width: 44,
-            }}
-          >
-            <Icon as={XCircle} className="text-muted-foreground" size={16} />
-          </Pressable>
-        </View>
-      ))}
+              <Icon as={XCircle} className="text-muted-foreground" size={16} />
+            </Pressable>
+          </View>
+        );
+      })}
 
       <View className="mb-2.5 flex-row items-center gap-2">
         <View
