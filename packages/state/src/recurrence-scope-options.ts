@@ -190,6 +190,13 @@ export interface EventSaveChanges {
    */
   entireSeriesCost?: EntireSeriesCost | null;
   /**
+   * An Entire series save would give a series meeting several times a day
+   * a new time of day, which the server refuses
+   * (`entireSeriesMovesSeveralADay`). Left out, `retimed` with
+   * `severalRules` is read as that.
+   */
+  movesSeveralADay?: boolean;
+  /**
    * The occurrence is its series' first meeting (`opensSeries`): This and
    * following from there is the whole series, which the server refuses
    * for the same reasons as Entire series.
@@ -585,15 +592,43 @@ function scopesOff(
 /**
  * Whether This and following from the series' first meeting is refused
  * as Entire series is: the server saves it as the whole series. A new day
- * there moves the series' start, so it's refused only where that start
- * resets a meeting changed on its own (`changedMeetingCost`).
+ * there moves the series' start, which it refuses only for what that
+ * start changes (`firstMeetingNewDayRefusal`).
  */
 function firstMeetingRefused(changes: EventSaveChanges): boolean {
   const off = entireSeriesOff(changes);
   if (!(changes.opensSeries && off)) {
     return false;
   }
-  return off.reason !== "newDay" || changedMeetingCost(changes) !== null;
+  return off.reason !== "newDay" || firstMeetingNewDayRefusal(changes) !== null;
+}
+
+/**
+ * Why the server refuses a new day through the series' first meeting,
+ * which it saves as the whole series from that day, in its order: a new
+ * time of day for a series meeting several times a day, then a meeting
+ * changed on its own, which the new start resets (Google cancels them
+ * all). Null when it takes it. Only `movesSeveralADay` tells a new time
+ * of day here: `retimed` is set by the new day alone.
+ */
+function firstMeetingNewDayRefusal(changes: EventSaveChanges): string | null {
+  if (!(changes.opensSeries && changes.dateMoved)) {
+    return null;
+  }
+  if (changes.movesSeveralADay) {
+    return SCOPE_DIALOG_COPY.severalRulesTime;
+  }
+  const cost = changedMeetingCost(changes);
+  return cost
+    ? `Moving the series to this day would reset your changed ${shortDay(cost.day)} meeting.`
+    : null;
+}
+
+/** Whether the server refuses the save's new time for the series (`movesSeveralADay`). */
+function severalADayRefused(changes: EventSaveChanges): boolean {
+  return (
+    changes.movesSeveralADay ?? Boolean(changes.retimed && changes.severalRules)
+  );
 }
 
 /**
@@ -659,7 +694,7 @@ function entireSeriesOff(changes: EventSaveChanges): EntireSeriesOff | null {
   if (patternChanged && repeatSkips) {
     return { reason: repeatSkips === "day" ? "repeatDay" : "repeatEnd" };
   }
-  if (retimed && changes.severalRules) {
+  if (severalADayRefused(changes)) {
     return { reason: "severalRulesTime" };
   }
   const cost = changedMeetingCost(changes);
@@ -697,7 +732,7 @@ export function chosenScope(
  * series' zone, named when it isn't the app's. That can't move the whole
  * series, and a new repeat (never one occurrence's) only goes from here.
  * From the series' first meeting, "from here" is the series' new start,
- * so a meeting changed on its own can rule it out too.
+ * which the server can refuse too (`firstMeetingNewDayRefusal`).
  */
 function newDayLine(changes: EventSaveChanges): string {
   const city = changes.seriesTimeZone
@@ -706,16 +741,12 @@ function newDayLine(changes: EventSaveChanges): string {
   const where = city
     ? `In ${city} time, this occurrence is now on another day than its series`
     : "This occurrence is now on another day than its series";
-  const cost = firstMeetingRefused(changes)
-    ? changedMeetingCost(changes)
-    : null;
-  if (cost) {
+  const refusal = firstMeetingNewDayRefusal(changes);
+  if (refusal) {
     const alone = changes.patternChanged
       ? `${where}, and a new repeat can't apply to it alone.`
       : `${where}, so your changes apply to it alone.`;
-    // The new day moves the series' start, which resets every meeting
-    // changed on its own (Google cancels them all), whatever the cost's reason.
-    return `${alone} Moving the series to this day would reset your changed ${shortDay(cost.day)} meeting.`;
+    return `${alone} ${refusal}`;
   }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`

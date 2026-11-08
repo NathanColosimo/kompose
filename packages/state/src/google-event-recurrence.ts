@@ -14,6 +14,7 @@ import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
 import {
   dayOfStart,
   matchRecurrenceToStart,
+  meetsSeveralTimesADay,
   moveSkippedDays,
   ruleClock,
   startInstant,
@@ -553,11 +554,12 @@ export function otherTimeZone(
 /**
  * The day a series' own repeat counts its implicit days from ("weekly" on
  * which weekday, "monthly" on which date), in the series' zone, for an
- * occurrence whose save keeps the series' rule and slot: the series' first
+ * occurrence whose save keeps the series' rule and the meeting's day (new
+ * times there keep the series' first day too): the series' first
  * day (its DTSTART, which anchors the rule's implicit days; an added RDATE
  * meeting needn't share them), or, before the series loads, the
  * occurrence's place in the series (where the rule puts it). Any other
- * event's counts from the form's day. A new repeat, day or time starts the
+ * event's counts from the form's day. A new repeat or day starts the
  * series again elsewhere: `seriesRepeatForEdit` says where.
  */
 export function repeatCountingDay(params: {
@@ -747,6 +749,32 @@ export function entireSeriesStartMoves(params: {
   }
   const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
   return !sameTime(start, master.start, zone);
+}
+
+/**
+ * Whether an Entire series save made through `occurrence` gives a series
+ * meeting more than once a day a new time of day, which the server
+ * refuses (its movesSeveralADay): its rules would be mixed up. A new day,
+ * length or all-day form keeps every meeting's time. For
+ * `EventSaveChanges`' `movesSeveralADay`.
+ */
+export function entireSeriesMovesSeveralADay(params: {
+  edited: { end: EventTime; start: EventTime };
+  master: GoogleEvent;
+  occurrence: Pick<GoogleEvent, "end" | "originalStartTime" | "start">;
+  timeZone: string;
+}): boolean {
+  const { edited, master, occurrence } = params;
+  const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
+  const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
+  const from = timeOfStart(master.start, zone);
+  const to = timeOfStart(start, zone);
+  return Boolean(
+    from &&
+      to &&
+      Temporal.PlainTime.compare(from, to) !== 0 &&
+      meetsSeveralTimesADay(master.recurrence ?? [], from)
+  );
 }
 
 /**

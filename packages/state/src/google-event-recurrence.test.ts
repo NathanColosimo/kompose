@@ -6,6 +6,7 @@ import {
   dayInZone,
   type EventRecurrencePattern,
   entireSeriesCost,
+  entireSeriesMovesSeveralADay,
   entireSeriesStartMoves,
   followStart,
   getPrimaryRecurrenceRule,
@@ -2130,6 +2131,72 @@ describe("entireSeriesCost", () => {
     expect(
       unloaded({ end: at("2026-12-03T10:00:00-05:00"), start: opened.start })
     ).toBe(true);
+  });
+
+  test("tells when a new time is refused for a series meeting several times a day", () => {
+    // Daily at 9:00, and at 15:00 by a second rule, from Tue Dec 1.
+    const twice = {
+      ...master,
+      recurrence: ["RRULE:FREQ=DAILY", "RRULE:FREQ=DAILY;BYHOUR=15"],
+    };
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    const refused = (
+      occurrence: ReturnType<typeof meeting>,
+      edited: {
+        end: { date?: string; dateTime?: string };
+        start: { date?: string; dateTime?: string };
+      }
+    ) =>
+      entireSeriesMovesSeveralADay({
+        edited,
+        master: twice,
+        occurrence,
+        timeZone: zone,
+      });
+    // Through its first meeting: a new day and time, or a new day alone.
+    expect(
+      refused(first, {
+        end: at("2026-12-02T10:30:00-05:00"),
+        start: at("2026-12-02T10:00:00-05:00"),
+      })
+    ).toBe(true);
+    expect(
+      refused(first, {
+        end: at("2026-12-02T09:30:00-05:00"),
+        start: at("2026-12-02T09:00:00-05:00"),
+      })
+    ).toBe(false);
+    // Through a later one: a new time, a new length, or all day.
+    expect(
+      refused(opened, {
+        end: at("2026-12-03T10:30:00-05:00"),
+        start: at("2026-12-03T10:00:00-05:00"),
+      })
+    ).toBe(true);
+    expect(
+      refused(opened, {
+        end: at("2026-12-03T10:00:00-05:00"),
+        start: opened.start,
+      })
+    ).toBe(false);
+    expect(
+      refused(opened, {
+        end: { date: "2026-12-04" },
+        start: { date: "2026-12-03" },
+      })
+    ).toBe(false);
+    // A series meeting once a day takes any new time.
+    expect(
+      entireSeriesMovesSeveralADay({
+        edited: {
+          end: at("2026-12-03T10:30:00-05:00"),
+          start: at("2026-12-03T10:00:00-05:00"),
+        },
+        master,
+        occurrence: opened,
+        timeZone: zone,
+      })
+    ).toBe(false);
   });
 
   test("an edit that moves no slot drops nothing", () => {

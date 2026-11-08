@@ -79,6 +79,7 @@ test("says why whenever a scope is off", () => {
     seriesRuleFailed: flags,
     seriesRuleLoaded: flags,
     severalRules: flags,
+    movesSeveralADay: [undefined, false, true],
     splitBlocked: [null, "addedOccurrence", "severalRules"],
   } as const);
   for (const changes of all) {
@@ -554,6 +555,34 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(eventSaveDescription(newDayRepeat)).toBe(
       "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
     );
+  });
+
+  test("from the series' first meeting, a new day and time for a series meeting several times a day", () => {
+    const twice = {
+      ...none,
+      dateMoved: true,
+      opensSeries: true,
+      retimed: true,
+      severalRules: true,
+    };
+    // The server saves This and following there as the whole series, and
+    // refuses its new time of day.
+    const newTime = { ...twice, movesSeveralADay: true };
+    expect(off(newTime)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(newTime)).toBe(
+      `This occurrence is now on another day than its series, so your changes apply to it alone. ${SCOPE_DIALOG_COPY.severalRulesTime} From its first meeting, This and following is the entire series too.`
+    );
+    // A new day alone keeps every meeting's time: only Entire series is off.
+    expect(off({ ...twice, movesSeveralADay: false })).toEqual(["all"]);
+  });
+
+  test("a series meeting several times a day takes a new form or length, not a new time", () => {
+    const several = { ...none, retimed: true, severalRules: true };
+    // All day, or a new length: the server keeps every meeting's time.
+    expect(off({ ...several, movesSeveralADay: false })).toEqual([]);
+    expect(off({ ...several, movesSeveralADay: true })).toEqual(["all"]);
+    // Callers that don't say yet: any new start is taken as a new time.
+    expect(off(several)).toEqual(["all"]);
   });
 
   test("still reads the field it replaces, droppedMovedDay", () => {
