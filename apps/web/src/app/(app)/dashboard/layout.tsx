@@ -107,7 +107,11 @@ export default function DashboardLayout({
   // one cramped day, so it folds each time the window narrows. The saved
   // choice is untouched; see sidebarLeftOpenAtom.
   const isNarrow = useAtomValue(isNarrowViewportAtom);
-  const setNarrowOpen = useSetAtom(sidebarLeftNarrowOpenAtom);
+  const [narrowOpen, setNarrowOpen] = useAtom(sidebarLeftNarrowOpenAtom);
+  // There the open task panel is the whole view, a list; the calendar
+  // behind it is clipped and inert, so it neither widens the page nor takes
+  // Tab, and keeps its place for when the list closes.
+  const showsTaskList = isNarrow && narrowOpen;
   useEffect(() => {
     if (isNarrow) {
       setNarrowOpen(false);
@@ -168,8 +172,11 @@ export default function DashboardLayout({
         className="min-h-0 flex-1"
         style={
           {
-            // Keep a stable left-sidebar width while the calendar region clamps itself.
-            "--sidebar-width": SIDEBAR_LEFT_WIDTH,
+            // Keep a stable left-sidebar width while the calendar region
+            // clamps itself. In a narrow window there's no room for both,
+            // so the open task panel takes the whole width (a list), and
+            // its rail icon goes back to the calendar.
+            "--sidebar-width": isNarrow ? "100vw" : SIDEBAR_LEFT_WIDTH,
           } as React.CSSProperties
         }
       >
@@ -179,7 +186,12 @@ export default function DashboardLayout({
           <CommandBar />
           <TaskParserPreload />
           <SidebarLeft />
-          <SidebarInset className="min-w-0">{children}</SidebarInset>
+          <SidebarInset
+            className={showsTaskList ? "min-w-0 overflow-hidden" : "min-w-0"}
+            inert={showsTaskList}
+          >
+            {children}
+          </SidebarInset>
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>
