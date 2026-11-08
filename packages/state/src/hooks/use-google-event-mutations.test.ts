@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CreateEventInput } from "@kompose/api/routers/google-cal/contract";
+import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
 import type { StateConfig } from "../config";
@@ -133,8 +134,9 @@ test("a failed delete doesn't add the event twice where a refetch brought it", a
 /**
  * An update of the Standup with `variables` (a rename to Planning), which
  * the server answers with `answer` after `before` sets up the cache and
- * `meanwhile` refreshes it; and what November's list was while it was
- * sent, and November's and October's lists after it.
+ * `meanwhile` refreshes it; and what the server was sent, what the app
+ * was told, what November's list was while it was sent, and November's
+ * and October's lists after it.
  */
 async function update(params: {
   answer: () => Promise<unknown>;
@@ -142,6 +144,7 @@ async function update(params: {
   meanwhile?: (queryClient: QueryClient) => void;
   variables?: Partial<UpdateGoogleEventVariables>;
 }) {
+  const told: Error[] = [];
   const queryClient = new QueryClient();
   queryClient.setQueryData(november, [standup]);
   params.before?.(queryClient);
@@ -151,7 +154,7 @@ async function update(params: {
   const observer = new MutationObserver(
     queryClient,
     updateGoogleEventMutationOptions(queryClient, {
-      notifyError: () => undefined,
+      notifyError: (error) => told.push(error),
       orpc: server.orpc,
     })
   );
@@ -166,6 +169,8 @@ async function update(params: {
   return {
     after: queryClient.getQueryData(november),
     octoberAfter: queryClient.getQueryData(october),
+    sent: server.sent,
+    told,
     whileSent: server.whileSent,
   };
 }
@@ -176,6 +181,41 @@ const anotherEvent = (queryClient: QueryClient) =>
     ...(queryClient.getQueryData<Event[]>(november) ?? []),
     { id: "new" },
   ]);
+
+test("an update sends its scope and event, not the editor's options", async () => {
+  const planning = sanitizeEventPayload({ ...standup, summary: "Planning" });
+  const { sent } = await update({
+    answer: refused,
+    variables: {
+      failureMessage: "x",
+      optimistic: false,
+      quiet: true,
+      recurrenceScope: "all",
+    },
+  });
+  expect(sent).toEqual([
+    { ...calendar, event: planning, eventId: "event", scope: "all" },
+  ]);
+  // With no scope given, the save is for this occurrence.
+  const { sent: plain } = await update({ answer: refused });
+  expect(plain).toEqual([
+    { ...calendar, event: planning, eventId: "event", scope: "this" },
+  ]);
+});
+
+test("a failed update says what failed, in the editor's words, unless quiet", async () => {
+  const { told } = await update({
+    answer: refused,
+    variables: { failureMessage: "Couldn't save it." },
+  });
+  expect(told.map((error) => error.message)).toEqual(["Couldn't save it."]);
+  expect(told[0]?.cause).toEqual(new Error("refused"));
+  const { told: quiet } = await update({
+    answer: refused,
+    variables: { quiet: true },
+  });
+  expect(quiet).toEqual([]);
+});
 
 test("a failed held update leaves the list as it's since been refreshed", async () => {
   // It changed nothing before the server answered, so nothing goes back.
