@@ -9,7 +9,22 @@ import {
 } from "@/lib/auth-client";
 import { Button } from "../ui/button";
 
-type SocialProvider = "google" | "apple";
+const PROVIDERS = [
+  {
+    id: "google",
+    label: "Continue with Google",
+    name: "Google",
+    variant: "default",
+  },
+  {
+    id: "apple",
+    label: "Continue with Apple",
+    name: "Apple",
+    variant: "outline",
+  },
+] as const;
+
+type SocialProvider = (typeof PROVIDERS)[number]["id"];
 
 function buildSocialAuthUrls() {
   const baseUrl = window.location.origin;
@@ -59,25 +74,11 @@ export function SocialAccountButtons() {
     }
   };
 
-  const providers = [
-    {
-      id: "google",
-      label: "Continue with Google",
-      name: "Google",
-      variant: "default",
-    },
-    {
-      id: "apple",
-      label: "Continue with Apple",
-      name: "Apple",
-      variant: "outline",
-    },
-  ] as const;
-  const lastUsed = providers.find(({ id }) => id === lastUsedMethod);
+  const lastUsed = PROVIDERS.find(({ id }) => id === lastUsedMethod);
 
   return (
     <div className="flex flex-col gap-2.5">
-      {providers.map(({ id, label, variant }) => (
+      {PROVIDERS.map(({ id, label, variant }) => (
         <Button
           className="h-10 w-full text-sm"
           disabled={activeProvider !== null}

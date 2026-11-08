@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Temporal } from "temporal-polyfill";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 
 interface LegalShellProps {
@@ -26,9 +27,8 @@ export function LegalShell({
               {summary}
             </p>
             <p className="text-muted-foreground text-sm">
-              {/* An ISO date: read it as a calendar day, not UTC midnight. */}
               Last updated{" "}
-              {new Date(`${updatedAt}T00:00:00`).toLocaleDateString("en-US", {
+              {Temporal.PlainDate.from(updatedAt).toLocaleString("en-US", {
                 dateStyle: "long",
               })}
             </p>
