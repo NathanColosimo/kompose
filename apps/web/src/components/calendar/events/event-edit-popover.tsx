@@ -242,12 +242,16 @@ function saveScopeState(
 } {
   const changes = saveChanges(pendingSave, series);
   const description = eventSaveDescription(changes);
-  return {
-    description: pendingSave?.colorReset
-      ? `Going back to the calendar's color works on this occurrence only. ${description}`
-      : description,
-    disabled: eventSaveDisabledScopes(changes),
-  };
+  const disabled = eventSaveDisabledScopes(changes);
+  if (!pendingSave?.colorReset) {
+    return { description, disabled };
+  }
+  // With this occurrence off (a calendar move, a new repeat), say what
+  // Save does instead of pointing at a choice that isn't there.
+  const note = disabled.this
+    ? "The series keeps its own color. To go back to the calendar's color, save that on one occurrence by itself."
+    : "Going back to the calendar's color works on this occurrence only.";
+  return { description: `${note} ${description}`, disabled };
 }
 
 export type CloseSaveRequest =
@@ -889,8 +893,6 @@ export function EventEditPopover({
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  /** The scope dialog closed by its Save, for where focus goes next. */
-  const savedFromDialogRef = useRef(false);
   /** Why the last save failed, shown beside Save until the next one. */
   const [saveFailure, setSaveFailure] = useState<string | null>(null);
   // A failure belongs to the save it came from: reopening starts clean.
@@ -1010,7 +1012,6 @@ export function EventEditPopover({
     if (!pendingSave) {
       return;
     }
-    savedFromDialogRef.current = true;
     // The save stays pending until the next one replaces it, so the
     // dialog's words don't change as it fades.
     holdForSave(saveEdits(pendingSave, saveScope), SAVE_FAILURE_MESSAGE);
@@ -1206,14 +1207,12 @@ export function EventEditPopover({
       <RecurrenceScopeDialog
         description={scopeState.description}
         disabledScopes={scopeState.disabled}
-        // Closed by its Save, focus doesn't go back to the editor's Save
-        // button (remounted read-only): to the editor while it's open, else
-        // where the editor's closing put it. On Cancel, back to that button.
+        // Focus goes to the editor while it's open (on Cancel, or a save
+        // still running or failed), else stays where the editor's closing
+        // put it (the event). Radix would return it to the Save button,
+        // which a save remounts, so it would fall to the page, where the
+        // calendar's keys could navigate away from the editor.
         onCloseAutoFocus={(e) => {
-          if (!savedFromDialogRef.current) {
-            return;
-          }
-          savedFromDialogRef.current = false;
           e.preventDefault();
           if (open) {
             contentRef.current?.focus();
