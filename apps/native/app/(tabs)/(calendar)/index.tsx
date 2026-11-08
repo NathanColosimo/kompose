@@ -1482,14 +1482,18 @@ export default function CalendarTab() {
       <TaskEditorSheet
         // Drop the content as soon as it closes rather than animating it out.
         draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
+        isSaving={taskFlow.isSavingStatus}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}
         onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        overlay={<TaskSaveScopeDialog flow={taskFlow} />}
+        savedRecurrence={taskFlow.savedRecurrence}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
+        undatedMember={taskFlow.undatedMember}
       />
 
       <AlertDialog
@@ -1567,7 +1571,6 @@ export default function CalendarTab() {
         title="Delete event"
       />
 
-      <TaskSaveScopeDialog flow={taskFlow} />
       <TaskDeleteScopeDialog flow={taskFlow} />
     </View>
   );
