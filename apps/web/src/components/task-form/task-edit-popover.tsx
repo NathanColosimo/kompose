@@ -534,6 +534,17 @@ export function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
+  /** The editor's focused field when the scope dialog opened. */
+  const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
+  const askScope = useCallback((defaultScope: UpdateScope) => {
+    // Where the user was (the title, Save), for a Cancel to return to.
+    focusBeforeScopeRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setTagScope(defaultScope);
+    setShowTagScopeDialog(true);
+  }, []);
   const { holdOpen, saving } = hold;
   /** Why the last held save failed, shown beside Save until the next one. */
   const [failure, setFailure] = useState<string | null>(null);
@@ -749,8 +760,7 @@ export function TaskEditForm({
       const decision = scopeDecisionFor(values);
       if (decision.action === "prompt") {
         pendingUpdateRef.current = values;
-        setTagScope(decision.defaultScope);
-        setShowTagScopeDialog(true);
+        askScope(decision.defaultScope);
         return;
       }
 
@@ -766,7 +776,7 @@ export function TaskEditForm({
         )
       );
     },
-    [commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
+    [askScope, commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
   );
 
   // Mark done saves unsaved edits with it, so they're never dropped: in one
@@ -785,8 +795,7 @@ export function TaskEditForm({
     if (decision.action === "prompt") {
       pendingUpdateRef.current = values;
       pendingStatusRef.current = status;
-      setTagScope(decision.defaultScope);
-      setShowTagScopeDialog(true);
+      askScope(decision.defaultScope);
       return;
     }
     holdOpen("done", commitWithStatus(values, decision.scope, status));
@@ -799,6 +808,7 @@ export function TaskEditForm({
     scopeDecisionFor,
     task,
     updateTask,
+    askScope,
   ]);
 
   const handleSaveClick = useCallback(
@@ -913,14 +923,25 @@ export function TaskEditForm({
         <RecurrenceScopeDialog
           confirmLabel="Apply"
           description={SCOPE_DIALOG_COPY.saveTask.description}
-          // Focus goes back to the editor (on Cancel, or a save still running
-          // or failed). Radix would return it to Save, which a save
-          // remounts, so it would fall to the page, where the calendar's
-          // keys could navigate away. If the editor closed, it stays where
-          // the closing put it.
+          // The dialog has no trigger to return focus to, and a save
+          // remounts the field it came from, so focus would fall to the
+          // page, where the calendar's keys could navigate away. On Cancel
+          // it goes back where the user was; during a save (or after it
+          // failed), to the editor; once the editor has closed, it stays
+          // where that put it.
           onCloseAutoFocus={(e) => {
             e.preventDefault();
-            hold.editorRef.current?.focus();
+            const editor = hold.editorRef.current;
+            const before = focusBeforeScopeRef.current;
+            if (
+              saving === null &&
+              before?.isConnected &&
+              editor?.contains(before)
+            ) {
+              before.focus();
+              return;
+            }
+            editor?.focus();
           }}
           onConfirm={() => {
             const pendingUpdate = pendingUpdateRef.current;
