@@ -760,6 +760,27 @@ describe("seriesRecurrenceForSave", () => {
     ).toBeUndefined();
   });
 
+  test("moves a kept rule's passed end on and unskips the picked start", () => {
+    // Every 4 hours until Nov 10, its start dragged onto Nov 17 at 9:00,
+    // which was skipped: the end moves three months on, and 9:00 meets.
+    expect(
+      followStart({
+        allDay: false,
+        from: Temporal.PlainDate.from("2026-11-09"),
+        recurrence: [
+          "RRULE:FREQ=HOURLY;INTERVAL=4;UNTIL=20261111T045959Z",
+          "EXDATE;TZID=America/New_York:20261117T090000,20261117T130000",
+        ],
+        timeZone: "America/New_York",
+        to: Temporal.PlainDate.from("2026-11-17"),
+        toTime: Temporal.PlainTime.from("09:00"),
+      })
+    ).toEqual([
+      "RRULE:FREQ=HOURLY;INTERVAL=4;UNTIL=20270218T045959Z",
+      "EXDATE;TZID=America/New_York:20261117T130000",
+    ]);
+  });
+
   test("carries the series' rule with a moved occurrence", () => {
     expect(after()).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=2SA"]);
   });

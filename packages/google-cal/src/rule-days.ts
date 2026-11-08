@@ -257,12 +257,14 @@ const MAX_DAYS = 366 * 50;
  * has no COUNT. COUNT counts these positions, skipped (EXDATE) ones
  * included and added (RDATE) ones not, so a split can say exactly how
  * many are left. The series' first start is its first occurrence, rule
- * day or not (Google counts it so).
+ * day or not (Google counts it so), for a rule at its time
+ * (`countsStart`); another rule counts that day only as one of its own.
  */
 export function countedRuleDays(
   rule: string,
   start: Temporal.PlainDate,
-  count: number
+  count: number,
+  countsStart = true
 ): Temporal.PlainDate[] | null {
   const read = readRule(rule);
   if (!read) {
@@ -271,7 +273,7 @@ export function countedRuleDays(
   const days: Temporal.PlainDate[] = [];
   for (let offset = 0; offset < MAX_DAYS && days.length < count; offset += 1) {
     const day = start.add({ days: offset });
-    if (offset === 0 || matches(read, start, day)) {
+    if ((offset === 0 && countsStart) || matches(read, start, day)) {
       days.push(day);
     }
   }

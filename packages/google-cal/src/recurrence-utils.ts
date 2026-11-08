@@ -359,10 +359,18 @@ export function carryCountExactly(
       used.push(null);
       continue;
     }
-    const positions = countedRuleDays(rule, seriesStartValue.day, count);
     // Each rule meets at its own time (BYHOUR=15 at 15:00); the series'
-    // first start is the first position of a rule at its time.
+    // first start is the first position only of a rule at its time.
     const clock = seriesClock && ruleClock(rule, seriesClock);
+    const atSeriesTime =
+      !(clock && seriesClock) ||
+      Temporal.PlainTime.compare(clock, seriesClock) === 0;
+    const positions = countedRuleDays(
+      rule,
+      seriesStartValue.day,
+      count,
+      atSeriesTime
+    );
     // A position whose time doesn't exist that day (a 2:30 AM meeting on
     // the spring-forward night) is up to Google: count from its list.
     if (
@@ -372,13 +380,10 @@ export function carryCountExactly(
       return null;
     }
     const splitInstant = split.instant;
-    const isBefore = (day: Temporal.PlainDate, offset: number) =>
+    const isBefore = (day: Temporal.PlainDate, position: number) =>
       clock && splitInstant
         ? Temporal.Instant.compare(
-            offset === 0 &&
-              seriesStartValue.instant &&
-              seriesClock &&
-              Temporal.PlainTime.compare(clock, seriesClock) === 0
+            position === 0 && atSeriesTime && seriesStartValue.instant
               ? seriesStartValue.instant
               : day
                   .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })

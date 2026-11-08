@@ -388,6 +388,27 @@ describe("splitting a series", () => {
     ]);
   });
 
+  test("counts the series' start only for a rule at its time", () => {
+    // Mondays at 9:00 (the series' start, Mon Nov 9) and Tuesdays at 15:00:
+    // the Tuesday rule's days are Nov 10, 17, 24, never the Monday start.
+    // Split Tue Nov 17 at 15:00: two Mondays and one Tuesday used.
+    const rules = [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=3",
+    ];
+    expect(
+      carryCountExactly(rules, {
+        masterRecurrence: rules,
+        originalStart: "2026-11-17T15:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2",
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;COUNT=2",
+    ]);
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(

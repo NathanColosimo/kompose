@@ -706,9 +706,14 @@ function savedSeriesRecurrence(
 function matchedRecurrence(
   recurrence: string[] | undefined,
   start: { date?: string; dateTime?: string },
-  timeZone: string
+  timeZone: string,
+  /** The series' start before the edit: which rules share its time. */
+  seriesStart?: { date?: string; dateTime?: string }
 ): string[] | undefined {
-  return recurrence && matchRecurrenceToStart(recurrence, start, timeZone);
+  return (
+    recurrence &&
+    matchRecurrenceToStart(recurrence, start, timeZone, seriesStart)
+  );
 }
 
 /**
@@ -1491,7 +1496,10 @@ export default function CalendarTab() {
         recurrence: matchedRecurrence(
           recurrenceToSend(currentDraft, masterRecurrence),
           startPayload,
-          zone
+          zone,
+          currentDraft.mode === "edit"
+            ? currentDraft.sourceEvent.start
+            : undefined
         ),
         start: startPayload,
         summary: currentDraft.summary.trim(),

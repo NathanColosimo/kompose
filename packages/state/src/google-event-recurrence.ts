@@ -292,6 +292,7 @@ function followedWeekday(
 const BY_SET_POS = /(?:^|;)BYSETPOS=(-?\d)(?:;|$)/;
 const HAS_SET_POS = /(?:^|;)BYSETPOS=/;
 const BY_MONTH = /(?:^|;)BYMONTH=(\d{1,2})(?:;|$)/;
+const UNTIL_PART = /([:;])UNTIL=[^;]+/;
 
 /**
  * The BYSETPOS a rule picks with, when it's one position ("-1"); null when
@@ -382,13 +383,14 @@ export function followStart(params: {
     pattern.end.type === "until"
       ? untilRuleToDay(pattern.end.date, timeZone)
       : null;
-  const end =
+  const movedEnd =
     untilDay && Temporal.PlainDate.compare(untilDay, to) < 0
       ? {
           date: untilRuleForDay(defaultUntilDay(to), allDay, timeZone),
           type: "until" as const,
         }
-      : pattern.end;
+      : null;
+  const end = movedEnd ?? pattern.end;
   const built = buildGoogleEventRecurrenceRule(
     { ...pattern, ...followedDays(rule, pattern, from, to), end },
     rule
@@ -399,18 +401,20 @@ export function followStart(params: {
           match.replace(`=${from.month}`, `=${to.month}`)
         )
       : built;
-  // A rule the editor can't write (hourly, say) is kept as it is.
-  if (!next) {
-    return recurrence;
-  }
+  // A rule the editor can't write (hourly, say) keeps its pattern; only an
+  // end the start passed moves on.
+  const kept =
+    next ??
+    (movedEnd ? rule.replace(UNTIL_PART, `$1UNTIL=${movedEnd.date}`) : rule);
   // Skipped days move with the pattern (also one that follows its start
-  // without naming it, like a plain weekly rule), so none comes back.
+  // without naming it, like a plain weekly rule), so none comes back; the
+  // picked start is never left skipped.
   return moveSkippedDays({
     from,
-    newRule: next,
+    newRule: kept,
     oldRule: rule,
     recurrence:
-      next === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, next),
+      kept === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, kept),
     seriesZone: timeZone,
     to,
     toTime,
