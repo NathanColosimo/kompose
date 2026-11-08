@@ -126,6 +126,9 @@ const fakeGoogle = (
     if (request.method === "DELETE") {
       return new Response(null, { status: 204 });
     }
+    if (request.method === "POST" && path.endsWith("/move")) {
+      return master;
+    }
     if (request.method === "POST") {
       const series = echo(request) as Event;
       created.set(series.id, series);
@@ -1333,5 +1336,105 @@ describe("an occurrence with only its end changed", () => {
       end: { dateTime: "2026-11-30T10:30:00-05:00", timeZone: zone },
       start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
     });
+  });
+});
+
+describe("Entire series through an occurrence keeps that occurrence's day", () => {
+  // Daily 9:00 from Nov 9; Nov 16 was renamed on its own.
+  const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+  const own = {
+    ...occurrenceOf(daily, "2026-11-16T09:00:00-05:00"),
+    summary: "Own",
+  };
+
+  test("a drag to another day moves nothing on its own", async () => {
+    const google = fakeGoogle(daily, [own]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", own, {
+            end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const writes = google.writes();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("a new length dragged to another day reaches it on its own day", async () => {
+    const google = fakeGoogle(daily, [own]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", own, {
+            end: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+    });
+    expect(opened?.body).toMatchObject({
+      end: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+      summary: "Own",
+    });
+  });
+});
+
+describe("This and following from the first meeting is the whole series", () => {
+  const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
+
+  test("deleting it deletes the series", async () => {
+    const google = fakeGoogle(weekly, [first]);
+    expect(
+      Exit.isSuccess(
+        await run(service().deleteEvent("primary", first.id, "following"))
+      )
+    ).toBe(true);
+    const writes = google.writes();
+    expect(writes.map((write) => write.method)).toEqual(["DELETE"]);
+    expect(writes[0]?.url.pathname).toEndWith("/events/series");
+  });
+
+  test("moving it moves the series", async () => {
+    const google = fakeGoogle(weekly, [first]);
+    expect(
+      Exit.isSuccess(
+        await run(service().moveEvent("primary", first.id, "work", "following"))
+      )
+    ).toBe(true);
+    const writes = google.writes();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.url.pathname).toEndWith("/events/series/move");
+    expect(writes[0]?.url.searchParams.get("destination")).toBe("work");
+  });
+
+  test("either is refused with meetings added before it", async () => {
+    const series = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261105T090000",
+      ],
+    };
+    const opened = occurrenceOf(series, "2026-11-09T09:00:00-05:00");
+    const google = fakeGoogle(series, [opened]);
+    const refusals = await Promise.all([
+      refusalOf(service().deleteEvent("primary", opened.id, "following")),
+      refusalOf(service().moveEvent("primary", opened.id, "work", "following")),
+    ]);
+    for (const refusal of refusals) {
+      expect(refusal).toMatchObject({ data: { reason: "addedBeforeStart" } });
+    }
+    expect(google.writes()).toEqual([]);
   });
 });

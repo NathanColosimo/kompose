@@ -336,6 +336,40 @@ function entireSeriesTimes(
 }
 
 /**
+ * An Entire series edit's times for the occurrence it was made through:
+ * the edit's time of day and length (read in the series' zone) on the
+ * occurrence's own day, as the series keeps its dates. The edit's times
+ * as they are when either is all day.
+ */
+function timesOnOwnDay(
+  occurrence: Event,
+  edited: CreateEvent,
+  master: Event
+): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
+  const start = inSeriesZone(edited.start, master.start);
+  const end = inSeriesZone(edited.end, master.end);
+  const day = startInstant(occurrence.start, zone)
+    ?.toZonedDateTimeISO(zone)
+    .toPlainDate();
+  const from = startInstant(start, zone);
+  const to = startInstant(end, zone);
+  if (!(day && from && to)) {
+    return { end, start };
+  }
+  const at = day.toZonedDateTime({
+    plainTime: from.toZonedDateTimeISO(zone).toPlainTime(),
+    timeZone: zone,
+  });
+  const written = (time: Temporal.ZonedDateTime) =>
+    time.toString({ smallestUnit: "second", timeZoneName: "never" });
+  return {
+    end: { ...end, dateTime: written(at.add(from.until(to))) },
+    start: { ...start, dateTime: written(at) },
+  };
+}
+
+/**
  * Whether `start` moves the time of day of a series that meets several
  * times a day. It has a rule per time, so its start's time can't move
  * without moving one of them onto another's, or off its own.
@@ -1557,7 +1591,10 @@ export function makeGoogleCalendarService(
     const { changes, edited, master, occurrence } = params;
     const zone = seriesZoneOf(master);
     const own = changesOwnTo(occurrence, master, {}, zone);
-    const retimed = !keepsTimes(edited, occurrence, zone);
+    // The edit's time of day and length, on the occurrence's own day: the
+    // series keeps its dates, and so does it.
+    const times = timesOnOwnDay(occurrence, edited, master);
+    const retimed = !keepsTimes(times, occurrence, zone);
     const overridden = Object.keys(changes).some((field) => field in own);
     // One that is just the series' own follows the series.
     const setsOwn = Object.keys(own).length > 0;
@@ -1567,34 +1604,23 @@ export function makeGoogleCalendarService(
     return updateEventThis(
       params.calendarId,
       occurrence.id,
-      {
-        ...sanitizeEventPayload(occurrence),
-        ...changes,
-        ...(retimed
-          ? {
-              end: inSeriesZone(edited.end, master.end),
-              start: inSeriesZone(edited.start, master.start),
-            }
-          : {}),
-      },
+      { ...sanitizeEventPayload(occurrence), ...changes, ...times },
       occurrence
     ).pipe(Effect.asVoid);
   };
 
   /**
-   * "This and following" from a series' first meeting is "Entire series",
-   * from its (possibly moved) date, unless meetings were added before it:
-   * those aren't "following", so it's refused.
+   * "This and following" from a series' first meeting is the whole series
+   * (a cut before its start would leave that meeting), unless meetings
+   * were added before it: those aren't "following", so it's refused.
    */
-  const updateFromFirstMeeting = (
-    calendarId: string,
-    edited: CreateEvent,
-    currentEvent: Event,
-    master: Event
-  ) =>
+  const wholeSeriesFromStart = <A, E>(
+    master: Event,
+    whole: Effect.Effect<A, E>
+  ): Effect.Effect<A, E | GoogleApiError> =>
     addsBeforeStart(master.recurrence ?? [], master.start, seriesZoneOf(master))
       ? Effect.fail(refused({ reason: "addedBeforeStart" }))
-      : updateEventAll(calendarId, edited, currentEvent, master);
+      : whole;
 
   const updateEventFollowing = (
     calendarId: string,
@@ -1611,11 +1637,9 @@ export function makeGoogleCalendarService(
         );
       }
       if (opensSeries(currentEvent, master)) {
-        return yield* updateFromFirstMeeting(
-          calendarId,
-          edited,
-          currentEvent,
-          master
+        return yield* wholeSeriesFromStart(
+          master,
+          updateEventAll(calendarId, edited, currentEvent, master)
         );
       }
       const zone = seriesZoneOf(master);
@@ -1786,6 +1810,13 @@ export function makeGoogleCalendarService(
         );
       }
 
+      if (opensSeries(instance, master)) {
+        return yield* wholeSeriesFromStart(
+          master,
+          deleteEventAll(calendarId, master.id)
+        );
+      }
+
       const originalStartIso = originalStartOf(instance, seriesZoneOf(master));
 
       if (!originalStartIso) {
@@ -1901,6 +1932,13 @@ export function makeGoogleCalendarService(
           new GoogleApiError({
             cause: new Error("Event is not a recurring event"),
           })
+        );
+      }
+
+      if (opensSeries(instance, master)) {
+        return yield* wholeSeriesFromStart(
+          master,
+          moveSingleEvent(calendarId, master.id, destinationCalendarId)
         );
       }
 

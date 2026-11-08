@@ -67,6 +67,41 @@ function writtenEventIds(
     : [eventId];
 }
 
+/**
+ * Clears what a write through `eventId` may have changed (the calendars'
+ * event lists, the event and its series) and tells the user's windows.
+ * Run whether the write succeeded or not: a series write can change
+ * Google and still fail part way.
+ */
+const refreshAfterWrite = Effect.fn("refreshAfterWrite")(function* (params: {
+  accountId: string;
+  /** The event's calendar first, then any other the write touched. */
+  calendarIds: [string, ...string[]];
+  event: { recurringEventId?: string };
+  eventId: string;
+  userId: string;
+}) {
+  const { accountId, calendarIds, userId } = params;
+  const cache = yield* GoogleCalendarCacheService;
+  yield* Effect.all(
+    [
+      ...calendarIds.map((calendarId) =>
+        cache.invalidateEventLists(userId, accountId, calendarId)
+      ),
+      ...writtenEventIds(params.eventId, params.event).map((eventId) =>
+        cache.invalidateEvent(userId, accountId, calendarIds[0], eventId)
+      ),
+    ],
+    { concurrency: "unbounded", discard: true }
+  );
+  yield* Effect.all(
+    calendarIds.map((calendarId) =>
+      publishGoogleCalendarEvent(userId, accountId, calendarId)
+    ),
+    { concurrency: "unbounded", discard: true }
+  );
+});
+
 const ensureGoogleEventEditable = (event: {
   id: string;
   description?: string;
@@ -246,7 +281,6 @@ export const googleCalRouter = os.router({
     }),
 
     delete: os.events.delete.effect(function* ({ input, context }) {
-      const cache = yield* GoogleCalendarCacheService;
       const google = yield* getGoogleCalendar(context.user.id, input.accountId);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
@@ -254,32 +288,19 @@ export const googleCalRouter = os.router({
       );
       yield* ensureGoogleEventEditable(currentEvent);
 
-      yield* google.deleteEvent(input.calendarId, input.eventId, input.scope);
-
-      yield* Effect.all(
-        [
-          cache.invalidateEventLists(
-            context.user.id,
-            input.accountId,
-            input.calendarId
-          ),
-          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
-            cache.invalidateEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId,
-              eventId
-            )
-          ),
-        ],
-        { concurrency: "unbounded", discard: true }
-      );
-
-      yield* publishGoogleCalendarEvent(
-        context.user.id,
-        input.accountId,
-        input.calendarId
-      );
+      yield* google
+        .deleteEvent(input.calendarId, input.eventId, input.scope)
+        .pipe(
+          Effect.ensuring(
+            refreshAfterWrite({
+              accountId: input.accountId,
+              calendarIds: [input.calendarId],
+              event: currentEvent,
+              eventId: input.eventId,
+              userId: context.user.id,
+            })
+          )
+        );
 
       return null;
     }),
@@ -352,7 +373,6 @@ export const googleCalRouter = os.router({
     }),
 
     move: os.events.move.effect(function* ({ input, context }) {
-      const cache = yield* GoogleCalendarCacheService;
       const google = yield* getGoogleCalendar(context.user.id, input.accountId);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
@@ -360,58 +380,29 @@ export const googleCalRouter = os.router({
       );
       yield* ensureGoogleEventEditable(currentEvent);
 
-      const event = yield* google.moveEvent(
-        input.calendarId,
-        input.eventId,
-        input.destinationCalendarId,
-        input.scope
-      );
-
-      yield* Effect.all(
-        [
-          cache.invalidateEventLists(
-            context.user.id,
-            input.accountId,
-            input.calendarId
-          ),
-          cache.invalidateEventLists(
-            context.user.id,
-            input.accountId,
-            input.destinationCalendarId
-          ),
-          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
-            cache.invalidateEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId,
-              eventId
-            )
-          ),
-        ],
-        { concurrency: "unbounded", discard: true }
-      );
-
-      yield* Effect.all(
-        [
-          publishGoogleCalendarEvent(
-            context.user.id,
-            input.accountId,
-            input.calendarId
-          ),
-          publishGoogleCalendarEvent(
-            context.user.id,
-            input.accountId,
-            input.destinationCalendarId
-          ),
-        ],
-        { concurrency: "unbounded", discard: true }
-      );
+      const event = yield* google
+        .moveEvent(
+          input.calendarId,
+          input.eventId,
+          input.destinationCalendarId,
+          input.scope
+        )
+        .pipe(
+          Effect.ensuring(
+            refreshAfterWrite({
+              accountId: input.accountId,
+              calendarIds: [input.calendarId, input.destinationCalendarId],
+              event: currentEvent,
+              eventId: input.eventId,
+              userId: context.user.id,
+            })
+          )
+        );
 
       return event;
     }),
 
     update: os.events.update.effect(function* ({ input, context }) {
-      const cache = yield* GoogleCalendarCacheService;
       const google = yield* getGoogleCalendar(context.user.id, input.accountId);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
@@ -419,38 +410,25 @@ export const googleCalRouter = os.router({
       );
       yield* ensureGoogleEventEditable(currentEvent);
 
-      const event = yield* google.updateEvent(
-        input.calendarId,
-        input.eventId,
-        input.event,
-        input.scope,
-        currentEvent
-      );
-
-      yield* Effect.all(
-        [
-          cache.invalidateEventLists(
-            context.user.id,
-            input.accountId,
-            input.calendarId
-          ),
-          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
-            cache.invalidateEvent(
-              context.user.id,
-              input.accountId,
-              input.calendarId,
-              eventId
-            )
-          ),
-        ],
-        { concurrency: "unbounded", discard: true }
-      );
-
-      yield* publishGoogleCalendarEvent(
-        context.user.id,
-        input.accountId,
-        input.calendarId
-      );
+      const event = yield* google
+        .updateEvent(
+          input.calendarId,
+          input.eventId,
+          input.event,
+          input.scope,
+          currentEvent
+        )
+        .pipe(
+          Effect.ensuring(
+            refreshAfterWrite({
+              accountId: input.accountId,
+              calendarIds: [input.calendarId],
+              event: currentEvent,
+              eventId: input.eventId,
+              userId: context.user.id,
+            })
+          )
+        );
 
       return event;
     }),
