@@ -220,6 +220,22 @@ function RecurrenceRow({
 }
 
 /**
+ * The pattern the repeat row shows. While it can't be used, that's still
+ * the series' last known one (a cached copy the form hasn't taken), dimmed:
+ * for display only, as the form and a save keep their own.
+ */
+function recurrenceShown(
+  disabled: boolean,
+  recurrence: string[],
+  masterRecurrence: string[] | undefined
+): string[] {
+  if (disabled && recurrence.length === 0) {
+    return masterRecurrence ?? [];
+  }
+  return recurrence;
+}
+
+/**
  * The repeat row, or, when the series' rule didn't load, a retry: its
  * repeat can't be edited from a copy that may be old. A copy already shown
  * stays, dimmed, above the retry.
@@ -1438,6 +1454,11 @@ export function EventEditorSheet({
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
   const recurrenceDisabled = masterLoading;
+  const shownRecurrence = recurrenceShown(
+    recurrenceDisabled,
+    recurrence,
+    masterRecurrence
+  );
 
   const primaryRule = getPrimaryRecurrenceRule(recurrence);
   const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
@@ -1528,7 +1549,7 @@ export function EventEditorSheet({
       isExpanded={isRecurrenceExpanded}
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
-      recurrence={recurrence}
+      recurrence={shownRecurrence}
       rule={primaryRule}
       // The start's day in the series' zone: its repeat's days count there.
       startDate={dayInZone(
@@ -1686,7 +1707,7 @@ export function EventEditorSheet({
         <RepeatSection
           editor={recurrenceEditor}
           failed={masterFailed}
-          hasRule={recurrence.length > 0}
+          hasRule={shownRecurrence.length > 0}
           onRetry={onRetryMaster}
         />
 
