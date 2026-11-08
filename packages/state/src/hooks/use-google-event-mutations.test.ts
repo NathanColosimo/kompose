@@ -277,34 +277,92 @@ test("a failed optimistic update keeps a newer copy of the event", async () => {
 
 // --- create ---
 
-test("a failed create takes back only the event it added", async () => {
+const lunch: CreateEventInput = {
+  ...calendar,
+  event: {
+    end: { dateTime: "2026-11-09T12:30:00-05:00" },
+    start: { dateTime: "2026-11-09T12:00:00-05:00" },
+    summary: "Lunch",
+  },
+};
+
+/**
+ * A create of `input` with the editor's `held` options, which the server
+ * answers with `answer` after the realtime sync brings another event; and
+ * what the server was sent, what the app was told, November's list while
+ * it was sent, and after.
+ */
+async function create(params: {
+  answer: () => Promise<unknown>;
+  held?: { failureMessage?: string; quiet?: boolean };
+  input?: CreateEventInput;
+}) {
+  const told: Error[] = [];
   const queryClient = new QueryClient();
   queryClient.setQueryData(november, [{ id: "other" }]);
-  const server = stubbedServer(queryClient, "create", refused, () =>
+  const server = stubbedServer(queryClient, "create", params.answer, () =>
     anotherEvent(queryClient)
   );
   const observer = new MutationObserver(
     queryClient,
     createGoogleEventMutationOptions(queryClient, {
-      notifyError: () => undefined,
+      notifyError: (error) => told.push(error),
       orpc: server.orpc,
     })
   );
-  const lunch: CreateEventInput = {
-    ...calendar,
-    event: {
-      end: { dateTime: "2026-11-09T12:30:00-05:00" },
-      start: { dateTime: "2026-11-09T12:00:00-05:00" },
-      summary: "Lunch",
-    },
+  await observer
+    .mutate({ ...(params.input ?? lunch), ...params.held })
+    .catch(() => undefined);
+  return {
+    after: queryClient.getQueryData(november),
+    sent: server.sent,
+    told,
+    whileSent: server.whileSent,
   };
-  await observer.mutate(lunch).catch(() => undefined);
+}
+
+test("a create sends the event, not the editor's options", async () => {
+  const { sent } = await create({
+    answer: refused,
+    held: { failureMessage: "x", quiet: true },
+  });
+  expect(sent).toEqual([lunch]);
+});
+
+test("a failed create says what failed, in the editor's words, unless quiet", async () => {
+  const { told } = await create({
+    answer: refused,
+    held: { failureMessage: "Couldn't create it." },
+  });
+  expect(told.map((error) => error.message)).toEqual(["Couldn't create it."]);
+  expect(told[0]?.cause).toEqual(new Error("refused"));
+  const { told: quiet } = await create({
+    answer: refused,
+    held: { quiet: true },
+  });
+  expect(quiet).toEqual([]);
+});
+
+test("a failed create takes back only the event it added", async () => {
+  const { after, whileSent } = await create({ answer: refused });
   // The stand-in showed while the create was out.
-  expect(server.whileSent).toEqual([
+  expect(whileSent).toEqual([
     [{ id: "other" }, expect.objectContaining({ summary: "Lunch" })],
   ]);
-  expect(queryClient.getQueryData(november)).toEqual([
-    { id: "other" },
-    { id: "new" },
-  ]);
+  expect(after).toEqual([{ id: "other" }, { id: "new" }]);
+});
+
+test("a create's stand-in gives way to the server's copy", async () => {
+  const saved = { ...lunch.event, id: "lunch" };
+  const { after } = await create({ answer: () => Promise.resolve(saved) });
+  expect(after).toEqual([{ id: "other" }, saved, { id: "new" }]);
+});
+
+test("a repeating create shows no stand-in: its meetings come with the refetch", async () => {
+  const weekly: CreateEventInput = {
+    ...lunch,
+    event: { ...lunch.event, recurrence: ["RRULE:FREQ=WEEKLY"] },
+  };
+  const { whileSent } = await create({ answer: refused, input: weekly });
+  expect(whileSent).toEqual([[{ id: "other" }]]);
 });
