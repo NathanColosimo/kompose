@@ -171,4 +171,37 @@ describe("seriesTimesForEdit", () => {
       start: { dateTime: "2026-10-06T10:00:00+09:00", timeZone: tokyo },
     });
   });
+
+  test("an edit written in another zone without an offset keeps its moment", () => {
+    // 09:00 in Tokyo on Nov 11 is 19:00 New York on Nov 10, the same
+    // whether it's written with its offset or without one.
+    const occurrenceStart = {
+      dateTime: "2026-11-10T09:00:00-05:00",
+      timeZone: zone,
+    };
+    const occurrenceEnd = {
+      dateTime: "2026-11-10T09:30:00-05:00",
+      timeZone: zone,
+    };
+    const edit = (start: string, end: string) =>
+      seriesTimesForEdit({
+        editedEnd: { dateTime: end, timeZone: "Asia/Tokyo" },
+        editedStart: { dateTime: start, timeZone: "Asia/Tokyo" },
+        masterEnd,
+        masterStart,
+        occurrenceEnd,
+        occurrenceStart,
+      });
+    const withOffset = edit(
+      "2026-11-11T09:00:00+09:00",
+      "2026-11-11T09:30:00+09:00"
+    );
+    expect(edit("2026-11-11T09:00:00", "2026-11-11T09:30:00")).toEqual(
+      withOffset
+    );
+    expect(withOffset?.start).toEqual({
+      dateTime: "2026-10-06T19:00:00-04:00",
+      timeZone: zone,
+    });
+  });
 });

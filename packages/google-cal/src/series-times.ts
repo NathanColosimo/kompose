@@ -47,12 +47,22 @@ function zoneOf(edited: EventTime, master: EventTime): string {
   );
 }
 
+/**
+ * The moment a Google time names: a date-time without an offset is read in
+ * its own time zone (as Google does), or `fallback` when it has none.
+ */
+function momentOf(time: EventTime, fallback: string): Temporal.Instant | null {
+  return time.dateTime
+    ? instantOf(time.dateTime, time.timeZone ?? fallback)
+    : null;
+}
+
 /** The local day `time` falls on, in `timeZone`. */
 function dayIn(time: EventTime, timeZone: string): Temporal.PlainDate | null {
   if (time.date) {
     return Temporal.PlainDate.from(time.date);
   }
-  const instant = time.dateTime ? instantOf(time.dateTime, timeZone) : null;
+  const instant = momentOf(time, timeZone);
   return instant ? instant.toZonedDateTimeISO(timeZone).toPlainDate() : null;
 }
 
@@ -61,8 +71,8 @@ function lengthMs(
   end: EventTime,
   timeZone: string
 ): number | null {
-  const from = start.dateTime ? instantOf(start.dateTime, timeZone) : null;
-  const to = end.dateTime ? instantOf(end.dateTime, timeZone) : null;
+  const from = momentOf(start, timeZone);
+  const to = momentOf(end, timeZone);
   return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
 }
 
@@ -76,8 +86,8 @@ function sameTime(a: EventTime, b: EventTime, timeZone: string): boolean {
   if (a.date || b.date) {
     return a.date === b.date;
   }
-  const from = a.dateTime ? instantOf(a.dateTime, timeZone) : null;
-  const to = b.dateTime ? instantOf(b.dateTime, timeZone) : null;
+  const from = momentOf(a, timeZone);
+  const to = momentOf(b, timeZone);
   return Boolean(from && to && Temporal.Instant.compare(from, to) === 0);
 }
 
@@ -123,9 +133,9 @@ export function seriesTimesForEdit(params: {
       start: { date: day.toString() },
     };
   }
-  const editedInstant = editedStart.dateTime
-    ? instantOf(editedStart.dateTime, timeZone)
-    : null;
+  // Read in its own zone, then projected onto the series' first day in
+  // the series' zone.
+  const editedInstant = momentOf(editedStart, timeZone);
   if (!editedInstant) {
     return null;
   }
