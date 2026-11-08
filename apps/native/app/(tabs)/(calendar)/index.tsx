@@ -69,10 +69,7 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import {
-  TaskDeleteScopeDialog,
-  TaskSaveScopeDialog,
-} from "@/components/tasks/task-scope-dialogs";
+import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -1480,20 +1477,20 @@ export default function CalendarTab() {
       </BottomSheet>
 
       <TaskEditorSheet
+        canSave={taskFlow.canSave}
         // Drop the content as soon as it closes rather than animating it out.
         draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
-        isSaving={taskFlow.isSavingStatus}
+        isSaving={taskFlow.isSaving}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}
         onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
-        overlay={<TaskSaveScopeDialog flow={taskFlow} />}
-        savedRecurrence={taskFlow.savedRecurrence}
+        overlay={<TaskScopeDialogs flow={taskFlow} />}
+        series={taskFlow.series}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
-        undatedMember={taskFlow.undatedMember}
       />
 
       <AlertDialog
@@ -1570,8 +1567,6 @@ export default function CalendarTab() {
         }}
         title="Delete event"
       />
-
-      <TaskDeleteScopeDialog flow={taskFlow} />
     </View>
   );
 }

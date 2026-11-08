@@ -24,7 +24,10 @@ export function SettingsSection({
   return (
     <View className="mb-7 gap-2.5">
       <View className="gap-0.5 px-1">
-        <Text className="font-sans-medium text-base text-foreground">
+        <Text
+          accessibilityRole="header"
+          className="font-sans-medium text-base text-foreground"
+        >
           {title}
         </Text>
         {description ? (
@@ -71,14 +74,12 @@ export function SettingsRow({
           </Text>
         </View>
       )}
+      {/* Names and emails wrap rather than truncate: two similar accounts
+          must stay tellable apart beside Unlink, at any text size. */}
       <View className="min-w-0 flex-1">
-        <Text className="text-foreground text-sm" numberOfLines={1}>
-          {name}
-        </Text>
+        <Text className="text-foreground text-sm">{name}</Text>
         {detail ? (
-          <Text className="text-muted-foreground text-xs" numberOfLines={1}>
-            {detail}
-          </Text>
+          <Text className="text-muted-foreground text-xs">{detail}</Text>
         ) : null}
       </View>
       {action}

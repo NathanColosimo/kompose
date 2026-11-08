@@ -24,27 +24,13 @@ import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import {
-  TaskDeleteScopeDialog,
-  TaskSaveScopeDialog,
-} from "@/components/tasks/task-scope-dialogs";
+import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
-
-function formatPlainDateShort(date: Temporal.PlainDate): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(plainDateToDate(date));
-}
-
-// Convert a plain date into a JS Date using the device's local timezone.
-function plainDateToDate(plainDate: Temporal.PlainDate): Date {
-  return new Date(`${plainDate.toString()}T00:00:00`);
-}
+import { formatShortDate, spokenDuration } from "@/lib/time-format";
 
 interface TaskSection {
   data: TaskSelectDecoded[];
@@ -123,6 +109,7 @@ function TaskRow({
   item,
   onPress,
   onToggleStatus,
+  timeZone,
   today,
 }: {
   /** In a tag's own list, rows don't repeat that tag. */
@@ -130,6 +117,7 @@ function TaskRow({
   item: TaskSelectDecoded;
   onPress: (task: TaskSelectDecoded) => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
+  timeZone: string;
   today: Temporal.PlainDate;
 }) {
   const tags = item.tags.filter((tag) => tag.id !== hiddenTagId);
@@ -137,7 +125,7 @@ function TaskRow({
     item.startDate && item.startTime
       ? item.startDate.toZonedDateTime({
           plainTime: item.startTime,
-          timeZone: getSystemTimeZone(),
+          timeZone,
         })
       : null;
   const isDone = item.status === "done";
@@ -149,9 +137,13 @@ function TaskRow({
   return (
     <View className="flex-row items-start gap-3 border-border/70 border-b py-3">
       <Checkbox
-        accessibilityLabel={isDone ? "Mark as not done" : "Mark as done"}
+        accessibilityLabel={`Done: ${item.title}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isDone }}
         checked={isDone}
         className="mt-0.5"
+        // 26 by 34pt; the slop makes the target 44pt.
+        hitSlop={{ bottom: 5, left: 9, right: 9, top: 5 }}
         onCheckedChange={() => onToggleStatus(item)}
       />
 
@@ -169,7 +161,10 @@ function TaskRow({
         <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
           <View className="flex-row items-center gap-1">
             <Icon as={Clock} className="text-muted-foreground" size={12} />
-            <Text className="text-muted-foreground text-xs">
+            <Text
+              accessibilityLabel={spokenDuration(item.durationMinutes)}
+              className="text-muted-foreground text-xs"
+            >
               {formatDuration(item.durationMinutes)}
             </Text>
           </View>
@@ -197,7 +192,7 @@ function TaskRow({
               <Text
                 className={`text-xs ${isPastDue ? "text-destructive" : "text-muted-foreground"}`}
               >
-                Due {formatPlainDateShort(item.dueDate)}
+                Due {formatShortDate(item.dueDate)}
               </Text>
             </View>
           ) : null}
@@ -234,6 +229,7 @@ interface TaskListProps {
   onPressTask: (task: TaskSelectDecoded) => void;
   onRefresh: () => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
+  timeZone: string;
   tintColor: string;
 }
 
@@ -243,12 +239,13 @@ function TaskList({
   hiddenTagId,
   isLoading,
   isRefreshing,
+  timeZone,
   tintColor,
   onRefresh,
   onPressTask,
   onToggleStatus,
 }: TaskListProps) {
-  const today = Temporal.Now.plainDateISO(getSystemTimeZone());
+  const today = Temporal.Now.plainDateISO(timeZone);
   return (
     <FlatList
       contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
@@ -271,7 +268,12 @@ function TaskList({
       }
       renderItem={({ item }) =>
         item.type === "header" ? (
-          <View className="flex-row items-baseline gap-1.5 pt-5 pb-1">
+          <View
+            accessibilityLabel={`${item.title}, ${item.count} ${item.count === 1 ? "task" : "tasks"}`}
+            accessibilityRole="header"
+            accessible
+            className="flex-row items-baseline gap-1.5 pt-5 pb-1"
+          >
             <Text
               className={`font-sans-medium text-sm ${item.tone === "overdue" ? "text-destructive" : "text-muted-foreground"}`}
             >
@@ -285,6 +287,7 @@ function TaskList({
             item={item.task}
             onPress={onPressTask}
             onToggleStatus={onToggleStatus}
+            timeZone={timeZone}
             today={today}
           />
         )
@@ -417,9 +420,15 @@ export default function TasksScreen() {
             <View className="flex-row items-center gap-1.5 pr-2">
               <Pressable
                 accessibilityLabel="Show inbox tasks"
+                accessibilityRole="tab"
+                accessibilityState={{
+                  selected: !isTagView && activeTab === "Inbox",
+                }}
                 className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
                   !isTagView && activeTab === "Inbox" ? "bg-foreground/15" : ""
                 }`}
+                // 32pt to sit in the header's glass; the slop makes 44pt.
+                hitSlop={{ bottom: 6, top: 6 }}
                 onPress={() => selectBaseTab("Inbox")}
               >
                 <Text
@@ -434,9 +443,15 @@ export default function TasksScreen() {
               </Pressable>
               <Pressable
                 accessibilityLabel="Show today tasks"
+                accessibilityRole="tab"
+                accessibilityState={{
+                  selected: !isTagView && activeTab === "Today",
+                }}
                 className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
                   !isTagView && activeTab === "Today" ? "bg-foreground/15" : ""
                 }`}
+                // 32pt to sit in the header's glass; the slop makes 44pt.
+                hitSlop={{ bottom: 6, top: 6 }}
                 onPress={() => selectBaseTab("Today")}
               >
                 <Text
@@ -471,26 +486,25 @@ export default function TasksScreen() {
         onPressTask={taskFlow.openEdit}
         onRefresh={handleRefresh}
         onToggleStatus={handleToggleStatus}
+        timeZone={timeZone}
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
       />
 
       <TaskEditorSheet
+        canSave={taskFlow.canSave}
         draft={taskFlow.draft}
-        isSaving={taskFlow.isSavingStatus}
+        isSaving={taskFlow.isSaving}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}
         onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
-        overlay={<TaskSaveScopeDialog flow={taskFlow} />}
-        savedRecurrence={taskFlow.savedRecurrence}
+        overlay={<TaskScopeDialogs flow={taskFlow} />}
+        series={taskFlow.series}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
-        undatedMember={taskFlow.undatedMember}
       />
-
-      <TaskDeleteScopeDialog flow={taskFlow} />
 
       <TagManagerPopover
         onChange={setSelectedTagId}

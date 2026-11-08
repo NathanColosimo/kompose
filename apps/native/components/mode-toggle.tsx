@@ -28,7 +28,7 @@ export function ModeToggle() {
             accessibilityLabel={label}
             accessibilityRole="radio"
             accessibilityState={{ checked: selected }}
-            className={`flex-1 flex-row items-center justify-center gap-1.5 rounded-lg py-2 active:opacity-70 ${selected ? "bg-muted" : ""}`}
+            className={`min-h-11 flex-1 flex-row items-center justify-center gap-1.5 rounded-lg py-2 active:opacity-70 ${selected ? "bg-muted" : ""}`}
             key={value}
             onPress={() => setColorScheme(value)}
           >
