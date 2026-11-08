@@ -1979,3 +1979,77 @@ describe("a skipped added meeting the save removes, its skip in the rule", () =>
     }
   );
 });
+
+describe("a removed added day's skip the saved series still needs", () => {
+  test.each([["all"], ["following"]] as const)(
+    "stays when the saved rule meets there (%s)",
+    async (scope) => {
+      // Mondays plus an added Tue Dec 1 9:00, deleted on its own; the save
+      // makes it Mondays and Tuesdays and drops the added day. Dec 1 9:00
+      // is the rule's now, and stays deleted.
+      const series: Event = {
+        ...weekly,
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261201T090000",
+        ],
+      };
+      const deleted: Event = {
+        ...occurrenceOf(series, "2026-12-01T09:00:00-05:00"),
+        status: "cancelled",
+      };
+      const google = fakeGoogle(series, [deleted]);
+      const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU",
+        "EXDATE:20261201T140000Z",
+      ]);
+    }
+  );
+
+  test.each([["all"], ["following"]] as const)(
+    "stays as a date when the series is made all day (%s)",
+    async (scope) => {
+      // Mondays 9:00 plus an added Nov 30 15:00, both Nov 30 meetings
+      // skipped. Made all day, the client sends the day skipped as a date
+      // and the added day dropped: Nov 30 stays skipped.
+      const series: Event = {
+        ...weekly,
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RDATE;TZID=America/New_York:20261130T150000",
+          "EXDATE;TZID=America/New_York:20261130T090000,20261130T150000",
+        ],
+      };
+      const google = fakeGoogle(series);
+      const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              end: { date: "2026-11-17" },
+              recurrence: [
+                "RRULE:FREQ=WEEKLY;BYDAY=MO",
+                "EXDATE;VALUE=DATE:20261130",
+              ],
+              start: { date: "2026-11-16" },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "EXDATE;VALUE=DATE:20261130",
+      ]);
+    }
+  );
+});

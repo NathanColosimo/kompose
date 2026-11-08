@@ -38,6 +38,7 @@ import {
 import { seriesTimesForEdit } from "./series-times";
 import {
   DATE_ONLY,
+  googleDateTime,
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
   parseDateList,
@@ -85,9 +86,7 @@ function seriesSlotAt(
   const length = from && to ? from.until(to) : new Temporal.Duration();
   const start = Temporal.Instant.from(originalStart);
   const written = (moment: Temporal.Instant) =>
-    moment
-      .toZonedDateTimeISO(zone)
-      .toString({ smallestUnit: "second", timeZoneName: "never" });
+    googleDateTime(moment.toZonedDateTimeISO(zone));
   return {
     end: {
       dateTime: written(start.add(length)),
@@ -204,9 +203,7 @@ function takeTimedSkips(
     if (values.length > 0 && moments.length === values.length) {
       skips.push(
         ...moments.map((moment) =>
-          moment
-            .toZonedDateTimeISO(zone)
-            .toString({ smallestUnit: "second", timeZoneName: "never" })
+          googleDateTime(moment.toZonedDateTimeISO(zone))
         )
       );
     } else {
@@ -234,9 +231,7 @@ function keepingSkips(
     const kept = list.values.filter((value) => {
       const read = readRecurrenceValue(value, list.zone, zone);
       const slot = read?.instant
-        ? read.instant
-            .toZonedDateTimeISO(zone)
-            .toString({ smallestUnit: "second", timeZoneName: "never" })
+        ? googleDateTime(read.instant.toZonedDateTimeISO(zone))
         : read?.day.toString();
       return !slot || keep(slot);
     });
@@ -288,12 +283,22 @@ function lineUpRule(params: {
       start: master.start,
     }) !== false;
   // A deleted added (RDATE) meeting the save removes has nothing left to
-  // skip (unless a rule met there too): kept, its skip would be lined up
-  // onto that day's other meeting.
+  // skip, unless a rule (the old series' or the saved one's) or the start
+  // meets there: kept, its timed skip would be lined up onto that day's
+  // other meeting.
+  const savedRules = params.rule.filter((line) => line.startsWith("RRULE:"));
   const stillMeets = (slot: string) =>
+    // A date skips the whole day, whatever meets on it.
+    DATE_ONLY.test(slot) ||
     !addsSlot(before, slot, zone) ||
     addsSlot(params.rule, slot, zone) ||
-    ruleMetAt(slot);
+    ruleMetAt(slot) ||
+    seriesMeetsAt({
+      recurrence: savedRules,
+      seriesZone: zone,
+      slot,
+      start: master.start,
+    }) !== false;
   const cancelled = params.cancelled.filter(stillMeets);
   const rule = keepingSkips(params.rule, zone, stillMeets);
   const change = timeOfDayChange(master, start);
@@ -321,11 +326,12 @@ function lineUpRule(params: {
     const ruleMet = !added || ruleMetAt(slot);
     if (ruleMet) {
       atNewTime.push(
-        moment
-          .toZonedDateTimeISO(zone)
-          .toPlainDate()
-          .toZonedDateTime({ plainTime: change.to, timeZone: zone })
-          .toString({ smallestUnit: "second", timeZoneName: "never" })
+        googleDateTime(
+          moment
+            .toZonedDateTimeISO(zone)
+            .toPlainDate()
+            .toZonedDateTime({ plainTime: change.to, timeZone: zone })
+        )
       );
     }
   }
@@ -495,9 +501,7 @@ function inSeriesZone<
   }
   const moment = startInstant(time, series.timeZone);
   const dateTime = moment
-    ? moment
-        .toZonedDateTimeISO(series.timeZone)
-        .toString({ smallestUnit: "second", timeZoneName: "never" })
+    ? googleDateTime(moment.toZonedDateTimeISO(series.timeZone))
     : time.dateTime;
   return { ...time, dateTime, timeZone: series.timeZone };
 }
@@ -514,11 +518,8 @@ function slotOf(
   if (start.date) {
     return start.date;
   }
-  return (
-    startInstant(start, zone)
-      ?.toZonedDateTimeISO(zone)
-      .toString({ smallestUnit: "second", timeZoneName: "never" }) ?? null
-  );
+  const moment = startInstant(start, zone);
+  return moment ? googleDateTime(moment.toZonedDateTimeISO(zone)) : null;
 }
 
 /** An occurrence's original start: the slot it holds in its series. */
