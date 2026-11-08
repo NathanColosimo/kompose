@@ -2053,3 +2053,36 @@ describe("a removed added day's skip the saved series still needs", () => {
     }
   );
 });
+
+describe("This and following: a removed added day the new rule reaches from the split", () => {
+  test.each([
+    ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TU"],
+    ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU;COUNT=6"],
+  ])("keeps its skip (%s)", async (rule) => {
+    // Mondays from Nov 9 plus an added Tue Dec 1 9:00, deleted on its own.
+    // From Nov 16 the new rule meets Dec 1 (counted from Nov 16, not Nov
+    // 9), so Dec 1 stays skipped.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261201T090000",
+      ],
+    };
+    const deleted: Event = {
+      ...occurrenceOf(series, "2026-12-01T09:00:00-05:00"),
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted]);
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { recurrence: [rule] }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      rule,
+      "EXDATE:20261201T140000Z",
+    ]);
+  });
+});

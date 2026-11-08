@@ -287,6 +287,22 @@ function lineUpRule(params: {
   // meets there: kept, its timed skip would be lined up onto that day's
   // other meeting.
   const savedRules = params.rule.filter((line) => line.startsWith("RRULE:"));
+  // The saved rules repeat from the new start; the skips are at the old
+  // series' time of day, so they're read from the new start's day at it.
+  const masterClock = startInstant(master.start, zone)
+    ?.toZonedDateTimeISO(zone)
+    .toPlainTime();
+  const startDay = startInstant(start, zone)
+    ?.toZonedDateTimeISO(zone)
+    .toPlainDate();
+  const savedFrom =
+    masterClock && startDay
+      ? {
+          dateTime: googleDateTime(
+            startDay.toZonedDateTime({ plainTime: masterClock, timeZone: zone })
+          ),
+        }
+      : start;
   const stillMeets = (slot: string) =>
     // A date skips the whole day, whatever meets on it.
     DATE_ONLY.test(slot) ||
@@ -297,7 +313,7 @@ function lineUpRule(params: {
       recurrence: savedRules,
       seriesZone: zone,
       slot,
-      start: master.start,
+      start: savedFrom,
     }) !== false;
   const cancelled = params.cancelled.filter(stillMeets);
   const rule = keepingSkips(params.rule, zone, stillMeets);
