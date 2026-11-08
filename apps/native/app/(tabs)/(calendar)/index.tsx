@@ -48,6 +48,7 @@ import {
   isRecurringGoogleEvent,
   occurrenceDayMoved,
   otherTimeZone,
+  repeatChanged,
   repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
@@ -735,15 +736,12 @@ function recurrenceToSend(
   if (draft.mode === "create") {
     return draft.recurrence.length > 0 ? draft.recurrence : undefined;
   }
-  if (!draft.recurrenceEdited) {
-    return undefined;
-  }
-  const source = draft.sourceEvent.recurrence?.length
-    ? draft.sourceEvent.recurrence
-    : masterRecurrence;
-  return JSON.stringify(draft.recurrence) === JSON.stringify(source)
-    ? undefined
-    : draft.recurrence;
+  const changed = repeatChanged({
+    edited: Boolean(draft.recurrenceEdited),
+    recurrence: draft.recurrence,
+    source: savedSeriesRecurrence(draft, masterRecurrence),
+  });
+  return changed ? draft.recurrence : undefined;
 }
 
 /**
