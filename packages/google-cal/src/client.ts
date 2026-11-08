@@ -1530,31 +1530,55 @@ export function makeGoogleCalendarService(
       });
 
       const updated = yield* parseEventResponse(response);
-      yield* applyToOpened(calendarId, currentEvent, master, changes);
+      yield* applyToOpened({
+        calendarId,
+        changes,
+        edited,
+        master,
+        occurrence: currentEvent,
+      });
       return updated;
     });
 
   /**
-   * Google keeps an occurrence's own values when its series changes, so a
-   * field the user changed through an occurrence that set its own (one
-   * moved and renamed, say) is written to that occurrence too.
+   * Google keeps an occurrence's own values when its series changes, so
+   * what the user changed through an occurrence that set its own (one
+   * moved and renamed, say) is written to that occurrence too: a field
+   * it set itself, or its times (then the edit's, else its own move
+   * stays).
    */
-  const applyToOpened = (
-    calendarId: string,
-    occurrence: Event,
-    master: Event,
-    changes: Partial<CreateEvent>
-  ) => {
-    const own = changesOwnTo(occurrence, master, {}, seriesZoneOf(master));
+  const applyToOpened = (params: {
+    calendarId: string;
+    changes: Partial<CreateEvent>;
+    edited: CreateEvent;
+    master: Event;
+    occurrence: Event;
+  }) => {
+    const { changes, edited, master, occurrence } = params;
+    const zone = seriesZoneOf(master);
+    const own = changesOwnTo(occurrence, master, {}, zone);
+    const retimed = !keepsTimes(edited, occurrence, zone);
     const overridden = Object.keys(changes).some((field) => field in own);
-    return occurrence.recurringEventId && overridden
-      ? updateEventThis(
-          calendarId,
-          occurrence.id,
-          { ...sanitizeEventPayload(occurrence), ...changes },
-          occurrence
-        ).pipe(Effect.asVoid)
-      : Effect.void;
+    // One that is just the series' own follows the series.
+    const setsOwn = Object.keys(own).length > 0;
+    if (!(occurrence.recurringEventId && setsOwn && (overridden || retimed))) {
+      return Effect.void;
+    }
+    return updateEventThis(
+      params.calendarId,
+      occurrence.id,
+      {
+        ...sanitizeEventPayload(occurrence),
+        ...changes,
+        ...(retimed
+          ? {
+              end: inSeriesZone(edited.end, master.end),
+              start: inSeriesZone(edited.start, master.start),
+            }
+          : {}),
+      },
+      occurrence
+    ).pipe(Effect.asVoid);
   };
 
   /**

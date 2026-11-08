@@ -1236,3 +1236,102 @@ describe("the opened occurrence takes the user's change", () => {
     expect(google.writes()).toHaveLength(1);
   });
 });
+
+describe("the opened occurrence through an Entire series save", () => {
+  // Nov 23 was moved to 11:00 and renamed on its own.
+  const special = {
+    ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+      end: "2026-11-23T11:30:00-05:00",
+      start: "2026-11-23T11:00:00-05:00",
+    }),
+    summary: "Special",
+  };
+
+  test("from a later moved and renamed one, a new title reaches it and its move stays", async () => {
+    const google = fakeGoogle(weekly, [special]);
+    expect(
+      Exit.isSuccess(await run(edit("all", special, { summary: "New series" })))
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+    expect(opened?.url.pathname).toEndWith(`/events/${special.id}`);
+    expect(opened?.body).toMatchObject({
+      start: { dateTime: "2026-11-23T11:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+  });
+
+  test("a new title and length both reach a renamed one", async () => {
+    // Nov 16 was only renamed; the user renames the series and makes it
+    // an hour long, from there.
+    const renamed = { ...nov16, summary: "Planning (Nov)" };
+    const google = fakeGoogle(weekly, [renamed]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", renamed, {
+            end: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+            summary: "New series",
+          })
+        )
+      )
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+    expect(opened?.body).toMatchObject({
+      end: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+      summary: "New series",
+    });
+  });
+
+  test("when the occurrence can't be written, the series is saved and the failure returned", async () => {
+    const google = fakeGoogle(weekly, [special], (request) =>
+      request.method === "PUT" && request.url.pathname.endsWith(special.id)
+        ? failure(400)
+        : undefined
+    );
+    expect(
+      Exit.isFailure(await run(edit("all", special, { summary: "New series" })))
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.url.pathname).toEndWith("/events/series");
+    expect(series?.body?.summary).toBe("New series");
+    expect(opened?.url.pathname).toEndWith(`/events/${special.id}`);
+  });
+});
+
+describe("an occurrence with only its end changed", () => {
+  test("keeps its own start and end through This and following", async () => {
+    // Nov 30 runs on to 10:30 (its start left at 9:00); the series moves to
+    // 10:00 from Nov 16. Its times are kept as a pair, as for any moved
+    // occurrence: 9:00 to 10:30.
+    const longer = occurrenceOf(weekly, "2026-11-30T09:00:00-05:00", {
+      end: "2026-11-30T10:30:00-05:00",
+      start: "2026-11-30T09:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [longer]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith("_20261130T150000Z");
+    expect(carried?.body).toMatchObject({
+      end: { dateTime: "2026-11-30T10:30:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+    });
+  });
+});

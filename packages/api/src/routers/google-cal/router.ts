@@ -54,6 +54,19 @@ function filterEventsBySearch<
   );
 }
 
+/**
+ * The cached events a write through `eventId` changes: it and, for an
+ * occurrence, its series, which a series write rewrites (or ends).
+ */
+function writtenEventIds(
+  eventId: string,
+  event: { recurringEventId?: string }
+): string[] {
+  return event.recurringEventId && event.recurringEventId !== eventId
+    ? [eventId, event.recurringEventId]
+    : [eventId];
+}
+
 const ensureGoogleEventEditable = (event: {
   id: string;
   description?: string;
@@ -250,11 +263,13 @@ export const googleCalRouter = os.router({
             input.accountId,
             input.calendarId
           ),
-          cache.invalidateEvent(
-            context.user.id,
-            input.accountId,
-            input.calendarId,
-            input.eventId
+          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
+            cache.invalidateEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId,
+              eventId
+            )
           ),
         ],
         { concurrency: "unbounded", discard: true }
@@ -364,11 +379,13 @@ export const googleCalRouter = os.router({
             input.accountId,
             input.destinationCalendarId
           ),
-          cache.invalidateEvent(
-            context.user.id,
-            input.accountId,
-            input.calendarId,
-            input.eventId
+          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
+            cache.invalidateEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId,
+              eventId
+            )
           ),
         ],
         { concurrency: "unbounded", discard: true }
@@ -417,11 +434,13 @@ export const googleCalRouter = os.router({
             input.accountId,
             input.calendarId
           ),
-          cache.invalidateEvent(
-            context.user.id,
-            input.accountId,
-            input.calendarId,
-            input.eventId
+          ...writtenEventIds(input.eventId, currentEvent).map((eventId) =>
+            cache.invalidateEvent(
+              context.user.id,
+              input.accountId,
+              input.calendarId,
+              eventId
+            )
           ),
         ],
         { concurrency: "unbounded", discard: true }

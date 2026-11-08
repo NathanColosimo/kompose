@@ -223,6 +223,26 @@ describe("splitting a series", () => {
     ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=2"]);
   });
 
+  test("carries a rule that never meets alongside one that does", () => {
+    // Feb 30 never comes, so the first rule has no meetings to count; the
+    // daily one, split at its second, has four left.
+    const rules = [
+      "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
+      "RRULE:FREQ=DAILY;COUNT=5",
+    ];
+    expect(
+      carryCountExactly(rules, {
+        masterRecurrence: rules,
+        originalStart: "2027-03-12T09:00:00-05:00",
+        seriesStart: "2027-03-11T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toEqual([
+      "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
+      "RRULE:FREQ=DAILY;COUNT=4",
+    ]);
+  });
+
   test("can't carry a COUNT it can't walk past added days", () => {
     // A week-number rule isn't walked, and Google's list can't tell its
     // meetings from the added one: what's left is unknown.
