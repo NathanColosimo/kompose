@@ -318,14 +318,14 @@ function matchDateList(
   severalADay: boolean,
   /**
    * In such a series, where a skipped time on a day goes when the start's
-   * time changes (its rule's new time; null drops it); null when the time
+   * time changes (its rules' new times; none drops it); null when the time
    * doesn't change.
    */
   retime:
     | ((
         day: Temporal.PlainDate,
         time: Temporal.PlainTime
-      ) => Temporal.PlainTime | null)
+      ) => Temporal.PlainTime[])
     | null = null
 ): string {
   const list = parseDateList(line, seriesZone);
@@ -387,7 +387,7 @@ function retimedList(
   retime: (
     day: Temporal.PlainDate,
     time: Temporal.PlainTime
-  ) => Temporal.PlainTime | null,
+  ) => Temporal.PlainTime[],
   line: string
 ): string {
   let moved = false;
@@ -396,8 +396,12 @@ function retimedList(
       .toZonedDateTimeISO(seriesZone)
       .toPlainTime();
     const next = retime(value.day, time);
-    moved ||= !next || Temporal.PlainTime.compare(next, time) !== 0;
-    return next ? [`${compactDate(value.day)}T${compactTime(next)}`] : [];
+    moved ||= !(
+      next.length === 1 &&
+      next[0] &&
+      Temporal.PlainTime.compare(next[0], time) === 0
+    );
+    return next.map((at) => `${compactDate(value.day)}T${compactTime(at)}`);
   });
   if (!moved) {
     return line;
@@ -474,34 +478,49 @@ export function matchRecurrenceToStart(
   const newTime = start.dateTime ? wallClock(start, timeZone) : null;
   const startDay = start.dateTime ? dayOfStart(start, timeZone) : null;
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const baseDay = seriesStart ? dayOfStart(seriesStart, timeZone) : null;
   const retime =
     severalADay &&
     base &&
+    baseDay &&
     newTime &&
     startDay &&
     Temporal.PlainTime.compare(base, newTime) !== 0
       ? (day: Temporal.PlainDate, time: Temporal.PlainTime) => {
-          const rule = rules.find((line) => ruleMeetsAt(line, time, base));
-          if (!rule || SUB_DAILY.test(rule)) {
-            return time;
-          }
-          const next = withRuleClock(rule, time, newTime);
-          // Onto the start's own slot: that meeting was just placed, so
-          // the skip goes. Onto another rule's meeting: it stays put.
-          if (
-            Temporal.PlainDate.compare(day, startDay) === 0 &&
-            Temporal.PlainTime.compare(next, newTime) === 0
-          ) {
-            return null;
-          }
-          const othersThere = rules.some(
-            (other) =>
-              other !== rule &&
-              isRuleDay(other, startDay, day) !== false &&
-              !endedBefore(other, startDay, day, timeZone) &&
-              ruleMeetsAt(other, next, newTime)
+          // The rules that met at this skipped day and time, each moving
+          // its own part of the time to the new start's (a rule that sets
+          // all of it stays). Every one that still meets keeps it skipped.
+          const owners = rules.filter(
+            (rule) =>
+              isRuleDay(rule, baseDay, day) !== false &&
+              !endedBefore(rule, baseDay, day, timeZone) &&
+              ruleMeetsAt(rule, time, base)
           );
-          return othersThere ? time : next;
+          if (owners.length === 0) {
+            return [time];
+          }
+          const meetsThen = (at: Temporal.PlainTime) =>
+            rules.some(
+              (rule) =>
+                !owners.includes(rule) &&
+                isRuleDay(rule, startDay, day) !== false &&
+                !endedBefore(rule, startDay, day, timeZone) &&
+                ruleMeetsAt(rule, at, newTime)
+            );
+          return owners.flatMap((rule) => {
+            const next = SUB_DAILY.test(rule)
+              ? time
+              : withRuleClock(rule, time, newTime);
+            // Onto the start's own slot: that meeting was just placed, so
+            // the skip goes. Onto another rule's meeting: it stays put.
+            if (
+              Temporal.PlainDate.compare(day, startDay) === 0 &&
+              Temporal.PlainTime.compare(next, newTime) === 0
+            ) {
+              return [];
+            }
+            return meetsThen(next) ? [time] : [next];
+          });
         }
       : null;
   let changed = false;
@@ -800,6 +819,8 @@ export function moveSkippedDays(params: {
     if (
       !(severalADay && time && toTime && ownSkip(value)) ||
       SUB_DAILY.test(oldRule) ||
+      // The moved rule must have met that day: another rule's day isn't its.
+      isRuleDay(oldRule, from, value.day) === false ||
       othersMeet(value.day, time, from, fromTime)
     ) {
       return null;

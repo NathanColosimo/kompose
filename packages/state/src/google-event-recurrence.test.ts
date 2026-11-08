@@ -923,6 +923,19 @@ describe("seriesRecurrenceForSave", () => {
         "10:00"
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261118T090000");
+    // A Wednesday 9:00 skip isn't the moved Monday rule's (it never met
+    // on Wednesdays): moving Mondays to Tuesdays at 9:30 leaves it be.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=WE;BYHOUR=15",
+          "EXDATE;TZID=America/New_York:20261118T090000",
+        ],
+        "2026-11-10",
+        "09:30"
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261118T090000");
     // A skip moved onto one already there is written once.
     expect(
       followed(
