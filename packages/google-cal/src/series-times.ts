@@ -1,6 +1,7 @@
 /**
- * Where a series starts and ends after an "Entire series" edit made through
- * one of its occurrences.
+ * A series' zone and slots (where an occurrence sits in it), and where a
+ * series starts and ends after an "Entire series" edit made through one of
+ * its occurrences.
  */
 import { Temporal } from "temporal-polyfill";
 import { googleDateTime, OFFSET, startInstant } from "./until";
