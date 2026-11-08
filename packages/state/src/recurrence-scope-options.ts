@@ -317,10 +317,12 @@ export function refuseSave(
   const reason = refusalReason(refusal);
   return {
     // The new reason first, then every earlier one (an app's own record's
-    // too, which has no refusals list to rebuild it from), each once.
-    message: refused?.message.includes(reason)
-      ? refused.message
-      : sentences(reason, refused?.message),
+    // too, which has no refusals list to rebuild it from), each once: one
+    // given before moves to the front.
+    message: sentences(
+      reason,
+      refused?.message.replace(reason, "").replace(/\s+/g, " ").trim()
+    ),
     refusals: [{ refusal, scope }, ...(refused?.refusals ?? [])],
     scopes: { ...refused?.scopes, [scope]: true },
   };

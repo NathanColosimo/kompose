@@ -1240,6 +1240,10 @@ describe("the server's refusal of a series write", () => {
     expect(eventSaveDescription(changes)).toStartWith(
       `${refusalReason({ reason: "countUnknown" })} ${refusalReason(drops)}`
     );
+    // A reason given again moves to the front, said once.
+    expect(refuseSave(both, "this", drops).message).toBe(
+      `${refusalReason(drops)} ${refusalReason({ reason: "countUnknown" })}`
+    );
   });
 });
 
