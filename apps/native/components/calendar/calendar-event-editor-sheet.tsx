@@ -408,7 +408,10 @@ function HeldWhileSaving({
   );
 }
 
-/** Whether the draft ends after it starts (an all-day event may be one day). */
+/**
+ * Whether the draft doesn't end before it starts (an all-day event may be
+ * one day; a timed one may be zero-length, as Google allows).
+ */
 function endsAfterStart(draft: EventDraft): boolean {
   if (draft.allDay || !(draft.startTime && draft.endTime)) {
     return Temporal.PlainDate.compare(draft.endDate, draft.startDate) >= 0;
@@ -417,7 +420,7 @@ function endsAfterStart(draft: EventDraft): boolean {
     Temporal.PlainDateTime.compare(
       draft.endDate.toPlainDateTime(draft.endTime),
       draft.startDate.toPlainDateTime(draft.startTime)
-    ) > 0
+    ) >= 0
   );
 }
 

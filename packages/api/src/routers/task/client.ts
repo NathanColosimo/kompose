@@ -201,6 +201,30 @@ const dbSelectExceptionDatesBySeriesFrom = (
       );
   });
 
+/** A series' exceptions from `fromDate` on (but `editedId`) become standalone. */
+const dbDetachExceptionsFrom = (params: {
+  editedId: string;
+  fromDate: string;
+  seriesMasterId: string;
+  userId: string;
+}) =>
+  Effect.gen(function* () {
+    const db = yield* Database;
+    return yield* db
+      .update(taskTable)
+      .set({ isException: false, seriesMasterId: null })
+      .where(
+        and(
+          eq(taskTable.userId, params.userId),
+          eq(taskTable.seriesMasterId, params.seriesMasterId),
+          eq(taskTable.isException, true),
+          gte(taskTable.startDate, params.fromDate),
+          ne(taskTable.id, params.editedId)
+        )
+      )
+      .returning();
+  });
+
 /** Move a series' exceptions from `fromDate` on (and `editedId`) to another series. */
 const dbMoveExceptionsToSeries = (params: {
   editedId: string;
@@ -708,8 +732,24 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
       })
     : [];
 
+  // The earlier part of the series stops the day before the edit, so its
+  // master no longer claims to repeat past it.
+  const endedMaster = yield* endSeriesBefore(userId, task);
+
   if (!recurrence) {
-    return { retagIds: ids(updatedAnchor), rows: updatedAnchor };
+    // Exceptions after the boundary (moved, renamed, or done alone) become
+    // standalone tasks rather than members of a series that no longer
+    // repeats there.
+    const detached = yield* dbDetachExceptionsFrom({
+      editedId: task.id,
+      fromDate: task.startDate,
+      seriesMasterId: task.seriesMasterId,
+      userId,
+    });
+    return {
+      retagIds: ids(updatedAnchor),
+      rows: [...updatedAnchor, ...endedMaster, ...detached],
+    };
   }
 
   const keptDates = new Set(
@@ -732,7 +772,10 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     userId,
   });
   if (taskRows.length === 0) {
-    return { retagIds: ids(updatedAnchor), rows: updatedAnchor };
+    return {
+      retagIds: ids(updatedAnchor),
+      rows: [...updatedAnchor, ...endedMaster],
+    };
   }
   const inserted = yield* dbInsert(taskRows);
   // Kept occurrences from the boundary on (and the edited one, wherever it
@@ -751,8 +794,35 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   const edited = moved.filter((row) => row.id === task.id);
   return {
     retagIds: [...ids(edited), ...ids(inserted)],
-    rows: [...moved, ...inserted],
+    rows: [...moved, ...inserted, ...endedMaster],
   };
+});
+
+/**
+ * Ends the series' pattern the day before `task` (when `task` isn't its
+ * first): the master keeps its days up to there, and stops claiming the
+ * ones a pattern change or "Repeat: None" replaced.
+ */
+const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
+  userId: string,
+  task: DatedSeriesTask
+) {
+  if (task.seriesMasterId === task.id) {
+    return [] as TaskSelect[];
+  }
+  const [master] = yield* dbSelectById(userId, task.seriesMasterId);
+  if (!master?.recurrence) {
+    return [] as TaskSelect[];
+  }
+  const { count: _count, ...pattern } = master.recurrence;
+  return yield* dbUpdate(userId, master.id, {
+    recurrence: {
+      ...pattern,
+      until: Temporal.PlainDate.from(task.startDate)
+        .subtract({ days: 1 })
+        .toString(),
+    },
+  });
 });
 
 function ids(rows: TaskSelect[]): string[] {

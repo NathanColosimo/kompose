@@ -666,6 +666,63 @@ function WorkoutSheet({
 }
 
 /**
+ * Delete confirmations for an event, over its editor: Cancel goes back to the
+ * editor with its edits, and Delete holds "Deleting…" until it's done.
+ */
+function EventDeleteDialogs({
+  dialog,
+  onCancel,
+  onConfirm,
+  onScopeChange,
+  pending,
+  scope,
+}: {
+  dialog: EventDialog;
+  onCancel: () => void;
+  onConfirm: (scope: RecurrenceScope) => void;
+  onScopeChange: (scope: RecurrenceScope) => void;
+  pending: boolean;
+  scope: RecurrenceScope;
+}) {
+  return (
+    <>
+      <AlertDialog
+        closeOnConfirm={false}
+        confirmText="Delete"
+        description="This is a recurring event. Choose what to delete."
+        isVisible={dialog === "delete"}
+        onCancel={onCancel}
+        onClose={noop}
+        onConfirm={() => onConfirm(scope)}
+        pending={pending}
+        pendingText="Deleting…"
+        title="Delete recurring event"
+      >
+        <View className="mt-2">
+          <RadioGroup
+            onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
+            options={RECURRENCE_SCOPE_OPTIONS}
+            value={scope}
+          />
+        </View>
+      </AlertDialog>
+      <AlertDialog
+        closeOnConfirm={false}
+        confirmText="Delete"
+        description="This action cannot be undone."
+        isVisible={dialog === "simple-delete"}
+        onCancel={onCancel}
+        onClose={noop}
+        onConfirm={() => onConfirm("this")}
+        pending={pending}
+        pendingText="Deleting…"
+        title="Delete event"
+      />
+    </>
+  );
+}
+
+/**
  * Scope for saving a recurring event. It opens over the editor (iOS presents
  * it from the sheet's modal): Cancel goes back to the editor with the edits,
  * and Apply holds "Saving…" until the save ends.
@@ -1509,8 +1566,9 @@ export default function CalendarTab() {
           masterRecurrence: recurringMasterRecurrence,
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
+      // The dialog opens over the editor, which stays open: Cancel goes back
+      // to it with the edits, and a failed delete leaves it.
       setPendingEventDeleteDraft(draft);
-      setEventDraft(null);
 
       if (recurring) {
         setEventDeleteScope(
@@ -1528,19 +1586,29 @@ export default function CalendarTab() {
     [masterRecurrence]
   );
 
+  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const confirmEventDelete = useCallback(
     async (scope: RecurrenceScope) => {
       if (!pendingEventDeleteDraft) {
         return;
       }
 
-      await deleteEvent.mutateAsync({
-        accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
-        calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
-        eventId: pendingEventDeleteDraft.eventId,
-        scope,
-      });
-      closeEventModal();
+      setIsDeletingEvent(true);
+      try {
+        await deleteEvent.mutateAsync({
+          accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
+          calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
+          eventId: pendingEventDeleteDraft.eventId,
+          scope,
+        });
+        closeEventModal();
+      } catch {
+        // The mutation reports the error; the editor stays.
+        setEventDialog(null);
+        setPendingEventDeleteDraft(null);
+      } finally {
+        setIsDeletingEvent(false);
+      }
     },
     [closeEventModal, deleteEvent, pendingEventDeleteDraft]
   );
@@ -2059,7 +2127,7 @@ export default function CalendarTab() {
         <EventEditorSheet
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
-          isSaving={isSavingEvent}
+          isSaving={isSavingEvent || isDeletingEvent}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onSubmit={(draft) => {
@@ -2073,17 +2141,29 @@ export default function CalendarTab() {
               .finally(() => setIsSavingEvent(false));
           }}
           overlay={
-            <EventSaveScopeDialog
-              draft={pendingEventSaveDraft}
-              isVisible={eventDialog === "save"}
-              onCancel={dismissEventSaveDialog}
-              onConfirm={() => {
-                confirmScopedEventSave().catch(() => null);
-              }}
-              onScopeChange={setEventSaveScope}
-              pending={isSavingEvent}
-              scope={eventSaveScope}
-            />
+            <>
+              <EventDeleteDialogs
+                dialog={eventDialog}
+                onCancel={dismissEventDeleteDialog}
+                onConfirm={(scope) => {
+                  confirmEventDelete(scope).catch(() => null);
+                }}
+                onScopeChange={setEventDeleteScope}
+                pending={isDeletingEvent}
+                scope={eventDeleteScope}
+              />
+              <EventSaveScopeDialog
+                draft={pendingEventSaveDraft}
+                isVisible={eventDialog === "save"}
+                onCancel={dismissEventSaveDialog}
+                onConfirm={() => {
+                  confirmScopedEventSave().catch(() => null);
+                }}
+                onScopeChange={setEventSaveScope}
+                pending={isSavingEvent}
+                scope={eventSaveScope}
+              />
+            </>
           }
         />
       ) : null}
@@ -2176,38 +2256,6 @@ export default function CalendarTab() {
         overlay={<TaskSaveScopeDialog flow={taskFlow} />}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
-      />
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring event. Choose what to delete."
-        isVisible={eventDialog === "delete"}
-        onClose={dismissEventDeleteDialog}
-        onConfirm={() => {
-          confirmEventDelete(eventDeleteScope).catch(() => null);
-        }}
-        title="Delete recurring event"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) =>
-              setEventDeleteScope(value as RecurrenceScope)
-            }
-            options={RECURRENCE_SCOPE_OPTIONS}
-            value={eventDeleteScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This action cannot be undone."
-        isVisible={eventDialog === "simple-delete"}
-        onClose={dismissEventDeleteDialog}
-        onConfirm={() => {
-          confirmEventDelete("this").catch(() => null);
-        }}
-        title="Delete event"
       />
 
       <TaskDeleteScopeDialog flow={taskFlow} />

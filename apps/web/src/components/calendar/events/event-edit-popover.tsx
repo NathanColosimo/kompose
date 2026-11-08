@@ -32,6 +32,7 @@ import {
 import {
   formatAllDayWhen,
   formatEventWhen,
+  moveEventStart,
 } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import {
@@ -56,7 +57,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  type UseFormSetValue,
+  useForm,
+  useWatch,
+} from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
@@ -1534,15 +1540,83 @@ function ReadOnlyEventDetails({
   );
 }
 
+/**
+ * Moves the form's start, keeping the event's length (shared with iOS): a
+ * 2–4 PM meeting moved to 3 PM ends at 5 PM, onto the next day past
+ * midnight.
+ */
+function applyMovedStart(
+  values: EventFormValues,
+  setValue: UseFormSetValue<EventFormValues>,
+  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime }
+) {
+  if (!values.startDate) {
+    return;
+  }
+  const moved = moveEventStart(formRange(values, values.startDate), next);
+  const dirty = { shouldDirty: true };
+  setValue("startDate", temporalToPickerDate(moved.startDate), dirty);
+  setValue("endDate", temporalToPickerDate(moved.endDate), dirty);
+  if (moved.startTime) {
+    setValue("startTime", timeInputValue(moved.startTime), dirty);
+  }
+  if (moved.endTime) {
+    setValue("endTime", timeInputValue(moved.endTime), dirty);
+  }
+}
+
+/** A time input's value ("09:05"). */
+function timeInputValue(time: Temporal.PlainTime): string {
+  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
+}
+
+/** The form's range as Temporal values, for moveEventStart. */
+function formRange(values: EventFormValues, startDate: Date) {
+  const time = (value: string) =>
+    !values.allDay && value ? Temporal.PlainTime.from(value) : null;
+  const start = pickerDateToTemporal(startDate);
+  return {
+    endDate: values.endDate ? pickerDateToTemporal(values.endDate) : start,
+    endTime: time(values.endTime),
+    startDate: start,
+    startTime: time(values.startTime),
+  };
+}
+
+/** Whether the form ends before it starts (Save stays off, with a reason). */
+function endsBeforeStart(values: Partial<EventFormValues>): boolean {
+  if (!(values.startDate && values.endDate)) {
+    return false;
+  }
+  const range = formRange(values as EventFormValues, values.startDate);
+  if (!(range.startTime && range.endTime)) {
+    return Temporal.PlainDate.compare(range.endDate, range.startDate) < 0;
+  }
+  return (
+    Temporal.PlainDateTime.compare(
+      range.endDate.toPlainDateTime(range.endTime),
+      range.startDate.toPlainDateTime(range.startTime)
+    ) < 0
+  );
+}
+
+function EndsBeforeStartNote({ values }: { values: Partial<EventFormValues> }) {
+  return endsBeforeStart(values) ? (
+    <p className="text-destructive text-xs">Ends before it starts.</p>
+  ) : null;
+}
+
 function EventFormActionRow({
   isCreateMode,
   readOnly = false,
+  saveDisabled = false,
   onDelete,
   onCancel,
   onSave,
 }: {
   isCreateMode: boolean;
   readOnly?: boolean;
+  saveDisabled?: boolean;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1568,7 +1642,12 @@ function EventFormActionRow({
             {readOnly ? "Close" : "Cancel"}
           </Button>
           {readOnly ? null : (
-            <Button onClick={onSave} size="sm" type="button">
+            <Button
+              disabled={saveDisabled}
+              onClick={onSave}
+              size="sm"
+              type="button"
+            >
               Save
             </Button>
           )}
@@ -1822,6 +1901,14 @@ export function EventEditForm({
     []
   );
 
+  const moveStart = (next: {
+    date?: Temporal.PlainDate;
+    time?: Temporal.PlainTime;
+  }) => {
+    hasUserEditedRef.current = true;
+    applyMovedStart(getValues(), setValue, next);
+  };
+
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
     if (readOnly) {
       return;
@@ -1836,6 +1923,10 @@ export function EventEditForm({
       return;
     }
 
+    if (field === "startTime" && getValues("startDate")) {
+      moveStart({ time: new Temporal.PlainTime(hours, minutes) });
+      return;
+    }
     hasUserEditedRef.current = true;
     setValue(
       field,
@@ -2120,6 +2211,10 @@ export function EventEditForm({
                   disabled={readOnly}
                   mode="single"
                   onSelect={(date) => {
+                    if (date && getValues("startDate")) {
+                      moveStart({ date: pickerDateToTemporal(date) });
+                      return;
+                    }
                     const next = date ?? null;
                     const clamped = clampToStartIfNeeded(
                       next,
@@ -2197,6 +2292,7 @@ export function EventEditForm({
           />
         </div>
       )}
+      <EndsBeforeStartNote values={watchedValues} />
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
@@ -2226,6 +2322,7 @@ export function EventEditForm({
           onDelete={onDelete}
           onSave={onSave}
           readOnly={readOnly}
+          saveDisabled={endsBeforeStart(watchedValues)}
         />
       ) : null}
     </div>

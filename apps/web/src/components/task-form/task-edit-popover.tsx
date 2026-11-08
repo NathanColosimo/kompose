@@ -23,6 +23,7 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
+  resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom } from "jotai";
@@ -408,14 +409,8 @@ export function TaskEditForm({
     if (!task) {
       return initialCreateValues?.recurrence ?? null;
     }
-    if (task.recurrence || !task.seriesMasterId) {
-      return task.recurrence ?? null;
-    }
-
-    const masterTask = (tasksQuery.data ?? []).find(
-      (candidate) => candidate.id === task.seriesMasterId
-    );
-    return masterTask?.recurrence ?? null;
+    // Shared with iOS, so both compare edits against the same pattern.
+    return resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []);
   }, [initialCreateValues?.recurrence, task, tasksQuery.data]);
 
   const handleDeleteClick = useCallback(() => {
