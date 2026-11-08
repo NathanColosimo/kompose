@@ -362,128 +362,70 @@ describe("the server refuses a split that can't start a series", () => {
     );
   });
 
-  test("when the new series' repeat ends before its first meeting", async () => {
-    const weekly = {
-      ...master,
-      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-    } as Event;
-    const occurrence = {
-      ...weekly,
-      id: "series_20261116T140000Z",
-      originalStartTime: {
-        dateTime: "2026-11-16T09:00:00-05:00",
-        timeZone: zone,
-      },
-      recurrence: undefined,
-      recurringEventId: "series",
-      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
-      end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
-    } as Event;
+  // A weekly series' Monday Nov 16 meeting, edited to start Nov 23.
+  const weekly = {
+    ...master,
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+  } as Event;
+  const monday = {
+    ...weekly,
+    end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+    id: "series_20261116T140000Z",
+    originalStartTime: {
+      dateTime: "2026-11-16T09:00:00-05:00",
+      timeZone: zone,
+    },
+    recurrence: undefined,
+    recurringEventId: "series",
+    start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+  } as Event;
+  const moveFollowing = (start: string, recurrence: string[]) => {
     const requests = stubGoogle((url) =>
-      url.includes(occurrence.id) ? occurrence : weekly
+      url.includes(monday.id) ? monday : weekly
     );
-    const service = makeGoogleCalendarService("token");
-    // Ends on the 16th, then moved to the 23rd: the new series would end
-    // before it starts.
-    const exit = await Effect.runPromiseExit(
-      service.updateEvent(
-        "primary",
-        occurrence.id,
-        {
-          ...occurrence,
-          end: { dateTime: "2026-11-23T09:30:00-05:00", timeZone: zone },
-          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261117T045959Z"],
-          start: { dateTime: "2026-11-23T09:00:00-05:00", timeZone: zone },
-        },
-        "following",
-        occurrence
-      )
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
-      "The repeat ends before this occurrence"
-    );
-    expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
-  });
-  test("the same with a start written without an offset, in its zone", async () => {
-    const weekly = {
-      ...master,
-      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-    } as Event;
-    const occurrence = {
-      ...weekly,
-      id: "series_20261116T140000Z",
-      originalStartTime: {
-        dateTime: "2026-11-16T09:00:00-05:00",
-        timeZone: zone,
+    const run = makeGoogleCalendarService("token").updateEvent(
+      "primary",
+      monday.id,
+      {
+        ...monday,
+        end: { dateTime: start.replace("09:00", "09:30"), timeZone: zone },
+        recurrence,
+        start: { dateTime: start, timeZone: zone },
       },
-      recurrence: undefined,
-      recurringEventId: "series",
-      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
-      end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
-    } as Event;
-    const requests = stubGoogle((url) =>
-      url.includes(occurrence.id) ? occurrence : weekly
+      "following",
+      monday
     );
-    const service = makeGoogleCalendarService("token");
-    // Ends on the 16th, then moved to the 23rd: the new series would end
-    // before it starts.
-    const exit = await Effect.runPromiseExit(
-      service.updateEvent(
-        "primary",
-        occurrence.id,
-        {
-          ...occurrence,
-          end: { dateTime: "2026-11-23T09:30:00-05:00", timeZone: zone },
-          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261117T045959Z"],
-          start: { dateTime: "2026-11-23T09:00:00", timeZone: zone },
-        },
-        "following",
-        occurrence
-      )
-    );
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
-      "The repeat ends before this occurrence"
-    );
-    expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
-  });
+    return { requests, run };
+  };
 
-  test("a start without an offset and no end parses (no crash)", async () => {
-    const weekly = {
-      ...master,
-      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-    } as Event;
-    const occurrence = {
-      ...weekly,
-      id: "series_20261116T140000Z",
-      originalStartTime: {
-        dateTime: "2026-11-16T09:00:00-05:00",
-        timeZone: zone,
-      },
-      recurrence: undefined,
-      recurringEventId: "series",
-      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
-      end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
-    } as Event;
-    stubGoogle((url) => (url.includes(occurrence.id) ? occurrence : weekly));
-    const service = makeGoogleCalendarService("token");
-    const exit = await Effect.runPromiseExit(
-      service.updateEvent(
-        "primary",
-        occurrence.id,
-        {
-          ...occurrence,
-          end: { dateTime: "2026-11-23T09:30:00", timeZone: zone },
-          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-          start: { dateTime: "2026-11-23T09:00:00", timeZone: zone },
-        },
-        "following",
-        occurrence
-      )
-    );
-    expect(String(Exit.isFailure(exit) ? exit.cause : "")).not.toContain(
-      "RangeError"
+  test.each([
+    ["with an offset", "2026-11-23T09:00:00-05:00"],
+    ["without an offset, in its zone", "2026-11-23T09:00:00"],
+  ])(
+    "when the new series' repeat ends before its first meeting (start %s)",
+    async (_form, start) => {
+      // Ends on the 16th, then moved to the 23rd.
+      const { requests, run } = moveFollowing(start, [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261117T045959Z",
+      ]);
+      const exit = await Effect.runPromiseExit(run);
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(String(Exit.isFailure(exit) ? exit.cause : "")).toContain(
+        "The repeat ends before this occurrence"
+      );
+      expect(requests.filter((r) => !r.startsWith("GET"))).toEqual([]);
+    }
+  );
+
+  test("a start without an offset and no end saves the split", async () => {
+    const { requests, run } = moveFollowing("2026-11-23T09:00:00", [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+    ]);
+    const exit = await Effect.runPromiseExit(run);
+    expect(Exit.isSuccess(exit)).toBe(true);
+    // The old series is cut and the new one written.
+    expect(requests.filter((r) => !r.startsWith("GET")).length).toBeGreaterThan(
+      0
     );
   });
 });

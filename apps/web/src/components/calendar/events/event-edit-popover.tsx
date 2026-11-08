@@ -1016,7 +1016,7 @@ export function EventEditPopover({
     }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
     if (request.type === "invalid") {
-      // The form says why ("Ends before it starts.").
+      // The form says why (it, or its repeat, ends before it starts).
       return;
     }
     if (request.type === "none") {

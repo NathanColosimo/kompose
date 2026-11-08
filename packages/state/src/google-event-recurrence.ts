@@ -590,9 +590,9 @@ interface RepeatSkipParams {
 
 /**
  * Why a new repeat, saved for the entire series, would skip this
- * occurrence (null when it wouldn't): an Entire series save keeps the series' first meeting (its
- * DTSTART; before the series loads, where the series puts this
- * occurrence) and counts the rule from there, so a day left implicit
+ * occurrence (null when it wouldn't): an Entire series save keeps the
+ * series' first meeting (its DTSTART; before the series loads, where the
+ * series puts this occurrence) and counts the rule from there, so a day left implicit
  * (weekly with no days picked, monthly on "Day N", yearly) comes from that
  * first meeting, an interval counts its weeks or months from it, and a
  * COUNT or UNTIL can end the series before today. When the rule counted
