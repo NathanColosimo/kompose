@@ -498,6 +498,22 @@ describe("a new time for a series of several rules", () => {
     );
   });
 
+  test("a calendar move waits for the series too, and says only Entire series opens", () => {
+    const move = {
+      ...none,
+      calendarChanged: true,
+      retimed: true,
+      seriesRuleLoaded: false,
+    };
+    expect(off(move)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(move)).toBe(
+      "Moving to another calendar moves the whole series. Loading the series… Entire series opens once it's in."
+    );
+    expect(eventSaveDescription({ ...move, seriesRuleFailed: true })).toBe(
+      "Moving to another calendar moves the whole series. Couldn't load the series, so the move and the new time can't be saved together. Try again later."
+    );
+  });
+
   test("a series of one rule takes a new time in full", () => {
     expect(off({ ...changes, severalRules: false })).toEqual([]);
   });

@@ -82,6 +82,14 @@ export const SCOPE_DIALOG_COPY = {
   /** The same, when it's the new end that comes first. */
   moveEventRepeatEnd:
     "Moving to another calendar moves the whole series, but counted from its first meeting the new end comes before this occurrence. Move the calendar and change the repeat in two saves.",
+  /**
+   * A calendar move with a new time while the series loads, or after it
+   * failed to: only Entire series could take both.
+   */
+  moveEventLoadingTime:
+    "Moving to another calendar moves the whole series. Loading the series… Entire series opens once it's in.",
+  moveEventFailedTime:
+    "Moving to another calendar moves the whole series. Couldn't load the series, so the move and the new time can't be saved together. Try again later.",
   /** A calendar move with a new time for a series of several rules. */
   moveEventSeveralRulesTime:
     "Moving to another calendar moves the whole series, but a new time can't apply to a series that repeats by more than one rule. Move the calendar and change the time in two saves.",
@@ -417,7 +425,12 @@ function calendarMoveDescription(changes: EventSaveChanges): string {
     case "severalRulesTime":
       return copy.moveEventSeveralRulesTime;
     case "seriesPending":
-      return `${copy.moveEvent} ${seriesPendingDescription(changes)}`;
+      if (changes.patternChanged) {
+        return `${copy.moveEvent} ${seriesPendingDescription(changes)}`;
+      }
+      return changes.seriesRuleFailed
+        ? copy.moveEventFailedTime
+        : copy.moveEventLoadingTime;
     default:
       return off satisfies never;
   }
