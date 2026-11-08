@@ -499,8 +499,28 @@ describe("isRuleDay", () => {
     expect(
       isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
     ).toBeNull();
+    // Several times a day still meet on the rule's days, unless BYSETPOS
+    // picks among those times.
     expect(
-      isRuleDay("RRULE:FREQ=DAILY;BYHOUR=9,15", start, day("2026-11-09"))
+      isRuleDay(
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
+        start,
+        day("2026-11-16")
+      )
+    ).toBe(true);
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
+        start,
+        day("2026-11-17")
+      )
+    ).toBe(false);
+    expect(
+      isRuleDay(
+        "RRULE:FREQ=MONTHLY;BYDAY=MO;BYHOUR=9,15;BYSETPOS=1",
+        start,
+        day("2026-12-07")
+      )
     ).toBeNull();
   });
 });

@@ -3,7 +3,8 @@
  * FREQ DAILY, WEEKLY, MONTHLY or YEARLY with INTERVAL, BYDAY (weekdays,
  * and weekdays of the month for monthly or yearly-by-month rules),
  * BYMONTHDAY, BYMONTH, BYSETPOS (monthly or weekly), WKST, and a single
- * BYHOUR / BYMINUTE / BYSECOND (one time a day). Each BY part narrows the
+ * BYHOUR / BYMINUTE / BYSECOND (one time a day; several, for which days
+ * a rule meets on, when it has no BYSETPOS). Each BY part narrows the
  * set ("Monday, the 1st to the 7th" is the first Monday). Anything else
  * (BYYEARDAY, BYWEEKNO, several times a day, sub-daily frequencies, a
  * yearly weekday without a month) isn't read: the answer is then null,
@@ -45,7 +46,7 @@ interface Rule {
   weekStart: number;
 }
 
-function readRule(rule: string): Rule | null {
+function readRule(rule: string, severalTimes = false): Rule | null {
   const parts = new Map(
     rule
       .replace("RRULE:", "")
@@ -58,7 +59,12 @@ function readRule(rule: string): Rule | null {
   }
   const list = (key: string) =>
     (parts.get(key) ?? "").split(",").filter(Boolean);
-  if (CLOCK_PARTS.some((key) => list(key).length > 1)) {
+  // Several times a day don't change which days a rule meets on, unless
+  // BYSETPOS picks among them; they do change what COUNT counts.
+  if (
+    CLOCK_PARTS.some((key) => list(key).length > 1) &&
+    !(severalTimes && list("BYSETPOS").length === 0)
+  ) {
     return null;
   }
   const freq = parts.get("FREQ") ?? "";
@@ -244,7 +250,7 @@ export function isRuleDay(
   start: Temporal.PlainDate,
   day: Temporal.PlainDate
 ): boolean | null {
-  const read = readRule(rule);
+  const read = readRule(rule, true);
   return read ? matches(read, start, day) : null;
 }
 

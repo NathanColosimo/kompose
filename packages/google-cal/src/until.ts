@@ -24,6 +24,7 @@ const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
 const BY_DAY_PART = /BYDAY=([^;]*)/;
 const WEEK_START_PART = /WKST=([A-Z]{2})/;
 const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=([^;]*)/g;
+const CLOCK_PART_ONCE = /[:;]BY(?:HOUR|MINUTE|SECOND)=/;
 
 /**
  * The time of day a rule meets, "9:0:0": its BYHOUR / BYMINUTE / BYSECOND,
@@ -658,11 +659,13 @@ export function moveSkippedDays(params: {
       if (!value.instant) {
         return [compactDate(day)];
       }
-      const clock = value.instant
-        .toZonedDateTimeISO(seriesZone)
-        .toPlainTime()
-        .toString({ smallestUnit: "second" })
-        .replace(/:/g, "");
+      // A moved skip keeps its time, but a rule with no time of its own
+      // meets at the start's, so its skip goes there with it.
+      const time =
+        moved[index] && toTime && !CLOCK_PART_ONCE.test(oldRule)
+          ? toTime
+          : value.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
+      const clock = time.toString({ smallestUnit: "second" }).replace(/:/g, "");
       return [`${compactDate(day)}T${clock}`];
     });
     if (values.length === 0) {

@@ -1316,8 +1316,8 @@ function buildEditPayload(
             values.recurrence ?? [],
             temporalPayload.startPayload,
             eventTimeZone(ctx.event, ctx.timeZone),
-            // The series' start before the edit: which rules share its time.
-            ctx.event?.start
+            // The series' slot before the edit: which rules share its time.
+            ctx.event?.originalStartTime ?? ctx.event?.start
           )
         : undefined,
       start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),

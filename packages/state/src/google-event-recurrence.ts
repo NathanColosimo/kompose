@@ -640,7 +640,12 @@ export function seriesRecurrenceForSave(params: {
           toTime: timeOfStart(editedStart, timeZone),
         })
       : masterRecurrence;
-  const matched = matchRecurrenceToStart(followed, editedStart, timeZone);
+  const matched = matchRecurrenceToStart(
+    followed,
+    editedStart,
+    timeZone,
+    occurrence.originalStartTime ?? occurrence.start
+  );
   return matched === masterRecurrence ? undefined : matched;
 }
 

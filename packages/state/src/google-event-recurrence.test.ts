@@ -805,6 +805,30 @@ describe("seriesRecurrenceForSave", () => {
         "09:00"
       ).at(-1)
     ).toBe("EXDATE;TZID=America/New_York:20261117T090000,20261116T150000");
+    // A rule with no time of its own meets at the start's: moved to
+    // Tuesdays at 10:00, its skipped Nov 16 9:00 is Nov 17 at 10:00.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
+          "EXDATE;TZID=America/New_York:20261116T090000",
+        ],
+        "2026-11-10",
+        "10:00"
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
+    // One rule at 9:00 and 15:00 moved to Tuesdays: both skips move.
+    expect(
+      followed(
+        [
+          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
+          "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
+        ],
+        "2026-11-10",
+        "09:00"
+      ).at(-1)
+    ).toBe("EXDATE;TZID=America/New_York:20261117T090000,20261117T150000");
     // BYHOUR=9 and BYHOUR=9;BYMINUTE=0 are one 9:00: moved onto Friday
     // Nov 13 at 10:00, that day's skipped 9:00 is the picked start's.
     expect(

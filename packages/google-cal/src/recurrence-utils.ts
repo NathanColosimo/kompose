@@ -10,6 +10,7 @@ import {
 
 const COUNT_REGEX = /;?COUNT=([^;]+)/;
 const COUNT_PART = /([:;])COUNT=[^;]+/;
+const SEVERAL_TIMES = /[:;]BY(?:HOUR|MINUTE|SECOND)=[^;]*,/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -164,7 +165,8 @@ function unique(values: RecurrenceValue[]): RecurrenceValue[] {
 /**
  * Whether an added (RDATE) value is also one of the rule's occurrences:
  * on one of its days, at the series' time (or both all day). Null when
- * the rule has parts `isRuleDay` doesn't read.
+ * the rule has parts `isRuleDay` doesn't read, or meets several times a
+ * day (which of its times is the series' isn't read here).
  */
 function isRuleOccurrence(
   rule: string,
@@ -172,6 +174,9 @@ function isRuleOccurrence(
   value: RecurrenceValue,
   seriesZone: string
 ): boolean | null {
+  if (SEVERAL_TIMES.test(rule)) {
+    return null;
+  }
   const onRuleDay = isRuleDay(rule, start.day, value.day);
   if (onRuleDay !== true) {
     return onRuleDay;
