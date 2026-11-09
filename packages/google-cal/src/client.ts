@@ -2216,9 +2216,10 @@ export function makeGoogleCalendarService(
         occurrences: followingOccurrences({
           changes,
           edited,
-          // A new part that doesn't repeat ends the series there, so later
-          // occurrences go with it, as a delete does.
-          exceptions: repeats(recurrence) ? exceptions.changed : [],
+          // "Repeat: None" ends the series there, so later occurrences go
+          // with it, as a delete does. Otherwise each is carried, or the
+          // save refused if the new part has no place for it.
+          exceptions: edited.recurrence?.length === 0 ? [] : exceptions.changed,
           keptTimes,
           master,
           opened: currentEvent,
