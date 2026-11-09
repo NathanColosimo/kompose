@@ -53,9 +53,19 @@ export function truncateRecurrenceForFollowing(
   const splitMoment = valueMoment(split, seriesZone);
   const firstValue = seriesStart ? asValue(seriesStart, seriesZone) : null;
   // A rule that ends before the split keeps its end (a cut never lengthens
-  // it); one whose end can't be told is cut, so nothing runs past the split.
-  const endsBeforeSplit = (line: string) =>
-    ruleEndsBefore(line, firstValue, splitMoment, seriesZone) === true;
+  // it); one whose end can't be told is cut, so nothing runs past the
+  // split. Beside other rules, though, the split may be another rule's
+  // meeting after this one's COUNT ran out, and an UNTIL there would add
+  // meetings it never had: such a rule keeps its COUNT, as on main, even
+  // if it meets on past the split.
+  const severalRules = recurrence.filter(isRule).length > 1;
+  const keepsItsEnd = (line: string) => {
+    const ended = ruleEndsBefore(line, firstValue, splitMoment, seriesZone);
+    return (
+      ended === true ||
+      (ended === null && severalRules && ruleCount(line) !== null)
+    );
+  };
   const skippedStart =
     firstValue &&
     Temporal.Instant.compare(
@@ -73,7 +83,7 @@ export function truncateRecurrenceForFollowing(
     if (!line.startsWith("RRULE:")) {
       return line;
     }
-    if (endsBeforeSplit(line)) {
+    if (keepsItsEnd(line)) {
       return line;
     }
     // Part by part, so "RRULE:COUNT=5;..." leaves no empty part behind.
@@ -436,6 +446,39 @@ export function followingSplitBlocked(params: {
 }
 
 /**
+ * Whether a plain hourly (minutely, secondly) rule, stepping from `first`,
+ * meets at `slot`. Null with BY parts, or across a clock change (see
+ * `subDailyEndsBefore`).
+ */
+function subDailyHasSlot(
+  rule: string,
+  step: "hours" | "minutes" | "seconds",
+  first: RecurrenceValue,
+  slot: RecurrenceValue,
+  seriesZone: string
+): boolean | null {
+  if (!(first.instant && slot.instant) || BY_PART.test(rule)) {
+    return null;
+  }
+  const change = first.instant
+    .toZonedDateTimeISO(seriesZone)
+    .getTimeZoneTransition("next");
+  if (
+    change &&
+    Temporal.Instant.compare(change.toInstant(), slot.instant) <= 0
+  ) {
+    return null;
+  }
+  const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
+  const steps = first.instant.until(slot.instant).total({ unit: step });
+  if (steps < 0 || !Number.isInteger(steps / interval)) {
+    return false;
+  }
+  const ended = ruleEndsBefore(rule, first, slot.instant, seriesZone);
+  return ended === null ? null : !ended;
+}
+
+/**
  * Whether `rule`, repeating from `first`, meets at `slot`: on its day,
  * before its end, at its time. Google meets a rule once a day, at its one
  * BYHOUR / BYMINUTE or the start's time, and ignores a list there. Null
@@ -447,9 +490,9 @@ function ruleHasSlot(
   slot: RecurrenceValue,
   seriesZone: string
 ): boolean | null {
-  // A rule within the day meets at many times, not the one read here.
-  if (SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""]) {
-    return null;
+  const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
+  if (step) {
+    return subDailyHasSlot(rule, step, first, slot, seriesZone);
   }
   const clock = (value: RecurrenceValue) =>
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
