@@ -14,6 +14,7 @@ import {
   refusalOf,
   run,
   weekly,
+  zone,
 } from "./google-test-fixtures";
 
 // A COUNT carried on through a split: exactly the meetings left.
@@ -134,6 +135,43 @@ describe("a COUNT carried from Google's list", () => {
     expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
+    ]);
+  });
+});
+
+describe("a COUNT carried from Google's list past a clock change", () => {
+  test("doesn't count a start at a time its rule doesn't meet", async () => {
+    // From Thu Mar 11 2027 9:00, daily at 2:30 four times: Mar 12, 13, 15
+    // and 16 (2:30 doesn't exist on Mar 14), and the start. The gap before
+    // the split stops the walk; from Google's list, two of the rule's
+    // meetings come before Mar 15, so two are left.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2027-03-11T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=4"],
+      start: { dateTime: "2027-03-11T09:00:00-05:00", timeZone: zone },
+    };
+    const listed = [
+      "2027-03-11T09:00:00-05:00",
+      "2027-03-12T02:30:00-05:00",
+      "2027-03-13T02:30:00-05:00",
+      "2027-03-15T02:30:00-04:00",
+      "2027-03-16T02:30:00-04:00",
+    ];
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? { items: listed.map((start) => occurrenceOf(series, start)) }
+        : undefined
+    );
+    const opened = occurrenceOf(series, "2027-03-15T02:30:00-04:00");
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=2",
     ]);
   });
 });

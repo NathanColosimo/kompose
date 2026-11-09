@@ -600,3 +600,29 @@ describe("This and following from an added meeting, or with several rules", () =
     }
   );
 });
+
+describe("deleting This and following beside a rule whose end can't be told", () => {
+  test("keeps that rule's COUNT, so the cut adds no meetings", async () => {
+    // Mondays, plus ten meetings on the hour from Nov 9 (a BYMINUTE list
+    // isn't read): deleting from Mon Nov 16 cuts the Mondays. An UNTIL on
+    // the other rule would run it every hour until Nov 16.
+    const mixed: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10",
+      ],
+    };
+    const opened = occurrenceOf(mixed, "2026-11-16T09:00:00-05:00");
+    const google = fakeGoogle(mixed, [opened]);
+    expect(
+      Exit.isSuccess(
+        await run(service().deleteEvent("primary", opened.id, "following"))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261116T135959Z",
+      "RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10",
+    ]);
+  });
+});

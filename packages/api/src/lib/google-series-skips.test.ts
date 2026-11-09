@@ -2,7 +2,11 @@
 import { describe, expect, test } from "bun:test";
 import { carryCountExactly } from "@kompose/google-cal/recurrence-utils";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
-import { dateValues, matchRecurrenceToStart } from "@kompose/google-cal/until";
+import {
+  dateValues,
+  matchRecurrenceToStart,
+  moveSkippedDays,
+} from "@kompose/google-cal/until";
 import { Exit } from "effect";
 import { Temporal } from "temporal-polyfill";
 import {
@@ -948,5 +952,92 @@ describe("a skip where nothing meets", () => {
       .map((value) => value.instant?.toString());
     expect(skips.length).toBeGreaterThan(0);
     expect(new Set(skips)).toEqual(new Set(["2026-11-23T13:00:00Z"]));
+  });
+});
+
+describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
+  const day = (date: string) => Temporal.PlainDate.from(date);
+  const nine = Temporal.PlainTime.from("09:00");
+  const moved = (params: {
+    from: string;
+    newRule: string;
+    oldRule: string;
+    skips: string;
+    to: string;
+    timed?: boolean;
+  }) =>
+    moveSkippedDays({
+      from: day(params.from),
+      fromTime: params.timed === false ? null : nine,
+      newRule: params.newRule,
+      oldRule: params.oldRule,
+      recurrence: [params.newRule, params.skips],
+      seriesZone: zone,
+      to: day(params.to),
+      toTime: params.timed === false ? null : nine,
+    });
+
+  test("moves a skip with Mondays that became Tuesdays, at its own time", () => {
+    // Mon Nov 23 skipped moves to Tue Nov 24; Nov 2, before the move, stays.
+    expect(
+      moved({
+        from: "2026-11-09",
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        skips: "EXDATE;TZID=America/New_York:20261123T090000,20261102T090000",
+        to: "2026-11-10",
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE;TZID=America/New_York:20261124T090000,20261102T090000",
+    ]);
+  });
+
+  test("moves an all-day skip as a date", () => {
+    expect(
+      moved({
+        from: "2026-11-09",
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        skips: "EXDATE;VALUE=DATE:20261123",
+        timed: false,
+        to: "2026-11-10",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU", "EXDATE;VALUE=DATE:20261124"]);
+  });
+
+  test("moves a monthly skip to its place in the new pattern", () => {
+    // The 2nd Tuesday became the 3rd Wednesday: Dec 8 moves to Dec 16.
+    expect(
+      moved({
+        from: "2026-11-10",
+        newRule: "RRULE:FREQ=MONTHLY;BYDAY=3WE",
+        oldRule: "RRULE:FREQ=MONTHLY;BYDAY=2TU",
+        skips: "EXDATE;TZID=America/New_York:20261208T090000",
+        to: "2026-11-18",
+      })
+    ).toEqual([
+      "RRULE:FREQ=MONTHLY;BYDAY=3WE",
+      "EXDATE;TZID=America/New_York:20261216T090000",
+    ]);
+  });
+
+  test("leaves a skip the new rule still meets on", () => {
+    const recurrence = [
+      "RRULE:FREQ=DAILY",
+      "EXDATE;TZID=America/New_York:20261123T090000",
+    ];
+    expect(
+      moveSkippedDays({
+        from: day("2026-11-09"),
+        fromTime: nine,
+        newRule: "RRULE:FREQ=DAILY",
+        oldRule: "RRULE:FREQ=DAILY",
+        recurrence,
+        seriesZone: zone,
+        to: day("2026-11-10"),
+        toTime: nine,
+      })
+    ).toBe(recurrence);
   });
 });
