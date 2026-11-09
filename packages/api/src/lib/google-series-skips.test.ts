@@ -794,9 +794,11 @@ describe("skips placed against the series being saved", () => {
           )
         )
       ).toBe(true);
-      expect(exdates(google.writes()[0]?.body?.recurrence)).toEqual([
-        "EXDATE:20261130T150000Z",
-      ]);
+      // This and following keeps an added day still on that a rule sent
+      // alone leaves out: no skip lands on it.
+      expect(exdates(google.writes()[0]?.body?.recurrence)).toEqual(
+        scope === "all" ? ["EXDATE:20261130T150000Z"] : []
+      );
     }
   );
 
