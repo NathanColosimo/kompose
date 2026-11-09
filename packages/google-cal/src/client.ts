@@ -870,34 +870,35 @@ function carriedSlot(params: {
 }
 
 /**
- * The split's own slot, when the new series still meets there and starts
- * on a day its rules don't meet (a Monday moved to Sunday, Mondays kept).
- * Google always meets at a series' start, so that start is a meeting of
- * its own, and the rule's meeting at the split, the one moved to it, would
- * be there twice.
+ * Where the new series meets in place of the split's own meeting, when it
+ * starts on a day its rules don't meet (a Monday moved to Sunday, Mondays
+ * kept). Google always meets at a series' start, so that start is a
+ * meeting of its own, and the rule's meeting in the moved one's place
+ * would be there too.
  */
 function movedOffRule(params: {
+  master: Event;
   originalStart: string;
   recurrence: string[];
   start: Event["start"];
-  zone: string;
 }): string[] {
-  const { originalStart, recurrence, start, zone } = params;
-  const day = dayOfStart(start, zone);
+  const { master, originalStart, recurrence, start } = params;
+  const day = dayOfStart(start, seriesZoneOf(master));
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
-  const offRule =
-    day !== null &&
-    rules.length > 0 &&
-    rules.every((rule) => isRuleDay(rule, day, day) === false);
-  return offRule &&
-    seriesMeetsAt({
-      recurrence,
-      seriesZone: zone,
-      slot: originalStart,
-      start,
-    }) === true
-    ? [originalStart]
-    : [];
+  if (
+    !(day && rules.length > 0) ||
+    rules.some((rule) => isRuleDay(rule, day, day) !== false)
+  ) {
+    return [];
+  }
+  const place = carriedSlot({
+    master,
+    recurrence,
+    slot: originalStart,
+    splitStart: originalStart,
+    start,
+  });
+  return place ? [place] : [];
 }
 
 /**
@@ -1696,10 +1697,10 @@ export function makeGoogleCalendarService(
             .filter((slot) => slot !== startSlot)
         : [];
       const moved = movedOffRule({
+        master,
         originalStart,
         recurrence: counted,
         start,
-        zone,
       });
       // The moved meeting's skip takes one of a COUNT's places.
       const recurrence = skipping(
