@@ -797,6 +797,45 @@ describe("This and following", () => {
     expect(carried?.body).toMatchObject({ summary: "Planning (renamed)" });
   });
 
+  test("a day on across the spring clock change keeps skips and changes on their own days", async () => {
+    // Daily 9:00 from Mar 1, 2027, Mar 15 deleted and Mar 17 renamed; from
+    // Mar 13 moved to Mar 14 9:00, 23 elapsed hours later.
+    const daily: Event = {
+      ...weekly,
+      end: { dateTime: "2027-03-01T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { dateTime: "2027-03-01T09:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(daily, [
+      {
+        ...occurrenceOf(daily, "2027-03-15T09:00:00-04:00"),
+        status: "cancelled",
+      },
+      {
+        ...occurrenceOf(daily, "2027-03-17T09:00:00-04:00"),
+        summary: "Planning (Mar 17)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(daily, "2027-03-13T09:00:00-05:00"), {
+            end: { dateTime: "2027-03-14T09:30:00-04:00", timeZone: zone },
+            start: { dateTime: "2027-03-14T09:00:00-04:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20270315T130000Z",
+    ]);
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20270317T130000Z`
+    );
+  });
+
   test("made timed across a clock change, places skips and changes in the new zone", async () => {
     // All-day Mondays from Nov 9; Mar 22 2027 deleted and Mar 15 renamed on
     // their own. From Nov 16 made 9:00 New York: after the clock change,

@@ -1469,11 +1469,14 @@ function carriedSlot(params: {
     splitStart: params.splitStart,
     zone,
   });
-  // A new time less than a day off (23:30 to 00:30 the next day) moves
-  // each meeting by as much, across midnight too; a longer move keeps a
-  // rule day's meetings on their own day first.
-  const from = momentOf(asStart(params.splitStart), zone);
-  const to = momentOf(start, zone);
+  // A new time less than a day off by the clock (23:30 to 00:30 the next
+  // day) moves each meeting by as much, across midnight too; a longer move
+  // keeps a rule day's meetings on their own day first. A day on across a
+  // clock change (23 elapsed hours) is a day.
+  const wall = (time: Event["start"]) =>
+    momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
+  const from = wall(asStart(params.splitStart));
+  const to = wall(start);
   const shortMove = Boolean(
     from && to && Math.abs(from.until(to).total("hours")) < 24
   );
