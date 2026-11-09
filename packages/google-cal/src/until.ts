@@ -108,7 +108,10 @@ function stepsWithinADay(line: string): boolean {
  * `lastCountedMeeting`'s answers, by rule and start; cleared when full.
  * It's what keeps a save of a long COUNT series with many skips fast: each
  * skip asks for its rule's end again (a 3,000-meeting series with 400
- * skips saves in tens of milliseconds with it, seconds without).
+ * skips saves in tens of milliseconds with it, seconds without). Shared
+ * across saves and users safely: an answer depends only on its key (the
+ * rule's text with its COUNT, the first start, the times and the zone),
+ * never on whose calendar asked, and it holds no event data.
  */
 const LAST_COUNTED = new Map<string, number | null>();
 const LAST_COUNTED_LIMIT = 1000;
