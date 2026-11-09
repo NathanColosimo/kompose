@@ -1071,14 +1071,14 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { tagIds, ...unsafeDbInput } = input;
       const sent = stripSystemManagedTaskFields(unsafeDbInput);
       const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
+      const inSeries = task.seriesMasterId !== null;
       const changesPattern =
-        task.seriesMasterId !== null &&
-        (yield* changesSeriesRecurrence(userId, task, sent));
+        inSeries && (yield* changesSeriesRecurrence(userId, task, sent));
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
       const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
-        task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
+        inSeries && !changesPattern ? withoutPattern : sent;
       const recurrenceChanged = changesPattern && scope === "following";
 
       // Regenerating a series replaces its rows. When the edit doesn't set
