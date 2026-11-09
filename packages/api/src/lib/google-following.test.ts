@@ -311,6 +311,64 @@ describe("This and following", () => {
     expect(renamed?.url.pathname).toEndWith("_20261125T140000Z");
   });
 
+  test("a move onto a day whose occurrence was deleted keeps the moved meeting", async () => {
+    // Weekdays at 9:00, Tue Nov 17 deleted on its own: moving Mon Nov 16
+    // to Tue Nov 17 puts the meeting the user saved there, so no skip.
+    const weekdays: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+    };
+    const google = fakeGoogle(weekdays, [
+      {
+        ...occurrenceOf(weekdays, "2026-11-17T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(
+            "following",
+            occurrenceOf(weekdays, "2026-11-16T09:00:00-05:00"),
+            {
+              end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+            }
+          )
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+    ]);
+  });
+
+  test("a move onto a day whose occurrence was renamed is refused, naming it", async () => {
+    const weekdays: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+    };
+    fakeGoogle(weekdays, [
+      {
+        ...occurrenceOf(weekdays, "2026-11-17T09:00:00-05:00"),
+        summary: "Planning (Tuesday)",
+      },
+    ]);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(weekdays, "2026-11-16T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-17T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+  });
+
   test("from the first occurrence, edits the series itself", async () => {
     const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
     const google = fakeGoogle(weekly);
