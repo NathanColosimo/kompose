@@ -167,6 +167,29 @@ describe("Entire series", () => {
     });
   });
 
+  test("a new time for a rule that steps a whole day at a time saves", async () => {
+    // Every 24 hours from Nov 9 9:00, three times: once a day.
+    const everyDay: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=HOURLY;INTERVAL=24;COUNT=3"],
+    };
+    const google = fakeGoogle(everyDay);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", everyDay, {
+            end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=HOURLY;INTERVAL=24;COUNT=3"],
+      start: { dateTime: "2026-11-09T10:00:00-05:00" },
+    });
+  });
+
   test("refuses a new time in a series that meets several times a day", async () => {
     // A rule at 9:00 and one at 15:00, three days from Dec 1; Dec 2's
     // 15:00 moved to 16:00 for the entire series.

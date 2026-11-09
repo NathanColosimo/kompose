@@ -18,6 +18,9 @@ const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
 const MAX_COUNT_DAYS = 366 * 50;
 /** A rule that repeats within a day: its times don't follow the start's. */
 const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
+const FREQ = /FREQ=([A-Z]+)/;
+const INTERVAL = /INTERVAL=(\d+)/;
+const TIME_PART = /BY(?:HOUR|MINUTE|SECOND)=/;
 /**
  * A time part a rule sets to one value. Google meets a rule once a day, at
  * the start's time, and ignores a list ("BYHOUR=9,15"), so a list reads as
@@ -60,6 +63,26 @@ export function ruleClock(
   });
 }
 
+/** A sub-daily rule's steps in a day. */
+const STEPS_A_DAY: Record<string, number> = {
+  HOURLY: 24,
+  MINUTELY: 24 * 60,
+  SECONDLY: 24 * 60 * 60,
+};
+
+/**
+ * Whether a sub-daily rule meets more than once a day: unless it steps
+ * whole days at a time (`FREQ=HOURLY;INTERVAL=24`) with no time parts.
+ */
+function stepsWithinADay(line: string): boolean {
+  const steps = STEPS_A_DAY[FREQ.exec(line)?.[1] ?? ""];
+  if (!steps) {
+    return false;
+  }
+  const interval = Number(INTERVAL.exec(line)?.[1] ?? "1");
+  return interval % steps !== 0 || TIME_PART.test(line);
+}
+
 /**
  * Whether a series meets more than once a day: a sub-daily rule, or rules
  * at different times. The start, at `base`, counts as a meeting, and its
@@ -73,7 +96,7 @@ export function meetsSeveralTimesADay(
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const times = new Set(rules.map((line) => ruleTime(line, base)));
   times.add(ruleTime("", base));
-  return rules.some((line) => SUB_DAILY.test(line)) || times.size > 1;
+  return rules.some(stepsWithinADay) || times.size > 1;
 }
 
 /**
