@@ -291,13 +291,24 @@ function entireSeriesTimes(
 
 /**
  * An Entire series edit's times on the opened occurrence's own day (the
- * series keeps its dates). Its own times if they don't parse.
+ * series keeps its dates). A time the edit kept is the occurrence's own,
+ * moment for moment (rebuilt from its clock, a time in an hour a clock
+ * change repeats could move). Its own times if they don't parse.
  */
 function timesOnOwnDay(
   occurrence: Event,
   edited: CreateEvent,
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
+  if (sameTime(edited.start, occurrence.start, zone)) {
+    return {
+      end: sameTime(edited.end, occurrence.end, zone)
+        ? occurrence.end
+        : inSeriesZone(edited.end, master.end),
+      start: occurrence.start,
+    };
+  }
   return (
     seriesTimesForEdit({
       editedEnd: inSeriesZone(edited.end, master.end),
