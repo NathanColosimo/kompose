@@ -442,6 +442,8 @@ interface DateListMatch {
   fromTime: Temporal.PlainTime | null;
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
+  /** Whether the saved series meets on a skip's day (at the start's time). */
+  meetsOn: ((value: RecurrenceValue) => boolean) | null;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
   ownSlot: ((value: RecurrenceValue) => boolean) | null;
   /**
@@ -460,6 +462,23 @@ interface DateListMatch {
 }
 
 /**
+ * Whether a once-a-day series counted from `start` meets on a value's day
+ * (at its start's time): one of its `rules` meets that day, not yet ended.
+ */
+function meetsOnDay(
+  rules: string[],
+  start: Temporal.PlainDate,
+  timeZone: string
+): (value: RecurrenceValue) => boolean {
+  return (value) =>
+    rules.some(
+      (rule) =>
+        isRuleDay(rule, start, value.day) === true &&
+        !endedBefore(rule, start, value.day, timeZone)
+    );
+}
+
+/**
  * An EXDATE/RDATE line in the start's form: dates for an all-day series;
  * for a timed one, each skip at the start's time on its day, so it stays
  * skipped when that time moves. RDATE times stay as they are.
@@ -473,6 +492,7 @@ function matchDateList(
     added,
     fromTime,
     keepAsDate,
+    meetsOn,
     ownSlot,
     retime,
     seriesZone,
@@ -538,7 +558,8 @@ function matchDateList(
       const movedOnto =
         fromTime !== null &&
         !kept.toZonedDateTimeISO(seriesZone).toPlainTime().equals(fromTime) &&
-        Temporal.Instant.compare(kept, moment) === 0;
+        Temporal.Instant.compare(kept, moment) === 0 &&
+        meetsOn?.(value) === true;
       return movedOnto ? [] : [kept];
     }
     if (
@@ -1075,6 +1096,7 @@ export function matchRecurrenceToStart(
           );
         }
       : null;
+  const meetsOn = base && baseDay ? meetsOnDay(rules, baseDay, timeZone) : null;
   let changed = false;
   const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
@@ -1089,6 +1111,7 @@ export function matchRecurrenceToStart(
           added,
           fromTime: base,
           keepAsDate,
+          meetsOn,
           ownSlot,
           retime,
           seriesZone: timeZone,

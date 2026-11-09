@@ -975,6 +975,62 @@ describe("a skip where nothing meets", () => {
   });
 });
 
+describe("a deleted added meeting the series moves onto", () => {
+  // Mondays at 9:00, plus Nov 23 at 8:00 added and then deleted on its own.
+  const added: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261123T080000",
+    ],
+  };
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+
+  test("goes when the series moves to its time on a day it meets", async () => {
+    // Moved to 8:00, Nov 23's own meeting is at 8:00: a skip there would
+    // cancel it.
+    const google = fakeGoogle(added, [
+      {
+        ...occurrenceOf(added, "2026-11-23T08:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(added, "2026-11-16T09:00:00-05:00"), {
+            end: at("2026-11-16T08:30:00-05:00"),
+            start: at("2026-11-16T08:00:00-05:00"),
+          })
+        )
+      )
+    ).toBe(true);
+    const written = google.writes()[0]?.body?.recurrence as string[];
+    expect(dateValues(written, "EXDATE", zone)).toEqual([]);
+  });
+
+  test("stays skipped on a day the series doesn't meet", () => {
+    // Added on Tue Nov 24 at 8:00 and deleted: moving the Mondays to 8:00
+    // doesn't bring it back.
+    const recurrence = [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;TZID=America/New_York:20261124T080000",
+      "EXDATE;TZID=America/New_York:20261124T080000",
+    ];
+    const matched = matchRecurrenceToStart(
+      recurrence,
+      { dateTime: "2026-11-09T08:00:00-05:00" },
+      zone,
+      { dateTime: "2026-11-09T09:00:00-05:00" }
+    );
+    expect(
+      dateValues(matched ?? [], "EXDATE", zone).map((value) =>
+        value.instant?.toString()
+      )
+    ).toEqual(["2026-11-24T13:00:00Z"]);
+  });
+});
+
 describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
   const day = (date: string) => Temporal.PlainDate.from(date);
   const nine = Temporal.PlainTime.from("09:00");

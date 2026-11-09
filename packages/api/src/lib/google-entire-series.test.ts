@@ -724,6 +724,80 @@ describe("Entire series start and length changes, as Google applies them", () =>
     }
   );
 
+  test.each([
+    [
+      "hourly from 9:00, 11:00 renamed, made to end after two meetings",
+      { recurrence: ["RRULE:FREQ=HOURLY"] },
+      "2026-11-09T11:00:00-05:00",
+      "RRULE:FREQ=HOURLY;COUNT=2",
+      true,
+    ],
+    [
+      "hourly from 9:00, 11:00 renamed, made to end after three meetings",
+      { recurrence: ["RRULE:FREQ=HOURLY"] },
+      "2026-11-09T11:00:00-05:00",
+      "RRULE:FREQ=HOURLY;COUNT=3",
+      false,
+    ],
+    [
+      "all-day weekly, Nov 30 renamed, made to end after three",
+      {
+        end: { date: "2026-11-10" },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+        start: { date: "2026-11-09" },
+      },
+      "2026-11-30",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+      true,
+    ],
+    [
+      "all-day weekly, Nov 30 renamed, made to end after four",
+      {
+        end: { date: "2026-11-10" },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+        start: { date: "2026-11-09" },
+      },
+      "2026-11-30",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      false,
+    ],
+  ] as const)(
+    "%s refuses only when it drops it",
+    async (_case, shape, renamedAt, rule, drops) => {
+      const series: Event = {
+        ...weekly,
+        ...shape,
+        recurrence: [...shape.recurrence],
+      };
+      const own = {
+        ...series,
+        end: series.end,
+        id: `series_${renamedAt.replace(/[-:]/g, "")}`,
+        originalStartTime:
+          renamedAt.length === 10
+            ? { date: renamedAt }
+            : { dateTime: renamedAt, timeZone: zone },
+        recurrence: undefined,
+        recurringEventId: "series",
+        start:
+          renamedAt.length === 10
+            ? { date: renamedAt }
+            : { dateTime: renamedAt, timeZone: zone },
+        summary: "Planning (renamed)",
+      };
+      const google = fakeGoogle(series, [own]);
+      const save = edit("all", series, { recurrence: [rule] });
+      if (drops) {
+        expect(await refusalOf(save)).toMatchObject({
+          data: { reason: "dropsChangedOccurrences" },
+        });
+        expect(google.writes()).toEqual([]);
+      } else {
+        expect(Exit.isSuccess(await run(save))).toBe(true);
+      }
+    }
+  );
+
   test("a skip added on an occurrence changed on its own is refused", async () => {
     fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
     expect(
