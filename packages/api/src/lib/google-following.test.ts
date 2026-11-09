@@ -1696,6 +1696,23 @@ describe("series shapes a write has to keep as they are", () => {
     expect(google.writes()).toHaveLength(2);
   });
 
+  test("Repeat: None from an occurrence with its own attachment keeps it", async () => {
+    // Nov 16 has a file of its own; from it, the repeat is ended.
+    const opened = {
+      ...occurrenceOf(weekly, "2026-11-16T09:00:00-05:00"),
+      attachments: [{ fileUrl: "https://example.com/agenda" }],
+    };
+    const google = fakeGoogle(weekly, [opened]);
+    expect(
+      Exit.isSuccess(await run(edit("following", opened, { recurrence: [] })))
+    ).toBe(true);
+    const [created] = google.writes();
+    expect(created?.url.searchParams.get("supportsAttachments")).toBe("true");
+    expect(created?.body).toMatchObject({
+      attachments: [{ fileUrl: "https://example.com/agenda" }],
+    });
+  });
+
   test("Repeat: None from a moved occurrence keeps it as one event, as it was", async () => {
     // Nov 16 was moved to Tue Nov 17 11:00; from it, the repeat is ended.
     const opened = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
