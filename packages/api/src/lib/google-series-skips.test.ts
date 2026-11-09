@@ -21,6 +21,40 @@ import {
 // Skips (EXDATE) and occurrences deleted on their own stay where their
 // meetings go when a save moves a series' time or makes it all day.
 
+describe("a skipped added meeting in the hour a clock change repeats", () => {
+  test("stays the only skip when the series moves to another time", async () => {
+    // Daily at 1:30 New York from Oct 25, with an added meeting at Nov 1's
+    // second 1:30 (6:30 UTC), skipped. Moved to 2:30, the rule's Nov 1
+    // meeting (the first 1:30, now 2:30) stays.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-25T02:00:00-04:00", timeZone: zone },
+      recurrence: [
+        "RRULE:FREQ=DAILY",
+        "RDATE:20261101T063000Z",
+        "EXDATE:20261101T063000Z",
+      ],
+      start: { dateTime: "2026-10-25T01:30:00-04:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-10-25T03:00:00-04:00", timeZone: zone },
+            start: { dateTime: "2026-10-25T02:30:00-04:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "RDATE:20261101T063000Z",
+      "EXDATE:20261101T063000Z",
+    ]);
+  });
+});
+
 describe("This and following", () => {
   test("keeps an occurrence deleted after the split skipped", async () => {
     // Nov 30 and Nov 9 were deleted one at a time (cancelled exceptions,
@@ -1440,6 +1474,25 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
       "RDATE:20261101T063000Z",
       "EXDATE:20261101T063000Z,20261103T140000Z",
     ]);
+  });
+
+  test("leaves a skip at the second pass of a repeated hour where it is", () => {
+    // Sundays at 1:30 from Oct 25, moved to Mondays, with a stale skip at
+    // Nov 1's second 1:30 (6:30 UTC): the rule met at the first 1:30, so
+    // that skip isn't its meeting's, and moved it would cancel Nov 2's.
+    const half = Temporal.PlainTime.from("01:30");
+    expect(
+      moveSkippedDays({
+        from: day("2026-10-25"),
+        fromTime: half,
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=SU",
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261101T063000Z"],
+        seriesZone: zone,
+        to: day("2026-10-26"),
+        toTime: half,
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261101T063000Z"]);
   });
 
   test("leaves a skip where nothing met where it is", () => {

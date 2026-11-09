@@ -1116,12 +1116,9 @@ export function matchRecurrenceToStart(
             return true;
           }
           const clock = at.toZonedDateTimeISO(timeZone).toPlainTime();
-          // A rule meets at the first of a repeated hour (RFC 5545): a
-          // skip at the second is another meeting's.
-          const ruleMoment = value.day
-            .toZonedDateTime({ plainTime: clock, timeZone })
-            .toInstant();
-          if (Temporal.Instant.compare(ruleMoment, at) !== 0) {
+          // A skip at the second pass of a repeated hour is another
+          // meeting's.
+          if (!atOwnWallTime(at, timeZone)) {
             return false;
           }
           // A day a rule can't be read for may be its: a skip where
@@ -1384,14 +1381,16 @@ export function moveSkippedDays(params: {
   const severalADay = meetsSeveralTimesADay(recurrence, fromTime);
   // A timed skip moves only if the moved rule meets then: another rule's
   // (a 15:00 rule left on Mondays) stays with it, as does one where
-  // nothing met (it would cancel a meeting where it lands).
+  // nothing met (it would cancel a meeting where it lands), such as the
+  // second pass of a repeated hour.
   const ownSkip = (value: RecurrenceValue) =>
     !(value.instant && (severalADay || fromTime)) ||
-    ruleAtTime(
-      oldRule,
-      value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
-      fromTime
-    );
+    (atOwnWallTime(value.instant, seriesZone) &&
+      ruleAtTime(
+        oldRule,
+        value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
+        fromTime
+      ));
   const wallTime = (value: RecurrenceValue) =>
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime() ?? null;
   // A skip another rule still needs stays, and no skip lands on another
@@ -1551,4 +1550,21 @@ export function moveSkippedDays(params: {
     ];
   });
   return changed ? next : recurrence;
+}
+
+/**
+ * Whether `instant` is the moment its wall-clock time in `timeZone` names:
+ * not the second pass of an hour a clock change repeats, where a rule
+ * doesn't meet (RFC 5545 reads a repeated time as its first).
+ */
+export function atOwnWallTime(
+  instant: Temporal.Instant,
+  timeZone: string
+): boolean {
+  const named = instant
+    .toZonedDateTimeISO(timeZone)
+    .toPlainDateTime()
+    .toZonedDateTime(timeZone)
+    .toInstant();
+  return Temporal.Instant.compare(named, instant) === 0;
 }
