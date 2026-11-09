@@ -1357,16 +1357,19 @@ function placeSkips(params: {
     }) === null;
   // A skipped position with no meeting of the new series after its start
   // in its place (none there, the start itself, or another's) frees none.
+  // Only a rule meeting's skip takes a place another one could share.
   const noPlaceFor = (skip: {
     added: boolean;
     at: string | null;
     formed: string | null;
     moment: Temporal.Instant | null;
+    ruleMeeting: boolean | null;
   }) =>
     skip.formed === startSlot ||
     (skip.at === null && !skip.added) ||
     Boolean(
-      skip.at &&
+      skip.ruleMeeting &&
+        skip.at &&
         skip.moment &&
         sharesPlace(skip.formed, skip.moment.epochMilliseconds)
     );
@@ -1380,7 +1383,7 @@ function placeSkips(params: {
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
-    const noPlace = noPlaceFor({ added, at, formed, moment });
+    const noPlace = noPlaceFor({ added, at, formed, moment, ruleMeeting });
     const uncounted = leftOutAt(moment);
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
