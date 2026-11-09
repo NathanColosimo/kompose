@@ -42,6 +42,7 @@ import {
   type RecurrenceScope,
 } from "./schema";
 import {
+  canonicalRule,
   changedFields,
   keepsTimes,
   type NamingRefusal,
@@ -98,10 +99,7 @@ function withoutEnd(line: string): string {
 function recurrenceValues(recurrence: string[], zone: string): string {
   const rules = recurrence
     .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
-    .map((line) => {
-      const [name, parts = ""] = line.split(":");
-      return `${name}:${parts.split(";").sort().join(";")}`;
-    })
+    .map(canonicalRule)
     .sort();
   const values = (name: "EXDATE" | "RDATE") =>
     dateValues(recurrence, name, zone).map(skipKey).sort();

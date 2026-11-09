@@ -2453,6 +2453,16 @@ describe("isRuleDay", () => {
 });
 
 describe("newRepeat", () => {
+  test("the same days listed in another order aren't a new repeat", () => {
+    expect(
+      newRepeat({
+        moved: null,
+        own: ["RRULE:FREQ=WEEKLY;BYDAY=WE,MO;COUNT=6"],
+        saved: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=6"],
+      })
+    ).toBe(false);
+  });
+
   test("a new day's rule rebuilt for it isn't a new repeat", () => {
     // Monthly on the first Saturday, moved to the second Sunday: the
     // editor rebuilds which day it picks, in any form.
