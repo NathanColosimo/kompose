@@ -91,7 +91,8 @@ function elsewhere(refusal: NamingRefusal): string {
     .map((start) => start.slice(0, 10))
     .sort()
     .at(-1);
-  const following = `This and following${last ? ` from an occurrence after ${dayName(last, spansYears(refusal.originalStarts))}` : ""}`;
+  // The series may have no meeting after it (its end), so none is promised.
+  const following = `This and following${last ? ` from an occurrence after ${dayName(last, spansYears(refusal.originalStarts))}, if there is one` : ""}`;
   return refusal.seriesOnly
     ? `Save it with ${following}.`
     : `Save it for this occurrence only, or with ${following}.`;
