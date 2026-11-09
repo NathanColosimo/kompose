@@ -292,9 +292,9 @@ export function skipping(
 }
 
 /**
- * `recurrence` with its rule's COUNT changed `by` that many: less the
- * occurrences before a split (a five-time series split at its third runs
- * three), or more for skips added within it.
+ * `recurrence` with its rule's COUNT changed `by` that many: raised for a
+ * moved meeting's skip, or lowered for places a split's skips lose. A
+ * split's carried COUNT is set from the series' own (`withCount`).
  */
 export function changeCount(recurrence: string[], by: number): string[] {
   return recurrence.map((line) => {
@@ -918,8 +918,7 @@ export function carryCountFromList(
   const before = startAtRuleTime
     ? positionsIn((value) => fromStartToSplit(value, params))
     : null;
-  // Used up before the split, it disagrees with Google's own count of
-  // the start: the side from the split on decides.
+  // Not used up before the split: the positions left are the rest.
   if (before !== null && before < count) {
     return {
       heldPlaces: countedAfter(count - before),
@@ -927,6 +926,9 @@ export function carryCountFromList(
       recurrence: withCount(recurrence, count - before),
     };
   }
+  // Otherwise (used up before the split, it disagrees with Google's own
+  // count of the start, or the start can't be told) the side from the
+  // split on decides.
   const left = positionsIn(
     (value) => !beforeSplit(value, originalStart, seriesZone)
   );
