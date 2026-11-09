@@ -1564,7 +1564,11 @@ export function makeGoogleCalendarService(
       event: changes.attendees
         ? {
             ...event,
-            attendees: seriesAttendees(changes.attendees, master.attendees),
+            attendees: seriesAttendees({
+              edited: changes.attendees,
+              occurrence: occurrence.attendees,
+              series: master.attendees,
+            }),
           }
         : event,
     };

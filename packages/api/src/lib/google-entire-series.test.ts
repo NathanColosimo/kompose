@@ -391,6 +391,34 @@ describe("what Google keeps as an occurrence's own", () => {
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("a guest added from an occurrence leaves the guests it dropped on its own", async () => {
+    // The series has a and b; Nov 16 dropped b on its own. From it, c is
+    // added: the series keeps b and gains c.
+    const series: Event = {
+      ...weekly,
+      attendees: [{ email: "a@example.com" }, { email: "b@example.com" }],
+    };
+    const dropped = {
+      ...occurrenceOf(series, "2026-11-16T09:00:00-05:00"),
+      attendees: [{ email: "a@example.com" }],
+    };
+    const google = fakeGoogle(series, [dropped]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", dropped, {
+            attendees: [{ email: "a@example.com" }, { email: "c@example.com" }],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.attendees).toEqual([
+      { email: "a@example.com" },
+      { email: "b@example.com" },
+      { email: "c@example.com" },
+    ]);
+  });
+
   test("a guest added keeps everyone's answers to the series", async () => {
     // I'm invited to the series; I accepted Nov 16 alone, and from it add
     // a guest: the series keeps my answer to it.
