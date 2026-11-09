@@ -3,6 +3,7 @@ import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
+  repeats,
   sanitizeEventPayload,
   seriesMeetsAt,
   skipping,
@@ -503,6 +504,99 @@ function deletedLost(params: {
       !keptOrEnded({ master, place, recurrence, start: times.start })
     );
   });
+}
+
+/**
+ * What an Entire series save that ends the repeat ("Repeat: None") keeps:
+ * the series becomes its first meeting alone, and Google drops every
+ * occurrence's own changes with the repeat. The first meeting's own
+ * fields the save doesn't set, and its own times when the save keeps the
+ * series' times (or it's the one opened, whose times the form shows), are
+ * carried into the event left (`carried`). Any other changed occurrence,
+ * a first meeting deleted on its own, or own times the save changes, is
+ * `lost`.
+ */
+function endedRepeat(params: {
+  cancelled: string[];
+  changed: { occurrence: Event; originalStart: string }[];
+  changes: Partial<CreateEvent>;
+  edited: CreateEvent;
+  master: Event;
+  opened: Event;
+  times: { end: Event["end"]; start: Event["start"] };
+}): { carried: Partial<CreateEvent>; lost: string[] } {
+  const { master, times } = params;
+  const zone = seriesZoneOf(master);
+  const firstSlot = slotOf(master.start, zone);
+  const lost = params.cancelled.filter((slot) => slot === firstSlot);
+  let carried: Partial<CreateEvent> = {};
+  for (const { occurrence, originalStart } of params.changed) {
+    if (originalStart !== firstSlot) {
+      lost.push(originalStart);
+      continue;
+    }
+    const { end, start, ...own } = changesOwnTo(occurrence, master, zone);
+    const fields = Object.fromEntries(
+      Object.entries(own).filter(([field]) => !(field in params.changes))
+    );
+    if (occurrence.id === params.opened.id) {
+      carried = {
+        ...fields,
+        end: inSeriesZone(params.edited.end, master.end),
+        start: inSeriesZone(params.edited.start, master.start),
+      };
+    } else if (!(start && end)) {
+      carried = fields;
+    } else if (
+      sameTime(times.start, master.start, zone) &&
+      sameLength(occurrence, times, zone)
+    ) {
+      carried = { ...fields, end, start };
+    } else {
+      lost.push(originalStart);
+    }
+  }
+  return { carried, lost };
+}
+
+/**
+ * What an Entire series save writes of `rule` once the occurrences changed
+ * or deleted on their own are read, and what it carries of the first
+ * meeting when it ends the repeat (`endedRepeat`); or why it's refused.
+ */
+function keptAfterEdit(params: {
+  cancelled: string[];
+  changed: { occurrence: Event; originalStart: string }[];
+  changes: Partial<CreateEvent>;
+  edited: CreateEvent;
+  master: Event;
+  movesSlots: boolean;
+  opened: Event;
+  rule: string[];
+  times: { end: Event["end"]; start: Event["start"] };
+}): SeriesRefusal | { carried: Partial<CreateEvent>; recurrence: string[] } {
+  const { cancelled, master, rule, times } = params;
+  if (!repeats(rule)) {
+    const { carried, lost } = endedRepeat(params);
+    return lost.length > 0
+      ? naming("dropsChangedOccurrences", lost, true)
+      : { carried, recurrence: [] };
+  }
+  const zone = seriesZoneOf(master);
+  const recurrence = sameTime(times.start, master.start, zone)
+    ? rule
+    : skipping(
+        rule,
+        deletedSlots({ cancelled, master, start: times.start }),
+        zone
+      );
+  return (
+    seriesChangeRefusal({
+      ...params,
+      recurrence,
+      saved: params.edited.recurrence,
+    }) ?? { carried: {}, recurrence }
+  );
 }
 
 /**
@@ -1316,6 +1410,8 @@ export function makeGoogleCalendarService(
    * stays deleted as a skip where its meeting now is (`deletedSlots`), as
    * Google brings it back when the start moves; one changed whose changes
    * Google would undo is refused before writing (`seriesChangeRefusal`).
+   * A save that ends the repeat carries the first meeting's own changes
+   * into the event left (`endedRepeat`).
    */
   const keptOccurrences = (params: {
     calendarId: string;
@@ -1336,34 +1432,20 @@ export function makeGoogleCalendarService(
         movesStart ||
         JSON.stringify(rule) !== JSON.stringify(master.recurrence ?? []);
       if (!(movesSlots || !sameLength(times, master, zone))) {
-        return rule;
+        return { carried: {}, recurrence: rule };
       }
       const { cancelled, changed } = yield* exceptionsOf(
         params.calendarId,
         master
       );
-      const recurrence = movesStart
-        ? skipping(
-            rule,
-            deletedSlots({ cancelled, master, start: times.start }),
-            zone
-          )
-        : rule;
-      const refusal = seriesChangeRefusal({
+      const kept = keptAfterEdit({
+        ...params,
         cancelled,
         changed,
-        changes: params.changes,
-        master,
         movesSlots,
-        opened: params.opened,
-        recurrence,
-        saved: params.edited.recurrence,
-        times,
+        rule,
       });
-      if (refusal) {
-        return yield* Effect.fail(refused(refusal));
-      }
-      return recurrence;
+      return "reason" in kept ? yield* Effect.fail(refused(kept)) : kept;
     });
 
   const updateEventAll = (
@@ -1383,7 +1465,7 @@ export function makeGoogleCalendarService(
 
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
-      const recurrence = yield* keptOccurrences({
+      const { carried, recurrence } = yield* keptOccurrences({
         calendarId,
         changes,
         edited,
@@ -1396,8 +1478,9 @@ export function makeGoogleCalendarService(
       const payload: CreateEvent = {
         ...event,
         end: times.end,
-        recurrence,
         start: times.start,
+        ...carried,
+        recurrence,
       };
       yield* Effect.annotateCurrentSpan(
         "eventType",
@@ -1427,8 +1510,9 @@ export function makeGoogleCalendarService(
 
       const updated = yield* parseEventResponse(response);
       // A new start cancels the opened occurrence's own times with the
-      // rest of its exception; there's nothing of its own left to write.
-      if (!movesStart) {
+      // rest of its exception, and an ended repeat all of it (the first
+      // meeting's carried above); there's nothing of its own left to write.
+      if (!movesStart && repeats(recurrence)) {
         yield* applyToOpened({
           calendarId,
           changes,
