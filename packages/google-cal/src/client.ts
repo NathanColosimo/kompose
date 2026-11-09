@@ -63,6 +63,9 @@ import {
   startInstant,
 } from "./until";
 
+/** A rule part that ends it: COUNT or UNTIL. */
+const END_PART = /^(?:COUNT|UNTIL)=/;
+
 interface GoogleWatchChannelInput {
   address: string;
   expiration: string;
@@ -283,7 +286,7 @@ function entireSeriesTimes(
   // A day the opened meeting already had on its own isn't a new one.
   const movesDay = !day?.equals(dayOfStart(occurrence.start, zone) ?? day);
   if (opensSeries(occurrence, master) && rulesMeet && movesDay) {
-    return { end, start };
+    return { end: oneForm(end), start: oneForm(start) };
   }
   return (
     seriesTimesForEdit({
@@ -363,11 +366,84 @@ function newTimesKeep(params: {
 }
 
 /**
+ * A time in one form: a date when it has one (a form that toggled to all
+ * day can keep its old date-time), else its date-time.
+ */
+function oneForm(time: Event["start"]): Event["start"] {
+  return time.date
+    ? { date: time.date }
+    : { dateTime: time.dateTime, timeZone: time.timeZone };
+}
+
+/** Whether the series' own rules (not an added day) meet at `slot`. */
+function ruleMeetingAt(slot: string, master: Event): boolean {
+  return (
+    seriesMeetsAt({
+      recurrence: (master.recurrence ?? []).filter((line) =>
+        line.startsWith("RRULE:")
+      ),
+      seriesZone: seriesZoneOf(master),
+      slot,
+      start: master.start,
+    }) === true
+  );
+}
+
+/**
+ * A rule meeting's place once the series starts at `start` (it meets once
+ * a day): its own day at the new time, or its date made all day. Null if
+ * it doesn't parse.
+ */
+function placeOnNewStart(
+  slot: string,
+  master: Event,
+  start: Event["start"]
+): string | null {
+  const day = dayOfStart(asStart(slot), seriesZoneOf(master));
+  const repeatsIn = repeatZone(master, start);
+  const clock = clockOf(start, repeatsIn);
+  if (!day) {
+    return null;
+  }
+  return clock
+    ? googleDateTime(
+        day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
+      )
+    : day.toString();
+}
+
+/**
+ * Whether the saved series has `place`, or ends before it: a meeting past
+ * its new end goes with the rest, not lost.
+ */
+function keptOrEnded(params: {
+  master: Event;
+  place: string;
+  recurrence: string[];
+  start: Event["start"];
+}): boolean {
+  const { master, place, start } = params;
+  const seriesZone = repeatZone(master, start);
+  // Read without skips: the save's own skip for it is already there.
+  const rules = params.recurrence.filter((line) => line.startsWith("RRULE:"));
+  const unbounded = rules.map(
+    (line) =>
+      `RRULE:${line
+        .slice("RRULE:".length)
+        .split(";")
+        .filter((part) => !END_PART.test(part))
+        .join(";")}`
+  );
+  const meets = (recurrence: string[]) =>
+    seriesMeetsAt({ recurrence, seriesZone, slot: place, start }) === true;
+  return meets(rules) || meets(unbounded);
+}
+
+/**
  * Where the occurrences deleted on their own (`cancelled`, original
- * starts) are once a series that meets once a day starts at `start`: a
- * rule's meeting on its own day at the new time (its date, made all day;
- * that day at the new time, made timed); an added (RDATE) one, or one
- * under the same time of day, where it was.
+ * starts) are skipped once a series that meets once a day starts at
+ * `start`: a rule's meeting at its place there (`placeOnNewStart`); an
+ * added (RDATE) one where it was, unless the series changes form.
  */
 function deletedSlots(params: {
   cancelled: string[];
@@ -375,43 +451,23 @@ function deletedSlots(params: {
   start: Event["start"];
 }): string[] {
   const { cancelled, master, start } = params;
-  const zone = seriesZoneOf(master);
   const keepsForm = Boolean(master.start.date) === Boolean(start.date);
   if (keepsForm && !timeOfDayChange(master, start)) {
     return cancelled;
   }
-  const rules = (master.recurrence ?? []).filter((line) =>
-    line.startsWith("RRULE:")
+  return cancelled.map((slot) =>
+    ruleMeetingAt(slot, master) || !keepsForm
+      ? (placeOnNewStart(slot, master, start) ?? slot)
+      : slot
   );
-  return cancelled.map((slot) => {
-    const day = dayOfStart(asStart(slot), zone);
-    const ruleMet =
-      seriesMeetsAt({
-        recurrence: rules,
-        seriesZone: zone,
-        slot,
-        start: master.start,
-      }) === true;
-    // Made timed, the series repeats in its new start's zone.
-    const repeatsIn = repeatZone(master, start);
-    const clock = clockOf(start, repeatsIn);
-    if (!(day && (ruleMet || !keepsForm))) {
-      return slot;
-    }
-    return clock
-      ? googleDateTime(
-          day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
-        )
-      : day.toString();
-  });
 }
 
 /**
- * The occurrences deleted on their own whose skip a new start leaves where
- * the series no longer meets: its day at the new time, after a first
- * meeting's day move under a rule whose days follow its start (monthly on
- * the start's date, say), isn't one of the series' meetings, and the one
- * that now is in its place would come back.
+ * The rule meetings deleted on their own whose place after a new start
+ * (where `deletedSlots` skips them) isn't one of the saved series': after
+ * a first meeting's day move under a rule whose days follow its start
+ * (monthly on the start's date, say), the meeting now in its place would
+ * come back.
  */
 function deletedLost(params: {
   cancelled: string[];
@@ -419,49 +475,19 @@ function deletedLost(params: {
   recurrence: string[];
   times: { end: Event["end"]; start: Event["start"] };
 }): string[] {
-  const { master, times } = params;
-  const zone = seriesZoneOf(master);
-  // Read without skips: the save's own skip for it is already there.
-  const recurrence = params.recurrence.filter(
-    (line) => !line.startsWith("EXDATE")
-  );
-  const repeatsIn = repeatZone(master, times.start);
-  const first = momentOf(times.start, repeatsIn);
-  const clock = clockOf(times.start, repeatsIn);
-  // An added (RDATE) meeting keeps its own slot: only a rule's moves.
-  const rules = (master.recurrence ?? []).filter((line) =>
-    line.startsWith("RRULE:")
-  );
+  const { master, recurrence, times } = params;
+  const first = momentOf(times.start, repeatZone(master, times.start));
   return params.cancelled.filter((slot) => {
-    const day = dayOfStart(asStart(slot), zone);
-    const ruleMet =
-      seriesMeetsAt({
-        recurrence: rules,
-        seriesZone: zone,
-        slot,
-        start: master.start,
-      }) === true;
-    if (!(day && ruleMet)) {
-      return false;
-    }
-    const place = clock
-      ? googleDateTime(
-          day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
-        )
-      : day.toString();
-    const at = momentOf(asStart(place), repeatsIn);
+    const place = ruleMeetingAt(slot, master)
+      ? placeOnNewStart(slot, master, times.start)
+      : null;
+    const at =
+      place && momentOf(asStart(place), repeatZone(master, times.start));
     // Before the new start, the series has no meeting to bring back.
-    if (!(at && first) || Temporal.Instant.compare(at, first) < 0) {
+    if (!(place && at && first) || Temporal.Instant.compare(at, first) < 0) {
       return false;
     }
-    return (
-      seriesMeetsAt({
-        recurrence,
-        seriesZone: repeatsIn,
-        slot: place,
-        start: times.start,
-      }) !== true
-    );
+    return !keptOrEnded({ master, place, recurrence, start: times.start });
   });
 }
 
@@ -505,13 +531,21 @@ function seriesChangeRefusal(params: {
         // day of its own, which Google would give back to the series,
         // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
+        const first = opensSeries(occurrence, master);
         const movedDay = !(
-          (opensSeries(occurrence, master) &&
-            ownDay?.equals(dayOfStart(times.start, zone) ?? ownDay)) ||
+          (first && ownDay?.equals(dayOfStart(times.start, zone) ?? ownDay)) ||
           ownDay?.equals(dayOfStart(asStart(originalStart), zone) ?? ownDay)
         );
+        // The saved series must still meet in its place (the first meeting's
+        // is the new start).
+        const place = placeOnNewStart(originalStart, master, times.start);
+        const replaced =
+          first ||
+          (place !== null &&
+            keptOrEnded({ master, place, recurrence, start: times.start }));
         return (
           movedDay ||
+          !replaced ||
           Object.keys(
             changesOwnTo(occurrence, master, params.changes, zone)
           ).some((field) => field !== "start" && field !== "end")
