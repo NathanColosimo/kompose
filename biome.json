@@ -21,7 +21,7 @@
       "!**/.svelte-kit",
       "!**/wrangler.jsonc",
       "!**/.source",
-      "!packages/google-cal/src",
+      "!packages/google-cal/src/api-client",
       "!**/components/ui",
       "!**/components/ai-elements",
       "!**/uniwind-types.d.ts",
