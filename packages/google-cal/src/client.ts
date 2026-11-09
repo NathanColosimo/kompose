@@ -1317,20 +1317,27 @@ function carriedSlot(params: {
   const shortMove = Boolean(
     from && to && Math.abs(from.until(to).total("hours")) < 24
   );
-  // In a monthly or yearly series, a meeting keeps its place in its period
-  // (the first Monday made the second Tuesday) before a fixed shift, which
-  // can land on another of its meetings.
+  // A monthly or yearly series moved within its period (the first Monday
+  // made the second Tuesday) keeps each meeting's place in its period
+  // before a fixed shift, which can land on another of its meetings; one
+  // moved into another period shifts each meeting as far.
   const inPeriod = periodPlace({ master, recurrence, slot, splitDay, start });
-  const order = shortMove
-    ? [moved, ownDay, inPeriod]
-    : [ownDay, inPeriod, moved];
+  const byPeriod = inPeriod?.samePeriod ?? false;
+  const period = inPeriod?.place ?? null;
+  let order = [ownDay, moved, period];
+  if (shortMove) {
+    order = [moved, ownDay, period];
+  } else if (byPeriod) {
+    order = [ownDay, period, moved];
+  }
   return order.find((place) => place && meets(place)) ?? null;
 }
 
 /**
  * Where a monthly or yearly series' meeting at `slot` lands in a split's
- * new series by its place in its period (`samePlaceInPeriod`); null for
- * other series, or several rules.
+ * new series by its place in its period (`samePlaceInPeriod`), and whether
+ * the split moves within its period; null for other series, or several
+ * rules.
  */
 function periodPlace(params: {
   master: Event;
@@ -1338,7 +1345,7 @@ function periodPlace(params: {
   slot: string;
   splitDay: Temporal.PlainDate | null;
   start: Event["start"];
-}): string | null {
+}): { place: string | null; samePeriod: boolean } | null {
   const { master, splitDay, start } = params;
   const zone = repeatZone(master, start);
   const rulesOf = (lines: string[]) =>
@@ -1366,7 +1373,13 @@ function periodPlace(params: {
     }),
     zone
   );
-  return inPeriod && slotOf(inPeriod, zone);
+  const yearly = newRule.includes("FREQ=YEARLY");
+  return {
+    place: inPeriod && slotOf(inPeriod, zone),
+    samePeriod:
+      splitDay.year === newStart.year &&
+      (yearly || splitDay.month === newStart.month),
+  };
 }
 
 /**
