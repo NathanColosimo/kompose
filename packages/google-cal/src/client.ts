@@ -343,6 +343,43 @@ function newTimesKeep(params: {
 }
 
 /**
+ * Where the occurrences deleted on their own (`cancelled`, original
+ * starts) are once a series that meets once a day starts at `start`: a
+ * rule's meeting on its own day at the new time; an added (RDATE) one, or
+ * one under the same time of day, where it was.
+ */
+function deletedSlots(params: {
+  cancelled: string[];
+  master: Event;
+  start: Event["start"];
+}): string[] {
+  const { cancelled, master, start } = params;
+  const zone = seriesZoneOf(master);
+  const change = timeOfDayChange(master, start);
+  if (!change) {
+    return cancelled;
+  }
+  const rules = (master.recurrence ?? []).filter((line) =>
+    line.startsWith("RRULE:")
+  );
+  return cancelled.map((slot) => {
+    const day = dayOfStart(asStart(slot), zone);
+    const ruleMet =
+      seriesMeetsAt({
+        recurrence: rules,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) === true;
+    return day && ruleMet
+      ? googleDateTime(
+          day.toZonedDateTime({ plainTime: change.to, timeZone: zone })
+        )
+      : slot;
+  });
+}
+
+/**
  * Why an Entire series write would cost the occurrences changed on their
  * own (`changed`) their changes; null if it wouldn't. Google ties each to
  * its original slot: it cancels all of them when the series' start moves
@@ -1654,15 +1691,17 @@ export function makeGoogleCalendarService(
           master,
           null
         );
-        const movesDayOnly =
-          !sameTime(times.start, master.start, zone) &&
-          Boolean(master.start.date) === Boolean(times.start.date) &&
-          timeOfDayChange(master, times.start) === null;
-        if (movesDayOnly) {
+        const sameForm =
+          Boolean(master.start.date) === Boolean(times.start.date);
+        if (sameForm && !sameTime(times.start, master.start, zone)) {
           // Google brings back an occurrence deleted on its own when the
-          // series' start moves. At the same time of day its slot is still
-          // the series', so a skip there keeps it deleted.
-          recurrence = skipping(recurrence, cancelled, zone);
+          // series' start moves, so it stays deleted as a skip where its
+          // meeting now is (`deletedSlots`).
+          recurrence = skipping(
+            recurrence,
+            deletedSlots({ cancelled, master, start: times.start }),
+            zone
+          );
         }
         const refusal = seriesChangeRefusal({
           changed,
