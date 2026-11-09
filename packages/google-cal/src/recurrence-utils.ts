@@ -716,7 +716,9 @@ function fromStartToSplit(
  * a rule day, a skip there Google doesn't list where the rule may meet may
  * or may not be a position, or a start at a time its rule doesn't meet may
  * or may not count), the positions left are counted from the split on
- * instead, the same way; null when neither side can be told.
+ * instead, the same way; null when neither side can be told. A skip after
+ * Google's last listed meeting changes no meeting, so it's left out of the
+ * count (`leftOut`, from the split on, when that side counts).
  */
 export function carryCountFromList(
   recurrence: string[],
@@ -729,7 +731,13 @@ export function carryCountFromList(
     /** The series' own first start, where its rule counts from. */
     seriesStart: string;
   }
-): string[] | null {
+): {
+  /** Skips from the split on it knows hold a place, by moment. */
+  counted: number[];
+  /** Skips from the split on it left out of the count, by moment. */
+  leftOut: number[];
+  recurrence: string[];
+} | null {
   const { masterRecurrence, originalStart, seriesZone } = params;
   const rule = masterRecurrence.find(isRule);
   const count = rule ? ruleCount(rule) : null;
@@ -800,6 +808,31 @@ export function carryCountFromList(
       unlisted.some((skip) => !onRule(skip));
     return unclear ? null : there.length + unlisted.length;
   };
+  // With `places` positions from the split on, the skips there Google
+  // doesn't list that must hold one, by moment: all of them, when they and
+  // its meetings there make up exactly that many.
+  const countedAfter = (places: number) => {
+    const fromSplit = (value: RecurrenceValue) =>
+      !beforeSplit(value, originalStart, seriesZone);
+    const meetings = ruleMeetings.filter(fromSplit);
+    const unlisted = skipped.filter(
+      (skip) =>
+        fromSplit(skip) &&
+        !offRule(skip) &&
+        !listed.some((value) => sameValue(value, skip))
+    );
+    return meetings.length + unlisted.length === places
+      ? unlisted.map((skip) => valueMoment(skip, seriesZone).epochMilliseconds)
+      : [];
+  };
+  // The skips from the split on left out of the count, by moment.
+  const leftOut = skipped
+    .filter(
+      (skip) =>
+        !(beforeSplit(skip, originalStart, seriesZone) || offRule(skip)) &&
+        afterLast(skip)
+    )
+    .map((skip) => valueMoment(skip, seriesZone).epochMilliseconds);
   const startAtRuleTime =
     !startClock || ruleClock(rule, startClock).equals(startClock);
   const before = startAtRuleTime
@@ -808,14 +841,22 @@ export function carryCountFromList(
   // Used up before the split, it disagrees with Google's own count of
   // the start: the side from the split on decides.
   if (before !== null && before < count) {
-    return changeCount(recurrence, -before);
+    return {
+      counted: countedAfter(count - before),
+      leftOut: [],
+      recurrence: changeCount(recurrence, -before),
+    };
   }
   const left = positionsIn(
     (value) => !beforeSplit(value, originalStart, seriesZone)
   );
   return left === null || left === 0
     ? null
-    : changeCount(recurrence, left - count);
+    : {
+        counted: [],
+        leftOut,
+        recurrence: changeCount(recurrence, left - count),
+      };
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");

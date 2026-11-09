@@ -1189,7 +1189,11 @@ function sameRepeat(a: string[], b: string[]): boolean {
  */
 function placeSkips(params: {
   cancelled: string[];
+  /** Skips a COUNT read from Google's list knows hold a place, by moment. */
+  heldPlaces: number[];
   keeps: boolean;
+  /** Skips the kept COUNT left out (`carryCountFromList`), by moment. */
+  leftOut: number[];
   listed: string[] | null;
   master: Event;
   originalStart: string;
@@ -1230,22 +1234,17 @@ function placeSkips(params: {
     if (added) {
       return null;
     }
-    if (cancelled.includes(slot)) {
+    const moment = slotMoment(slot, zone);
+    if (
+      cancelled.includes(slot) ||
+      (moment && params.heldPlaces.includes(moment.epochMilliseconds))
+    ) {
       return true;
     }
     // Google may leave a skipped meeting off its list: only one it lists
     // is told to be a meeting.
     return params.listed?.includes(slot) ? true : null;
   };
-  // Counted from Google's list, a skip after its last meeting wasn't
-  // counted (`carryCountFromList`): it holds no place to free.
-  const lastListed = (params.listed ?? [])
-    .filter((slot) => !addsSlot(master.recurrence ?? [], slot, zone))
-    .flatMap((slot) => {
-      const at = slotMoment(slot, zone);
-      return at ? [at.epochMilliseconds] : [];
-    })
-    .reduce((last, at) => Math.max(last, at), Number.NEGATIVE_INFINITY);
   // Each rule meeting once, however many skips it has.
   const ontoStart = new Set<number>();
   let unknown = false;
@@ -1270,8 +1269,9 @@ function placeSkips(params: {
         slot: formed,
         start,
       }) === null;
+    // Left out of a COUNT read from Google's list: it holds no place.
     const uncounted = Boolean(
-      params.listed && moment && moment.epochMilliseconds > lastListed
+      moment && params.leftOut.includes(moment.epochMilliseconds)
     );
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || placeUnknown;
@@ -2094,7 +2094,7 @@ export function makeGoogleCalendarService(
       if (!carried) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const { listed, rule: counted } = carried;
+      const { counted: heldPlaces, leftOut, listed, rule: counted } = carried;
       const moved = movedOffRule({
         master,
         originalStart,
@@ -2148,7 +2148,9 @@ export function makeGoogleCalendarService(
       );
       const skips = placeSkips({
         cancelled: params.cancelled,
+        heldPlaces,
         keeps,
+        leftOut,
         listed,
         master,
         originalStart,
@@ -2204,7 +2206,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       if (!params.keeps) {
-        return { listed: null, rule };
+        return { counted: [], leftOut: [], listed: null, rule };
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
       if (!seriesStart) {
@@ -2219,11 +2221,18 @@ export function makeGoogleCalendarService(
       // A rule that can be read is counted without asking Google.
       const exact = carryCountExactly(rule, counting);
       if (exact) {
-        return { listed: null, rule: exact };
+        return { counted: [], leftOut: [], listed: null, rule: exact };
       }
       const starts = yield* listOccurrenceStarts(calendarId, master);
       const fromList = carryCountFromList(rule, { ...counting, starts });
-      return fromList && { listed: starts, rule: fromList };
+      return (
+        fromList && {
+          counted: fromList.counted,
+          leftOut: fromList.leftOut,
+          listed: starts,
+          rule: fromList.recurrence,
+        }
+      );
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */
