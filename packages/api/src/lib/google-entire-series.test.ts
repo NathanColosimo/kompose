@@ -1130,6 +1130,37 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
+  test("a new time with a deleted occurrence under a rule that can't be read is refused", async () => {
+    // Yearly on day 1 (not read here), the 2028 meeting deleted; moved to
+    // 10:00: where that meeting goes can't be told.
+    const yearly: Event = {
+      ...weekly,
+      end: { dateTime: "2027-01-01T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=YEARLY;BYYEARDAY=1"],
+      start: { dateTime: "2027-01-01T09:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(yearly, [
+      {
+        ...occurrenceOf(yearly, "2028-01-01T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", yearly, {
+          end: { dateTime: "2027-01-01T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2027-01-01T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2028-01-01T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [
