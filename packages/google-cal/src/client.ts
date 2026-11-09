@@ -156,15 +156,24 @@ function givesNewRepeat(params: {
   start: Event["start"];
 }): boolean {
   const zone = seriesZoneOf(params.master);
-  // The new start's day where the series will repeat (an all-day series
-  // made timed, in the new start's zone).
-  const day = dayOfStart(params.start, repeatZone(params.master, params.start));
+  const day = newStartDay(params.master, params.start);
   const from = dayOfStart(params.from, zone);
   return newRepeat({
     moved: day && from && !from.equals(day) ? { from, to: day } : null,
     own: params.master.recurrence ?? [],
     saved: params.saved,
   });
+}
+
+/**
+ * A new start's day where the series will repeat (an all-day series made
+ * timed, in the new start's zone): what a day move is read from.
+ */
+function newStartDay(
+  master: Pick<Event, "start">,
+  start: Event["start"]
+): Temporal.PlainDate | null {
+  return dayOfStart(start, repeatZone(master, start));
 }
 
 /** A slot as a start: a date, or a date-time. */
@@ -299,7 +308,7 @@ function entireSeriesTimes(params: {
   const rules = (edited.recurrence ?? master.recurrence ?? []).filter((line) =>
     line.startsWith("RRULE:")
   );
-  const day = dayOfStart(start, repeatZone(master, start));
+  const day = newStartDay(master, start);
   const rulesMeet =
     !day ||
     rules.length === 0 ||
@@ -547,7 +556,7 @@ function deletedLost(params: {
   const sent = new Set(
     dateValues(params.saved ?? own, "EXDATE", zone).map(skipKey)
   );
-  const day = dayOfStart(times.start, repeatZone(master, times.start));
+  const day = newStartDay(master, times.start);
   const movesDay = !day?.equals(dayOfStart(master.start, zone) ?? day);
   const ruleSkips = dateValues(movesDay ? own : [], "EXDATE", zone)
     .filter((value) => sent.has(skipKey(value)))
@@ -660,12 +669,11 @@ function withoutOwnSkipAt(
   saved: string[] | undefined
 ): string[] {
   const zone = seriesZoneOf(master);
-  const repeatsIn = repeatZone(master, start);
-  const day = dayOfStart(start, repeatsIn);
+  const day = newStartDay(master, start);
   if (!day || day.equals(dayOfStart(master.start, zone) ?? day)) {
     return rule;
   }
-  const at = momentOf(start, repeatsIn);
+  const at = momentOf(start, repeatZone(master, start));
   const onStart = (value: RecurrenceValue) =>
     value.instant
       ? Boolean(at && Temporal.Instant.compare(value.instant, at) === 0)
@@ -767,7 +775,7 @@ function seriesChangeRefusal(params: {
         // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
         const first = opensSeries(occurrence, master);
-        const newDay = dayOfStart(times.start, repeatZone(master, times.start));
+        const newDay = newStartDay(master, times.start);
         // A first meeting whose day the series takes, or is given, keeps it.
         const firstDayKept =
           first &&
