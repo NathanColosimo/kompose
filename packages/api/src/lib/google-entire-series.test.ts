@@ -1295,6 +1295,112 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
+  describe("Repeat: None leaves the first meeting alone", () => {
+    const nov9 = "2026-11-09T09:00:00-05:00";
+    const at = (time: string) => ({
+      dateTime: `2026-11-10T${time}:00-05:00`,
+      timeZone: zone,
+    });
+    // Nov 9, the first meeting, renamed "Kickoff" on its own.
+    const kickoff = { ...occurrenceOf(weekly, nov9), summary: "Kickoff" };
+
+    test.each([
+      ["from it", kickoff],
+      ["from another", nov16],
+    ])("keeping its own title, saved %s", async (_from, opened) => {
+      const google = fakeGoogle(weekly, [kickoff]);
+      expect(
+        Exit.isSuccess(await run(edit("all", opened, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([
+        {
+          body: {
+            recurrence: [],
+            start: { dateTime: nov9 },
+            summary: "Kickoff",
+          },
+        },
+      ]);
+    });
+
+    test("a title the save sets is the event's", async () => {
+      const google = fakeGoogle(weekly, [kickoff]);
+      expect(
+        Exit.isSuccess(
+          await run(edit("all", kickoff, { recurrence: [], summary: "Retro" }))
+        )
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([{ body: { summary: "Retro" } }]);
+    });
+
+    test("keeping its own day and time", async () => {
+      // Nov 9 moved to Tue Nov 10 11:00 on its own.
+      const moved = occurrenceOf(weekly, nov9, {
+        end: "2026-11-10T11:30:00-05:00",
+        start: "2026-11-10T11:00:00-05:00",
+      });
+      const google = fakeGoogle(weekly, [moved]);
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([
+        { body: { end: at("11:30"), recurrence: [], start: at("11:00") } },
+      ]);
+      // A new time for the series would take its own: refused.
+      fakeGoogle(weekly, [moved]);
+      expect(
+        await refusalOf(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            recurrence: [],
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      ).toMatchObject({
+        data: { originalStarts: [nov9], reason: "dropsChangedOccurrences" },
+      });
+    });
+
+    test.each([
+      [
+        "it was deleted",
+        { ...occurrenceOf(weekly, nov9), status: "cancelled" },
+      ],
+      [
+        "a later one was changed",
+        {
+          ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+          summary: "Own",
+        },
+      ],
+    ])("is refused when %s on its own", async (_case, exception) => {
+      const google = fakeGoogle(weekly, [exception]);
+      expect(
+        await refusalOf(edit("all", nov16, { recurrence: [] }))
+      ).toMatchObject({
+        data: {
+          originalStarts: [exception.originalStartTime?.dateTime],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    test("writes no skips", async () => {
+      const google = fakeGoogle(
+        {
+          ...weekly,
+          recurrence: [...(weekly.recurrence ?? []), "EXDATE:20261123T140000Z"],
+        },
+        []
+      );
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([]);
+    });
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.
@@ -1340,7 +1446,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
       },
       // A new time one occurrence can take.
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -1532,14 +1638,14 @@ describe("Entire series start and length changes, as Google applies them", () =>
         reason: "dropsChangedOccurrences",
       },
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
     });
     expect(
       await toTuesdays("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU")
     ).toMatchObject({
       data: { seriesOnly: true },
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });

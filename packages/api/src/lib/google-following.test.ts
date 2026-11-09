@@ -137,7 +137,7 @@ describe("This and following", () => {
       },
       // One occurrence can't take a new repeat.
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -1069,7 +1069,7 @@ describe("a move to another calendar from an occurrence", () => {
     ).toMatchObject({
       data: { reason: "dropsChangedOccurrences", seriesOnly: true },
       message:
-        "This would undo changes made to single occurrences (Nov 30), so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
+        "This would undo what was changed or deleted on single occurrences (Nov 30), so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
     });
     expect(google.writes()).toEqual([]);
   });
