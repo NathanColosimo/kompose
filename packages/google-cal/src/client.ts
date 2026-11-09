@@ -880,6 +880,15 @@ function inFormOf(
 }
 
 /**
+ * Whether a split's new `rule` keeps the series' COUNT, which is then
+ * carried on (a COUNT the user changed is the new part's own).
+ */
+function keepsCount(master: Event, rule: string[]): boolean {
+  const count = countOf(master.recurrence);
+  return count !== null && countOf(rule) === count;
+}
+
+/**
  * Where a split's skipped or deleted meetings (`slots`, original starts)
  * stay skipped: where the new series (`rule`) meets in their place, as a
  * changed one is put back (read without skips: a place already skipped is
@@ -1797,10 +1806,10 @@ export function makeGoogleCalendarService(
         start,
       });
       // A skipped meeting whose place is the new start (the meeting just
-      // saved there) holds no place of its own: a carried COUNT is one less.
-      const carried = countOf(master.recurrence) === countOf(fromSplit);
+      // saved there) holds no place of its own: a carried COUNT is one less
+      // for each.
       const recurrence = skipping(
-        carried ? changeCount(rule, -ontoStart) : rule,
+        keepsCount(master, fromSplit) ? changeCount(rule, -ontoStart) : rule,
         [...placed, ...moved],
         zone
       );
@@ -1836,8 +1845,7 @@ export function makeGoogleCalendarService(
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
-      const count = countOf(master.recurrence);
-      if (count === null || countOf(rule) !== count) {
+      if (!keepsCount(master, rule)) {
         return rule;
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
