@@ -1074,6 +1074,51 @@ describe("a COUNT read from Google's list through a move onto a skip", () => {
   });
 });
 
+describe("a COUNT read from Google's list, the split keeping the series' times", () => {
+  test("keeps a later deleted meeting deleted where it is", async () => {
+    // Yearly 150 times from 1950, 2028 deleted on its own; renamed from
+    // 2026 (past fifty years, so counted from Google's list): 74 left,
+    // 2028 still skipped.
+    const series: Event = {
+      end: { dateTime: "1950-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=150"],
+      start: { dateTime: "1950-11-09T09:00:00Z", timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    const deleted = {
+      ...occurrenceOf(series, "2028-11-09T09:00:00Z"),
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: Array.from({ length: 150 }, (_, i) =>
+              i + 1950 === 2028
+                ? deleted
+                : occurrenceOf(series, `${1950 + i}-11-09T09:00:00Z`)
+            ),
+          }
+        : undefined
+    );
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-09T09:00:00Z"), {
+            summary: "Anniversary (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=74",
+      "EXDATE:20281109T090000Z",
+    ]);
+  });
+});
+
 describe("a COUNT through a move past a deleted meeting", () => {
   test.each([
     ["Tue Nov 24", "2026-11-24"],
