@@ -1899,14 +1899,14 @@ export function makeGoogleCalendarService(
   }) =>
     Effect.gen(function* () {
       const { master, originalStart, start } = params;
+      const zone = seriesZoneOf(master);
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
         params.edited ?? master.recurrence ?? [],
         originalStart,
-        seriesZoneOf(master),
+        zone,
         "from"
       );
-      const zone = seriesZoneOf(master);
       const isAdded = (slot: string) =>
         addsSlot(master.recurrence ?? [], slot, zone);
       const asSlot = (value: RecurrenceValue) =>
