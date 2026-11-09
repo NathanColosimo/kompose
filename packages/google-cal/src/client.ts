@@ -1577,15 +1577,18 @@ export function makeGoogleCalendarService(
       const toDay = dayOfStart(start, zone);
       const movesDay = !(fromDay && toDay && fromDay.equals(toDay));
       // Moved to other days, a deleted rule meeting's skip goes where the
-      // new series meets in its place; one already at its new place isn't
+      // new series meets in its place (read against the rule as it's
+      // written for the new start); one already at its new place isn't
       // lined up again.
+      const writtenRule =
+        ruleForStart(counted, master, start, originalStart) ?? counted;
       const placed = movesDay
         ? params.cancelled.map((slot) =>
             addsSlot(master.recurrence ?? [], slot, zone)
               ? slot
               : (carriedSlot({
                   master,
-                  recurrence: counted,
+                  recurrence: writtenRule,
                   slot,
                   splitStart: originalStart,
                   start,

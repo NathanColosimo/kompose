@@ -1082,6 +1082,39 @@ describe("a skip the app already lined up for the new start", () => {
   });
 });
 
+test("a day and time move with the rule's own hour carries a deleted occurrence's skip", async () => {
+  // Mondays at 9:00 written BYHOUR=9, Nov 30 deleted; from Nov 16 moved
+  // to Tuesdays at 10:00. The rule is written BYHOUR=10, and the skip
+  // goes to Tue Dec 1 10:00.
+  const series: Event = {
+    ...weekly,
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9"],
+  };
+  const google = fakeGoogle(series, [
+    {
+      ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+      status: "cancelled",
+    },
+  ]);
+  expect(
+    Exit.isSuccess(
+      await run(
+        edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9"],
+          start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    )
+  ).toBe(true);
+  const written = google.writes()[0]?.body?.recurrence as string[];
+  expect(
+    dateValues(written, "EXDATE", zone).map((value) =>
+      value.instant?.toString()
+    )
+  ).toEqual(["2026-12-01T15:00:00Z"]);
+});
+
 describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
   const day = (date: string) => Temporal.PlainDate.from(date);
   const nine = Temporal.PlainTime.from("09:00");
