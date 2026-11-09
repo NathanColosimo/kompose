@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
 import { isRuleDay } from "@kompose/google-cal/rule-days";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
@@ -87,6 +86,31 @@ describe("Entire series", () => {
     expect(google.writes()[0]?.body).toMatchObject({
       recurrence: weekly.recurrence,
       start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("a first meeting moved under a rule that can't be read keeps the series' date", async () => {
+    // A day-of-year rule isn't read here, so whether it meets Jan 2 can't
+    // be told: the series keeps Jan 1, as main did.
+    const yearly: Event = {
+      ...weekly,
+      end: { dateTime: "2027-01-01T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=YEARLY;BYYEARDAY=1"],
+      start: { dateTime: "2027-01-01T09:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(yearly);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(yearly, "2027-01-01T09:00:00-05:00"), {
+            end: { dateTime: "2027-01-02T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2027-01-02T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2027-01-01T09:00:00-05:00" },
     });
   });
 
@@ -665,6 +689,53 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()[0]?.body).toMatchObject({
       end: { dateTime: "2026-11-09T10:00:00-05:00" },
     });
+  });
+
+  test.each([
+    [
+      "an UNTIL before it",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261118T045959Z",
+      true,
+    ],
+    [
+      "an UNTIL after it",
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T045959Z",
+      false,
+    ],
+    ["a COUNT that ends before it", "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2", true],
+    ["a COUNT that reaches it", "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3", false],
+  ])(
+    "a new end with %s refuses only when it drops Nov 23, renamed on its own",
+    async (_case, rule, drops) => {
+      const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
+      const save = edit("all", nov16, { recurrence: [rule] });
+      if (drops) {
+        expect(await refusalOf(save)).toMatchObject({
+          data: {
+            originalStarts: ["2026-11-23T09:00:00-05:00"],
+            reason: "dropsChangedOccurrences",
+          },
+        });
+        expect(google.writes()).toEqual([]);
+      } else {
+        expect(Exit.isSuccess(await run(save))).toBe(true);
+        expect(google.writes()[0]?.body?.recurrence).toEqual([rule]);
+      }
+    }
+  );
+
+  test("a skip added on an occurrence changed on its own is refused", async () => {
+    fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
+    expect(
+      await refusalOf(
+        edit("all", nov16, {
+          recurrence: [
+            "RRULE:FREQ=WEEKLY;BYDAY=MO",
+            "EXDATE;TZID=America/New_York:20261123T090000",
+          ],
+        })
+      )
+    ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
   });
 
   test("a new day offers this occurrence, a new repeat with it doesn't", async () => {

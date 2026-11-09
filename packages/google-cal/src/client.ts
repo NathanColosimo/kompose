@@ -239,8 +239,13 @@ function lineUpRule(params: {
     const ruleMet =
       ruleMetAt(slot) || (added && !stillAdded && savedMeetsAt(slot));
     // An added meeting the saved rule still adds keeps its time, as does a
-    // skip where nothing met (it skips nothing, so it can't move onto one).
-    if (stillAdded || !(added || ruleMet)) {
+    // skip where nothing met (it skips nothing, so it can't move onto one),
+    // unless the series now meets at that time, where it would cancel one.
+    const atNewClock = moment
+      .toZonedDateTimeISO(zone)
+      .toPlainTime()
+      .equals(change.to);
+    if (stillAdded || !(added || ruleMet || atNewClock)) {
       atOwnTime.push(slot);
     }
     if (ruleMet) {
@@ -469,8 +474,8 @@ function withLength(
  * Times the edit left keep the series' (an occurrence moved on its own
  * doesn't move it), and a new end alone changes only the length. Only an
  * edit to the first meeting moves the series' date, and only to a day its
- * rules meet on: Google always meets at a series' start, so any other day
- * would add a meeting the rules don't make. Elsewhere a date move is "This
+ * rules are known to meet on: Google always meets at a series' start, so
+ * any other day would add a meeting the rules don't make. Elsewhere a date move is "This
  * and following" only. Google repeats a series in its start's zone, so
  * times are read in it.
  */
@@ -496,7 +501,7 @@ function entireSeriesTimes(
   const rulesMeet =
     !day ||
     rules.length === 0 ||
-    rules.some((rule) => isRuleDay(rule, day, day) !== false);
+    rules.some((rule) => isRuleDay(rule, day, day) === true);
   if (opensSeries(occurrence, master) && rulesMeet) {
     return { end, start };
   }
@@ -705,6 +710,33 @@ function changesOwnTo(
 }
 
 /**
+ * A This and following new series' times, from its first meeting `at`.
+ * Times the edit left start it at that meeting's slot, with the series'
+ * time and length (the occurrence's own move stays an exception), and a
+ * new end alone gives that slot the edit's length. Else the edit's, in the
+ * series' zone.
+ */
+function followingTimes(
+  edited: CreateEvent,
+  opened: Event,
+  master: Event,
+  at: string
+): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
+  const slot = seriesSlotAt(master, at);
+  if (keepsTimes(edited, opened, zone)) {
+    return slot;
+  }
+  if (sameTime(edited.start, opened.start, zone)) {
+    return withLength({ ...master, ...slot }, edited) ?? slot;
+  }
+  return {
+    end: inSeriesZone(edited.end, master.end),
+    start: inSeriesZone(edited.start, master.start),
+  };
+}
+
+/**
  * The occurrences a "This and following" new series carries, and where:
  * the opened one at its start with its own changes (its times only if
  * the edit left them), and later changed ones at their new places.
@@ -712,6 +744,7 @@ function changesOwnTo(
 function followingOccurrences(params: {
   /** The fields the edit changed, which the new series carries. */
   changes: Partial<CreateEvent>;
+  edited: CreateEvent;
   exceptions: { occurrence: Event; originalStart: string }[];
   /** Whether the edit left the opened occurrence's times. */
   keptTimes: boolean;
@@ -725,10 +758,18 @@ function followingOccurrences(params: {
   const zone = seriesZoneOf(master);
   const own = changesOwnTo(params.opened, master, changes, zone);
   const { end: _end, start: _start, ...ownFields } = own;
+  // A new end alone keeps the opened one's own start, now with that end.
+  const keptStart = sameTime(params.edited.start, params.opened.start, zone);
+  let openedChanges: Partial<CreateEvent> = ownFields;
+  if (params.keptTimes) {
+    openedChanges = own;
+  } else if (keptStart && own.start) {
+    openedChanges = { ...own, end: params.edited.end };
+  }
   return [
     {
       at: slotOf(start, zone),
-      changes: params.keptTimes ? own : ownFields,
+      changes: openedChanges,
       originalStart,
     },
     ...params.exceptions.map((exception) => ({
@@ -1409,9 +1450,11 @@ export function makeGoogleCalendarService(
    * The rule a split's new part repeats with: `edited`, or the series'.
    * An unchanged COUNT carries on (a five-time series split at its third
    * runs three more, not five). Occurrences `cancelled` after the split
-   * stay skipped on their own days, not shifted onto days the user never
-   * deleted. Refuses, before any write, if the COUNT can't be carried or
-   * if the rule ends before `start`.
+   * stay skipped: on their own days, or, when the save moves the day, where
+   * the new series meets in their place, as changed ones are put back
+   * (`placeInNewSeries`); an added one keeps its slot. Refuses, before any
+   * write, if the COUNT can't be carried or if the rule ends before
+   * `start`.
    */
   const newSeriesRecurrence = (params: {
     calendarId: string;
@@ -1439,15 +1482,31 @@ export function makeGoogleCalendarService(
       if (!counted) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
+      const zone = seriesZoneOf(master);
+      const movesDay = !dayOfStart(asStart(originalStart), zone)?.equals(
+        dayOfStart(start, zone) ?? Temporal.PlainDate.from("0001-01-01")
+      );
+      const cancelled = movesDay
+        ? params.cancelled.map((slot) =>
+            addsSlot(master.recurrence ?? [], slot, zone)
+              ? slot
+              : (placeInNewSeries({
+                  newStart: start,
+                  originalStart: slot,
+                  splitStart: originalStart,
+                  zone,
+                }) ?? slot)
+          )
+        : params.cancelled;
       const recurrence = lineUpRule({
-        cancelled: params.cancelled,
+        cancelled,
         master,
         rule: counted,
         splitAt: originalStart,
         start,
       });
-      const zone = repeatZone(master, start);
-      if (endsBeforeStart(recurrence, momentOf(start, zone), zone)) {
+      const ends = repeatZone(master, start);
+      if (endsBeforeStart(recurrence, momentOf(start, ends), ends)) {
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
       }
       return recurrence;
@@ -1573,10 +1632,9 @@ export function makeGoogleCalendarService(
         catch: (cause) => new GoogleApiError({ cause }),
       }).pipe(Effect.ignore);
 
-      // A new part that doesn't repeat ("Repeat: None") is one event with
-      // no occurrences: the one carried (at its start) goes on it.
+      // A new part that doesn't repeat ("Repeat: None") is one event, with
+      // no recurrence lines: the one carried (at its start) goes on it.
       const repeating = repeats(newSeries.recurrence);
-      // A part that doesn't repeat is one event: no recurrence lines.
       const written = repeating
         ? newSeries
         : Object.assign(
@@ -1874,16 +1932,8 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(blocked);
       }
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
-      // Times the edit left: the new series starts at the original slot,
-      // with the series' time and length (the occurrence's own move stays
-      // an exception). Else at the edit's, in the series' zone.
       const keptTimes = keepsTimes(edited, currentEvent, zone);
-      const times = keptTimes
-        ? seriesSlotAt(master, originalStart)
-        : {
-            end: inSeriesZone(edited.end, master.end),
-            start: inSeriesZone(edited.start, master.start),
-          };
+      const times = followingTimes(edited, currentEvent, master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
@@ -1898,6 +1948,7 @@ export function makeGoogleCalendarService(
       const carried = placeCarried({
         occurrences: followingOccurrences({
           changes,
+          edited,
           exceptions: exceptions.changed,
           keptTimes,
           master,

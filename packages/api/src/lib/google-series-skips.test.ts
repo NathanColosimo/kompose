@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
 import { carryCountExactly } from "@kompose/google-cal/recurrence-utils";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
@@ -952,6 +951,27 @@ describe("a skip where nothing meets", () => {
       .map((value) => value.instant?.toString());
     expect(skips.length).toBeGreaterThan(0);
     expect(new Set(skips)).toEqual(new Set(["2026-11-23T13:00:00Z"]));
+  });
+
+  test.each([
+    ["Entire series", "all"],
+    ["This and following", "following"],
+  ] as const)("goes when %s moves to its time", async (_save, scope) => {
+    // Moved to 8:00, the series meets Nov 23 at 8:00: kept, the skip
+    // would cancel that meeting.
+    const google = fakeGoogle(stale);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(scope, occurrenceOf(stale, "2026-11-16T09:00:00-05:00"), {
+            end: at("2026-11-16T08:30:00-05:00"),
+            start: at("2026-11-16T08:00:00-05:00"),
+          })
+        )
+      )
+    ).toBe(true);
+    const written = google.writes()[0]?.body?.recurrence as string[];
+    expect(dateValues(written, "EXDATE", zone)).toEqual([]);
   });
 });
 

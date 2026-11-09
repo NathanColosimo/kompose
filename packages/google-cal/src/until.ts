@@ -99,8 +99,8 @@ function endedBefore(
   const count = Number(COUNT_VALUE.exec(rule)?.[1]);
   const last = Number.isFinite(count)
     ? // RFC 5545 also counts the start when it isn't a rule day. Leaving
-      // it out can only put the end late, which keeps a skip in place:
-      // the safe way to be wrong.
+      // it out can only put the end late, so the rule is taken as still
+      // meeting, which each caller treats as the safe way to be wrong.
       countedRuleDays(rule, start, count, false)?.at(-1)
     : undefined;
   return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
@@ -438,6 +438,8 @@ export function keepingDateValues(
 interface DateListMatch {
   /** The series' added (RDATE) meetings, as epoch milliseconds. */
   added: Set<number>;
+  /** The start's time before the edit; null all day. */
+  fromTime: Temporal.PlainTime | null;
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
@@ -467,7 +469,15 @@ function matchDateList(
   start: StartTime,
   how: DateListMatch
 ): string {
-  const { added, keepAsDate, ownSlot, retime, seriesZone, severalADay } = how;
+  const {
+    added,
+    fromTime,
+    keepAsDate,
+    ownSlot,
+    retime,
+    seriesZone,
+    severalADay,
+  } = how;
   const list = parseDateList(line, seriesZone);
   if (!list) {
     return line;
@@ -475,10 +485,12 @@ function matchDateList(
   const read = list.values.map((value) =>
     readRecurrenceValue(value, list.zone, seriesZone)
   );
-  if (read.some((value) => value === null)) {
+  const values = read.filter(
+    (value): value is RecurrenceValue => value !== null
+  );
+  if (values.length < read.length) {
     return line;
   }
-  const values = read as RecurrenceValue[];
   if (start.date) {
     if (values.every((value) => value.instant === null)) {
       return line;
@@ -498,12 +510,15 @@ function matchDateList(
   // Times of their own stay theirs: an RDATE's, or any in a rule with
   // several times a day (moving a skipped 15:00 to the start's 9:00 would
   // un-skip it).
+  const timed = values.flatMap(({ day, instant }) =>
+    instant ? [{ day, instant }] : []
+  );
   if (
     (list.name === "RDATE" || severalADay) &&
-    values.every((value) => value.instant)
+    timed.length === values.length
   ) {
     return list.name === "EXDATE" && severalADay && retime
-      ? retimedList(list.name, values, seriesZone, retime, line)
+      ? retimedList(list.name, timed, seriesZone, retime, line)
       : line;
   }
   const time = wallClock(start, seriesZone);
@@ -517,9 +532,14 @@ function matchDateList(
       .toInstant();
     const kept = value.instant;
     // A skip where no rule nor the start met skips nothing: it stays as it
-    // is, so it can't land on a meeting.
+    // is, so it can't land on a meeting, unless the series moved to its
+    // time, where it would cancel one: then it goes.
     if (list.name === "EXDATE" && kept && ownSlot && !ownSlot(value)) {
-      return [kept];
+      const movedOnto =
+        fromTime !== null &&
+        !kept.toZonedDateTimeISO(seriesZone).toPlainTime().equals(fromTime) &&
+        Temporal.Instant.compare(kept, moment) === 0;
+      return movedOnto ? [] : [kept];
     }
     if (
       !(
@@ -539,16 +559,15 @@ function matchDateList(
   });
   const same =
     moments.length === values.length &&
-    moments.every(
-      (moment, index) =>
-        values[index]?.instant &&
-        Temporal.Instant.compare(
-          moment,
-          values[index].instant as Temporal.Instant
-        ) === 0
-    );
+    moments.every((moment, index) => {
+      const own = values[index]?.instant;
+      return own ? Temporal.Instant.compare(moment, own) === 0 : false;
+    });
   if (same) {
     return line;
+  }
+  if (moments.length === 0) {
+    return "";
   }
   return `${list.name};TZID=${seriesZone}:${[
     ...new Set(
@@ -837,7 +856,7 @@ function addedMoments(recurrence: string[], seriesZone: string): Set<number> {
  */
 function retimedList(
   name: string,
-  values: RecurrenceValue[],
+  values: { day: Temporal.PlainDate; instant: Temporal.Instant }[],
   seriesZone: string,
   retime: (
     day: Temporal.PlainDate,
@@ -847,9 +866,7 @@ function retimedList(
 ): string {
   let moved = false;
   const written = values.flatMap((value) => {
-    const time = (value.instant as Temporal.Instant)
-      .toZonedDateTimeISO(seriesZone)
-      .toPlainTime();
+    const time = value.instant.toZonedDateTimeISO(seriesZone).toPlainTime();
     const next = retime(value.day, time);
     moved ||= !(
       next.length === 1 &&
@@ -1070,6 +1087,7 @@ export function matchRecurrenceToStart(
         )
       : matchDateList(line, start, {
           added,
+          fromTime: base,
           keepAsDate,
           ownSlot,
           retime,
