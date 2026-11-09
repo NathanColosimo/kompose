@@ -2272,11 +2272,10 @@ export function makeGoogleCalendarService(
         recurrence: counted,
         start,
       });
-      // The moved meeting's skip takes one of a COUNT's places when the
-      // rule meets there (an added day's takes none), so the rest are
-      // placed against the COUNT it ends up with.
       const newZone = repeatZone(master, start);
-      // A meeting both the rule's and an added day still holds a place.
+      // The moved meeting's skip takes one of a COUNT's places when the
+      // rule meets there, an added day or not (an added day's alone takes
+      // none), so the rest are placed against the COUNT it ends up with.
       const rulePlaces = moved.filter(
         (place) =>
           seriesMeetsAt({
