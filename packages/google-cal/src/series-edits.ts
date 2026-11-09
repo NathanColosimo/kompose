@@ -150,8 +150,9 @@ export function refusalMessage(refusal: SeriesRefusal): string {
 
 /**
  * Fields a series and its occurrences don't share: which event this is
- * (ids, place in the series, status), and its times and rule, which each
- * write sets itself.
+ * (ids, place in the series), and its times and rule, which each write
+ * sets itself. Status is shared: an occurrence marked tentative on its own
+ * has a change of its own (a cancelled one is a deleted occurrence).
  */
 const NOT_SERIES_FIELDS = new Set<keyof Event>([
   "end",
@@ -165,7 +166,6 @@ const NOT_SERIES_FIELDS = new Set<keyof Event>([
   "recurrence",
   "recurringEventId",
   "start",
-  "status",
 ]);
 // Object.keys loses the schema's key type: every key is an Event field,
 // and those left are CreateEvent's too.
@@ -181,6 +181,10 @@ type Attendee = NonNullable<Event["attendees"]>[number];
  * not a change to the occurrence.
  */
 function comparable(field: keyof CreateEvent, value: unknown): unknown {
+  // Google reads an event without a status as confirmed.
+  if (field === "status") {
+    return value ?? "confirmed";
+  }
   if (value === "" || (Array.isArray(value) && value.length === 0)) {
     return null;
   }

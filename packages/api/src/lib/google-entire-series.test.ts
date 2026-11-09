@@ -889,6 +889,58 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a first meeting's day move under a monthly rule is refused while one is skipped in the rule", async () => {
+    // Monthly on the 9th from Nov 9, Dec 9 skipped in the rule; the first
+    // meeting moves to Nov 10, so Dec 9's skip would leave Dec 10 to come
+    // back.
+    const monthly: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=MONTHLY", "EXDATE:20261209T140000Z"],
+    };
+    const google = fakeGoogle(monthly, []);
+    expect(
+      await refusalOf(
+        edit("all", occurrenceOf(monthly, "2026-11-09T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-12-09T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a skip in the rule the client moved with a day move is saved", async () => {
+    // Mondays from Nov 9, Nov 30 skipped; moved to Tuesdays from Nov 10,
+    // the client sends the skip on Tue Dec 1.
+    const mondays: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261130T140000Z"],
+    };
+    const google = fakeGoogle(mondays, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(mondays, "2026-11-09T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE:20261201T140000Z",
+            ],
+            start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "EXDATE:20261201T140000Z"
+    );
+  });
+
   test("reads every page of the series' exceptions", async () => {
     // Google lists Nov 23, renamed on its own, on a second page.
     const onSecondPage = {
@@ -1386,6 +1438,22 @@ describe("Entire series start and length changes, as Google applies them", () =>
             summary: "Kickoff",
           },
         },
+      ]);
+    });
+
+    test("keeping it tentative when it was marked so on its own", async () => {
+      const tentative = {
+        ...occurrenceOf(weekly, nov9),
+        status: "tentative",
+      };
+      const google = fakeGoogle({ ...weekly, status: "confirmed" }, [
+        tentative,
+      ]);
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([
+        { body: { recurrence: [], status: "tentative" } },
       ]);
     });
 
