@@ -318,13 +318,13 @@ const MAX_DAYS = 366 * 50;
  * COUNT counts these, EXDATE skips included and RDATE days not. Google
  * counts the series' start as its first, rule day or not.
  */
-export function countedRuleDays(
-  rule: string,
-  start: Temporal.PlainDate,
-  count: number,
-  options: { through?: Temporal.PlainDate } = {}
-): Temporal.PlainDate[] | null {
-  const { through } = options;
+export function countedRuleDays(params: {
+  count: number;
+  rule: string;
+  start: Temporal.PlainDate;
+  through?: Temporal.PlainDate;
+}): Temporal.PlainDate[] | null {
+  const { count, rule, start, through } = params;
   const read = readRule(rule);
   if (!read) {
     return null;

@@ -1498,19 +1498,26 @@ function placeSkips(params: {
     Boolean(
       moment && params.fromList?.leftOut.includes(moment.epochMilliseconds)
     );
-  const placed = [...cancelled, ...params.skips].flatMap((slot) => {
-    const added = addsSlot(master.recurrence ?? [], slot, zone);
-    const at = placeOf(slot, added);
-    const formed = inFormOf(at ?? slot, start, newZone);
+  // A kept COUNT's account of one skip: a position with no meeting of the
+  // new series after its start in its place (none there, the start
+  // itself, or another's) frees none; one placed holds its place.
+  const tally = (skip: {
+    added: boolean;
+    at: string | null;
+    formed: string | null;
+    ontoLive: boolean;
+    slot: string;
+  }) => {
+    const { added, at, formed, slot } = skip;
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
-    // A skipped position with no meeting of the new series after its start
-    // in its place (none there, the start itself, or another's) frees none.
     const shared = claimPlace({ at, formed, moment, ruleMeeting });
-    const ontoLive = landsOnLive(at, formed);
     const noPlace =
-      formed === startSlot || (at === null && !added) || shared || ontoLive;
+      formed === startSlot ||
+      (at === null && !added) ||
+      shared ||
+      skip.ontoLive;
     const uncounted = leftOutAt(moment);
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
@@ -1518,10 +1525,18 @@ function placeSkips(params: {
         lostPlaces.add(moment.epochMilliseconds);
       }
     } else if (ruleMeeting && at && formed && !uncounted && !keepsSlots) {
-      // Placed in the new series, it falls within the COUNT as before. An
-      // added day's skip stays at its own time, where the new rule may not
-      // meet, so it's no place to count (the rule's meeting there is left).
+      // An added day's skip stays at its own time, where the new rule may
+      // not meet, so it's no place to count (the rule's meeting is left).
       ruleSkips.add(formed);
+    }
+  };
+  const placed = [...cancelled, ...params.skips].flatMap((slot) => {
+    const added = addsSlot(master.recurrence ?? [], slot, zone);
+    const at = placeOf(slot, added);
+    const formed = inFormOf(at ?? slot, start, newZone);
+    const ontoLive = landsOnLive(at, formed);
+    if (params.keeps) {
+      tally({ added, at, formed, ontoLive, slot });
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
