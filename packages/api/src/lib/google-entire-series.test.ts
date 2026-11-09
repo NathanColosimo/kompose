@@ -958,25 +958,6 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
-  test("an empty repeat keeps the series' rule", async () => {
-    // A rename from Nov 23 sent with the repeat its form hadn't loaded.
-    const google = fakeGoogle(weekly);
-    expect(
-      Exit.isSuccess(
-        await run(
-          edit("all", occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"), {
-            recurrence: [],
-            summary: "Planning (renamed)",
-          })
-        )
-      )
-    ).toBe(true);
-    expect(google.writes()[0]?.body).toMatchObject({
-      recurrence: weekly.recurrence,
-      summary: "Planning (renamed)",
-    });
-  });
-
   test("a first meeting made all day on a new day is written as a date", async () => {
     // The form keeps the old date-time beside the new date.
     const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };

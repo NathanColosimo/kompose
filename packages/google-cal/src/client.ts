@@ -23,7 +23,6 @@ import {
 import {
   changedFields,
   keepsTimes,
-  keptRepeat,
   NAMING_REFUSALS,
   newRepeat,
   ownChanges,
@@ -1302,12 +1301,11 @@ export function makeGoogleCalendarService(
 
   const updateEventAll = (
     calendarId: string,
-    input: CreateEvent,
+    edited: CreateEvent,
     currentEvent: Event,
     master: Event
   ) =>
     Effect.gen(function* () {
-      const edited = keptRepeat(input);
       const zone = seriesZoneOf(master);
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
       const times = entireSeriesTimes(edited, currentEvent, master);
@@ -1315,6 +1313,8 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
       }
 
+      // Left out keeps the series' pattern; an empty list ends it
+      // ("Repeat: None").
       const recurrence = yield* keptOccurrences({
         calendarId,
         changes,
