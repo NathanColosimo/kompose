@@ -815,6 +815,14 @@ function allDayDates(params: {
       value.instant ? [] : [value.day.toString()]
     )
   );
+  const liveAddedOn = (day: Temporal.PlainDate) =>
+    added.some(
+      (moment) =>
+        !(
+          skipped.has(moment.epochMilliseconds) ||
+          cancelled.has(moment.epochMilliseconds)
+        ) && moment.toZonedDateTimeISO(timeZone).toPlainDate().equals(day)
+    );
   const liveDays = new Set(
     [...addedDates(recurrence, timeZone)].filter((day) => !skippedDays.has(day))
   );
@@ -826,8 +834,9 @@ function allDayDates(params: {
     if (name !== "EXDATE") {
       return true;
     }
-    // A day added whole (and not skipped whole) meets whatever is skipped.
-    if (liveDays.has(value.day.toString())) {
+    // A day added whole (and not skipped whole), or a timed added meeting
+    // still on, meets whatever else is skipped.
+    if (liveDays.has(value.day.toString()) || liveAddedOn(value.day)) {
       return false;
     }
     const listed = ruleMeetings(value.day);

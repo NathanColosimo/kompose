@@ -1133,6 +1133,68 @@ describe("a deleted meeting's skip through a short move on a clock-change day", 
   });
 });
 
+describe("a deleted meeting's skip through a same-day move to the evening", () => {
+  test.each([["all"], ["following"]] as const)(
+    "stays on its own day (%s)",
+    async (scope) => {
+      // Daily 9:00 from Nov 9, Nov 20 deleted on its own; moved to 23:00 the
+      // same day: Nov 20's skip is at 23:00 that day.
+      const google = fakeGoogle(
+        { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] },
+        [
+          {
+            ...occurrenceOf(weekly, "2026-11-20T09:00:00-05:00"),
+            status: "cancelled",
+          },
+        ]
+      );
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(scope, occurrenceOf(weekly, "2026-11-16T09:00:00-05:00"), {
+              end: { dateTime: "2026-11-16T23:30:00-05:00", timeZone: zone },
+              recurrence: ["RRULE:FREQ=DAILY"],
+              start: { dateTime: "2026-11-16T23:00:00-05:00", timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+      expect(written).toContain("20261121T040000Z");
+      expect(written).not.toContain("20261120T040000Z");
+    }
+  );
+});
+
+describe("made all day under a rule not read here", () => {
+  test("keeps a day with a timed added meeting still on", async () => {
+    // Day 313 at 9:00, three times; Nov 9 2027's 9:00 skipped, an added
+    // 15:00 that day still on. Made all day, Nov 9 2027 stays.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=YEARLY;BYYEARDAY=313;COUNT=3",
+        "EXDATE:20271109T140000Z",
+        "RDATE:20271109T200000Z",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { date: "2026-11-10" },
+            start: { date: "2026-11-09" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "EXDATE;VALUE=DATE:20271109"
+    );
+  });
+});
+
 describe("skips through a move a day on and an hour earlier", () => {
   test("stay on their own days at the new time", async () => {
     // Daily 9:00 from Nov 9, Nov 20 skipped and Nov 23 deleted on its own;

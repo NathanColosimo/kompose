@@ -184,23 +184,29 @@ function shortShift(
 
 /**
  * A skipped meeting's place once the series' time moves, the first the
- * saved series `meets` at: the time of day's change (within twelve hours,
- * across midnight too: 9:00 to 8:00 is an hour earlier, 23:00 to 00:30 an
- * hour and a half later), then the clock's whole `shift` (a move of less
- * than a day); else on its own day at the new time.
+ * saved series `meets` at: the time of day's change (on the start's own
+ * day as it is; moved to another day too, within twelve hours, across
+ * midnight: 9:00 to the next day's 8:00 is an hour earlier, 23:00 to
+ * 00:30 an hour and a half later), then the clock's whole `shift` (a move
+ * of less than a day); else on its own day at the new time.
  */
 function placeAtNewTime(params: {
   change: { from: Temporal.PlainTime; to: Temporal.PlainTime };
   meets: (slot: string) => boolean;
   moment: Temporal.Instant;
+  /** Whether the series' start keeps its day. */
+  sameDay: boolean;
   shift: Temporal.Duration | null;
   zone: string;
 }): string {
   const { change, moment, shift, zone } = params;
   const local = moment.toZonedDateTimeISO(zone).toPlainDateTime();
   const minutes = change.from.until(change.to).total("minutes");
-  // The change's nearest way round the clock.
-  const turn = ((((minutes + 720) % 1440) + 1440) % 1440) - 720;
+  // On the start's own day, the change as it is; moved to another day too,
+  // its nearest way round the clock.
+  const turn = params.sameDay
+    ? minutes
+    : ((((minutes + 720) % 1440) + 1440) % 1440) - 720;
   const at = (time: Temporal.PlainDateTime) =>
     googleDateTime(time.toZonedDateTime(zone));
   const tried = [
@@ -330,11 +336,14 @@ function lineUpRule(params: {
     });
   const isNew = (slot: string) =>
     keysOf([slot]).some((key) => !hadBefore.has(key));
+  const startedAt = splitAt ? asStart(splitAt) : master.start;
   const shift = shortShift(
-    momentOf(splitAt ? asStart(splitAt) : master.start, zone),
+    momentOf(startedAt, zone),
     momentOf(start, zone),
     zone
   );
+  const fromDay = dayOfStart(startedAt, zone);
+  const sameDay = Boolean(fromDay && dayOfStart(start, zone)?.equals(fromDay));
   const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
   // Whether that day's meeting before the save was skipped or deleted: a
   // skip at its new time then keeps it so (a client may have moved the
@@ -406,6 +415,7 @@ function lineUpRule(params: {
               start,
             }) === true,
           moment,
+          sameDay,
           shift,
           zone,
         })
