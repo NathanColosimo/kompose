@@ -1781,6 +1781,40 @@ describe("edges a series write has to tell apart", () => {
 });
 
 describe("series shapes a write has to keep as they are", () => {
+  test("This and following from the first meeting, also an added day, splits there", async () => {
+    // Mondays from Wed Nov 4, with Nov 1 and Nov 4 itself added.
+    const series = {
+      ...weekly,
+      end: { dateTime: "2026-11-04T09:30:00-05:00", timeZone: zone },
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261101T090000,20261104T090000",
+      ],
+      start: { dateTime: "2026-11-04T09:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-04T09:00:00-05:00"), {
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, cut] = google.writes();
+    expect(created?.body).toMatchObject({
+      start: { dateTime: "2026-11-04T09:00:00-05:00" },
+      summary: "Planning (new)",
+    });
+    // The old series keeps Nov 1 alone.
+    expect(cut?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261104T135959Z",
+      "RDATE;TZID=America/New_York:20261101T090000",
+      "EXDATE:20261104T140000Z",
+    ]);
+  });
+
   test("This and following from the first meeting splits there with meetings added before it", async () => {
     const series = {
       ...weekly,

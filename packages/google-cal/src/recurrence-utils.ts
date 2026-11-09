@@ -475,8 +475,11 @@ export function followingSplitBlocked(
   if (rules.length + exclusions.length > 1) {
     return "severalRules";
   }
+  // The series' own start is its rule's anchor, added there too or not: a
+  // new series from it repeats just as the old one did.
   if (
-    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
+    !(split && addsSlot(recurrence, params.originalStart, params.seriesZone)) ||
+    (first && sameValue(first, split))
   ) {
     return null;
   }
