@@ -1037,7 +1037,10 @@ export function matchRecurrenceToStart(
   const newTime = start.dateTime ? wallClock(start, timeZone) : null;
   const startDay = start.dateTime ? dayOfStart(start, timeZone) : null;
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
-  const baseDay = seriesStart ? dayOfStart(seriesStart, timeZone) : null;
+  // The day the rules count their weeks and months from: where the caller
+  // moved them to, else the series' start before the edit.
+  const baseDay =
+    days?.rulesFrom ?? (seriesStart ? dayOfStart(seriesStart, timeZone) : null);
   const added = addedMoments(recurrence, timeZone);
   // The series' start before the edit: a meeting of its own.
   const startMoment = seriesStart ? startInstant(seriesStart, timeZone) : null;

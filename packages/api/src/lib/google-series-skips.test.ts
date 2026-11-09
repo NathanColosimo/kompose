@@ -1573,6 +1573,37 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
     ).toBe("EXDATE:20261124T140000Z");
   });
 
+  test("then lined up with a new time, reads the moved rule from its new day", () => {
+    // Every other Sunday at 9:00 from Nov 1, Nov 29 skipped; from Nov 15
+    // moved to Monday Nov 16 at 10:00. The skip goes to Nov 30 (a week
+    // of the moved rule, counted from Nov 16), then to its 10:00.
+    const oldRule = "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=SU;BYHOUR=9";
+    const newRule = "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;BYHOUR=9";
+    const onMonday = moveSkippedDays({
+      from: day("2026-11-15"),
+      fromTime: nine,
+      newRule,
+      oldRule,
+      recurrence: [newRule, "EXDATE:20261129T140000Z"],
+      seriesZone: zone,
+      to: day("2026-11-16"),
+      toTime: Temporal.PlainTime.from("10:00"),
+    });
+    expect(onMonday).toEqual([newRule, "EXDATE:20261130T140000Z"]);
+    expect(
+      matchRecurrenceToStart(
+        onMonday,
+        { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        zone,
+        { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+        { rulesFrom: day("2026-11-16") }
+      )
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;BYHOUR=10",
+      "EXDATE:20261130T150000Z",
+    ]);
+  });
+
   test("leaves a skip where nothing met where it is", () => {
     // Mondays at 9:00 with a stale 8:00 Nov 30 skip: moved to Tuesdays, it
     // would cancel Dec 1's 9:00 meeting.
