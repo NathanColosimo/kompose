@@ -359,18 +359,20 @@ function existsOn(
 
 /**
  * A COUNT rule's `count` meetings as epoch ms, at `time` on its days,
- * counted from the series' first day `from` at start time `base`. Null
- * when its days can't be read or don't all fit in the walk.
+ * counted from the series' first day `from` at start time `base`, or only
+ * those up to `through` when given. Null when its days can't be read or
+ * don't all fit in the walk.
  */
 export function countedRuleMeetings(params: {
   base: Temporal.PlainTime;
   count: number;
   from: Temporal.PlainDate;
   rule: string;
+  through?: Temporal.PlainDate;
   time: Temporal.PlainTime;
   timeZone: string;
 }): Set<number> | null {
-  const { base, count, from, rule, time, timeZone } = params;
+  const { base, count, from, rule, through, time, timeZone } = params;
   const at = (day: Temporal.PlainDate, clock: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: clock, timeZone }).epochMilliseconds;
   const first = at(from, base);
@@ -386,6 +388,9 @@ export function countedRuleMeetings(params: {
   }
   for (let offset = 0; offset < MAX_COUNT_DAYS; offset += 1) {
     const day = from.add({ days: offset });
+    if (through && Temporal.PlainDate.compare(day, through) > 0) {
+      return meetings;
+    }
     const onRuleDay = isRuleDay(rule, from, day);
     if (onRuleDay === null) {
       return null;
