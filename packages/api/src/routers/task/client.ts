@@ -157,6 +157,13 @@ const dbUpdate = (
       .returning();
   });
 
+/** A task's series fields once it's out of any series. */
+const STANDALONE = {
+  isException: false,
+  recurrence: null,
+  seriesMasterId: null,
+} as const;
+
 const dbDelete = (userId: string, taskId: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
@@ -809,13 +816,6 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   return allRetagged([task]);
 });
 
-/** A task's series fields once it's out of any series. */
-const STANDALONE = {
-  isException: false,
-  recurrence: null,
-  seriesMasterId: null,
-} as const;
-
 /** A series occurrence with a start date, which "following" edits need. */
 type DatedSeriesTask = TaskSelect & {
   seriesMasterId: string;
@@ -1184,9 +1184,8 @@ const repatternUndated = Effect.fn("repatternUndated")(function* (
   const standalone: TaskSelect = { ...task, ...STANDALONE };
   const rows = newPattern
     ? yield* convertToRecurring(userId, standalone, input, newPattern)
-    : yield* dbUpdate(userId, task.id, { ...input, recurrence: null });
-  const written = new Map([...released, ...rows].map((row) => [row.id, row]));
-  return { retagIds: ids(rows), rows: [...written.values()] };
+    : yield* dbUpdate(userId, task.id, input);
+  return { retagIds: ids(rows), rows: [...released, ...rows] };
 });
 
 /** Handle scope=following update for recurring task */

@@ -51,5 +51,14 @@ describe("getTaskUpdateScopeDecision", () => {
     expect(
       getTaskUpdateScopeDecision({ ...base, hasFollowing: false })
     ).toEqual({ action: "apply", scope: "this" });
+    // A pattern change still applies as "following": the server rejects it
+    // for "this", and makes the occurrence a series of its own.
+    expect(
+      getTaskUpdateScopeDecision({
+        ...base,
+        hasFollowing: false,
+        previousRecurrence: { freq: "DAILY", interval: 1 },
+      })
+    ).toEqual({ action: "apply", scope: "following" });
   });
 });
