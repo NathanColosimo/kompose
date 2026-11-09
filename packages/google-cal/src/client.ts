@@ -1544,32 +1544,34 @@ function liveMeetingLandsAt(params: {
   if (!split) {
     return false;
   }
-  return liveCandidates({ opened, oldZone, newZone, place, start }).some(
-    (slot) => {
-      const at = slotMoment(slot, oldZone);
-      if (
-        !(slot && at) ||
-        Temporal.Instant.compare(at, split) <= 0 ||
-        params.cancelled.includes(slot) ||
-        seriesMeetsAt({
-          recurrence: master.recurrence ?? [],
-          seriesZone: oldZone,
-          slot,
-          start: master.start,
-        }) !== true
-      ) {
-        return false;
-      }
-      const lands = carriedSlot({
-        master,
-        recurrence: params.recurrence,
-        slot: inFormOf(slot, start, newZone) ?? slot,
-        splitStart: params.splitStart,
-        start,
-      });
-      return lands !== null && inFormOf(lands, start, newZone) === place;
+  const candidates = new Set([
+    ...liveCandidates({ opened, oldZone, newZone, place, start }),
+    ...periodCandidates({ master, newZone, oldZone, opened, place }),
+  ]);
+  return [...candidates].some((slot) => {
+    const at = slotMoment(slot, oldZone);
+    if (
+      !(slot && at) ||
+      Temporal.Instant.compare(at, split) <= 0 ||
+      params.cancelled.includes(slot) ||
+      seriesMeetsAt({
+        recurrence: master.recurrence ?? [],
+        seriesZone: oldZone,
+        slot,
+        start: master.start,
+      }) !== true
+    ) {
+      return false;
     }
-  );
+    const lands = carriedSlot({
+      master,
+      recurrence: params.recurrence,
+      slot: inFormOf(slot, start, newZone) ?? slot,
+      splitStart: params.splitStart,
+      start,
+    });
+    return lands !== null && inFormOf(lands, start, newZone) === place;
+  });
 }
 
 /**
@@ -1613,6 +1615,52 @@ function liveCandidates(params: {
       return slot ? [slot] : [];
     }
   );
+}
+
+/** A rule that repeats by month or by year. */
+const BY_PERIOD = /FREQ=(MONTHLY|YEARLY)/;
+
+/**
+ * A monthly or yearly series' meetings in `place`'s month (or year), at
+ * the opened occurrence's time: any may keep its place in its period onto
+ * `place` (`samePlaceInPeriod`). None for other series.
+ */
+function periodCandidates(params: {
+  master: Event;
+  newZone: string;
+  oldZone: string;
+  opened: Event["start"];
+  place: string;
+}): string[] {
+  const { master, oldZone, opened } = params;
+  const rule = (master.recurrence ?? []).find((line) =>
+    line.startsWith("RRULE:")
+  );
+  const freq = rule && BY_PERIOD.exec(rule)?.[1];
+  const day = dayOfStart(asStart(params.place), params.newZone);
+  const first = dayOfStart(master.start, oldZone);
+  if (!(rule && freq && day && first)) {
+    return [];
+  }
+  const from =
+    freq === "MONTHLY" ? day.with({ day: 1 }) : day.with({ day: 1, month: 1 });
+  const to =
+    freq === "MONTHLY" ? from.add({ months: 1 }) : from.add({ years: 1 });
+  const slots: string[] = [];
+  for (
+    let candidate = from;
+    Temporal.PlainDate.compare(candidate, to) < 0;
+    candidate = candidate.add({ days: 1 })
+  ) {
+    if (isRuleDay(rule, first, candidate) === true) {
+      const formed = onDay(opened, candidate, oldZone);
+      const slot = formed && slotOf(formed, oldZone);
+      if (slot) {
+        slots.push(slot);
+      }
+    }
+  }
+  return slots;
 }
 
 /**
