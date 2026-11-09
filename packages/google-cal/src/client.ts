@@ -2270,9 +2270,15 @@ export function makeGoogleCalendarService(
       // rule meets there (an added day's takes none), so the rest are
       // placed against the COUNT it ends up with.
       const newZone = repeatZone(master, start);
-      // (`movedOffRule` places it only where the series meets.)
+      // A meeting both the rule's and an added day still holds a place.
       const rulePlaces = moved.filter(
-        (place) => !addsSlot(counted, place, zone)
+        (place) =>
+          seriesMeetsAt({
+            recurrence: counted.filter((line) => line.startsWith("RRULE:")),
+            seriesZone: newZone,
+            slot: place,
+            start,
+          }) === true
       );
       const final = changeCount(counted, rulePlaces.length);
       const isAdded = (slot: string) =>
