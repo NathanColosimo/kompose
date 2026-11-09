@@ -2645,6 +2645,8 @@ export function makeGoogleCalendarService(
     cancelled: string[];
     edited: string[] | undefined;
     master: Event;
+    /** Whether `edited` gives the series a new repeat (`givesNewRepeat`). */
+    newRepeat: boolean;
     originalStart: string;
     start: Event["start"];
   }) =>
@@ -2666,12 +2668,7 @@ export function makeGoogleCalendarService(
       // repeat, is theirs, less nothing.
       const keeps = keepsCount({
         master,
-        newRepeat: givesNewRepeat({
-          from: asStart(originalStart),
-          master,
-          saved: params.edited,
-          start,
-        }),
+        newRepeat: params.newRepeat,
         rule: fromSplit,
       });
       const carried = yield* carriedCount({
@@ -2704,16 +2701,9 @@ export function makeGoogleCalendarService(
       // The moved meeting's skip takes one of a COUNT's places when the
       // rule meets there (an added day's takes none), so the rest are
       // placed against the COUNT it ends up with.
+      // (`movedOffRule` places it only where the series meets.)
       const rulePlaces = moved.filter(
-        (place) =>
-          seriesMeetsAt({
-            recurrence: writtenCounted.filter((line) =>
-              line.startsWith("RRULE:")
-            ),
-            seriesZone: newZone,
-            slot: place,
-            start,
-          }) === true
+        (place) => !addsSlot(writtenCounted, place, zone)
       );
       const final = changeCount(counted, rulePlaces.length);
       // Moved to other days, or in a series that meets several times a day
@@ -2734,12 +2724,7 @@ export function makeGoogleCalendarService(
           master.recurrence ?? [],
           clockOf(master.start, zone)
         ) ||
-        givesNewRepeat({
-          from: asStart(originalStart),
-          master,
-          saved: params.edited,
-          start,
-        });
+        params.newRepeat;
       const split = slotMoment(originalStart, zone);
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
@@ -2848,12 +2833,7 @@ export function makeGoogleCalendarService(
       const kept = withinEnd({
         // Its own rule however it's written (parts reordered, its day
         // rebuilt for a day move): not a new end.
-        ownRule: !givesNewRepeat({
-          from: asStart(originalStart),
-          master,
-          saved: params.edited,
-          start,
-        }),
+        ownRule: !params.newRepeat,
         recurrence,
         rule: final,
         start,
@@ -3404,11 +3384,18 @@ export function makeGoogleCalendarService(
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
+      const isNewRepeat = givesNewRepeat({
+        from: asStart(originalStart),
+        master,
+        saved: edited.recurrence,
+        start: times.start,
+      });
       const recurrence = yield* newSeriesRecurrence({
         calendarId,
         cancelled: exceptions.cancelled,
         edited: edited.recurrence,
         master,
+        newRepeat: isNewRepeat,
         originalStart,
         start: times.start,
       });
@@ -3428,12 +3415,7 @@ export function makeGoogleCalendarService(
           start: times.start,
         }),
         recurrence,
-        seriesOnly: givesNewRepeat({
-          from: asStart(originalStart),
-          master,
-          saved: edited.recurrence,
-          start: times.start,
-        }),
+        seriesOnly: isNewRepeat,
         start: times.start,
         zone: repeatZone(master, times.start),
       });
@@ -3735,6 +3717,7 @@ export function makeGoogleCalendarService(
         cancelled: exceptions.cancelled,
         edited: undefined,
         master,
+        newRepeat: false,
         originalStart,
         start: slot.start,
       });
