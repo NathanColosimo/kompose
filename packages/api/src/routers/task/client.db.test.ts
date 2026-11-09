@@ -268,6 +268,19 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
+      /**
+       * Delete a task's row directly, past the service: how older code left
+       * a series without its master.
+       */
+      drop: (date: string) =>
+        Effect.flatMap(find(date), (task) =>
+          Effect.gen(function* () {
+            const db = yield* modules.db.Database;
+            yield* db
+              .delete(modules.task.taskTable)
+              .where(modules.drizzle.eq(modules.task.taskTable.id, task.id));
+          })
+        ),
       /** A new tag of the user's, by name; returns its id. */
       tag: (name: string) =>
         Effect.gen(function* () {
@@ -735,6 +748,23 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-10 Review todo MASTER WEEKLY/1 WE x2",
       "2026-11-11 Review todo in 2026-11-10",
       "2026-11-20 Review todo exc in 2026-11-10",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves an inbox occurrence alone when a series that lost its master splits", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.drop("2026-11-09");
+          yield* u.update("2026-11-11", { recurrence: daily(2) }, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-11 Review todo MASTER DAILY/1 x2",
+      "2026-11-12 Review todo in 2026-11-11",
       "inbox Review todo alone",
     ]);
   });

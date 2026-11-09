@@ -963,8 +963,8 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
     return [] as TaskSelect[];
   }
   // The master was moved to the inbox: it can't carry the earlier part's
-  // pattern, so that part becomes a series of its own (or a lone task), and
-  // the master and any other undated occurrences stand alone.
+  // pattern, so that part becomes a series of its own, and the master and
+  // any other undated occurrences stand alone.
   if (!master.startDate) {
     const handedOff = yield* handOffEarlierPart(userId, master, boundary);
     const detached = yield* dbDetachUndated(userId, master.id);
