@@ -1699,7 +1699,7 @@ export function makeGoogleCalendarService(
       const moved = movedOffRule({
         master,
         originalStart,
-        recurrence: counted,
+        recurrence: writtenRule,
         start,
       });
       // The moved meeting's skip takes one of a COUNT's places.
