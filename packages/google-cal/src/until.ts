@@ -105,44 +105,65 @@ function stepsWithinADay(line: string): boolean {
 }
 
 /**
- * Whether `rule` (counted from `start`, the series' first start at `base`;
- * null all day) has ended before `day`: past its UNTIL day, or its COUNT
- * spent. A timed COUNT counts the rule's meetings, so a day the clocks
- * skip its time (spring forward) isn't one. False when that can't be told.
+ * The last day `rule` (counted from `start`, the series' first start at
+ * `base`; null all day) meets: its UNTIL day, or its COUNT's last meeting's.
+ * A timed COUNT counts the rule's meetings, so a day the clocks skip its
+ * time (spring forward) isn't one. Null when it never ends, or that can't
+ * be told.
  */
-function endedBefore(params: {
+function ruleLastDay(params: {
   base: Temporal.PlainTime | null;
-  day: Temporal.PlainDate;
   rule: string;
   start: Temporal.PlainDate;
   timeZone: string;
-}): boolean {
-  const { base, day, rule, start, timeZone } = params;
+}): Temporal.PlainDate | null {
+  const { base, rule, start, timeZone } = params;
   const until = UNTIL_PART.exec(rule)?.[2];
-  const untilDay = until ? untilRuleToDay(until, timeZone) : null;
-  if (untilDay) {
-    return Temporal.PlainDate.compare(day, untilDay) > 0;
+  if (until) {
+    return untilRuleToDay(until, timeZone);
   }
   const count = Number(COUNT_VALUE.exec(rule)?.[1]);
   if (!Number.isFinite(count)) {
-    return false;
+    return null;
   }
   const time = ruleTimeOf(rule, base);
   const meetings =
     time &&
     countedRuleMeetings({ base, count, from: start, rule, time, timeZone });
-  const lastMeeting =
-    meetings && meetings.size > 0 ? Math.max(...meetings) : null;
-  const last =
-    lastMeeting === null
-      ? // RFC 5545 also counts the start when it isn't a rule day. Leaving
-        // it out can only put the end late, so the rule is taken as still
-        // meeting, which each caller treats as the safe way to be wrong.
-        countedRuleDays(rule, start, count, { countsStart: false })?.at(-1)
-      : Temporal.Instant.fromEpochMilliseconds(lastMeeting)
-          .toZonedDateTimeISO(timeZone)
-          .toPlainDate();
-  return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
+  if (meetings && meetings.size > 0) {
+    return Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
+      .toZonedDateTimeISO(timeZone)
+      .toPlainDate();
+  }
+  // RFC 5545 also counts the start when it isn't a rule day. Leaving it
+  // out can only put the end late, so the rule is taken as still meeting,
+  // which each caller treats as the safe way to be wrong.
+  return (
+    countedRuleDays(rule, start, count, { countsStart: false })?.at(-1) ?? null
+  );
+}
+
+/**
+ * A check of whether a rule has ended before `day` (`ruleLastDay`), false
+ * when that can't be told. Each rule's end is worked out once, however
+ * many skips are checked against it.
+ */
+function endChecker(timeZone: string) {
+  const lastDays = new Map<string, Temporal.PlainDate | null>();
+  return (params: {
+    base: Temporal.PlainTime | null;
+    day: Temporal.PlainDate;
+    rule: string;
+    start: Temporal.PlainDate;
+  }): boolean => {
+    const { base, rule, start } = params;
+    const key = `${rule}|${start.toString()}|${base?.toString() ?? ""}`;
+    if (!lastDays.has(key)) {
+      lastDays.set(key, ruleLastDay({ base, rule, start, timeZone }));
+    }
+    const last = lastDays.get(key);
+    return last ? Temporal.PlainDate.compare(params.day, last) > 0 : false;
+  };
 }
 
 /**
@@ -1159,6 +1180,7 @@ export function matchRecurrenceToStart(
   }
 ): string[] {
   const allDay = Boolean(start.date);
+  const endedBefore = endChecker(timeZone);
   const base = seriesStart?.dateTime ? wallClock(seriesStart, timeZone) : null;
   const severalADay = meetsSeveralTimesADay(recurrence, base);
   const newTime = start.dateTime ? wallClock(start, timeZone) : null;
@@ -1217,7 +1239,7 @@ export function matchRecurrenceToStart(
           const owners = rules.filter(
             (rule) =>
               isRuleDay(rule, baseDay, day) !== false &&
-              !endedBefore({ base, day, rule, start: baseDay, timeZone }) &&
+              !endedBefore({ base, day, rule, start: baseDay }) &&
               ruleAtTime(rule, time, base)
           );
           // A skipped added meeting is its own: it stays.
@@ -1242,7 +1264,6 @@ export function matchRecurrenceToStart(
                   day,
                   rule,
                   start: startDay,
-                  timeZone,
                 }) &&
                 ruleAtTime(rule, at, newTime)
             );
@@ -1288,7 +1309,6 @@ export function matchRecurrenceToStart(
                 day: value.day,
                 rule,
                 start: baseDay,
-                timeZone,
               }) &&
               ruleAtTime(rule, clock, base)
           );
@@ -1532,6 +1552,7 @@ export function moveSkippedDays(params: {
 }): string[] {
   const { from, newRule, oldRule, recurrence, seriesZone, to, toTime } = params;
   const fromTime = params.fromTime ?? null;
+  const endedBefore = endChecker(seriesZone);
   const freq = FREQ_PART.exec(newRule)?.[1] ?? "";
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (Temporal.PlainDate.compare(day, from) < 0) {
@@ -1546,7 +1567,6 @@ export function moveSkippedDays(params: {
         day,
         rule: oldRule,
         start: from,
-        timeZone: seriesZone,
       }) ||
       isRuleDay(newRule, to, day) !== false
     ) {
@@ -1590,7 +1610,7 @@ export function moveSkippedDays(params: {
     otherRules.some(
       (rule) =>
         isRuleDay(rule, start, day) !== false &&
-        !endedBefore({ base, day, rule, start, timeZone: seriesZone }) &&
+        !endedBefore({ base, day, rule, start }) &&
         (!time || ruleAtTime(rule, time, base))
     );
   // An added (RDATE) meeting is its own: its skip stays with it, and no
