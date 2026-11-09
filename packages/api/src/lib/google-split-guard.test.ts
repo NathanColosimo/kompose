@@ -345,12 +345,12 @@ describe("This and following from an added meeting, or with several rules", () =
     // Mondays to Nov 27 2028, plus an added Thu Nov 9 2028: deleting from
     // it keeps the yearly COUNT (cut, it would meet again on Nov 8 2028,
     // day 313 of a leap year), cuts the Mondays, and skips each meeting
-    // Google lists from then.
+    // Google lists from then, the rules in their own order.
     const mixed: Event = {
       ...master,
       recurrence: [
-        "RRULE:FREQ=YEARLY;BYYEARDAY=313;COUNT=2",
         "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20281128T045959Z",
+        "RRULE:FREQ=YEARLY;BYYEARDAY=313;COUNT=2",
         "RDATE;TZID=America/New_York:20281109T090000",
       ],
     };
@@ -379,8 +379,8 @@ describe("This and following from an added meeting, or with several rules", () =
     ).toBe(true);
     expect(google.writes().map((write) => write.body?.recurrence)).toEqual([
       [
-        "RRULE:FREQ=YEARLY;BYYEARDAY=313;COUNT=2",
         "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20281109T135959Z",
+        "RRULE:FREQ=YEARLY;BYYEARDAY=313;COUNT=2",
         "EXDATE:20281109T140000Z,20281113T140000Z,20281120T140000Z,20281127T140000Z",
       ],
     ]);

@@ -142,12 +142,21 @@ export function deleteFromListed(params: {
     (rule) =>
       splitAt && ruleEndsBefore(rule, first, splitAt, seriesZone) === null
   );
+  // Cut as one, then each unsure rule put back as it was: the cut keeps
+  // the rules in their own order.
   const cut = truncateRecurrenceForFollowing(
-    recurrence.filter((line) => !unsure.includes(line)),
+    recurrence,
     originalStart,
     seriesZone,
     seriesStart
   );
+  const cutRules = cut.filter(isRule);
+  const lines = [
+    ...rules.map((rule, index) =>
+      unsure.includes(rule) ? rule : (cutRules[index] ?? rule)
+    ),
+    ...cut.filter((line) => !isRule(line)),
+  ];
   // A listed meeting no unsure rule meets is a cut rule's or a dropped
   // added day's, gone with them.
   const theirs = fromSplit.filter((start) => {
@@ -159,7 +168,7 @@ export function deleteFromListed(params: {
       )
     );
   });
-  return skipping([...unsure, ...cut], theirs, seriesZone);
+  return skipping(lines, theirs, seriesZone);
 }
 
 /**
