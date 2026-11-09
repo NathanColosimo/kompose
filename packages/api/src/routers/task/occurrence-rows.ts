@@ -1,5 +1,4 @@
 import type {
-  TaskInsert,
   TaskSelect,
   TaskUpdate,
   taskTable,
@@ -18,11 +17,6 @@ import { generateOccurrences } from "../../lib/recurrence";
 export type TaskInsertRow = typeof taskTable.$inferInsert;
 
 export type SystemManagedTaskField = "createdAt" | "updatedAt";
-export type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
-  createdAt?: never;
-  tagIds?: string[];
-  updatedAt?: never;
-};
 export type TaskUpdateInput = Omit<TaskUpdate, SystemManagedTaskField> & {
   createdAt?: never;
   tagIds?: string[];
@@ -166,7 +160,8 @@ export function keepsEditedOccurrence(params: {
  * occurrence is kept, it holds the first date, as the master
  * (`seriesMasterId` is its id) carrying the pattern. Otherwise
  * the first row, on its date, replaces it: the new master, with the
- * pattern and its status. Other new occurrences start open.
+ * pattern and its status (so `keptDates` mustn't hold that date, as
+ * keepsEditedOccurrence ensures). Other new occurrences start open.
  */
 export function regeneratedOccurrenceRows(params: {
   input: TaskUpdateInput;

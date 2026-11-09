@@ -521,6 +521,25 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     ).toEqual(["2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10"]);
   });
 
+  test("deleting a master moved later, and what follows it, keeps the earlier part", async () => {
+    // Daily x5; the Nov 9 master moved alone to Nov 20, then deleted with
+    // "following".
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.remove("2026-11-20", "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 until 2026-11-13",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-12 Review todo in 2026-11-10",
+      "2026-11-13 Review todo in 2026-11-10",
+    ]);
+  });
+
   test("deletes an inbox occurrence alone, even from following", async () => {
     expect(
       await scenario((u) =>
