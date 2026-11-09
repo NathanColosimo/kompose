@@ -863,8 +863,9 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     });
   // The earlier part of the series stops before the edit, so its master no
   // longer claims to repeat past it. First, while the master is still
-  // there: a split before it deletes it below, its earlier occurrences need
-  // it to move to a series of their own, and its undated ones to stand alone.
+  // there: a split before it deletes it below, so first its earlier
+  // occurrences move to a series of their own and its undated ones become
+  // standalone.
   const ended = yield* endSeriesBefore(userId, task, boundary);
   const deletedIds = new Set(
     ids(
@@ -1003,8 +1004,7 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
 
 /**
  * A series' undated occurrences (moved to the inbox alone) have no place
- * before or after a split, so when a split starts at or before their master,
- * or the master is deleted or gone, they become standalone tasks rather than
+ * before or after a split, so they become standalone tasks rather than
  * members of a series that's changed or gone.
  */
 const dbDetachUndated = (userId: string, seriesMasterId: string) =>
