@@ -166,15 +166,27 @@ const SERIES_FIELDS = (
 
 type Attendee = NonNullable<Event["attendees"]>[number];
 
+/** The value Google gives a field an event leaves out. */
+const GOOGLE_DEFAULTS: Partial<Record<keyof CreateEvent, unknown>> = {
+  anyoneCanAddSelf: false,
+  guestsCanInviteOthers: true,
+  guestsCanModify: false,
+  guestsCanSeeOtherGuests: true,
+  status: "confirmed",
+  transparency: "opaque",
+  visibility: "default",
+};
+
 /**
  * A field's value as compared across a series. "" and [] are none, as a
  * form writes them. Attendees drop their answers: those are per meeting,
  * not a change to the occurrence.
  */
 function comparable(field: keyof CreateEvent, value: unknown): unknown {
-  // Google reads an event without a status as confirmed.
-  if (field === "status") {
-    return value ?? "confirmed";
+  // A field left out is Google's default (an event without a status is
+  // confirmed), so the two are no change.
+  if (field in GOOGLE_DEFAULTS) {
+    return value ?? GOOGLE_DEFAULTS[field];
   }
   if (value === "" || (Array.isArray(value) && value.length === 0)) {
     return null;
