@@ -2,7 +2,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { NotFoundError } from "./api-client/core/error";
+import { APIConnectionError, NotFoundError } from "./api-client/core/error";
 import {
   addsSlot,
   carryCountExactly,
@@ -952,7 +952,7 @@ function endedRepeat(params: {
     }
     // All its own changes, its times too even where the save sets times:
     // own times the save would override are lost (below).
-    const { end, start, ...own } = changesOwnTo(occurrence, master, {}, zone);
+    const { end, start, ...own } = changesOwnTo(occurrence, master, zone);
     const fields = Object.fromEntries(
       Object.entries(own).filter(([field]) => !(field in params.changes))
     );
@@ -1143,7 +1143,7 @@ function seriesChangeRefusal(params: {
           movedDay ||
           !replaced ||
           Object.keys(
-            changesOwnTo(occurrence, master, params.changes, zone)
+            changesOwnTo(occurrence, master, zone, params.changes)
           ).some((field) => field !== "start" && field !== "end")
         );
       }
@@ -1257,7 +1257,7 @@ function sortExceptions(
     }
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
-    } else if (Object.keys(changesOwnTo(event, master, {}, zone)).length > 0) {
+    } else if (Object.keys(changesOwnTo(event, master, zone)).length > 0) {
       // One moved and moved back has nothing to keep.
       changed.push({ occurrence: event, originalStart });
     }
@@ -1296,8 +1296,9 @@ interface CarriedOccurrence {
 function changesOwnTo(
   occurrence: Event,
   master: Event,
-  edited: Partial<CreateEvent>,
-  zone: string
+  zone: string,
+  /** Fields the edit sets for its whole series, left out. */
+  edited: Partial<CreateEvent> = {}
 ): Partial<CreateEvent> {
   const originalStart = originalStartOf(occurrence, zone);
   if (!originalStart) {
@@ -1521,7 +1522,7 @@ function placeByDay(params: {
   rule: string[];
   slots: string[];
   start: Event["start"];
-}): { ontoStart: number[] | null; placed: string[] } {
+}): { ontoStart: number[] | null; placed: string[]; ruleSkips: string[] } {
   const { master, originalStart, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
@@ -1542,6 +1543,8 @@ function placeByDay(params: {
     return first !== moment;
   };
   let unknown = false;
+  // The places of the rule meetings' skips that hold a COUNT place.
+  const ruleSkips: string[] = [];
   const placed = params.slots.flatMap((slot) => {
     const at = carriedSlot({
       master,
@@ -1580,12 +1583,78 @@ function placeByDay(params: {
       if (meeting) {
         ontoStart.push(moment.epochMilliseconds);
       }
+    } else if (formed && !uncounted) {
+      ruleSkips.push(formed);
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
-  return { ontoStart: unknown ? null : ontoStart, placed };
+  return { ontoStart: unknown ? null : ontoStart, placed, ruleSkips };
+}
+
+/**
+ * A kept COUNT (in `recurrence`, the new series' rule) lowered for each
+ * rule meeting's skip (`ruleSkips`, by place) its end leaves out: that
+ * skip frees no place, so the end comes one meeting sooner, again until
+ * every skip left falls within it. Null when whether one does can't be
+ * told.
+ */
+function countWithinSkips(params: {
+  recurrence: string[];
+  ruleSkips: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] | null {
+  const { recurrence, ruleSkips, start, zone } = params;
+  let trimmed = recurrence;
+  for (let round = 0; round <= ruleSkips.length; round += 1) {
+    const rules = trimmed.filter((line) => line.startsWith("RRULE:"));
+    const meets = ruleSkips.map((slot) =>
+      seriesMeetsAt({ recurrence: rules, seriesZone: zone, slot, start })
+    );
+    if (meets.includes(null)) {
+      return null;
+    }
+    const next = changeCount(
+      recurrence,
+      -meets.filter((meeting) => meeting === false).length
+    );
+    if (countOf(next) === countOf(trimmed)) {
+      return trimmed;
+    }
+    trimmed = next;
+  }
+  return trimmed;
+}
+
+/**
+ * A split's new `rule` with a kept COUNT lowered by the `places` its skips
+ * free none of, and again for each placed skip (`ruleSkips`) its end then
+ * leaves out (`countWithinSkips`). Null when that can't be told.
+ */
+function lowerCount(params: {
+  master: Event;
+  places: number;
+  rule: string[];
+  ruleSkips: string[];
+  /** The split's original start (see `ruleForStart`). */
+  splitAt: string;
+  start: Event["start"];
+}): string[] | null {
+  const { master, splitAt, start } = params;
+  const lowered = changeCount(params.rule, -params.places);
+  const written = ruleForStart(lowered, master, start, splitAt);
+  const within = countWithinSkips({
+    recurrence: written,
+    ruleSkips: params.ruleSkips,
+    start,
+    zone: repeatZone(master, start),
+  });
+  return (
+    within &&
+    changeCount(lowered, (countOf(within) ?? 0) - (countOf(written) ?? 0))
+  );
 }
 
 /**
@@ -1734,7 +1803,7 @@ function followingOccurrences(params: {
 }) {
   const { changes, master, originalStart, start } = params;
   const zone = seriesZoneOf(master);
-  const own = changesOwnTo(params.opened, master, changes, zone);
+  const own = changesOwnTo(params.opened, master, zone, changes);
   const { end: _end, start: _start, ...ownFields } = own;
   // A new end alone keeps the opened one's own start, now with that end.
   const keptStart = sameTime(params.edited.start, params.opened.start, zone);
@@ -1755,8 +1824,8 @@ function followingOccurrences(params: {
       const exceptionOwn = changesOwnTo(
         exception.occurrence,
         master,
-        changes,
-        zone
+        zone,
+        changes
       );
       return {
         at: carriedAt({
@@ -2620,7 +2689,7 @@ export function makeGoogleCalendarService(
             ],
             start,
           })
-        : { ontoStart: [], placed: [] };
+        : { ontoStart: [], placed: [], ruleSkips: [] };
       const placed = byDay.placed;
       const ontoStart = placesOnStart({
         added: addedOntoStart({
@@ -2631,7 +2700,18 @@ export function makeGoogleCalendarService(
         byDay: byDay.ontoStart,
         keeps,
       });
-      if (ontoStart === null) {
+      const lowered =
+        ontoStart === null
+          ? null
+          : lowerCount({
+              master,
+              places: ontoStart,
+              rule: final,
+              ruleSkips: byDay.ruleSkips,
+              splitAt: originalStart,
+              start,
+            });
+      if (!lowered) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const recurrence = skipping(
@@ -2647,7 +2727,7 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            changeCount(final, -ontoStart),
+            lowered,
             "EXDATE",
             zone,
             (value) => !ownSkip(value)
@@ -2904,6 +2984,9 @@ export function makeGoogleCalendarService(
         recurrence: cutRecurrence,
       });
       const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
+      // A cut Google never answered (a timeout, a dropped connection) may
+      // still go through after it's read back.
+      let unanswered = false;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
           try: () =>
@@ -2923,13 +3006,14 @@ export function makeGoogleCalendarService(
               event: cutPayload,
               cause,
             });
+            unanswered = cause instanceof APIConnectionError;
             return new GoogleApiError({ cause });
           },
         })
       );
       if (Exit.isFailure(cut)) {
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
-        if (outcome === "unchanged") {
+        if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;
         }
         if (outcome !== "cut") {
@@ -3091,7 +3175,7 @@ export function makeGoogleCalendarService(
   }) => {
     const { changes, edited, master, occurrence } = params;
     const zone = seriesZoneOf(master);
-    const own = changesOwnTo(occurrence, master, {}, zone);
+    const own = changesOwnTo(occurrence, master, zone);
     const times = timesOnOwnDay(occurrence, edited, master);
     const retimed = !keepsTimes(times, occurrence, zone);
     const overridden = Object.keys(changes).some((field) => field in own);
@@ -3526,12 +3610,12 @@ export function makeGoogleCalendarService(
         occurrences: [
           {
             at: originalStart,
-            changes: changesOwnTo(instance, master, {}, zone),
+            changes: changesOwnTo(instance, master, zone),
             originalStart,
           },
           ...exceptions.changed.map((exception) => ({
             at: exception.originalStart,
-            changes: changesOwnTo(exception.occurrence, master, {}, zone),
+            changes: changesOwnTo(exception.occurrence, master, zone),
             originalStart: exception.originalStart,
           })),
         ],

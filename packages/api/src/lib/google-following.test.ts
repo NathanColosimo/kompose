@@ -1189,6 +1189,19 @@ describe("a split that fails part way leaves the old series whole", () => {
     ]);
   });
 
+  test("leaves both series when the cut gets no answer, even if the old one reads whole", async () => {
+    // A cut Google never answered may still go through after the read.
+    const google = fakeGoogle(weekly, [], (request) => {
+      if (isCut(request)) {
+        throw new TypeError("network down");
+      }
+    });
+    expect(Exit.isFailure(await run(rename()))).toBe(true);
+    expect(google.writes().map((write) => write.method)).not.toContain(
+      "DELETE"
+    );
+  });
+
   test("keeps the split when the cut's answer failed but it went through", async () => {
     let master = weekly;
     const google = fakeGoogle(weekly, [], (request) => {
