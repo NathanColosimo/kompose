@@ -672,18 +672,19 @@ function oneForm(time: Event["start"]): Event["start"] {
     : { dateTime: time.dateTime, timeZone: time.timeZone };
 }
 
-/** Whether the series' own rules (not an added day) meet at `slot`. */
-function ruleMeetingAt(slot: string, master: Event): boolean {
-  return (
-    seriesMeetsAt({
-      recurrence: (master.recurrence ?? []).filter((line) =>
-        line.startsWith("RRULE:")
-      ),
-      seriesZone: seriesZoneOf(master),
-      slot,
-      start: master.start,
-    }) === true
-  );
+/**
+ * Whether the series' own rules (not an added day) meet at `slot`; null
+ * when a rule can't be read.
+ */
+function ruleMeetingAt(slot: string, master: Event): boolean | null {
+  return seriesMeetsAt({
+    recurrence: (master.recurrence ?? []).filter((line) =>
+      line.startsWith("RRULE:")
+    ),
+    seriesZone: seriesZoneOf(master),
+    slot,
+    start: master.start,
+  });
 }
 
 /**
@@ -752,16 +753,21 @@ function deletedLost(params: {
   const { master, recurrence, times } = params;
   const first = momentOf(times.start, repeatZone(master, times.start));
   return params.cancelled.filter((slot) => {
-    const place = ruleMeetingAt(slot, master)
-      ? placeOnNewStart(slot, master, times.start)
-      : null;
+    const ruleMet = ruleMeetingAt(slot, master);
+    const place =
+      ruleMet === false ? null : placeOnNewStart(slot, master, times.start);
     const at =
       place && momentOf(asStart(place), repeatZone(master, times.start));
     // Before the new start, the series has no meeting to bring back.
     if (!(place && at && first) || Temporal.Instant.compare(at, first) < 0) {
       return false;
     }
-    return !keptOrEnded({ master, place, recurrence, start: times.start });
+    // A rule that can't be read can't tell where its meeting went: lost,
+    // as a changed one there is.
+    return (
+      ruleMet === null ||
+      !keptOrEnded({ master, place, recurrence, start: times.start })
+    );
   });
 }
 
@@ -2049,8 +2055,14 @@ export function makeGoogleCalendarService(
         seriesZoneOf(master),
         "from"
       );
+      // The new part's COUNT, when it keeps the series': less the places
+      // before the split (`carriedCount`), plus one for a moved meeting's
+      // skip (`moved`), less one for each skip onto the new start
+      // (`ontoStart`). A COUNT the user set is theirs, less nothing.
+      const keeps = keepsCount(master, fromSplit);
       const counted = yield* carriedCount({
         calendarId,
+        keeps,
         master,
         originalStart,
         rule: fromSplit,
@@ -2164,9 +2176,7 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            keepsCount(master, fromSplit)
-              ? changeCount(final, -ontoStart.size)
-              : final,
+            keeps ? changeCount(final, -ontoStart.size) : final,
             "EXDATE",
             zone,
             (value) => !ownSkip(value)
@@ -2204,13 +2214,15 @@ export function makeGoogleCalendarService(
    */
   const carriedCount = (params: {
     calendarId: string;
+    /** Whether `rule` keeps the series' COUNT (`keepsCount`). */
+    keeps: boolean;
     master: Event;
     originalStart: string;
     rule: string[];
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
-      if (!keepsCount(master, rule)) {
+      if (!params.keeps) {
         return rule;
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
