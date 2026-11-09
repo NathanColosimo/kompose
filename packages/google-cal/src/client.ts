@@ -445,23 +445,6 @@ function withSeriesSkips(rule: string[], master: Event): string[] {
 }
 
 /**
- * `recurrence` as what it means, however Google writes it back: its rules'
- * parts, and its skipped and added moments.
- */
-function recurrenceValues(recurrence: string[], zone: string): string {
-  const rules = recurrence
-    .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
-    .map((line) => {
-      const [name, parts = ""] = line.split(":");
-      return `${name}:${parts.split(";").sort().join(";")}`;
-    })
-    .sort();
-  const values = (name: "EXDATE" | "RDATE") =>
-    dateValues(recurrence, name, zone).map(skipKey).sort();
-  return JSON.stringify([rules, values("EXDATE"), values("RDATE")]);
-}
-
-/**
  * The rules a save writes: the series' own when it sends none, and a rule
  * sent alone with the series' skips and the added days still on, which a
  * client rebuilding the rule may leave out ("Repeat: None" stays none).
@@ -2084,10 +2067,10 @@ export function makeGoogleCalendarService(
       if (!endsBeforeStart(recurrence, momentOf(start, newZone), newZone)) {
         return recurrence;
       }
-      // The series' own end before the meeting moved past it (its last
-      // rule meeting, moved later): its rule is spent, so the new part has
-      // that meeting and any added (RDATE) ones after it; one event if
-      // none. An end the save sets there is refused.
+      // The series' own end before the new start (a meeting moved past
+      // it): its rule is spent, so the new part has that meeting and any
+      // added (RDATE) ones after it; one event if none. An end the save
+      // sets there is refused.
       // Its own rule however it's written (parts reordered, its day rebuilt
       // for a day move): not a new end.
       const ownRule = !givesNewRepeat({
@@ -2237,14 +2220,13 @@ export function makeGoogleCalendarService(
       // A new part that doesn't repeat ("Repeat: None") is one event, with
       // no recurrence lines: the one carried (at its start) goes on it.
       const repeating = repeats(newSeries.recurrence);
+      const startSlot = slotOf(newSeries.start, seriesZoneOf(master));
+      const atStart = params.carried.find(
+        (carried) => carried.at === startSlot
+      );
       const written = repeating
         ? newSeries
-        : Object.assign(
-            {},
-            newSeries,
-            ...params.carried.map((carried) => carried.changes),
-            { recurrence: [] }
-          );
+        : { ...newSeries, ...atStart?.changes, recurrence: [] };
       const conferenceDataVersion = getConferenceDataVersion(written);
       const created = yield* Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
