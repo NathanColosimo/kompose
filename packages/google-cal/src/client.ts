@@ -879,6 +879,50 @@ function inFormOf(
 }
 
 /**
+ * Where a split's skipped or deleted meetings (`slots`, original starts)
+ * stay skipped: where the new series (`rule`) meets in their place, as a
+ * changed one is put back (read without skips: a place already skipped is
+ * still its place, and in the new start's form: made all day or timed,
+ * it's placed by day); an added one keeps its slot. None lands on the new
+ * series' start, the meeting the user just saved (`ontoStart` counts the
+ * ones that would), or on an added meeting it keeps.
+ */
+function placeSkips(params: {
+  master: Event;
+  originalStart: string;
+  rule: string[];
+  slots: string[];
+  start: Event["start"];
+}): { ontoStart: number; placed: string[] } {
+  const { master, originalStart, rule, start } = params;
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const unskipped = rule.filter((line) => !line.startsWith("EXDATE"));
+  const startSlot = slotOf(start, newZone);
+  const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
+  let ontoStart = 0;
+  const placed = params.slots.flatMap((slot) => {
+    const at = addsSlot(master.recurrence ?? [], slot, zone)
+      ? null
+      : carriedSlot({
+          master,
+          recurrence: unskipped,
+          slot: inFormOf(slot, start, newZone) ?? slot,
+          splitStart,
+          start,
+        });
+    const formed = inFormOf(at ?? slot, start, newZone);
+    if (formed === startSlot && at !== null) {
+      ontoStart += 1;
+    }
+    const ontoAdded =
+      at !== null && formed !== null && addsSlot(rule, formed, zone);
+    return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
+  });
+  return { ontoStart, placed };
+}
+
+/**
  * The occurrences a "This and following" new series carries, and where:
  * the opened one at its start with its own changes (its times only if
  * the edit left them), and later changed ones at their new places.
@@ -1737,33 +1781,21 @@ export function makeGoogleCalendarService(
         zone,
         (value) => !ownSkip(value)
       );
-      // A deleted or skipped rule meeting stays skipped where the new
-      // series meets in its place, as a changed one is put back (read
-      // without skips: a place already skipped is still its place, and in
-      // the new start's form: made all day or timed, it's placed by day);
-      // an added one keeps its slot. No skip lands on the new series'
-      // start, the meeting the user just saved, or on an added meeting it
-      // keeps.
-      const unskipped = final.filter((line) => !line.startsWith("EXDATE"));
-      const startSlot = slotOf(start, newZone);
-      const splitStart =
-        inFormOf(originalStart, start, newZone) ?? originalStart;
-      const placed = [...params.cancelled, ...ownSkips].flatMap((slot) => {
-        const at = isAdded(slot)
-          ? null
-          : carriedSlot({
-              master,
-              recurrence: unskipped,
-              slot: inFormOf(slot, start, newZone) ?? slot,
-              splitStart,
-              start,
-            });
-        const formed = inFormOf(at ?? slot, start, newZone);
-        const ontoAdded =
-          at !== null && formed !== null && addsSlot(final, formed, zone);
-        return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
+      const { ontoStart, placed } = placeSkips({
+        master,
+        originalStart,
+        rule: final,
+        slots: [...params.cancelled, ...ownSkips],
+        start,
       });
-      const recurrence = skipping(rule, [...placed, ...moved], zone);
+      // A skipped meeting whose place is the new start (the meeting just
+      // saved there) holds no place of its own: a carried COUNT is one less.
+      const carried = countOf(master.recurrence) === countOf(fromSplit);
+      const recurrence = skipping(
+        carried ? changeCount(rule, -ontoStart) : rule,
+        [...placed, ...moved],
+        zone
+      );
       if (!endsBeforeStart(recurrence, momentOf(start, newZone), newZone)) {
         return recurrence;
       }
