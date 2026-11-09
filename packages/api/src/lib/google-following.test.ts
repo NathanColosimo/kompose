@@ -604,7 +604,7 @@ describe("This and following", () => {
     // Mar 22 at 9:00 New York, in the new start's form.
     expect(created?.body?.recurrence).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=MO",
-      "EXDATE;TZID=America/New_York:20270322T090000",
+      "EXDATE:20270322T130000Z",
     ]);
     expect(carried?.url.pathname).toEndWith(
       `/events/${String(created?.body?.id)}_20270315T130000Z`

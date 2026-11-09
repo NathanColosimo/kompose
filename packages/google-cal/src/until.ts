@@ -178,7 +178,7 @@ export function untilRuleForDay(
   const instant = day
     .toZonedDateTime({ plainTime: "23:59:59", timeZone })
     .toInstant();
-  return `${instant.toString().slice(0, 19).replace(/[-:]/g, "")}Z`;
+  return compactInstant(instant);
 }
 
 /** The day an UNTIL (or any date / date-time value) falls on in `timeZone`. */
@@ -209,11 +209,6 @@ export function untilMoment(
       .toInstant()
       .subtract({ milliseconds: 1 })
   );
-}
-
-/** "093000" for 9:30. */
-function compactTime(time: Temporal.PlainTime): string {
-  return time.toString({ smallestUnit: "second" }).replace(/:/g, "");
 }
 
 function compactDate(day: Temporal.PlainDate): string {
@@ -581,14 +576,8 @@ function matchDateList(
   if (moments.length === 0) {
     return "";
   }
-  return `${list.name};TZID=${seriesZone}:${[
-    ...new Set(
-      moments.map((moment) => {
-        const local = moment.toZonedDateTimeISO(seriesZone);
-        return `${compactDate(local.toPlainDate())}T${compactTime(local.toPlainTime())}`;
-      })
-    ),
-  ].join(",")}`;
+  // In UTC: a moment kept exactly, even in the hour a clock change repeats.
+  return `${list.name}:${[...new Set(moments.map(compactInstant))].join(",")}`;
 }
 
 /**
@@ -914,12 +903,15 @@ function retimedList(
 function matchClock(
   line: string,
   start: StartTime,
-  timeZone: string,
-  severalADay: boolean,
-  /** Made all day: drop the rule's times (it has none). */
-  dropTimes = true
+  how: {
+    /** Made all day: drop the rule's times (it has none). */
+    dropTimes: boolean;
+    severalADay: boolean;
+    timeZone: string;
+  }
 ): string {
-  if (start.date && dropTimes && !SUB_DAILY.test(line)) {
+  const { severalADay, timeZone } = how;
+  if (start.date && how.dropTimes && !SUB_DAILY.test(line)) {
     return `RRULE:${line
       .slice("RRULE:".length)
       .split(";")
@@ -990,7 +982,7 @@ function matchUntil(
 
 /** "20261101T063000Z": a moment as a recurrence value, in UTC. */
 function compactInstant(instant: Temporal.Instant): string {
-  return `${instant.toString({ smallestUnit: "second" }).replace(/[-:]/g, "")}`;
+  return instant.toString({ smallestUnit: "second" }).replace(/[-:]/g, "");
 }
 
 /**
@@ -1124,6 +1116,14 @@ export function matchRecurrenceToStart(
             return true;
           }
           const clock = at.toZonedDateTimeISO(timeZone).toPlainTime();
+          // A rule meets at the first of a repeated hour (RFC 5545): a
+          // skip at the second is another meeting's.
+          const ruleMoment = value.day
+            .toZonedDateTime({ plainTime: clock, timeZone })
+            .toInstant();
+          if (Temporal.Instant.compare(ruleMoment, at) !== 0) {
+            return false;
+          }
           // A day a rule can't be read for may be its: a skip where
           // nothing meets does nothing, one missed brings a meeting back.
           return rules.some(
@@ -1150,9 +1150,7 @@ export function matchRecurrenceToStart(
             timeZone,
           }),
           start,
-          timeZone,
-          severalADay,
-          convertsRule
+          { dropTimes: convertsRule, severalADay, timeZone }
         )
       : matchDateList(line, start, {
           added,

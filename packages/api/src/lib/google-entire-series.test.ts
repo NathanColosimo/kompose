@@ -852,7 +852,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
     // Nov 23 at 23:00 New York, in the new start's form.
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=DAILY",
-      "EXDATE;TZID=America/New_York:20261123T230000",
+      "EXDATE:20261124T040000Z",
     ]);
   });
 

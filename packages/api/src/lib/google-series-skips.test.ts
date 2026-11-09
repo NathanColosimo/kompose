@@ -309,7 +309,7 @@ describe("Entire series", () => {
     // Through Nov 12 at 21:00 New York, and Nov 10 at 21:00 skipped.
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=DAILY;UNTIL=20261113T045959Z",
-      "EXDATE;TZID=America/New_York:20261110T210000",
+      "EXDATE:20261111T020000Z",
     ]);
   });
 });
@@ -424,8 +424,8 @@ describe("a series of added days only", () => {
       )
     ).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
-      "RDATE;TZID=America/New_York:20261116T090000,20261123T090000",
-      "EXDATE;TZID=America/New_York:20261123T090000",
+      "RDATE:20261116T140000Z,20261123T140000Z",
+      "EXDATE:20261123T140000Z",
     ]);
   });
 });
@@ -437,9 +437,7 @@ describe("a series made all day", () => {
     // skipped, as a date.
     const series: Event = {
       ...weekly,
-      recurrence: [
-        "RDATE;TZID=America/New_York:20261116T090000,20261123T090000",
-      ],
+      recurrence: ["RDATE:20261116T140000Z,20261123T140000Z"],
     };
     const deleted: Event = {
       ...occurrenceOf(series, "2026-11-09T09:00:00-05:00"),
@@ -1488,10 +1486,7 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
   });
 
   test("leaves a skip the new rule still meets on", () => {
-    const recurrence = [
-      "RRULE:FREQ=DAILY",
-      "EXDATE;TZID=America/New_York:20261123T090000",
-    ];
+    const recurrence = ["RRULE:FREQ=DAILY", "EXDATE:20261123T140000Z"];
     expect(
       moveSkippedDays({
         from: day("2026-11-09"),

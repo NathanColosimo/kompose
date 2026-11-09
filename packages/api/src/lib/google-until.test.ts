@@ -139,7 +139,7 @@ describe("matchRecurrenceToStart", () => {
       )
     ).toEqual([
       "RRULE:FREQ=WEEKLY",
-      "EXDATE;TZID=America/New_York:20261128T090000,20261205T090000",
+      "EXDATE:20261128T140000Z,20261205T140000Z",
     ]);
   });
 });
@@ -164,10 +164,7 @@ describe("skipped occurrences on the series' days", () => {
         { dateTime: "2026-11-01T10:00:00-05:00" },
         "America/New_York"
       )
-    ).toEqual([
-      "RRULE:FREQ=DAILY",
-      "EXDATE;TZID=America/New_York:20261104T100000",
-    ]);
+    ).toEqual(["RRULE:FREQ=DAILY", "EXDATE:20261104T150000Z"]);
     // Unchanged time: left as written.
     const same = ["RRULE:FREQ=DAILY", "EXDATE:20261104T140000Z"];
     expect(
@@ -188,10 +185,7 @@ describe("skipped occurrences on the series' days", () => {
         { dateTime: "2026-11-01T09:00:00-05:00" },
         "America/New_York"
       )
-    ).toEqual([
-      "RRULE:FREQ=DAILY",
-      "EXDATE;TZID=America/New_York:20261104T090000",
-    ]);
+    ).toEqual(["RRULE:FREQ=DAILY", "EXDATE:20261104T140000Z"]);
   });
 
   test("skips a deleted start an added day repeats at its new time too", () => {
@@ -209,7 +203,34 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261109T090000,20261109T100000");
+    ).toBe("EXDATE:20261109T140000Z,20261109T150000Z");
+  });
+
+  test("keeps a skip in the repeated hour of a clock change at its own moment", () => {
+    // Daily at 1:30 New York, with an added meeting at the second 1:30 of
+    // Nov 1 (6:30 UTC, after clocks go back), skipped. The rule meets at
+    // the first 1:30 (5:30 UTC), which stays.
+    const recurrence = [
+      "RRULE:FREQ=DAILY;INTERVAL=1",
+      "RDATE:20261101T063000Z",
+      "EXDATE:20261101T063000Z",
+    ];
+    const start = {
+      dateTime: "2026-10-25T01:30:00-04:00",
+      timeZone: "America/New_York",
+    };
+    expect(
+      matchRecurrenceToStart(recurrence, start, "America/New_York", start)
+    ).toEqual(recurrence);
+    // Moved to 2:30, the skip stays where the added meeting is.
+    expect(
+      matchRecurrenceToStart(
+        recurrence,
+        { ...start, dateTime: "2026-10-25T02:30:00-04:00" },
+        "America/New_York",
+        start
+      ).at(-1)
+    ).toBe("EXDATE:20261101T063000Z");
   });
 
   test("skips such a meeting at its new time too when the rule can't be read", () => {
@@ -226,7 +247,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-23T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261130T090000,20261130T100000");
+    ).toBe("EXDATE:20261130T140000Z,20261130T150000Z");
   });
 
   test("keeps a skipped start off the rule's days when made all day", () => {
@@ -273,10 +294,7 @@ describe("skipped occurrences on the series' days", () => {
         { dateTime: "2026-11-01T09:00:00-05:00" },
         "America/New_York"
       )
-    ).toEqual([
-      "RRULE:FREQ=DAILY;BYHOUR=9,15",
-      "EXDATE;TZID=America/New_York:20261104T090000",
-    ]);
+    ).toEqual(["RRULE:FREQ=DAILY;BYHOUR=9,15", "EXDATE:20261104T140000Z"]);
   });
 
   test("keeps the times of rules that meet at different hours", () => {
@@ -313,7 +331,7 @@ describe("skipped occurrences on the series' days", () => {
     ).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=10",
       "RRULE:FREQ=WEEKLY;BYDAY=FR;BYHOUR=10;BYMINUTE=0",
-      "EXDATE;TZID=America/New_York:20261113T100000",
+      "EXDATE:20261113T150000Z",
     ]);
   });
 
@@ -463,7 +481,7 @@ describe("skipped occurrences on the series' days", () => {
       )
     ).toEqual([
       "RRULE:FREQ=DAILY;BYHOUR=10;BYMINUTE=30",
-      "EXDATE;TZID=America/New_York:20261104T103000",
+      "EXDATE:20261104T153000Z",
     ]);
   });
 });
