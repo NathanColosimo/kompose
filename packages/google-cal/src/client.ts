@@ -1,12 +1,14 @@
-import { Context, Effect, Exit, Layer, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Schedule, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
   APIConnectionError,
+  APIError,
   ConflictError,
   InternalServerError,
   NotFoundError,
+  RateLimitError,
 } from "./api-client/core/error";
 import {
   addsSlot,
@@ -512,6 +514,33 @@ function asStart(slot: string): Event["start"] {
 }
 
 /** A refusal, as the service fails with it. */
+/**
+ * Whether a failed Google write may still have gone through: Google never
+ * answered it (a timeout, a dropped connection), or answered with a server
+ * error.
+ */
+function mayGoThrough(error: GoogleApiError): boolean {
+  return (
+    error.cause instanceof APIConnectionError ||
+    error.cause instanceof InternalServerError
+  );
+}
+
+/**
+ * A split's writes tried again, after a growing wait, on a failure that
+ * may clear: one that may still have gone through, or one Google turned
+ * away for now (a rate limit, a request timeout), as the client's own
+ * retries would.
+ */
+const WRITE_RETRIES = {
+  schedule: Schedule.exponential("200 millis"),
+  times: 2,
+  while: (error: GoogleApiError) =>
+    mayGoThrough(error) ||
+    error.cause instanceof RateLimitError ||
+    (error.cause instanceof APIError && error.cause.status === 408),
+};
+
 function refused(refusal: SeriesRefusal): GoogleApiError {
   return new GoogleApiError({
     cause: new Error(refusalMessage(refusal)),
@@ -3229,28 +3258,37 @@ export function makeGoogleCalendarService(
       const created = yield* Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
           try: () =>
-            client.calendars.events.create(destinationCalendarId, {
-              ...written,
-              id: seriesId,
-              ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
-              // Google writes attachments only when asked to.
-              ...(written.attachments?.length
-                ? { supportsAttachments: true }
-                : {}),
-            }),
-          catch: (cause) => {
-            // Taken is no failure: it's read back below.
-            if (!(cause instanceof ConflictError)) {
-              logGoogleEventUpdateFailure({
-                operation: "create",
-                calendarId: destinationCalendarId,
-                event: written,
-                cause,
-              });
-            }
-            return new GoogleApiError({ cause });
-          },
+            client.calendars.events.create(
+              destinationCalendarId,
+              {
+                ...written,
+                id: seriesId,
+                ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+                // Google writes attachments only when asked to.
+                ...(written.attachments?.length
+                  ? { supportsAttachments: true }
+                  : {}),
+              },
+              // Retried below: a 409 there means a try whose answer was
+              // lost made it, which is read back, not tried again.
+              { maxRetries: 0 }
+            ),
+          catch: (cause) => new GoogleApiError({ cause }),
         }).pipe(
+          Effect.retry(WRITE_RETRIES),
+          // Logged once, for the last try; taken is no failure.
+          Effect.tapError((error) =>
+            error.cause instanceof ConflictError
+              ? Effect.void
+              : Effect.sync(() =>
+                  logGoogleEventUpdateFailure({
+                    operation: "create",
+                    calendarId: destinationCalendarId,
+                    event: written,
+                    cause: error.cause,
+                  })
+                )
+          ),
           // Taken: a try whose answer was lost made it (the id is ours).
           Effect.catchIf(
             (error) => error.cause instanceof ConflictError,
@@ -3277,15 +3315,11 @@ export function makeGoogleCalendarService(
         recurrence: cutRecurrence,
       });
       const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
-      // A cut Google never answered (a timeout, a dropped connection), or
-      // answered with a server error, may still go through. It's tried
-      // again (it writes the same whole event each time, so an answer to a
-      // later try is true), and remembered: if every try fails, the old
-      // series is left as it reads back rather than the new one deleted.
+      // A cut is tried again (it writes the same whole event each time, so
+      // an answer to a later try is true). One that may still go through is
+      // remembered: if every try fails, the old series is left as it reads
+      // back rather than the new one deleted.
       let unanswered = false;
-      const mayGoThrough = (error: GoogleApiError) =>
-        error.cause instanceof APIConnectionError ||
-        error.cause instanceof InternalServerError;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
           try: () =>
@@ -3307,7 +3341,7 @@ export function makeGoogleCalendarService(
               unanswered ||= mayGoThrough(error);
             })
           ),
-          Effect.retry({ times: 2, while: mayGoThrough }),
+          Effect.retry(WRITE_RETRIES),
           // Logged once, for the last try.
           Effect.tapError((error) =>
             Effect.sync(() =>
