@@ -1211,11 +1211,17 @@ function inFormOf(
 
 /**
  * Whether a split's new `rule` keeps the series' COUNT, which is then
- * carried on (a COUNT the user changed is the new part's own).
+ * carried on: the series' own rule (or rebuilt for a new day) with its
+ * COUNT. A COUNT the user changed, or one sent with a new repeat
+ * (`newRepeat`), is the new part's own.
  */
-function keepsCount(master: Event, rule: string[]): boolean {
-  const count = countOf(master.recurrence);
-  return count !== null && countOf(rule) === count;
+function keepsCount(params: {
+  master: Event;
+  newRepeat: boolean;
+  rule: string[];
+}): boolean {
+  const count = countOf(params.master.recurrence);
+  return !params.newRepeat && count !== null && countOf(params.rule) === count;
 }
 
 /**
@@ -1226,14 +1232,7 @@ function sameRepeat(a: string[], b: string[]): boolean {
   const rules = (recurrence: string[]) =>
     recurrence
       .filter((line) => line.startsWith("RRULE:"))
-      .map((line) =>
-        line
-          .slice("RRULE:".length)
-          .split(";")
-          .filter((part) => !END_PART.test(part))
-          .sort()
-          .join(";")
-      )
+      .map((line) => withoutEnd(line).split(";").sort().join(";"))
       .sort()
       .join("\n");
   return rules(a) === rules(b);
@@ -1249,8 +1248,9 @@ function sameRepeat(a: string[], b: string[]): boolean {
  *   all day or timed, by day). An added meeting's keeps its slot.
  * - None lands on the new start, the meeting the user just saved.
  * - A kept COUNT (`keeps`) loses one place for each rule meeting that
- *   would have, or that has no meeting of the new series in its place
- *   (`ontoStart`): its position is gone with it. A deleted one that isn't
+ *   would have, that has no meeting of the new series in its place, or
+ *   whose place another one already takes (`ontoStart`): its position is
+ *   gone with it. A deleted one that isn't
  *   an added day is a rule meeting, as Google lists only a series'
  *   meetings; so is a skip on Google's list (`listed`).
  *
@@ -1316,6 +1316,17 @@ function placeSkips(params: {
   };
   // Each rule meeting once, however many skips it has.
   const ontoStart = new Set<number>();
+  // Each place's first rule meeting, by moment: another one there shares
+  // its place, and frees none of its own.
+  const takenBy = new Map<string, number>();
+  const sharesPlace = (formed: string | null, moment: number) => {
+    if (!formed) {
+      return false;
+    }
+    const first = takenBy.get(formed) ?? moment;
+    takenBy.set(formed, first);
+    return first !== moment;
+  };
   let unknown = false;
   const placed = [...cancelled, ...params.skips].flatMap((slot) => {
     const added = addsSlot(master.recurrence ?? [], slot, zone);
@@ -1326,7 +1337,10 @@ function placeSkips(params: {
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
     // A skipped position with no meeting of the new series after its
     // start in its place (none there, or the start itself) frees none.
-    const noPlace = formed === startSlot || (at === null && !added);
+    const noPlace =
+      formed === startSlot ||
+      (at === null && !added) ||
+      Boolean(at && moment && sharesPlace(formed, moment.epochMilliseconds));
     // A new rule not read here may meet there after all.
     const placeUnknown =
       at === null &&
@@ -2151,8 +2165,18 @@ export function makeGoogleCalendarService(
       // The new part's COUNT, when it keeps the series': less the places
       // before the split (`carriedCount`), plus one for a moved meeting's
       // skip (`moved`), less one for each skip onto the new start
-      // (`ontoStart`). A COUNT the user set is theirs, less nothing.
-      const keeps = keepsCount(master, fromSplit);
+      // (`ontoStart`). A COUNT the user set, or one with a new repeat, is
+      // theirs, less nothing.
+      const keeps = keepsCount({
+        master,
+        newRepeat: givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: params.edited,
+          start,
+        }),
+        rule: fromSplit,
+      });
       const carried = yield* carriedCount({
         calendarId,
         keeps,
@@ -2163,7 +2187,7 @@ export function makeGoogleCalendarService(
       if (!carried) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const { counted: heldPlaces, leftOut, listed, rule: counted } = carried;
+      const { heldPlaces, leftOut, listed, rule: counted } = carried;
       const moved = movedOffRule({
         master,
         originalStart,
@@ -2275,7 +2299,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       if (!params.keeps) {
-        return { counted: [], leftOut: [], listed: null, rule };
+        return { heldPlaces: [], leftOut: [], listed: null, rule };
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
       if (!seriesStart) {
@@ -2290,13 +2314,13 @@ export function makeGoogleCalendarService(
       // A rule that can be read is counted without asking Google.
       const exact = carryCountExactly(rule, counting);
       if (exact) {
-        return { counted: [], leftOut: [], listed: null, rule: exact };
+        return { heldPlaces: [], leftOut: [], listed: null, rule: exact };
       }
       const starts = yield* listOccurrenceStarts(calendarId, master);
       const fromList = carryCountFromList(rule, { ...counting, starts });
       return (
         fromList && {
-          counted: fromList.counted,
+          heldPlaces: fromList.heldPlaces,
           leftOut: fromList.leftOut,
           listed: starts,
           rule: fromList.recurrence,

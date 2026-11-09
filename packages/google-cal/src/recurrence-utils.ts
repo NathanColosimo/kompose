@@ -733,7 +733,7 @@ export function carryCountFromList(
   }
 ): {
   /** Skips from the split on it knows hold a place, by moment. */
-  counted: number[];
+  heldPlaces: number[];
   /** Skips from the split on it left out of the count, by moment. */
   leftOut: number[];
   recurrence: string[];
@@ -842,7 +842,7 @@ export function carryCountFromList(
   // the start: the side from the split on decides.
   if (before !== null && before < count) {
     return {
-      counted: countedAfter(count - before),
+      heldPlaces: countedAfter(count - before),
       leftOut: [],
       recurrence: changeCount(recurrence, -before),
     };
@@ -853,7 +853,7 @@ export function carryCountFromList(
   return left === null || left === 0
     ? null
     : {
-        counted: [],
+        heldPlaces: [],
         leftOut,
         recurrence: changeCount(recurrence, left - count),
       };
