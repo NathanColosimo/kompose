@@ -1850,6 +1850,31 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("an occurrence detached when the series was made timed isn't at stake", async () => {
+    // The series was all day, then made 9:00; Google still lists Nov 23,
+    // renamed while all day, at its date. Moving to 10:00 costs it nothing.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        end: { date: "2026-11-24" },
+        originalStartTime: { date: "2026-11-23" },
+        start: { date: "2026-11-23" },
+        summary: "Own",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.
