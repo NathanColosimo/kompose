@@ -238,6 +238,71 @@ export function isRuleDay(
   return read ? matches(read, start, day) : null;
 }
 
+/**
+ * The day a This and following split's new rule (`newRule` from
+ * `newStart`) meets as many of its days into `day`'s month, or year, as
+ * `day` is into the old rule's (`oldRule` from `oldStart`), each counted
+ * from the split (`split`, the old rule's day it was made at): a monthly
+ * or yearly series moved to other days of its periods (its third Monday
+ * made its third Tuesday) keeps each meeting in its period. Null when the
+ * rules repeat by other periods, the new rule has no such day there, or a
+ * rule can't be read.
+ */
+export function samePlaceInPeriod(params: {
+  day: Temporal.PlainDate;
+  newRule: string;
+  newStart: Temporal.PlainDate;
+  oldRule: string;
+  oldStart: Temporal.PlainDate;
+  split: Temporal.PlainDate;
+}): Temporal.PlainDate | null {
+  const { day, split } = params;
+  const before = readRule(params.oldRule);
+  const after = readRule(params.newRule);
+  if (
+    !(before && after) ||
+    before.freq !== after.freq ||
+    before.interval !== after.interval ||
+    !(before.freq === "MONTHLY" || before.freq === "YEARLY")
+  ) {
+    return null;
+  }
+  const first =
+    before.freq === "MONTHLY"
+      ? day.with({ day: 1 })
+      : day.with({ day: 1, month: 1 });
+  const next =
+    before.freq === "MONTHLY"
+      ? first.add({ months: 1 })
+      : first.add({ years: 1 });
+  // A rule's days (from its `start`) in the period, from `from` on.
+  const daysOf = (
+    rule: Rule,
+    start: Temporal.PlainDate,
+    from: Temporal.PlainDate
+  ) => {
+    const days: Temporal.PlainDate[] = [];
+    for (
+      let at = Temporal.PlainDate.compare(first, from) < 0 ? from : first;
+      Temporal.PlainDate.compare(at, next) < 0;
+      at = at.add({ days: 1 })
+    ) {
+      if (matches(rule, start, at)) {
+        days.push(at);
+      }
+    }
+    return days;
+  };
+  // The new rule's days start at its start, the old one's left at the split.
+  const place = daysOf(before, params.oldStart, split).findIndex((at) =>
+    at.equals(day)
+  );
+  if (place < 0) {
+    return null;
+  }
+  return daysOf(after, params.newStart, params.newStart)[place] ?? null;
+}
+
 /** The longest a rule is walked looking for its days: fifty years. */
 const MAX_DAYS = 366 * 50;
 
