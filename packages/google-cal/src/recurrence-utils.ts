@@ -3,6 +3,7 @@ import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
 import {
   countedRuleMeetings,
+  DATE_ONLY,
   dateValues,
   type RecurrenceValue,
   readRecurrenceValue,
@@ -62,6 +63,63 @@ const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
 /** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
 function asValue(start: string, seriesZone: string): RecurrenceValue | null {
   return readRecurrenceValue(start, seriesZone, seriesZone);
+}
+
+/** Whether `recurrence` repeats at all: a rule, or an added day. */
+export function repeats(recurrence: string[] | undefined): boolean {
+  return (recurrence ?? []).some(
+    (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
+  );
+}
+
+/** A skip's key: its moment, or its date for an all-day one. */
+function skipKey(value: RecurrenceValue): string {
+  return value.instant
+    ? String(value.instant.epochMilliseconds)
+    : value.day.toString();
+}
+
+/**
+ * `recurrence` with the occurrences at `starts` (original starts) skipped,
+ * each once: a skip it already has isn't written again. Unchanged when it
+ * doesn't repeat.
+ */
+export function skipping(
+  recurrence: string[],
+  starts: string[],
+  zone: string
+): string[] {
+  if (starts.length === 0 || !repeats(recurrence)) {
+    return recurrence;
+  }
+  const skipped = new Set(dateValues(recurrence, "EXDATE", zone).map(skipKey));
+  // Each skip once, however many times it's asked for.
+  const fresh = starts.filter((start) => {
+    const value = asValue(start, zone);
+    if (!value || skipped.has(skipKey(value))) {
+      return !value;
+    }
+    skipped.add(skipKey(value));
+    return true;
+  });
+  if (fresh.length === 0) {
+    return recurrence;
+  }
+  const dates = fresh
+    .filter((start) => DATE_ONLY.test(start))
+    .map((start) => start.replace(/-/g, ""));
+  const times = fresh
+    .filter((start) => !DATE_ONLY.test(start))
+    .map((start) =>
+      Temporal.Instant.from(start)
+        .toString({ smallestUnit: "second" })
+        .replace(/[-:]/g, "")
+    );
+  return [
+    ...recurrence,
+    ...(dates.length > 0 ? [`EXDATE;VALUE=DATE:${dates.join(",")}`] : []),
+    ...(times.length > 0 ? [`EXDATE:${times.join(",")}`] : []),
+  ];
 }
 
 /** A value as a moment: its own, or its day's start in `seriesZone`. */

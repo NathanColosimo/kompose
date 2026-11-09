@@ -622,6 +622,71 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("moving the first meeting's day keeps a deleted occurrence deleted", async () => {
+    // Daily from Mon Nov 9, Nov 12 deleted on its own; the first meeting
+    // moves to Tue Nov 10. Google brings Nov 12 back unless it's skipped.
+    const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+    const google = fakeGoogle(daily, [
+      {
+        ...occurrenceOf(daily, "2026-11-12T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(daily, "2026-11-09T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=DAILY", "EXDATE:20261112T140000Z"],
+      start: { dateTime: "2026-11-10T09:00:00-05:00" },
+    });
+  });
+
+  test("a new time an occurrence was already moved to on its own saves", async () => {
+    // Nov 23 moved to 10:00 on its own; the series moves to 10:00. Google
+    // cancels Nov 23's exception, and the series' 10:00 meeting is the same.
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T10:30:00-05:00",
+        start: "2026-11-23T10:00:00-05:00",
+      }),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T10:00:00-05:00" },
+    });
+    // Moved to 11:00 instead, it would lose its own time: refused.
+    fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T11:30:00-05:00",
+        start: "2026-11-23T11:00:00-05:00",
+      }),
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", nov16, {
+          end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
+  });
+
   test("moving the start's time is refused for a renamed occurrence too", async () => {
     const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
     expect(
