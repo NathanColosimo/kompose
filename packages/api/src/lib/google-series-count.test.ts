@@ -602,6 +602,34 @@ describe("a COUNT carried by a move to another calendar", () => {
   });
 });
 
+describe("a COUNT through a move to a day its rule doesn't meet", () => {
+  test("runs the meetings left, the moved one's old slot skipped", async () => {
+    // Mondays four times from Nov 9; from Nov 16, moved to Sun Nov 15 with
+    // the Monday rule kept. The new series meets Sun 15, Nov 23 and Nov 30:
+    // Mon 16 is skipped, and takes one of the COUNT's places.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            recurrence: series.recurrence,
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "EXDATE:20261116T140000Z",
+    ]);
+  });
+});
+
 describe("a COUNT the user changed", () => {
   test("is written as they set it", async () => {
     const five: Event = {
