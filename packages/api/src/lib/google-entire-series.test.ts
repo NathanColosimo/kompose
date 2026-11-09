@@ -855,6 +855,62 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ]);
   });
 
+  test("a first meeting's day move under a monthly rule is refused while one is deleted", async () => {
+    // Monthly on the 9th from Nov 9, Dec 9 deleted on its own; the first
+    // meeting moves to Nov 10, so every meeting moves to the 10th and Dec
+    // 9's skip would leave Dec 10 to come back.
+    const monthly: Event = { ...weekly, recurrence: ["RRULE:FREQ=MONTHLY"] };
+    const google = fakeGoogle(monthly, [
+      {
+        ...occurrenceOf(monthly, "2026-12-09T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", occurrenceOf(monthly, "2026-11-09T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-12-09T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("reads every page of the series' exceptions", async () => {
+    // Google lists Nov 23, renamed on its own, on a second page.
+    const renamed = {
+      ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+      summary: "Planning (renamed)",
+    };
+    fakeGoogle(weekly, [], (request) => {
+      if (!request.url.pathname.endsWith("/events")) {
+        return;
+      }
+      return request.url.searchParams.get("pageToken") === "2"
+        ? { items: [renamed] }
+        : { items: [weekly], nextPageToken: "2" };
+    });
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [
