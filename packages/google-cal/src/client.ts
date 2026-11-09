@@ -636,28 +636,35 @@ function endedRepeat(params: {
 }
 
 /**
- * `rule` without a skip of the series' own at its new `start`: that was
- * another meeting's (a Wednesday deleted, the first Monday moved onto it),
- * and the meeting just placed there stays. A skip the save adds there is
- * the user's.
+ * `rule` without a skip at the series' `start` moved to another day that
+ * the save didn't add (`saved`, the rules it sends): one the series had
+ * there, or one placed there for a deleted meeting, was another meeting's
+ * (a Wednesday deleted, the first Monday moved onto it), and the meeting
+ * just placed there stays. A skip the save adds there is the user's; on
+ * the start's own day, a skip there is the first meeting's.
  */
 function withoutOwnSkipAt(
   rule: string[],
   master: Event,
-  start: Event["start"]
+  start: Event["start"],
+  saved: string[] | undefined
 ): string[] {
   const zone = seriesZoneOf(master);
+  const day = dayOfStart(start, zone);
+  if (!day || day.equals(dayOfStart(master.start, zone) ?? day)) {
+    return rule;
+  }
   const at = momentOf(start, repeatZone(master, start));
   const onStart = (value: RecurrenceValue) =>
     value.instant
       ? Boolean(at && Temporal.Instant.compare(value.instant, at) === 0)
       : value.day.toString() === start.date;
-  const own = dateValues(master.recurrence ?? [], "EXDATE", zone).filter(
-    onStart
-  );
-  return own.length > 0
-    ? keepingDateValues(rule, "EXDATE", zone, (value) => !onStart(value))
-    : rule;
+  const added =
+    dateValues(saved ?? [], "EXDATE", zone).some(onStart) &&
+    !dateValues(master.recurrence ?? [], "EXDATE", zone).some(onStart);
+  return added
+    ? rule
+    : keepingDateValues(rule, "EXDATE", zone, (value) => !onStart(value));
 }
 
 /**
@@ -689,13 +696,15 @@ function keptAfterEdit(params: {
   const zone = seriesZoneOf(master);
   const recurrence = sameTime(times.start, master.start, zone)
     ? rule
-    : skipping(
-        withoutOwnSkipAt(rule, master, times.start),
-        deletedSlots({ cancelled, master, start: times.start }).filter(
-          (slot) =>
-            slot !== slotOf(times.start, repeatZone(master, times.start))
+    : withoutOwnSkipAt(
+        skipping(
+          rule,
+          deletedSlots({ cancelled, master, start: times.start }),
+          zone
         ),
-        zone
+        master,
+        times.start,
+        params.edited.recurrence
       );
   return (
     seriesChangeRefusal({
