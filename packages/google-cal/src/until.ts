@@ -101,7 +101,7 @@ function endedBefore(
     ? // RFC 5545 also counts the start when it isn't a rule day. Leaving
       // it out can only put the end late, so the rule is taken as still
       // meeting, which each caller treats as the safe way to be wrong.
-      countedRuleDays(rule, start, count, false)?.at(-1)
+      countedRuleDays(rule, start, count, { countsStart: false })?.at(-1)
     : undefined;
   return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
 }
@@ -612,18 +612,20 @@ function existsOn(
 
 /**
  * A COUNT rule's `count` meetings as epoch ms, at `time` on its days,
- * counted from the series' first day `from` at start time `base`. Null
- * when its days can't be read or don't all fit in the walk.
+ * counted from the series' first day `from` at start time `base`, or only
+ * those up to `through` when given. Null when its days can't be read or
+ * don't all fit in the walk.
  */
 export function countedRuleMeetings(params: {
   base: Temporal.PlainTime | null;
   count: number;
   from: Temporal.PlainDate;
   rule: string;
+  through?: Temporal.PlainDate;
   time: Temporal.PlainTime;
   timeZone: string;
 }): Set<number> | null {
-  const { base, count, from, rule, time, timeZone } = params;
+  const { base, count, from, rule, through, time, timeZone } = params;
   const at = (day: Temporal.PlainDate, clock: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: clock, timeZone }).epochMilliseconds;
   const first = base ? at(from, base) : null;
@@ -641,6 +643,9 @@ export function countedRuleMeetings(params: {
   }
   for (let offset = 0; offset < MAX_COUNT_DAYS; offset += 1) {
     const day = from.add({ days: offset });
+    if (through && Temporal.PlainDate.compare(day, through) > 0) {
+      return meetings;
+    }
     const onRuleDay = isRuleDay(rule, from, day);
     if (onRuleDay === null) {
       return null;

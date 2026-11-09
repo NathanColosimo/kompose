@@ -67,26 +67,27 @@ describe("a COUNT too long to walk", () => {
 });
 
 describe("a COUNT carried from Google's list", () => {
-  // Yearly on Nov 9 at 9:00 UTC from 2028, 98 times: too long to walk, so
-  // what's left is counted from Google's list of its meetings.
-  const yearly = (recurrence: string[], startTime = "2028-11-09T09:00:00Z") => {
+  // Yearly on Nov 9 at 9:00 UTC from 1978, 148 times (to 2125): split more
+  // than fifty years in, too far to walk, so what's left is counted from
+  // Google's list of its meetings.
+  const yearly = (recurrence: string[], startTime = "1978-11-09T09:00:00Z") => {
     const series: Event = {
-      end: { dateTime: "2028-11-09T09:30:00Z", timeZone: "UTC" },
+      end: { dateTime: "1978-11-09T09:30:00Z", timeZone: "UTC" },
       iCalUID: "series@google.com",
       id: "series",
-      recurrence: ["RRULE:FREQ=YEARLY;COUNT=98", ...recurrence],
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=148", ...recurrence],
       start: { dateTime: startTime, timeZone: "UTC" },
       summary: "Anniversary",
     };
     // Google lists its meetings with their offsets.
     const listed: Event = {
       ...series,
-      start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
+      start: { dateTime: "1978-11-09T09:00:00Z", timeZone: "UTC" },
     };
     // A skipped meeting is listed as cancelled.
-    const meetings = Array.from({ length: 98 }, (_, i) => {
-      const meeting = occurrenceOf(listed, `${2028 + i}-11-09T09:00:00Z`);
-      return recurrence.includes(`EXDATE:${2028 + i}1109T090000Z`)
+    const meetings = Array.from({ length: 148 }, (_, i) => {
+      const meeting = occurrenceOf(listed, `${1978 + i}-11-09T09:00:00Z`);
+      return recurrence.includes(`EXDATE:${1978 + i}1109T090000Z`)
         ? { ...meeting, status: "cancelled" }
         : meeting;
     });
@@ -105,34 +106,34 @@ describe("a COUNT carried from Google's list", () => {
 
   test("doesn't count a skip from before the series began", async () => {
     // Left by an earlier split: still carrying the old series' Nov 9,
-    // 2027 skip. Split at 2029, one is used (2028), so 97 are left.
-    const { google, rename } = yearly(["EXDATE:20271109T090000Z"]);
+    // 1977 skip. Split at 2029, 51 are used (1978 to 2028), so 97 are left.
+    const { google, rename } = yearly(["EXDATE:19771109T090000Z"]);
     expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
-      "EXDATE:20271109T090000Z",
+      "EXDATE:19771109T090000Z",
     ]);
   });
 
   test("counts before the split without a skip from before the series began", async () => {
-    // The same 2027 skip, and a Dec 1, 2031 skip after the split that the
+    // The same 1977 skip, and a Dec 1, 2031 skip after the split that the
     // list can't tell from a meeting: counted from the series' start to
-    // the split, where only 2028 is used.
+    // the split, where 1978 to 2028 are used.
     const { google, rename } = yearly([
-      "EXDATE:20271109T090000Z",
+      "EXDATE:19771109T090000Z",
       "EXDATE:20311201T090000Z",
     ]);
     expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
-      "EXDATE:20271109T090000Z",
+      "EXDATE:19771109T090000Z",
       "EXDATE:20311201T090000Z",
     ]);
   });
 
   test("counts a skip Google lists as one of its meetings", async () => {
     // Nov 9, 2029 deleted, and listed by Google as cancelled: split at
-    // 2030, two are used, so 96 are left.
+    // 2030, 52 are used, so 96 are left.
     const { google, rename } = yearly(["EXDATE:20291109T090000Z"]);
     expect(Exit.isSuccess(await run(rename(2030)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
@@ -163,8 +164,40 @@ describe("a COUNT carried from Google's list", () => {
     expect(google.writes()).toEqual([]);
   });
 
+  test("walks to the split when skips off the rule's days fall on both sides", async () => {
+    // Yearly from 2028, 98 times, Dec 1 skipped in 2029 and 2031: no
+    // meeting is skipped, and the walk to the 2030 split finds two used.
+    const series: Event = {
+      end: { dateTime: "2028-11-09T09:30:00Z", timeZone: "UTC" },
+      iCalUID: "series@google.com",
+      id: "series",
+      recurrence: [
+        "RRULE:FREQ=YEARLY;COUNT=98",
+        "EXDATE:20291201T090000Z",
+        "EXDATE:20311201T090000Z",
+      ],
+      start: { dateTime: "2028-11-09T09:00:00Z", timeZone: "UTC" },
+      summary: "Anniversary",
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2030-11-09T09:00:00Z"), {
+            summary: "Anniversary (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=96",
+      "EXDATE:20291201T090000Z",
+      "EXDATE:20311201T090000Z",
+    ]);
+  });
+
   test("reads a series start Google wrote without an offset", async () => {
-    const { google, rename } = yearly([], "2028-11-09T09:00:00");
+    const { google, rename } = yearly([], "1978-11-09T09:00:00");
     expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",

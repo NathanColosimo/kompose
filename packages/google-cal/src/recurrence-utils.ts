@@ -807,11 +807,13 @@ function positionsBefore(params: {
     if (!clock.equals(seriesClock)) {
       return null;
     }
+    // Only the positions before the split are needed.
     const meetings = countedRuleMeetings({
       base: seriesClock,
       count,
       from: seriesStart.day,
       rule,
+      through: split.day,
       time: clock,
       timeZone: seriesZone,
     });
@@ -821,7 +823,6 @@ function positionsBefore(params: {
         before: split.instant,
         clock,
         from: seriesStart.instant,
-        meetings,
         rule,
         seriesZone,
       })
@@ -832,14 +833,15 @@ function positionsBefore(params: {
     return [...meetings].filter((ms) => ms < at).length;
   }
   return (
-    countedRuleDays(rule, seriesStart.day, count)?.filter(
-      (day) => Temporal.PlainDate.compare(day, split.day) < 0
-    ).length ?? null
+    countedRuleDays(rule, seriesStart.day, count, {
+      through: split.day,
+    })?.filter((day) => Temporal.PlainDate.compare(day, split.day) < 0)
+      .length ?? null
   );
 }
 
 /**
- * Whether a rule's counted `meetings` pass a rule day whose `clock` time
+ * Whether a rule passes a day before the split whose `clock` time
  * the clocks skip (2:30 AM on the spring-forward night). RFC 5545 drops
  * that meeting; Google's list shows what Google did, so the count is left
  * to it (see until.ts `existsOn`).
@@ -849,15 +851,12 @@ function skipsAClockGap(params: {
   before: Temporal.Instant;
   clock: Temporal.PlainTime;
   from: Temporal.Instant;
-  meetings: Set<number>;
   rule: string;
   seriesZone: string;
 }): boolean {
-  const { before, clock, from, meetings, rule, seriesZone } = params;
+  const { before, clock, from, rule, seriesZone } = params;
   const start = from.toZonedDateTimeISO(seriesZone).toPlainDate();
-  const last = Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
-    .toZonedDateTimeISO(seriesZone)
-    .toPlainDate();
+  const last = before.toZonedDateTimeISO(seriesZone).toPlainDate();
   for (
     let day = start;
     Temporal.PlainDate.compare(day, last) <= 0;
