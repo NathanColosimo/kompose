@@ -5,6 +5,7 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
+import { isRuleDay } from "./rule-days";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { lengthMs, startInstant } from "./until";
 
@@ -197,36 +198,108 @@ const DAY_PARTS = new Set([
   "BYYEARDAY",
 ]);
 
+const WEEKLY = /FREQ=WEEKLY/;
+const BYDAY_VALUE = /BYDAY=([^;]+)/;
+
+/** Weekday codes, Monday first, as a rule writes them. */
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
+/** A rule line's parts, sorted, without its day parts when `dropDays`. */
+function ruleParts(line: string, dropDays: boolean): string {
+  const [name, parts = ""] = line.split(":");
+  const kept = parts
+    .split(";")
+    .filter((part) => !(dropDays && DAY_PARTS.has(part.split("=")[0] ?? "")))
+    .sort();
+  return `${name}:${kept.join(";")}`;
+}
+
+/**
+ * Whether `saved` is `own` rebuilt for a series moved from the day `from`
+ * to `to`: a weekly rule meets on its other weekdays still, the moved one
+ * swapped for the new day's (or kept); any other picks as many days in
+ * the two years from its start. One whose days can't be read is taken as
+ * rebuilt.
+ */
+function rebuiltForDay(
+  own: string,
+  saved: string,
+  moved: { from: Temporal.PlainDate; to: Temporal.PlainDate }
+): boolean {
+  const { from, to } = moved;
+  if (WEEKLY.test(own)) {
+    const weekdays = (rule: string, start: Temporal.PlainDate) => {
+      const listed = BYDAY_VALUE.exec(rule)?.[1]?.split(",");
+      return new Set(listed ?? [WEEKDAY_CODES[start.dayOfWeek - 1] ?? ""]);
+    };
+    const before = weekdays(own, from);
+    const after = [...weekdays(saved, to)].sort().join(",");
+    before.delete(WEEKDAY_CODES[from.dayOfWeek - 1] ?? "");
+    before.add(WEEKDAY_CODES[to.dayOfWeek - 1] ?? "");
+    return (
+      after === [...before].sort().join(",") ||
+      after === [...weekdays(own, from)].sort().join(",")
+    );
+  }
+  const daysIn = (rule: string, start: Temporal.PlainDate) => {
+    let days = 0;
+    for (
+      let day = start;
+      Temporal.PlainDate.compare(day, start.add({ years: 2 })) < 0;
+      day = day.add({ days: 1 })
+    ) {
+      const meets = isRuleDay(rule, start, day);
+      if (meets === null) {
+        return null;
+      }
+      days += meets ? 1 : 0;
+    }
+    return days;
+  };
+  const before = daysIn(own, from);
+  const after = daysIn(saved, to);
+  // Two years from another day can hold one day more or less.
+  return before === null || after === null || Math.abs(before - after) <= 1;
+}
+
 /**
  * Whether a save gives the series a new repeat: its rules (`saved`; none
- * sent means the series' own) differ from `own`. A client that moves the
- * series' day rebuilds its rules' day parts for it, so `DAY_PARTS` aren't
- * compared.
+ * sent means the series' own) differ from `own`. Moved to another day
+ * (`moved`), a client rebuilds a rule's day parts (`DAY_PARTS`) for it,
+ * so those may differ when they still pick the days the old rule did
+ * (`rebuiltForDay`); several rules' day parts aren't compared.
  */
 export function newRepeat(params: {
-  dayMoved: boolean;
+  moved: { from: Temporal.PlainDate; to: Temporal.PlainDate } | null;
   own: readonly string[];
   saved: readonly string[] | undefined;
 }): boolean {
-  const { dayMoved, own, saved } = params;
+  const { moved, own, saved } = params;
   if (!saved) {
     return false;
   }
-  const rules = (recurrence: readonly string[]) =>
-    recurrence
-      .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
-      .map((line) => {
-        const [name, parts = ""] = line.split(":");
-        const kept = parts
-          .split(";")
-          .filter(
-            (part) => !(dayMoved && DAY_PARTS.has(part.split("=")[0] ?? ""))
-          )
-          .sort();
-        return `${name}:${kept.join(";")}`;
-      })
-      .sort();
-  return canonical(rules(saved)) !== canonical(rules(own));
+  const rulesOf = (recurrence: readonly string[]) =>
+    recurrence.filter(
+      (line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:")
+    );
+  const written = (recurrence: readonly string[], dropDays: boolean) =>
+    canonical(
+      rulesOf(recurrence)
+        .map((line) => ruleParts(line, dropDays))
+        .sort()
+    );
+  if (written(saved, false) === written(own, false)) {
+    return false;
+  }
+  if (!moved || written(saved, true) !== written(own, true)) {
+    return true;
+  }
+  const [ownRule, ...ownOthers] = rulesOf(own);
+  const [savedRule, ...savedOthers] = rulesOf(saved);
+  if (!(ownRule && savedRule) || ownOthers.length + savedOthers.length > 0) {
+    return false;
+  }
+  return !rebuiltForDay(ownRule, savedRule, moved);
 }
 
 /** Whether two Google times are the same moment (or the same date). */

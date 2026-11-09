@@ -135,8 +135,9 @@ function givesNewRepeat(params: {
 }): boolean {
   const zone = seriesZoneOf(params.master);
   const day = dayOfStart(params.start, zone);
+  const from = dayOfStart(params.from, zone);
   return newRepeat({
-    dayMoved: !(day && dayOfStart(params.from, zone)?.equals(day)),
+    moved: day && from && !from.equals(day) ? { from, to: day } : null,
     own: params.master.recurrence ?? [],
     saved: params.saved,
   });
@@ -538,8 +539,9 @@ function deletedLost(params: {
  * fields the save doesn't set, and its own times when the save keeps the
  * series' times (or it's the one opened, whose times the form shows), are
  * carried into the event left (`carried`). Any other changed occurrence,
- * a first meeting deleted on its own or skipped in the rule, or own times
- * the save changes, is `lost`.
+ * a first meeting deleted on its own or skipped in the rule (or maybe
+ * dropped by an exclusion rule), or own times the save changes, is
+ * `lost`.
  */
 function endedRepeat(params: {
   cancelled: string[];
@@ -560,8 +562,12 @@ function endedRepeat(params: {
         ? Temporal.Instant.compare(value.instant, first) === 0
         : value.day.toString() === master.start.date
   );
+  // An exclusion rule isn't read here: it may drop the first meeting.
+  const excluded = (master.recurrence ?? []).some((line) =>
+    line.startsWith("EXRULE")
+  );
   const lost = params.cancelled.filter((slot) => slot === firstSlot);
-  if (skipped && firstSlot && !lost.includes(firstSlot)) {
+  if ((skipped || excluded) && firstSlot && !lost.includes(firstSlot)) {
     lost.push(firstSlot);
   }
   let carried: Partial<CreateEvent> = {};
@@ -615,7 +621,10 @@ function keptAfterEdit(params: {
   if (!repeats(rule)) {
     const { carried, lost } = endedRepeat(params);
     return lost.length > 0
-      ? naming("dropsChangedOccurrences", lost, true)
+      ? unsureWhere(
+          naming("dropsChangedOccurrences", lost, true),
+          params.master.recurrence ?? []
+        )
       : { carried, recurrence: [] };
   }
   const zone = seriesZoneOf(master);
