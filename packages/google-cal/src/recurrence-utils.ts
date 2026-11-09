@@ -756,7 +756,7 @@ export function carryCountFromList(
       .filter((value): value is RecurrenceValue => value !== null)
   );
   const added = dateValues(masterRecurrence, "RDATE", seriesZone);
-  const skipped = dateValues(masterRecurrence, "EXDATE", seriesZone);
+  const skipped = unique(dateValues(masterRecurrence, "EXDATE", seriesZone));
   // A skip on a day the rule doesn't meet (and not the series' first,
   // which counts whatever the rule says) is no position.
   const offRule = (skip: RecurrenceValue) =>
@@ -765,12 +765,28 @@ export function carryCountFromList(
   const startClock = start.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
+  // The last meeting Google lists that isn't an added day: the rule's
+  // positions run on at least to it.
+  const ruleMeetings = listed.filter(
+    (value) => !added.some((day) => sameValue(day, value))
+  );
+  const lastMeeting = ruleMeetings.reduce<Temporal.Instant | null>(
+    (last, value) => {
+      const at = valueMoment(value, seriesZone);
+      return last && Temporal.Instant.compare(last, at) >= 0 ? last : at;
+    },
+    null
+  );
   // A skip at one of the rule's meetings, as it reads here: on its day, at
-  // its time (the first pass of a repeated hour), is a position.
+  // its time (the first pass of a repeated hour), and before a meeting
+  // Google lists, so within its COUNT, is a position.
   const onRule = (skip: RecurrenceValue) => {
     const at = skip.instant;
     const clock = at?.toZonedDateTimeISO(seriesZone).toPlainTime();
     return (
+      lastMeeting !== null &&
+      Temporal.Instant.compare(valueMoment(skip, seriesZone), lastMeeting) <
+        0 &&
       isRuleDay(rule, start.day, skip.day) === true &&
       (!(at && clock && startClock) ||
         (ruleClock(rule, startClock).equals(clock) &&

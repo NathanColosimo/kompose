@@ -700,6 +700,46 @@ describe("carrying a COUNT through a split", () => {
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=4", skips]);
   });
 
+  describe("a yearly COUNT=100 from 1950, split in 2026", () => {
+    const rule = "RRULE:FREQ=YEARLY;COUNT=100";
+    const years = (from: number, to: number) =>
+      Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    const countOn = (lines: string[], starts: string[]) =>
+      carryCountFromList([rule, ...lines], {
+        masterRecurrence: [rule, ...lines],
+        originalStart: "2026-11-09T09:00:00Z",
+        seriesStart: "1950-11-09T09:00:00Z",
+        seriesZone: "UTC",
+        starts,
+      });
+    const onNov9 = (year: number) => `${year}-11-09T09:00:00Z`;
+
+    test("counts a skip written twice once", () => {
+      // 2025 skipped (twice over) and not listed: 76 used, 24 left.
+      const skip = "EXDATE:20251109T090000Z,20251109T090000Z";
+      expect(
+        countOn(
+          [skip],
+          years(1950, 2049)
+            .filter((year) => year !== 2025)
+            .map(onNov9)
+        )
+      ).toEqual(["RRULE:FREQ=YEARLY;COUNT=24", skip]);
+    });
+
+    test("doesn't count a skip past the last meeting it lists", () => {
+      // An added Dec 1 2020 makes the side before the split unclear; a
+      // stale skip in 2051, after the rule's last meeting (2049), can't be
+      // told to be a position, so neither side can be counted.
+      expect(
+        countOn(
+          ["RDATE:20201201T090000Z", "EXDATE:20511109T090000Z"],
+          [...years(1950, 2049).map(onNov9), "2020-12-01T09:00:00Z"]
+        )
+      ).toBeNull();
+    });
+  });
+
   test("leaves a COUNT the walk finds used up before the split to Google's list", () => {
     // Mondays three times from Nov 30 end Dec 14; a split at Jan 4 means
     // the walk and Google disagree.
