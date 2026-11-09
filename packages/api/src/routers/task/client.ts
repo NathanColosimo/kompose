@@ -793,14 +793,11 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   if (!master?.recurrence) {
     return [] as TaskSelect[];
   }
-  // The split starts on or before the master, so the master's pattern goes
-  // rather than ending before its own start. Occurrences before the split
-  // (the master was moved later alone) keep the original pattern as a
-  // series of their own first.
+  // The split starts on or before the master (it was moved later alone), so
+  // the master goes with what follows. The occurrences before the split keep
+  // the original pattern as a series of their own.
   if (master.startDate && boundary <= master.startDate) {
-    const handedOff = yield* handOffEarlierPart(userId, master, boundary);
-    const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
-    return [...handedOff, ...cleared];
+    return yield* handOffEarlierPart(userId, master, boundary);
   }
   const db = yield* Database;
   const [last] = yield* db
@@ -1136,6 +1133,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
+      // Each transaction below is scoped to this fiber by drizzle's effect
+      // driver, so the helpers' queries join it.
       const db = yield* Database;
       // Without a start date there's no "following": delete it alone.
       const alone = scope === "this" || !task.startDate;

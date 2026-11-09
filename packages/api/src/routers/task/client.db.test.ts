@@ -236,9 +236,9 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     );
   }
 
-  /** Steps that find a task by its date, then act on it. */
+  /** Steps that find a task by its date (null: the inbox), then act on it. */
   function forUser(service: TaskService["Service"], userId: string) {
-    const find = (date: string) =>
+    const find = (date: string | null) =>
       Effect.gen(function* () {
         const db = yield* modules.db.Database;
         const rows = yield* db
@@ -259,11 +259,15 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           title: "Review",
           userId,
         }),
-      remove: (date: string, scope: DeleteScope) =>
+      remove: (date: string | null, scope: DeleteScope) =>
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
-      update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
+      update: (
+        date: string | null,
+        input: TaskUpdateInput,
+        scope: UpdateScope
+      ) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
         ),
@@ -317,6 +321,21 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         })
       )
     ).toEqual(["2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10"]);
+  });
+
+  test("deletes an inbox occurrence alone, even from following", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.remove(null, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
   });
 
   test("treats a pattern sent along unchanged, in another key order, as no change", async () => {
