@@ -84,6 +84,45 @@ describe("This and following to other days", () => {
   });
 });
 
+describe("This and following made all day on another day", () => {
+  test("drops a deleted added meeting from both lists", async () => {
+    // Mondays at 9:00 plus an added Wed Dec 2 at 15:00, deleted on its
+    // own; from Nov 16 moved to Tue Nov 17, all day, on Tuesdays. A timed
+    // skip can't stay in an all-day series, and the added day it cancels
+    // goes with it.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261202T150000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-12-02T15:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { date: "2026-11-18" },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "RDATE;TZID=America/New_York:20261202T150000",
+            ],
+            start: { date: "2026-11-17" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+    ]);
+  });
+});
+
 describe("Entire series", () => {
   test("an all-day series made timed counts its days in the new start's zone", async () => {
     // Daily all day Nov 8-12, Nov 10 skipped, made 21:00 New York.

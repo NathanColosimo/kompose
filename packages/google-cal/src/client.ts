@@ -1692,31 +1692,39 @@ export function makeGoogleCalendarService(
         value.instant
           ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
           : value.day.toString();
+      // An added (RDATE) meeting keeps its own slot: `lineUpRule` keeps its
+      // skip there, in the new start's form.
+      const isAdded = (slot: string) =>
+        addsSlot(master.recurrence ?? [], slot, zone);
       const ownSkip = (value: RecurrenceValue) => {
-        const at = slotMoment(asSlot(value), zone);
+        const slot = asSlot(value);
+        const at = slotMoment(slot, zone);
         return (
           byPlace &&
           had.has(skipKey(value)) &&
+          !isAdded(slot) &&
           Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
         );
       };
       const ownSkips = dateValues(counted, "EXDATE", zone)
         .filter(ownSkip)
         .map(asSlot);
+      // One the new series meets at neither place skips nothing there.
       const placed = byPlace
-        ? [...params.cancelled, ...ownSkips]
-            .map((slot) =>
-              addsSlot(master.recurrence ?? [], slot, zone)
-                ? slot
-                : (carriedSlot({
-                    master,
-                    recurrence: writtenRule,
-                    slot,
-                    splitStart: originalStart,
-                    start,
-                  }) ?? slot)
-            )
-            .filter((slot) => slot !== startSlot)
+        ? [
+            ...params.cancelled.filter((slot) => !isAdded(slot)),
+            ...ownSkips,
+          ].flatMap((slot) => {
+            const at =
+              carriedSlot({
+                master,
+                recurrence: writtenRule,
+                slot,
+                splitStart: originalStart,
+                start,
+              }) ?? sameForm(slot, start);
+            return at && at !== startSlot ? [at] : [];
+          })
         : [];
       const moved = movedOffRule({
         master,
@@ -1727,7 +1735,9 @@ export function makeGoogleCalendarService(
       // The moved meeting's skip takes one of a COUNT's places.
       const recurrence = skipping(
         lineUpRule({
-          cancelled: byPlace ? [] : params.cancelled,
+          cancelled: byPlace
+            ? params.cancelled.filter(isAdded)
+            : params.cancelled,
           master,
           rule: keepingDateValues(
             changeCount(counted, moved.length),
