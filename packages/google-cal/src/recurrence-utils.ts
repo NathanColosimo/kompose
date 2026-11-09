@@ -891,8 +891,8 @@ function skipsAClockGap(params: {
 /**
  * The following part's rule with exactly the positions it has left: its
  * COUNT less the positions before the split (skips included, added days
- * not). Null when the walk can't tell, or with several rules (such a
- * series can't be split).
+ * not). Null when the walk can't tell, or finds the COUNT used up before
+ * the split (it disagrees with Google, whose list then decides).
  */
 export function carryCountExactly(
   recurrence: string[],
@@ -904,14 +904,17 @@ export function carryCountExactly(
   }
 ): string[] | null {
   const { masterRecurrence, originalStart, seriesZone } = params;
-  const [rule, ...others] = masterRecurrence.filter(isRule);
+  const rule = masterRecurrence.find(isRule);
   const seriesStart = asValue(params.seriesStart, seriesZone);
   const split = asValue(originalStart, seriesZone);
-  if (!(rule && seriesStart && split) || others.length > 0) {
+  const count = rule ? ruleCount(rule) : null;
+  if (!(rule && count !== null && seriesStart && split)) {
     return null;
   }
   const before = positionsBefore({ rule, seriesStart, seriesZone, split });
-  return before === null ? null : changeCount(recurrence, -before);
+  return before === null || before >= count
+    ? null
+    : changeCount(recurrence, -before);
 }
 
 /** The COUNT a series' rule ends after, if it has one. */
