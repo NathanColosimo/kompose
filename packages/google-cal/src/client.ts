@@ -311,15 +311,15 @@ function lineUpRule(params: {
   // even one of the old part's moved there (a start moved back across
   // midnight onto a skipped day, or onto a day skipped whole).
   const startValue = readRecurrenceValue(slotOf(start, zone) ?? "", zone, zone);
-  const keepStart = (lined: string[]) =>
+  const keepStart = (written: string[]) =>
     splitAt && startValue
       ? keepingDateValues(
-          lined,
+          written,
           "EXDATE",
           zone,
           (value) => skipKey(value) !== skipKey(startValue)
         )
-      : lined;
+      : written;
   const change = timeOfDayChange(master, start);
   if (!change || meetsSeveralTimesADay(before, change.from)) {
     return keepStart(
