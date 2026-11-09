@@ -1042,7 +1042,7 @@ const dbDetachUndated = (userId: string, seriesMasterId: string) =>
 /**
  * Occurrences of `master`'s series before `boundary` (the master was moved
  * later alone, then the series split at or before it) keep the original
- * pattern, ended the day before, under the earliest of them as their own
+ * pattern, ended at their last day, under the earliest of them as their own
  * master, so what happens to the master from there on doesn't reach them.
  */
 const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
@@ -1050,6 +1050,9 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
   master: Pick<TaskSelect, "id" | "recurrence">,
   boundary: string
 ) {
+  if (!master.recurrence) {
+    return [] as TaskSelect[];
+  }
   const db = yield* Database;
   const earlier = yield* db
     .select()
@@ -1064,7 +1067,7 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
     )
     .orderBy(asc(taskTable.startDate));
   const [heir] = earlier;
-  if (!(heir && master.recurrence)) {
+  if (!heir) {
     return [] as TaskSelect[];
   }
   return yield* makeMaster(userId, {
@@ -1318,14 +1321,14 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { tagIds, ...unsafeDbInput } = input;
       const sent = stripSystemManagedTaskFields(unsafeDbInput);
       const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
+      const inSeries = task.seriesMasterId !== null;
       const changesPattern =
-        task.seriesMasterId !== null &&
-        (yield* changesSeriesRecurrence(userId, task, sent));
+        inSeries && (yield* changesSeriesRecurrence(userId, task, sent));
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
       const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
-        task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
+        inSeries && !changesPattern ? withoutPattern : sent;
       // One occurrence can't repeat differently from its series: a new
       // pattern (or "Repeat: None") applies from this occurrence on.
       if (changesPattern && scope === "this") {
