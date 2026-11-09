@@ -251,8 +251,9 @@ export function countedRuleDays(
   rule: string,
   start: Temporal.PlainDate,
   count: number,
-  through?: Temporal.PlainDate
+  options: { through?: Temporal.PlainDate } = {}
 ): Temporal.PlainDate[] | null {
+  const { through } = options;
   const read = readRule(rule);
   if (!read) {
     return null;

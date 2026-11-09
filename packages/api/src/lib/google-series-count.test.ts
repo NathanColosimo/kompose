@@ -668,6 +668,20 @@ describe("carrying a COUNT through a split", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
   });
 
+  test("leaves a COUNT the walk finds used up before the split to Google's list", () => {
+    // Mondays three times from Nov 30 end Dec 14; a split at Jan 4 means
+    // the walk and Google disagree.
+    const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3";
+    expect(
+      carryCountExactly([rule], {
+        masterRecurrence: [rule],
+        originalStart: "2027-01-04T09:00:00-05:00",
+        seriesStart: "2026-11-30T09:00:00-05:00",
+        seriesZone: "America/New_York",
+      })
+    ).toBeNull();
+  });
+
   test("leaves a count across a DST gap to Google's list", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(
