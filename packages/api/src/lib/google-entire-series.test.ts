@@ -687,6 +687,34 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
   });
 
+  test("a reminder set on one occurrence is a change of its own", async () => {
+    // Nov 23 has only its own five-minute reminder; the series moves to
+    // 10:00, which Google would cancel it for.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        reminders: {
+          overrides: [{ method: "popup", minutes: 5 }],
+          useDefault: false,
+        },
+      },
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("moving the start's time is refused for a renamed occurrence too", async () => {
     const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
     expect(
