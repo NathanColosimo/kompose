@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 /**
  * A fake Google Calendar for the series write tests: it records every
  * request, lists a series' exceptions, and finds a new series'
