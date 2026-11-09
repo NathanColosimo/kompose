@@ -1008,6 +1008,43 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
   });
 
+  test.each([
+    [
+      "deleted on its own",
+      [],
+      {
+        ...occurrenceOf(weekly, "2026-11-11T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ],
+    ["skipped in the rule", ["EXDATE:20261111T140000Z"], null],
+  ])(
+    "a first meeting moved onto a day whose meeting was %s keeps it",
+    async (_how, skips, exception) => {
+      // Mondays and Wednesdays from Nov 9; Wed Nov 11's meeting is gone. The
+      // first meeting moves to Nov 11 for the Entire series: it stays there.
+      const series: Event = {
+        ...weekly,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE", ...skips],
+      };
+      const google = fakeGoogle(series, exception ? [exception] : []);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("all", series, {
+              end: { dateTime: "2026-11-11T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2026-11-11T09:00:00-05:00", timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body).toMatchObject({
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+        start: { dateTime: "2026-11-11T09:00:00-05:00" },
+      });
+    }
+  );
+
   test("a first meeting moved on its own to one day, then to another, saves", async () => {
     // Daily from Nov 9; Nov 9 moved to Nov 10 11:00 on its own; from it,
     // moved to Nov 11 11:00 for the Entire series.
