@@ -261,9 +261,9 @@ describe("This and following", () => {
     // now Tue Dec 15, not a day after Dec 21.
     const monthly: Event = {
       ...weekly,
-      end: { dateTime: "2026-10-19T09:30:00-05:00", timeZone: zone },
+      end: { dateTime: "2026-10-19T09:30:00-04:00", timeZone: zone },
       recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3MO"],
-      start: { dateTime: "2026-10-19T09:00:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-10-19T09:00:00-04:00", timeZone: zone },
     };
     const dec21 = occurrenceOf(monthly, "2026-12-21T09:00:00-05:00");
     const toThirdTuesday = () =>
@@ -1237,6 +1237,25 @@ describe("a split that fails part way leaves the old series whole", () => {
     expect(google.writes().map((write) => write.method)).toEqual([
       "POST",
       "PUT",
+      "DELETE",
+    ]);
+  });
+
+  test("deletes the new series when it has no meeting for a changed occurrence", async () => {
+    const renamed = {
+      ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+      summary: "Planning (Nov 30)",
+    };
+    const google = fakeGoogle(weekly, [renamed], (request) =>
+      request.url.pathname.endsWith("/instances") ? { items: [] } : undefined
+    );
+    expect(
+      Exit.isFailure(
+        await run(edit("following", nov16, { location: "Room 2" }))
+      )
+    ).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
       "DELETE",
     ]);
   });
