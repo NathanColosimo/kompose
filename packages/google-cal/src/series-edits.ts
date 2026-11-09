@@ -136,7 +136,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "countUnknown":
       return "This and following isn't available for this series: how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
     case "severalTimesADay":
-      return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
+      return "This series meets at several set times each day, so one new time can't replace them for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
       return refusal.unsure
         ? `This may undo what was changed or deleted on single occurrences (${namedDays(refusal.originalStarts)}): this series repeats in a way, made in another app, that can't be fully read here, so it wasn't saved. ${elsewhere(refusal)}`
