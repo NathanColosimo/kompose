@@ -1263,10 +1263,10 @@ function sameRepeat(a: string[], b: string[], zone: string): boolean {
  * - None lands on the new start, the meeting the user just saved.
  * - A kept COUNT (`keeps`) loses one place for each rule meeting that
  *   would have, that has no meeting of the new series in its place, or
- *   whose place another one already takes (`ontoStart`): its position is
- *   gone with it. A deleted one that isn't
- *   an added day is a rule meeting, as Google lists only a series'
- *   meetings; so is a skip on Google's list (`listed`).
+ *   whose place another one already takes (`lostPlaces`): its position is
+ *   gone with it. A deleted one that isn't an added day is a rule
+ *   meeting, as Google lists only a series' meetings; so is a skip on
+ *   Google's list (`listed`).
  *
  * Null when the kept COUNT's change can't be told.
  */
@@ -1283,7 +1283,7 @@ function placeSkips(params: {
   rule: string[];
   skips: string[];
   start: Event["start"];
-}): { ontoStart: number; placed: string[]; ruleSkips: string[] } | null {
+}): { lostPlaces: number; placed: string[]; ruleSkips: string[] } | null {
   const { cancelled, master, originalStart, rule, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
@@ -1329,7 +1329,7 @@ function placeSkips(params: {
     return params.listed?.includes(slot) ? true : null;
   };
   // Each rule meeting once, however many skips it has.
-  const ontoStart = new Set<number>();
+  const lostPlaces = new Set<number>();
   // Each place's first rule meeting, by moment: another one there shares
   // its place, and frees none of its own.
   const takenBy = new Map<string, number>();
@@ -1388,7 +1388,7 @@ function placeSkips(params: {
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
       if (ruleMeeting) {
-        ontoStart.add(moment.epochMilliseconds);
+        lostPlaces.add(moment.epochMilliseconds);
       }
     } else if (ruleMeeting && formed && !uncounted && !keepsSlots) {
       // Kept where it was, it falls within the COUNT as before.
@@ -1399,11 +1399,11 @@ function placeSkips(params: {
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
   if (!params.keeps) {
-    return { ontoStart: 0, placed, ruleSkips: [] };
+    return { lostPlaces: 0, placed, ruleSkips: [] };
   }
   return unknown
     ? null
-    : { ontoStart: ontoStart.size, placed, ruleSkips: [...ruleSkips] };
+    : { lostPlaces: lostPlaces.size, placed, ruleSkips: [...ruleSkips] };
 }
 
 /**
@@ -2236,9 +2236,10 @@ export function makeGoogleCalendarService(
       );
       // The new part's COUNT, when it keeps the series': less the places
       // before the split (`carriedCount`), plus one for a moved meeting's
-      // skip (`moved`), less one for each skip onto the new start
-      // (`ontoStart`). A COUNT the user set, or one with a new repeat, is
-      // theirs, less nothing.
+      // skip (`moved`), less one for each skip with no place of its own in
+      // the new series (`lostPlaces`) and each that falls past its end
+      // (`countWithinSkips`). A COUNT the user set, or one with a new
+      // repeat, is theirs, less nothing.
       const keeps = keepsCount({
         master,
         newRepeat: givesNewRepeat({
@@ -2326,7 +2327,7 @@ export function makeGoogleCalendarService(
       const withinSkips =
         skips &&
         countWithinSkips({
-          recurrence: changeCount(rule, -skips.ontoStart),
+          recurrence: changeCount(rule, -skips.lostPlaces),
           ruleSkips: skips.ruleSkips,
           start,
           zone: newZone,
