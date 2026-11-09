@@ -213,19 +213,37 @@ function mayGoThrough(error: GoogleApiError): boolean {
   );
 }
 
+/** Google's reasons for turning a request away for now (as a 403). */
+const RATE_LIMITED = /"(?:userR|r)ateLimitExceeded"/;
+
+/**
+ * Whether Google turned a write away for now: a rate limit (a 429, or a
+ * 403 that names one) or a request timeout.
+ */
+function turnedAwayForNow(error: GoogleApiError): boolean {
+  const { cause } = error;
+  if (cause instanceof RateLimitError) {
+    return true;
+  }
+  if (!(cause instanceof APIError)) {
+    return false;
+  }
+  return (
+    cause.status === 408 ||
+    (cause.status === 403 && RATE_LIMITED.test(JSON.stringify(cause.error)))
+  );
+}
+
 /**
  * A split's writes tried again, after a growing wait, on a failure that
  * may clear: one that may still have gone through, or one Google turned
- * away for now (a rate limit, a request timeout), as the client's own
- * retries would.
+ * away for now.
  */
 const WRITE_RETRIES = {
   schedule: Schedule.exponential("200 millis"),
   times: 2,
   while: (error: GoogleApiError) =>
-    mayGoThrough(error) ||
-    error.cause instanceof RateLimitError ||
-    (error.cause instanceof APIError && error.cause.status === 408),
+    mayGoThrough(error) || turnedAwayForNow(error),
 };
 
 /** A refusal, as the service fails with it. */
