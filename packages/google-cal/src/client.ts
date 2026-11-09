@@ -885,7 +885,7 @@ function inFormOf(
  * still its place, and in the new start's form: made all day or timed,
  * it's placed by day); an added one keeps its slot. None lands on the new
  * series' start, the meeting the user just saved (`ontoStart` counts the
- * ones that would), or on an added meeting it keeps.
+ * rule meetings that would), or on an added meeting it keeps.
  */
 function placeSkips(params: {
   master: Event;
@@ -900,7 +900,8 @@ function placeSkips(params: {
   const unskipped = rule.filter((line) => !line.startsWith("EXDATE"));
   const startSlot = slotOf(start, newZone);
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
-  let ontoStart = 0;
+  // Each rule meeting once, however many skips it has.
+  const ontoStart = new Set<number>();
   const placed = params.slots.flatMap((slot) => {
     const at = addsSlot(master.recurrence ?? [], slot, zone)
       ? null
@@ -912,14 +913,20 @@ function placeSkips(params: {
           start,
         });
     const formed = inFormOf(at ?? slot, start, newZone);
-    if (formed === startSlot && at !== null) {
-      ontoStart += 1;
+    const moment = slotMoment(slot, zone);
+    if (
+      formed === startSlot &&
+      at !== null &&
+      moment &&
+      ruleMeetingAt(slot, master)
+    ) {
+      ontoStart.add(moment.epochMilliseconds);
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
-  return { ontoStart, placed };
+  return { ontoStart: ontoStart.size, placed };
 }
 
 /**
