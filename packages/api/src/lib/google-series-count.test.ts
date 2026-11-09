@@ -1306,9 +1306,10 @@ describe("a COUNT read from Google's list, a last skip it doesn't list", () => {
     expect(Exit.isSuccess(await run(edit("following", from10, changes)))).toBe(
       true
     );
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "COUNT=2"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;BYHOUR=8;COUNT=2",
+      "EXDATE:20261112T130000Z",
+    ]);
   });
 });
 
@@ -1346,9 +1347,9 @@ describe("a COUNT read from Google's list, counted before the split", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "COUNT=1"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=1",
+    ]);
   });
 });
 
@@ -1428,9 +1429,10 @@ describe("a COUNT whose end a placed skip would fall past", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "RRULE:FREQ=MONTHLY;COUNT=1"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=MONTHLY;COUNT=1",
+      "EXDATE;VALUE=DATE:20260601",
+    ]);
   });
 
   test("lowers it once for a meeting skipped twice over past the end", async () => {
@@ -1455,9 +1457,10 @@ describe("a COUNT whose end a placed skip would fall past", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "RRULE:FREQ=MONTHLY;COUNT=3"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=MONTHLY;COUNT=3",
+      "EXDATE;VALUE=DATE:20260801",
+    ]);
   });
 
   test("counts a meeting skipped twice over once", async () => {
@@ -1480,9 +1483,10 @@ describe("a COUNT whose end a placed skip would fall past", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "RRULE:FREQ=MONTHLY;COUNT=1"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=MONTHLY;COUNT=1",
+      "EXDATE;VALUE=DATE:20260601",
+    ]);
   });
 });
 
@@ -1550,9 +1554,10 @@ describe("a COUNT with stale skips at another time", () => {
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "RRULE:FREQ=DAILY;COUNT=3"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=3",
+      "EXDATE:20270313T083000Z,20270316T073000Z",
+    ]);
   });
 });
 
@@ -1578,9 +1583,11 @@ describe("a COUNT through a move off the rule's days, the old place also an adde
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "RDATE:20261116T140000Z",
+      "EXDATE:20261116T140000Z",
+    ]);
   });
 });
 
