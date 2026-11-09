@@ -1820,10 +1820,14 @@ export function makeGoogleCalendarService(
       // rule meeting, moved later): its rule is spent, so the new part has
       // that meeting and any added (RDATE) ones after it; one event if
       // none. An end the save sets there is refused.
-      const ownRule =
-        params.edited === undefined ||
-        JSON.stringify(params.edited) ===
-          JSON.stringify(master.recurrence ?? []);
+      // Its own rule however it's written (parts reordered, its day rebuilt
+      // for a day move): not a new end.
+      const ownRule = !givesNewRepeat({
+        from: asStart(originalStart),
+        master,
+        saved: params.edited,
+        start,
+      });
       if (ownRule) {
         const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
         return repeats(added) ? added : [];
