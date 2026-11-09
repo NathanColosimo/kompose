@@ -49,7 +49,8 @@ function canonicalRecurrence(
 /**
  * Generate dates on or after startDate, stopping at the count (or safety cap)
  * or the inclusive until date, whichever comes first. The start date is
- * always the first, and counts toward the count, even when the pattern
+ * the first (unless it's past the until date), and counts toward the count,
+ * even when the pattern
  * wouldn't land on it (a Thursday start for "weekly on Monday"), as with
  * RFC 5545's DTSTART and Google: the task the user placed there stays.
  */
