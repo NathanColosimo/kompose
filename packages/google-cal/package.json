@@ -4,8 +4,11 @@
   "exports": {
     "./client": "./src/client.ts",
     "./recurrence-utils": "./src/recurrence-utils.ts",
+    "./rule-days": "./src/rule-days.ts",
     "./schema": "./src/schema.ts",
-    "./series-edits": "./src/series-edits.ts"
+    "./series-edits": "./src/series-edits.ts",
+    "./series-times": "./src/series-times.ts",
+    "./until": "./src/until.ts"
   },
   "scripts": {
     "lint": "biome check .",
