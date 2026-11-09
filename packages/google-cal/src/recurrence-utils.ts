@@ -656,12 +656,11 @@ function subDailyEndsBefore(
 }
 
 /**
- * Whether `rule` ends before `split`: its UNTIL is earlier, or its last
- * COUNT meeting is, counted from the series' `first` start. Null when that
- * can't be told, as for a COUNT when `first` isn't known (null): an UNTIL,
- * or no end, is told without it.
+ * `lastCountedMeeting`'s answers, by rule and start; cleared when full.
+ * It's what keeps a save of a long COUNT series with many skips fast: each
+ * skip asks for its rule's end again (a 3,000-meeting series with 400
+ * skips saves in tens of milliseconds with it, seconds without).
  */
-/** `lastCountedMeeting`'s answers, by rule and start; cleared when full. */
 const LAST_COUNTED = new Map<string, number | null>();
 const LAST_COUNTED_LIMIT = 1000;
 
@@ -703,6 +702,12 @@ function lastCountedMeeting(params: {
   return last;
 }
 
+/**
+ * Whether `rule` ends before `split`: its UNTIL is earlier, or its last
+ * COUNT meeting is, counted from the series' `first` start. Null when that
+ * can't be told, as for a COUNT when `first` isn't known (null): an UNTIL,
+ * or no end, is told without it.
+ */
 function ruleEndsBefore(
   rule: string,
   first: RecurrenceValue | null,
