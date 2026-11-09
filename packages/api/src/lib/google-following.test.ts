@@ -1399,6 +1399,23 @@ describe("a split that fails part way leaves the old series whole", () => {
     ]);
   });
 
+  test("finishes the split when a cut Google rate-limited goes through on a retry", async () => {
+    // A 429 was never applied: tried again, the cut goes through.
+    let tries = 0;
+    const google = fakeGoogle(weekly, [], (request) => {
+      if (isCut(request)) {
+        tries += 1;
+        return tries === 1 ? failure(429) : undefined;
+      }
+    });
+    expect(Exit.isSuccess(await run(rename()))).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
+      "PUT",
+      "PUT",
+    ]);
+  });
+
   test("finishes the split when a cut that got a server error goes through on a retry", async () => {
     let tries = 0;
     const google = fakeGoogle(weekly, [], (request) => {
