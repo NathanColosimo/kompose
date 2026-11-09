@@ -315,8 +315,8 @@ function timesOnOwnDay(
  * own (`changed`) their changes; null if it wouldn't. Google ties each to
  * its original slot: it cancels all of them when the series' start moves,
  * and each whose slot the new rule drops. A length-only change keeps them
- * but gives each the new length (the opened one takes the edit's, so it
- * isn't counted).
+ * but gives each the new length (the opened one takes the edit's, and one
+ * that already has it loses nothing, so neither is counted).
  */
 function seriesChangeRefusal(params: {
   changed: { occurrence: Event; originalStart: string }[];
@@ -360,7 +360,9 @@ function seriesChangeRefusal(params: {
   const resized = changed
     .filter(
       ({ occurrence }) =>
-        occurrence.id !== opened.id && !sameLength(occurrence, master, zone)
+        occurrence.id !== opened.id &&
+        !sameLength(occurrence, master, zone) &&
+        !sameLength(occurrence, times, zone)
     )
     .map(({ originalStart }) => originalStart);
   return resized.length > 0

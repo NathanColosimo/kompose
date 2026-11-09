@@ -635,6 +635,28 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a new length an occurrence already has saves", async () => {
+    // Nov 23 runs to 10:00 on its own; the series' 30 minutes become 60,
+    // so Google's new length for it is the one it has.
+    const longer = occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+      end: "2026-11-23T10:00:00-05:00",
+      start: "2026-11-23T09:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [longer]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", weekly, {
+            end: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      end: { dateTime: "2026-11-09T10:00:00-05:00" },
+    });
+  });
+
   test("a new day offers this occurrence, a new repeat with it doesn't", async () => {
     // The series moved from Mondays to Tuesdays, its rule rebuilt for the
     // new day; then every other Tuesday as well.

@@ -1042,3 +1042,32 @@ describe("cutting the old series", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261109"]);
   });
 });
+
+describe("This and following in a series that meets within the day", () => {
+  test("puts a later occurrence back at its own hour", async () => {
+    // Hourly from 9:00; 11:00 was renamed on its own. A location-only
+    // save from 10:00 carries it to the new series' 11:00.
+    const hourly: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=HOURLY"],
+    };
+    const opened = occurrenceOf(hourly, "2026-11-09T10:00:00-05:00");
+    const renamed = {
+      ...occurrenceOf(hourly, "2026-11-09T11:00:00-05:00"),
+      summary: "Planning (11:00)",
+    };
+    const google = fakeGoogle(hourly, [opened, renamed]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", opened, { location: "Room 1" }))
+      )
+    ).toBe(true);
+    const carried = google
+      .writes()
+      .find((write) => write.body?.summary === "Planning (11:00)");
+    expect(carried?.url.pathname).toEndWith("_20261109T160000Z");
+    expect(carried?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T11:00:00-05:00" },
+    });
+  });
+});

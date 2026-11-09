@@ -296,8 +296,9 @@ export function ownChanges(
 
 /**
  * Where an old occurrence lands when the series' first meeting moved from
- * `splitStart` to `newStart`: as many days on, at the new time of day.
- * Null when the series changes between timed and all day.
+ * `splitStart` to `newStart`: as many days on, its time of day moved as
+ * much as the first meeting's (one within the day keeps its place among
+ * them). Null when the series changes between timed and all day.
  */
 export function placeInNewSeries(params: {
   newStart: Pick<Event["start"], "date" | "dateTime" | "timeZone">;
@@ -323,18 +324,16 @@ export function placeInNewSeries(params: {
   if (!(from && to && original)) {
     return null;
   }
-  const days = from
-    .toZonedDateTimeISO(zone)
-    .toPlainDate()
-    .until(to.toZonedDateTimeISO(zone).toPlainDate());
+  const fromWall = from.toZonedDateTimeISO(zone).toPlainDateTime();
+  const toWall = to.toZonedDateTimeISO(zone).toPlainDateTime();
+  const days = fromWall.toPlainDate().until(toWall.toPlainDate());
+  const clock = fromWall.toPlainTime().until(toWall.toPlainTime());
   return googleDateTime(
     original
       .toZonedDateTimeISO(zone)
-      .toPlainDate()
+      .toPlainDateTime()
       .add(days)
-      .toZonedDateTime({
-        plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
-        timeZone: zone,
-      })
+      .add(clock)
+      .toZonedDateTime(zone)
   );
 }
