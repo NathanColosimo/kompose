@@ -2386,10 +2386,12 @@ export function makeGoogleCalendarService(
 
   const updateEventFollowing = (
     calendarId: string,
-    edited: CreateEvent,
+    input: CreateEvent,
     currentEvent: Event
   ) =>
     Effect.gen(function* () {
+      // A form toggled to or from all day can send both forms' fields.
+      const edited = withOneForm(input, currentEvent);
       const master = yield* getMasterRecurrence(calendarId, currentEvent);
       if (!master.recurrence) {
         return yield* Effect.fail(
