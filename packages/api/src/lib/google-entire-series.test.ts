@@ -1573,6 +1573,33 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("a first meeting moved on its own is refused, unsure, where an exclusion rule may drop its place", async () => {
+    // Daily from Tue Nov 10, Mondays excluded; Nov 10 moved to 11:00 on
+    // its own, then moved to Mon Nov 16 11:00 for the Entire series.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=MO"],
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    };
+    const first = occurrenceOf(series, "2026-11-10T09:00:00-05:00", {
+      end: "2026-11-10T11:30:00-05:00",
+      start: "2026-11-10T11:00:00-05:00",
+    });
+    const google = fakeGoogle(series, [first]);
+    expect(
+      await refusalOf(
+        edit("all", first, {
+          end: { dateTime: "2026-11-16T11:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: { reason: "dropsChangedOccurrences", unsure: true },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.

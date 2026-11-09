@@ -755,7 +755,8 @@ function seriesChangeRefusal(params: {
             slot: place,
             start: times.start,
           });
-        const replaced = first ? meetsThere !== false : meetsThere === true;
+        // An exclusion rule may drop even the series' start.
+        const replaced = meetsThere === true;
         return (
           movedDay ||
           !replaced ||
@@ -791,10 +792,13 @@ function seriesChangeRefusal(params: {
   }
   if (lost.length > 0) {
     const refusal = naming("dropsChangedOccurrences", lost, seriesOnly);
-    // A new start cancels them whatever the rule says.
-    return movesStart
-      ? refusal
-      : unsureWhere(refusal, [...(master.recurrence ?? []), ...recurrence]);
+    const lines = [...(master.recurrence ?? []), ...recurrence];
+    // A new start cancels them whatever the rule says; only whether one is
+    // replaced (an exclusion rule may drop it) can be unsure then.
+    return unsureWhere(
+      refusal,
+      movesStart ? lines.filter((line) => line.startsWith("EXRULE")) : lines
+    );
   }
   if (sameLength(times, master, zone)) {
     return null;
