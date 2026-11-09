@@ -6,6 +6,7 @@ import {
   countedRuleMeetings,
   DATE_ONLY,
   dateValues,
+  existsOn,
   keepingDateValues,
   type RecurrenceValue,
   readRecurrenceValue,
@@ -877,7 +878,7 @@ function skipsAClockGap(params: {
       timeZone: seriesZone,
     });
     if (
-      Temporal.PlainTime.compare(zoned.toPlainTime(), clock) !== 0 &&
+      !existsOn(day, clock, seriesZone) &&
       Temporal.Instant.compare(zoned.toInstant(), from) >= 0 &&
       Temporal.Instant.compare(zoned.toInstant(), before) < 0 &&
       isRuleDay(rule, start, day) === true
@@ -917,14 +918,9 @@ export function carryCountExactly(
     : changeCount(recurrence, -before);
 }
 
-/** The COUNT a series' rule ends after, if it has one. */
-export function countOf(recurrence: string[] | undefined): number | undefined {
-  for (const line of recurrence ?? []) {
-    const count = ruleCount(line);
-    if (count !== null) {
-      return count;
-    }
-  }
+/** The COUNT a series' rule ends after; null if it has none. */
+export function countOf(recurrence: string[] | undefined): number | null {
+  return ruleCount(recurrence?.find(isRule) ?? "");
 }
 
 // Strip server-managed fields so create/update inputs stay valid.
