@@ -1976,8 +1976,13 @@ function placeCarried(params: {
     placed.set(moment.epochMilliseconds, originalStart);
     carried.push({ at, changes });
   }
+  // A new rule not read here may meet at a place after all: what's named
+  // may keep its changes, which the words then say.
   return lost.size > 0
-    ? naming("dropsChangedOccurrences", [...lost], params.seriesOnly)
+    ? unsureWhere(
+        naming("dropsChangedOccurrences", [...lost], params.seriesOnly),
+        params.recurrence
+      )
     : carried;
 }
 
