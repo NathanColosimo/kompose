@@ -1229,6 +1229,48 @@ describe("This and following to a new time the same day", () => {
     );
   });
 
+  test.each([
+    ["skipped in the rule too", "EXDATE:20270314T130000Z"],
+    ["an added day too", "RDATE:20270314T130000Z"],
+  ])(
+    "drops that place once when the deleted meeting is %s",
+    async (_how, line) => {
+      // As above, Mar 14 also written another way: still seven left.
+      const series: Event = {
+        ...weekly,
+        end: { dateTime: "2027-03-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=DAILY;COUNT=10", line],
+        start: { dateTime: "2027-03-10T09:00:00-05:00", timeZone: zone },
+      };
+      const google = fakeGoogle(series, [
+        {
+          ...occurrenceOf(series, "2027-03-14T09:00:00-04:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(series, "2027-03-12T09:00:00-05:00"),
+              {
+                end: { dateTime: "2027-03-12T03:00:00-05:00", timeZone: zone },
+                start: {
+                  dateTime: "2027-03-12T02:30:00-05:00",
+                  timeZone: zone,
+                },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+        "RRULE:FREQ=DAILY;COUNT=7"
+      );
+    }
+  );
+
   test("keeps an end on the moved last meeting's day across midnight", async () => {
     // Daily 23:00 New York, its last meeting Nov 19; from Nov 16 moved to
     // Nov 17 00:30: that meeting is Nov 20 00:30 now, and stays.

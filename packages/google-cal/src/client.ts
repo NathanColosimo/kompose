@@ -1,8 +1,12 @@
-import { Context, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { APIConnectionError, NotFoundError } from "./api-client/core/error";
+import {
+  APIConnectionError,
+  ConflictError,
+  NotFoundError,
+} from "./api-client/core/error";
 import {
   addsSlot,
   carryCountExactly,
@@ -1603,15 +1607,16 @@ function placeByDay(params: {
     const uncounted = Boolean(
       moment && params.leftOut.includes(moment.epochMilliseconds)
     );
+    const meeting = ruleMeetingOf({ ...params, slot });
+    // Only a rule meeting's skip takes a place another one could share.
     const shared = Boolean(
-      at && moment && sharesPlace(formed, moment.epochMilliseconds)
+      meeting && at && moment && sharesPlace(formed, moment.epochMilliseconds)
     );
     if (
       (formed === startSlot || at === null || shared) &&
       moment &&
       !uncounted
     ) {
-      const meeting = ruleMeetingOf({ ...params, slot });
       const placeUnknown =
         at === null &&
         formed !== null &&
@@ -1686,12 +1691,17 @@ function onOwnDays(params: {
   start: Event["start"];
 }): string[] {
   const { master, start } = params;
-  return params.slots.flatMap((slot) => {
+  // Each place once, however many skips (or a deletion too) it has.
+  const places = new Set<string>();
+  for (const slot of params.slots) {
     const place = ruleMeetingAt(slot, master)
       ? placeOnNewStart(slot, master, start)
       : null;
-    return place ? [place] : [];
-  });
+    if (place) {
+      places.add(place);
+    }
+  }
+  return [...places];
 }
 
 /**
@@ -2642,9 +2652,10 @@ export function makeGoogleCalendarService(
       );
       // The new part's COUNT, when it keeps the series': less the places
       // before the split (`carriedCount`), plus one for a moved meeting's
-      // skip (`moved`), less one for each skip onto the new start
-      // (`ontoStart`). A COUNT the user set, or one with a new repeat, is
-      // theirs, less nothing.
+      // skip (`moved`), less one for each skip with no place of its own in
+      // the new series (`lostPlaces`) and each that falls past its end
+      // (`countWithinSkips`). A COUNT the user set, or one with a new
+      // repeat, is theirs, less nothing.
       const keeps = keepsCount({
         master,
         newRepeat: givesNewRepeat({
@@ -2772,10 +2783,8 @@ export function makeGoogleCalendarService(
             // Kept on their days, skips go to the new time there.
             ruleSkips: onOwnDays({
               master,
-              slots: [
-                ...params.cancelled.filter((slot) => !isAdded(slot)),
-                ...ownSkipsAfterSplit,
-              ],
+              // An added day's own place only if the rule meets there too.
+              slots: [...params.cancelled, ...ownSkipsAfterSplit],
               start,
             }),
           };
@@ -3052,7 +3061,13 @@ export function makeGoogleCalendarService(
             });
             return new GoogleApiError({ cause });
           },
-        });
+        }).pipe(
+          // Taken: a try whose answer was lost made it (the id is ours).
+          Effect.catchIf(
+            (error) => error.cause instanceof ConflictError,
+            () => getEvent(destinationCalendarId, seriesId)
+          )
+        );
         const series = yield* parseEventResponse(response);
         yield* Effect.forEach(
           repeating ? params.carried : [],
@@ -3073,9 +3088,6 @@ export function makeGoogleCalendarService(
         recurrence: cutRecurrence,
       });
       const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
-      // A cut Google never answered (a timeout, a dropped connection) may
-      // still go through after it's read back.
-      let unanswered = false;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
           // Sent once: a retry's answer would hide that an earlier try,
@@ -3101,12 +3113,17 @@ export function makeGoogleCalendarService(
               event: cutPayload,
               cause,
             });
-            unanswered = cause instanceof APIConnectionError;
             return new GoogleApiError({ cause });
           },
         })
       );
       if (Exit.isFailure(cut)) {
+        // A cut Google never answered (a timeout, a dropped connection) may
+        // still go through after it's read back.
+        const failure = Cause.findErrorOption(cut.cause);
+        const unanswered =
+          Option.isSome(failure) &&
+          failure.value.cause instanceof APIConnectionError;
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
         if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;

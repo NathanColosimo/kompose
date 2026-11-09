@@ -752,14 +752,35 @@ export function carryCountFromList(
   );
   const added = dateValues(masterRecurrence, "RDATE", seriesZone);
   const skipped = unique(dateValues(masterRecurrence, "EXDATE", seriesZone));
-  // A skip on a day the rule doesn't meet (and not the series' first,
-  // which counts whatever the rule says) is no position.
-  const offRule = (skip: RecurrenceValue) =>
-    !skip.day.equals(start.day) &&
-    isRuleDay(rule, start.day, skip.day) === false;
   const startClock = start.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
+  // The time a once-a-day rule meets at; null for a rule that steps within
+  // a day, or an all-day series.
+  const ruleAt =
+    startClock && !SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""]
+      ? ruleClock(rule, startClock)
+      : null;
+  // A skip on a day the rule doesn't meet, or at another time than the
+  // rule's on a day that has it, is no position (the series' first start
+  // counts whatever the rule says).
+  const offRule = (skip: RecurrenceValue) => {
+    if (sameValue(skip, start)) {
+      return false;
+    }
+    const clock = skip.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
+    const offTime = Boolean(
+      clock &&
+        ruleAt &&
+        !clock.equals(ruleAt) &&
+        existsOn(skip.day, ruleAt, seriesZone)
+    );
+    return (
+      offTime ||
+      (!skip.day.equals(start.day) &&
+        isRuleDay(rule, start.day, skip.day) === false)
+    );
+  };
   // The last meeting Google lists that isn't an added day: the rule's
   // positions run on at least to it.
   const ruleMeetings = listed.filter(
