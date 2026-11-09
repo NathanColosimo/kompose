@@ -63,6 +63,7 @@ import {
   matchRecurrenceToStart,
   meetsSeveralTimesADay,
   momentOf,
+  type RecurrenceValue,
   readRecurrenceValue,
   startInstant,
 } from "./until";
@@ -1662,13 +1663,15 @@ export function makeGoogleCalendarService(
       }
       const zone = seriesZoneOf(master);
       // Moved to other days, or in a series that meets several times a day
-      // (whose times don't follow its start), a deleted rule meeting's skip
-      // goes where the new series meets in its place, as a changed one is
-      // put back (read against the rule as it's written for the new start,
-      // its skips aside: a place already skipped is still its place).
-      // Otherwise `lineUpRule` moves it to the new time on its own day. The
-      // new series' start is the meeting the user just saved, so no skip
-      // lands on it.
+      // (whose times don't follow its start), a skipped or deleted rule
+      // meeting after the split stays skipped where the new series meets
+      // in its place, as a changed one is put back (read against the rule
+      // as it's written for the new start, its skips aside: a place already
+      // skipped is still its place). A skip the series didn't have was
+      // lined up by the client and stays as written. Otherwise
+      // `lineUpRule` moves skips to the new time on their own day. The new
+      // series' start is the meeting the user just saved, so no skip lands
+      // on it.
       const fromDay = dayOfStart(asStart(originalStart), zone);
       const toDay = dayOfStart(start, zone);
       const byPlace =
@@ -1681,8 +1684,27 @@ export function makeGoogleCalendarService(
         ruleForStart(counted, master, start, originalStart) ?? counted
       ).filter((line) => !line.startsWith("EXDATE"));
       const startSlot = slotOf(start, zone);
+      const split = slotMoment(originalStart, zone);
+      const had = new Set(
+        dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
+      );
+      const asSlot = (value: RecurrenceValue) =>
+        value.instant
+          ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
+          : value.day.toString();
+      const ownSkip = (value: RecurrenceValue) => {
+        const at = slotMoment(asSlot(value), zone);
+        return (
+          byPlace &&
+          had.has(skipKey(value)) &&
+          Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
+        );
+      };
+      const ownSkips = dateValues(counted, "EXDATE", zone)
+        .filter(ownSkip)
+        .map(asSlot);
       const placed = byPlace
-        ? params.cancelled
+        ? [...params.cancelled, ...ownSkips]
             .map((slot) =>
               addsSlot(master.recurrence ?? [], slot, zone)
                 ? slot
@@ -1707,7 +1729,12 @@ export function makeGoogleCalendarService(
         lineUpRule({
           cancelled: byPlace ? [] : params.cancelled,
           master,
-          rule: changeCount(counted, moved.length),
+          rule: keepingDateValues(
+            changeCount(counted, moved.length),
+            "EXDATE",
+            zone,
+            (value) => !ownSkip(value)
+          ),
           splitAt: originalStart,
           start,
         }),
@@ -1962,9 +1989,11 @@ export function makeGoogleCalendarService(
       // ("Repeat: None").
       const rule = edited.recurrence ?? master.recurrence ?? [];
       let recurrence = ruleForStart(rule, master, times.start) ?? [];
+      // Read from the rule as sent: one only rewritten in the start's form
+      // keeps its slots.
       const movesSlots =
         !sameTime(times.start, master.start, zone) ||
-        JSON.stringify(recurrence) !== JSON.stringify(master.recurrence ?? []);
+        JSON.stringify(rule) !== JSON.stringify(master.recurrence ?? []);
       const resizes = !sameLength(times, master, zone);
       if (movesSlots || resizes) {
         const { cancelled, changed } = yield* exceptionsOf(

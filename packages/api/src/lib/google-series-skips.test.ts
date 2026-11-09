@@ -53,6 +53,37 @@ describe("This and following", () => {
   });
 });
 
+describe("This and following to other days", () => {
+  test("moves the rule's own skip with its meeting", async () => {
+    // Mondays at 9:00 with Nov 30 skipped in the rule; from Nov 16, moved
+    // to Tuesdays at 10:00. Nov 30's meeting is now Tue Dec 1 at 10:00, so
+    // the skip goes there; left on Monday, Dec 1 would come back.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261130T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE:20261130T140000Z",
+            ],
+            start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE:20261201T150000Z",
+    ]);
+  });
+});
+
 describe("Entire series", () => {
   test("an all-day series made timed counts its days in the new start's zone", async () => {
     // Daily all day Nov 8-12, Nov 10 skipped, made 21:00 New York.

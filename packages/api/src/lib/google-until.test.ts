@@ -56,6 +56,34 @@ describe("matchRecurrenceToStart", () => {
     expect(matchRecurrenceToStart(same, allDay, zone)).toBe(same);
   });
 
+  test("ends an UNTIL on the series' last meeting's day", () => {
+    // Mondays at 9:00 until the second before Nov 23's meeting, as a split
+    // cuts: they meet Nov 9 and 16. Made all day, Nov 23 isn't added.
+    const series = { dateTime: "2026-11-09T09:00:00-05:00" };
+    const cut = ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261123T135959Z"];
+    expect(
+      matchRecurrenceToStart(cut, { date: "2026-11-09" }, zone, series)
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261122"]);
+    // Moved to 8:00, Nov 23 at 8:00 would start before that UNTIL.
+    expect(
+      matchRecurrenceToStart(
+        cut,
+        { dateTime: "2026-11-09T08:00:00-05:00" },
+        zone,
+        series
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261123T045959Z"]);
+    // Until Nov 23's own 9:00 start: moved to 10:00, Nov 23 still meets.
+    expect(
+      matchRecurrenceToStart(
+        ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261123T140000Z"],
+        { dateTime: "2026-11-09T10:00:00-05:00" },
+        zone,
+        series
+      )
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261124T045959Z"]);
+  });
+
   test("keeps a skipped occurrence skipped in the new form", () => {
     // Made all day: the skipped 9:00 (UTC 14:00) becomes its date.
     expect(

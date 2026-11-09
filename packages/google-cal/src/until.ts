@@ -906,20 +906,48 @@ function matchClock(
   );
 }
 
-/** An RRULE line with its UNTIL in the start's form. */
-function matchUntil(line: string, allDay: boolean, timeZone: string): string {
+/**
+ * An RRULE line with its UNTIL in the start's form, on the series' last
+ * day: a date-time UNTIL's own day, or the day before when that day's
+ * meeting (at `base`, the start's time before the edit) starts after it,
+ * as a split's cut, the second before its meeting, does. A once-a-day
+ * series moved to a new time of day (`retimed`) ends at that day's end
+ * too, so its last meeting stays and none is added.
+ */
+function matchUntil(
+  line: string,
+  params: {
+    allDay: boolean;
+    base: Temporal.PlainTime | null;
+    retimed: boolean;
+    timeZone: string;
+  }
+): string {
+  const { allDay, base, timeZone } = params;
   const match = UNTIL_PART.exec(line);
   const until = match?.[2];
-  if (!(match && until) || until.includes("T") !== allDay) {
+  const value = until ? readRecurrenceValue(until, timeZone, timeZone) : null;
+  if (!(match && value)) {
     return line;
   }
-  const day = untilRuleToDay(until, timeZone);
-  return day
-    ? line.replace(
-        UNTIL_PART,
-        `${match[1]}UNTIL=${untilRuleForDay(day, allDay, timeZone)}`
-      )
-    : line;
+  const timed = value.instant !== null;
+  if (timed !== allDay && !(timed && params.retimed)) {
+    return line;
+  }
+  const meeting =
+    value.instant && base
+      ? value.day.toZonedDateTime({ plainTime: base, timeZone }).toInstant()
+      : null;
+  const day =
+    meeting &&
+    value.instant &&
+    Temporal.Instant.compare(meeting, value.instant) > 0
+      ? value.day.subtract({ days: 1 })
+      : value.day;
+  return line.replace(
+    UNTIL_PART,
+    `${match[1]}UNTIL=${untilRuleForDay(day, allDay, timeZone)}`
+  );
 }
 
 /**
@@ -1067,7 +1095,17 @@ export function matchRecurrenceToStart(
   const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchClock(
-          matchUntil(line, allDay, timeZone),
+          matchUntil(line, {
+            allDay,
+            base,
+            retimed: Boolean(
+              base &&
+                newTime &&
+                !severalADay &&
+                Temporal.PlainTime.compare(base, newTime) !== 0
+            ),
+            timeZone,
+          }),
           start,
           timeZone,
           severalADay,
