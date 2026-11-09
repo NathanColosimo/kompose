@@ -105,27 +105,43 @@ function stepsWithinADay(line: string): boolean {
 }
 
 /**
- * Whether `rule` (counted from `start`) has ended before `day`: past its
- * UNTIL day, or its COUNT spent. False when that can't be told.
+ * Whether `rule` (counted from `start`, the series' first start at `base`;
+ * null all day) has ended before `day`: past its UNTIL day, or its COUNT
+ * spent. A timed COUNT counts the rule's meetings, so a day the clocks
+ * skip its time (spring forward) isn't one. False when that can't be told.
  */
-function endedBefore(
-  rule: string,
-  start: Temporal.PlainDate,
-  day: Temporal.PlainDate,
-  timeZone: string
-): boolean {
+function endedBefore(params: {
+  base: Temporal.PlainTime | null;
+  day: Temporal.PlainDate;
+  rule: string;
+  start: Temporal.PlainDate;
+  timeZone: string;
+}): boolean {
+  const { base, day, rule, start, timeZone } = params;
   const until = UNTIL_PART.exec(rule)?.[2];
   const untilDay = until ? untilRuleToDay(until, timeZone) : null;
   if (untilDay) {
     return Temporal.PlainDate.compare(day, untilDay) > 0;
   }
   const count = Number(COUNT_VALUE.exec(rule)?.[1]);
-  const last = Number.isFinite(count)
-    ? // RFC 5545 also counts the start when it isn't a rule day. Leaving
-      // it out can only put the end late, so the rule is taken as still
-      // meeting, which each caller treats as the safe way to be wrong.
-      countedRuleDays(rule, start, count, { countsStart: false })?.at(-1)
-    : undefined;
+  if (!Number.isFinite(count)) {
+    return false;
+  }
+  const time = ruleTimeOf(rule, base);
+  const meetings =
+    time &&
+    countedRuleMeetings({ base, count, from: start, rule, time, timeZone });
+  const lastMeeting =
+    meetings && meetings.size > 0 ? Math.max(...meetings) : null;
+  const last =
+    lastMeeting === null
+      ? // RFC 5545 also counts the start when it isn't a rule day. Leaving
+        // it out can only put the end late, so the rule is taken as still
+        // meeting, which each caller treats as the safe way to be wrong.
+        countedRuleDays(rule, start, count, { countsStart: false })?.at(-1)
+      : Temporal.Instant.fromEpochMilliseconds(lastMeeting)
+          .toZonedDateTimeISO(timeZone)
+          .toPlainDate();
   return last ? Temporal.PlainDate.compare(day, last) > 0 : false;
 }
 
@@ -1201,7 +1217,7 @@ export function matchRecurrenceToStart(
           const owners = rules.filter(
             (rule) =>
               isRuleDay(rule, baseDay, day) !== false &&
-              !endedBefore(rule, baseDay, day, timeZone) &&
+              !endedBefore({ base, day, rule, start: baseDay, timeZone }) &&
               ruleAtTime(rule, time, base)
           );
           // A skipped added meeting is its own: it stays.
@@ -1221,7 +1237,13 @@ export function matchRecurrenceToStart(
                   ) === 0
                 ) &&
                 isRuleDay(rule, startDay, day) !== false &&
-                !endedBefore(rule, startDay, day, timeZone) &&
+                !endedBefore({
+                  base: newTime,
+                  day,
+                  rule,
+                  start: startDay,
+                  timeZone,
+                }) &&
                 ruleAtTime(rule, at, newTime)
             );
           return owners.flatMap((rule) => {
@@ -1261,7 +1283,13 @@ export function matchRecurrenceToStart(
           return rules.some(
             (rule) =>
               isRuleDay(rule, baseDay, value.day) !== false &&
-              !endedBefore(rule, baseDay, value.day, timeZone) &&
+              !endedBefore({
+                base,
+                day: value.day,
+                rule,
+                start: baseDay,
+                timeZone,
+              }) &&
               ruleAtTime(rule, clock, base)
           );
         }
@@ -1513,7 +1541,13 @@ export function moveSkippedDays(params: {
     // one past the old rule's end (COUNT or UNTIL) skipped nothing.
     if (
       isRuleDay(oldRule, from, day) !== true ||
-      endedBefore(oldRule, from, day, seriesZone) ||
+      endedBefore({
+        base: fromTime,
+        day,
+        rule: oldRule,
+        start: from,
+        timeZone: seriesZone,
+      }) ||
       isRuleDay(newRule, to, day) !== false
     ) {
       return null;
@@ -1556,7 +1590,7 @@ export function moveSkippedDays(params: {
     otherRules.some(
       (rule) =>
         isRuleDay(rule, start, day) !== false &&
-        !endedBefore(rule, start, day, seriesZone) &&
+        !endedBefore({ base, day, rule, start, timeZone: seriesZone }) &&
         (!time || ruleAtTime(rule, time, base))
     );
   // An added (RDATE) meeting is its own: its skip stays with it, and no

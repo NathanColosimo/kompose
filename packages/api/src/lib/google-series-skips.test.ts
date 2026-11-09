@@ -1262,6 +1262,24 @@ describe("This and following moved back across midnight onto a skipped day", () 
   });
 });
 
+describe("a COUNT across the spring clock change", () => {
+  test("counts only the meetings that happen, so its last skip follows a new time", () => {
+    // Daily 2:30 from Mar 10, 2027, five times; Mar 14 has no 2:30, so
+    // Mar 15 is the fifth meeting, and it's skipped. Moved to 2:45.
+    expect(
+      matchRecurrenceToStart(
+        [
+          "RRULE:FREQ=DAILY;COUNT=5",
+          "EXDATE;TZID=America/New_York:20270315T023000",
+        ],
+        { dateTime: "2027-03-10T02:45:00-05:00", timeZone: zone },
+        zone,
+        { dateTime: "2027-03-10T02:30:00-05:00", timeZone: zone }
+      )
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=5", "EXDATE:20270315T064500Z"]);
+  });
+});
+
 describe("a series whose time has seconds", () => {
   test("moves a deleted meeting's skip to the new time", async () => {
     // Mondays 9:00:30, Nov 30 deleted; the series moves to 10:00.
