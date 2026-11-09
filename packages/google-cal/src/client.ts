@@ -621,6 +621,37 @@ function carriedSlot(params: {
 }
 
 /**
+ * The split's own slot, when the new series still meets there and starts
+ * on a day its rules don't meet (a Monday moved to Sunday, Mondays kept).
+ * Google always meets at a series' start, so that start is a meeting of
+ * its own, and the rule's meeting at the split, the one moved to it, would
+ * be there twice.
+ */
+function movedOffRule(params: {
+  originalStart: string;
+  recurrence: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] {
+  const { originalStart, recurrence, start, zone } = params;
+  const day = dayOfStart(start, zone);
+  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const offRule =
+    day !== null &&
+    rules.length > 0 &&
+    rules.every((rule) => isRuleDay(rule, day, day) === false);
+  return offRule &&
+    seriesMeetsAt({
+      recurrence,
+      seriesZone: zone,
+      slot: originalStart,
+      start,
+    }) === true
+    ? [originalStart]
+    : [];
+}
+
+/**
  * The occurrences a "This and following" new series carries, and where:
  * the opened one at its start with its own changes (its times only if
  * the edit left them), and later changed ones at their new places.
@@ -1346,10 +1377,9 @@ export function makeGoogleCalendarService(
 
   /**
    * The rule a split's new part repeats with: `edited`, or the series'.
-   * Occurrences `cancelled` after the split stay skipped: on their own
-   * days, or, when the save moves the day, where the new series meets in
-   * their place, as changed ones are put back (`placeInNewSeries`); an
-   * added one keeps its slot. Refuses, before any write, if the rule ends
+   * Occurrences `cancelled` after the split stay skipped where the new
+   * series meets in their place, as changed ones are put back
+   * (`carriedSlot`); an added one keeps its slot. Refuses, before any write, if the rule ends
    * before `start`.
    */
   const newSeriesRecurrence = (params: {
@@ -1369,32 +1399,34 @@ export function makeGoogleCalendarService(
         "from"
       );
       const zone = seriesZoneOf(master);
-      const fromDay = dayOfStart(asStart(originalStart), zone);
-      const toDay = dayOfStart(start, zone);
-      const movesDay = !(fromDay && toDay && fromDay.equals(toDay));
-      // Moved to other days, a deleted rule meeting's skip goes where the
-      // new series meets in its place.
-      // The new series' start is the meeting the user just saved: no skip
-      // lands on it.
+      // A deleted rule meeting's skip goes where the new series meets in
+      // its place, as a changed one is put back; the new series' start is
+      // the meeting the user just saved, so no skip lands on it.
       const startSlot = slotOf(start, zone);
-      const placed = movesDay
-        ? params.cancelled
-            .map((slot) =>
-              addsSlot(master.recurrence ?? [], slot, zone)
-                ? slot
-                : (carriedSlot({
-                    master,
-                    recurrence: fromSplit,
-                    slot,
-                    splitStart: originalStart,
-                    start,
-                  }) ?? slot)
-            )
-            .filter((slot) => slot !== startSlot)
-        : [];
+      const placed = params.cancelled
+        .map((slot) =>
+          addsSlot(master.recurrence ?? [], slot, zone)
+            ? slot
+            : (carriedSlot({
+                master,
+                recurrence: fromSplit,
+                slot,
+                splitStart: originalStart,
+                start,
+              }) ?? slot)
+        )
+        .filter((slot) => slot !== startSlot);
       const recurrence = skipping(
         fromSplit,
-        movesDay ? placed : params.cancelled,
+        [
+          ...placed,
+          ...movedOffRule({
+            originalStart,
+            recurrence: fromSplit,
+            start,
+            zone,
+          }),
+        ],
         zone
       );
       const ends = repeatZone(master, start);
