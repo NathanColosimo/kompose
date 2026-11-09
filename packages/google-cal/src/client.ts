@@ -1418,8 +1418,17 @@ function carriedSlot(params: {
   // The new series repeats in its start's zone (an all-day one made timed
   // takes the new start's).
   const zone = repeatZone(master, start);
-  const meets = (at: string) =>
-    seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
+  // A slot kept as it was meets, though a rule not read here can't say:
+  // the new series repeats by that rule from one of its own meetings.
+  const meets = (at: string) => {
+    const read = seriesMeetsAt({
+      recurrence,
+      seriesZone: zone,
+      slot: at,
+      start,
+    });
+    return read === true || (read === null && at === slot);
+  };
   const splitDay = dayOfStart(asStart(params.splitStart), zone);
   const ownDayStart = onDay(start, splitDay, zone);
   const ownDay =
@@ -1982,7 +1991,10 @@ function placeCarried(params: {
         slot: at,
         start: params.start,
       });
-    const moment = at && meets === true ? slotMoment(at, params.zone) : null;
+    // Kept on its own slot, it meets though a rule not read here can't say
+    // (`carriedSlot`); a lookup on the new series checks it before the cut.
+    const kept = meets === true || (meets === null && at === originalStart);
+    const moment = at && kept ? slotMoment(at, params.zone) : null;
     const taken = moment && placed.get(moment.epochMilliseconds);
     // An added (RDATE) meeting the new series keeps holds its slot too.
     const ontoAdded =

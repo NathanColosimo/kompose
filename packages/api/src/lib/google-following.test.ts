@@ -360,6 +360,30 @@ describe("This and following", () => {
     });
   });
 
+  test("carries a renamed occurrence on its own slot under a rule not read here", async () => {
+    // Monday of weeks 46 to 49 (a rule not read here), Nov 30 renamed on
+    // its own; from Nov 16, a new location only.
+    const rule = "RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48,49;BYDAY=MO";
+    const series: Event = { ...weekly, recurrence: [rule] };
+    const google = fakeGoogle(series, [
+      { ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            location: "Room 2",
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261130T140000Z`
+    );
+    expect(carried?.body).toMatchObject({ summary: "Own" });
+  });
+
   test("a new repeat sent alone keeps the series' skips after the split", async () => {
     // Nov 30 skipped in the rule; from Nov 16, Mondays become Mondays and
     // Thursdays, the rule sent without the skip.
@@ -1299,10 +1323,10 @@ describe("a split that fails part way leaves the old series whole", () => {
 });
 
 describe("a move to another calendar from an occurrence", () => {
-  test("offers no single occurrence when it's refused", async () => {
-    // A rule by days of the year (Mondays Nov 9 to Dec 7) isn't read, so
-    // a renamed Nov 30 can't be told to have a place in the moved series.
-    // One occurrence can't move to another calendar on its own.
+  test("carries a renamed occurrence on its own slot under a rule not read here", async () => {
+    // A rule by days of the year (Mondays Nov 9 to Dec 7) isn't read, but
+    // the moved series repeats by it from one of its own meetings, so a
+    // renamed Nov 30 keeps its slot there.
     const series: Event = {
       ...weekly,
       recurrence: ["RRULE:FREQ=YEARLY;BYYEARDAY=313,320,327,334,341"],
@@ -1313,15 +1337,15 @@ describe("a move to another calendar from an occurrence", () => {
       { ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"), summary: "Mine" },
     ]);
     expect(
-      await refusalOf(
-        service().moveEvent("primary", opened.id, "work", "following")
+      Exit.isSuccess(
+        await run(
+          service().moveEvent("primary", opened.id, "work", "following")
+        )
       )
-    ).toMatchObject({
-      data: { reason: "dropsChangedOccurrences", seriesOnly: true },
-      message:
-        "This would undo what was changed or deleted on single occurrences (Nov 30), so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
-    });
-    expect(google.writes()).toEqual([]);
+    ).toBe(true);
+    expect(
+      google.writes().some((write) => write.body?.summary === "Mine")
+    ).toBe(true);
   });
 });
 
