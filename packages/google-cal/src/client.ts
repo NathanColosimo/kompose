@@ -1114,6 +1114,63 @@ function onDay(
 }
 
 /**
+ * Whether a meeting of the old series after the split, one not deleted or
+ * skipped, lands at `place` in the new series (`carriedSlot`), where a
+ * deleted one's skip would cancel it: two rule days folded into one
+ * (Mondays and Wednesdays made Wednesdays). It's the meeting on `place`'s
+ * day, or as many days back as the split moved.
+ */
+function liveMeetingLandsAt(params: {
+  cancelled: string[];
+  master: Event;
+  originalStart: string;
+  place: string;
+  /** The new series' rule, without skips. */
+  recurrence: string[];
+  splitStart: string;
+  start: Event["start"];
+}): boolean {
+  const { master, place, start } = params;
+  const oldZone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const opened = asStart(params.originalStart);
+  const split = slotMoment(params.originalStart, oldZone);
+  const day = dayOfStart(asStart(place), newZone);
+  const from = dayOfStart(opened, oldZone);
+  const to = dayOfStart(start, newZone);
+  if (!(day && from && to && split)) {
+    return false;
+  }
+  const days = [day, day.subtract({ days: from.until(to).days })];
+  return days.some((candidate) => {
+    const formed = onDay(opened, candidate, oldZone);
+    const slot = formed && slotOf(formed, oldZone);
+    const at = slot && slotMoment(slot, oldZone);
+    if (
+      !(slot && at) ||
+      Temporal.Instant.compare(at, split) <= 0 ||
+      params.cancelled.includes(slot) ||
+      seriesMeetsAt({
+        recurrence: master.recurrence ?? [],
+        seriesZone: oldZone,
+        slot,
+        start: master.start,
+      }) !== true
+    ) {
+      return false;
+    }
+    const lands = carriedSlot({
+      master,
+      recurrence: params.recurrence,
+      slot: inFormOf(slot, start, newZone) ?? slot,
+      splitStart: params.splitStart,
+      start,
+    });
+    return lands !== null && inFormOf(lands, start, newZone) === place;
+  });
+}
+
+/**
  * Where a rule's occurrence of `master` at `slot` (an original start)
  * lands in a This and following new series from `splitStart`, starting at
  * `start` with `recurrence`: on its own day with the split's change of time
@@ -1413,6 +1470,21 @@ function placeSkips(params: {
         skip.moment &&
         claimsTakenPlace(skip.formed, skip.moment.epochMilliseconds)
     );
+  // A place a meeting of the old series still lands at too (two rule days
+  // folded into one) is that meeting's: a skip there would cancel it.
+  const landsOnLive = (at: string | null, formed: string | null) =>
+    !keepsSlots &&
+    at !== null &&
+    formed !== null &&
+    liveMeetingLandsAt({
+      cancelled,
+      master,
+      originalStart,
+      place: formed,
+      recurrence: unskipped,
+      splitStart,
+      start,
+    });
   // Left out of a COUNT read from Google's list: it holds no place.
   const leftOutAt = (moment: Temporal.Instant | null) =>
     Boolean(
@@ -1428,7 +1500,9 @@ function placeSkips(params: {
     // A skipped position with no meeting of the new series after its start
     // in its place (none there, the start itself, or another's) frees none.
     const shared = claimPlace({ at, formed, moment, ruleMeeting });
-    const noPlace = formed === startSlot || (at === null && !added) || shared;
+    const ontoLive = landsOnLive(at, formed);
+    const noPlace =
+      formed === startSlot || (at === null && !added) || shared || ontoLive;
     const uncounted = leftOutAt(moment);
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
@@ -1441,7 +1515,9 @@ function placeSkips(params: {
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
-    return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
+    return formed && formed !== startSlot && !ontoAdded && !ontoLive
+      ? [formed]
+      : [];
   });
   if (!params.keeps) {
     return { lostPlaces: 0, placed, ruleSkips: [] };
