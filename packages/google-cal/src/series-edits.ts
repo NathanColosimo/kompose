@@ -5,7 +5,7 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { isRuleDay } from "./rule-days";
+import { isRuleDay, WEEKDAY_CODES } from "./rule-days";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { lengthMs, startInstant } from "./until";
 
@@ -15,7 +15,7 @@ import { lengthMs, startInstant } from "./until";
  * series made in another app has several rules (Kompose writes one), and
  * Kompose doesn't write that shape.
  */
-export const PLAIN_REFUSALS = [
+const PLAIN_REFUSALS = [
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
   "severalTimesADay",
@@ -27,7 +27,7 @@ export const PLAIN_REFUSALS = [
  * or whose own length it would overwrite (a new length). Writing them back
  * afterwards can fail with nothing to restore them from.
  */
-export const NAMING_REFUSALS = [
+const NAMING_REFUSALS = [
   "dropsChangedOccurrences",
   "resizesChangedOccurrences",
 ] as const;
@@ -204,9 +204,6 @@ const DAY_PARTS = new Set([
 
 const WEEKLY = /FREQ=WEEKLY/;
 const BYDAY_VALUE = /BYDAY=([^;]+)/;
-
-/** Weekday codes, Monday first, as a rule writes them. */
-const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 /** A rule line's parts, sorted, without its day parts when `dropDays`. */
 function ruleParts(line: string, dropDays: boolean): string {
