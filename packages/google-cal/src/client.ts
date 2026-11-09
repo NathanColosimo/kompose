@@ -1666,6 +1666,26 @@ function countWithinSkips(params: {
 }
 
 /**
+ * Where a split that keeps its days puts its skipped or deleted rule
+ * meetings (`slots`): their own day at the new time (`lineUpRule`). One
+ * whose new time that day doesn't exist (a clock change skips it) has no
+ * meeting there.
+ */
+function onOwnDays(params: {
+  master: Event;
+  slots: string[];
+  start: Event["start"];
+}): string[] {
+  const { master, start } = params;
+  return params.slots.flatMap((slot) => {
+    const place = ruleMeetingAt(slot, master)
+      ? placeOnNewStart(slot, master, start)
+      : null;
+    return place ? [place] : [];
+  });
+}
+
+/**
  * A split's new `rule` with a kept COUNT lowered by the `places` its skips
  * free none of, and again for each placed skip (`ruleSkips`) its end then
  * leaves out (`countWithinSkips`). Null when that can't be told.
@@ -2701,18 +2721,20 @@ export function makeGoogleCalendarService(
       // skip there, in the new start's form.
       const isAdded = (slot: string) =>
         addsSlot(master.recurrence ?? [], slot, zone);
-      const ownSkip = (value: RecurrenceValue) => {
+      // The rule's own skips after the split, of its own meetings.
+      const ownAfterSplit = (value: RecurrenceValue) => {
         const slot = asSlot(value);
         const at = slotMoment(slot, zone);
         return (
-          byPlace &&
           had.has(skipKey(value)) &&
           !isAdded(slot) &&
           Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
         );
       };
-      const ownSkips = dateValues(final, "EXDATE", zone)
-        .filter(ownSkip)
+      const ownSkip = (value: RecurrenceValue) =>
+        byPlace && ownAfterSplit(value);
+      const ownSkipsAfterSplit = dateValues(final, "EXDATE", zone)
+        .filter(ownAfterSplit)
         .map(asSlot);
       // A skip whose place is the new start (the meeting just saved there)
       // is dropped, and holds no place of its own: a carried COUNT is one
@@ -2728,11 +2750,23 @@ export function makeGoogleCalendarService(
             rule: ruleForStart(final, master, start, originalStart),
             slots: [
               ...params.cancelled.filter((slot) => !isAdded(slot)),
-              ...ownSkips,
+              ...ownSkipsAfterSplit,
             ],
             start,
           })
-        : { ontoStart: [], placed: [], ruleSkips: [] };
+        : {
+            ontoStart: [],
+            placed: [],
+            // Kept on their days, skips go to the new time there.
+            ruleSkips: onOwnDays({
+              master,
+              slots: [
+                ...params.cancelled.filter((slot) => !isAdded(slot)),
+                ...ownSkipsAfterSplit,
+              ],
+              start,
+            }),
+          };
       const placed = byDay.placed;
       const ontoStart = placesOnStart({
         added: addedOntoStart({

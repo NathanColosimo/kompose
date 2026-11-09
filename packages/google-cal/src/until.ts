@@ -969,6 +969,11 @@ function matchUntil(
   params: {
     allDay: boolean;
     base: Temporal.PlainTime | null;
+    /**
+     * Days the last meeting moves with a new time of less than a day
+     * (23:00 to the next day's 00:30 is one).
+     */
+    dayShift: number;
     retimed: boolean;
     timeZone: string;
   }
@@ -997,10 +1002,36 @@ function matchUntil(
     Temporal.Instant.compare(meeting, value.instant) > 0
       ? value.day.subtract({ days: 1 })
       : value.day;
+  const lastDay = params.retimed ? day.add({ days: params.dayShift }) : day;
   return line.replace(
     UNTIL_PART,
-    `${match[1]}UNTIL=${untilRuleForDay(day, allDay, timeZone)}`
+    `${match[1]}UNTIL=${untilRuleForDay(lastDay, allDay, timeZone)}`
   );
+}
+
+/**
+ * The days a start moved by the clock, when the move is less than a day
+ * (23:00 to the next day's 00:30 is one): each meeting moves as many.
+ * Zero for a longer move, which keeps each meeting on its own day.
+ */
+function shortDayShift(
+  from: StartTime | undefined,
+  to: StartTime,
+  timeZone: string
+): number {
+  if (!(from?.dateTime && to.dateTime)) {
+    return 0;
+  }
+  const wall = (time: StartTime) => {
+    const moment = startInstant(time, timeZone);
+    return moment?.toZonedDateTimeISO(timeZone).toPlainDateTime() ?? null;
+  };
+  const was = wall(from);
+  const now = wall(to);
+  if (!(was && now) || Math.abs(was.until(now).total("hours")) >= 24) {
+    return 0;
+  }
+  return was.toPlainDate().until(now.toPlainDate()).days;
 }
 
 /** "20261101T063000Z": a moment as a recurrence value, in UTC. */
@@ -1180,6 +1211,7 @@ export function matchRecurrenceToStart(
           matchUntil(line, {
             allDay,
             base: newUntil(line) ? newTime : base,
+            dayShift: shortDayShift(seriesStart, start, timeZone),
             retimed: Boolean(
               !newUntil(line) &&
                 base &&

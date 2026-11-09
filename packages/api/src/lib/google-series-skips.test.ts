@@ -1197,6 +1197,64 @@ describe("This and following with a new pattern from the same day", () => {
   });
 });
 
+describe("This and following to a new time the same day", () => {
+  test("drops a COUNT place for a deleted meeting whose new time doesn't exist", async () => {
+    // Daily 9:00 New York ten times from Mar 10 2027, Mar 14 deleted; from
+    // Mar 12 moved to 2:30, an hour Mar 14 skips (clocks go forward): its
+    // deleted meeting has no place, so seven are left, not eight.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2027-03-10T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY;COUNT=10"],
+      start: { dateTime: "2027-03-10T09:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2027-03-14T09:00:00-04:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2027-03-12T09:00:00-05:00"), {
+            end: { dateTime: "2027-03-12T03:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2027-03-12T02:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "RRULE:FREQ=DAILY;COUNT=7"
+    );
+  });
+
+  test("keeps an end on the moved last meeting's day across midnight", async () => {
+    // Daily 23:00 New York, its last meeting Nov 19; from Nov 16 moved to
+    // Nov 17 00:30: that meeting is Nov 20 00:30 now, and stays.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY;UNTIL=20261121T035959Z"],
+      start: { dateTime: "2026-11-09T23:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T23:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T01:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;UNTIL=20261121T045959Z",
+    ]);
+  });
+});
+
 describe("an Entire series rule change alone", () => {
   test("adds no skip for a rule meeting deleted on its own", async () => {
     // Nov 23 deleted on its own; Mondays become Mondays and Wednesdays.
