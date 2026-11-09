@@ -278,11 +278,31 @@ const BYDAY_VALUE = /BYDAY=([^;]+)/;
 /** A rule line's parts, sorted, without its day parts when `dropDays`. */
 function ruleParts(line: string, dropDays: boolean): string {
   const [name, parts = ""] = line.split(":");
-  const kept = parts
+  return canonicalRule(
+    `${name}:${parts
+      .split(";")
+      .filter((part) => !(dropDays && DAY_PARTS.has(part.split("=")[0] ?? "")))
+      .join(";")}`
+  );
+}
+
+/**
+ * A rule line written one way: its parts, and the values in each list
+ * (BYDAY=WE,MO is BYDAY=MO,WE), in order. Order means nothing in either.
+ */
+export function canonicalRule(line: string): string {
+  const [name, parts = ""] = line.split(":");
+  const sorted = parts
     .split(";")
-    .filter((part) => !(dropDays && DAY_PARTS.has(part.split("=")[0] ?? "")))
+    .filter(Boolean)
+    .map((part) => {
+      const [key, values = ""] = part.split("=");
+      return key?.startsWith("BY")
+        ? `${key}=${values.split(",").sort().join(",")}`
+        : part;
+    })
     .sort();
-  return `${name}:${kept.join(";")}`;
+  return `${name}:${sorted.join(";")}`;
 }
 
 /**
