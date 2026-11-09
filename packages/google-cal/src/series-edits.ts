@@ -12,7 +12,9 @@ import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
  * occurrences to name. `endsBeforeStart`, `deleteFromAddedOccurrence` and
  * `countUnknown` stay because no write through Google's API does what was
  * asked safely. `severalRules`, `addedOccurrence` and `severalTimesADay`
- * have a safe write, which a later change adds.
+ * are refused for good: only a series made in another app has several
+ * rules or added meetings (Kompose writes one rule and no RDATE), and
+ * Kompose doesn't write those shapes.
  */
 export const PLAIN_REFUSALS = [
   // This and following in a series with several rules (or an exclusion
