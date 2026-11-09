@@ -24,12 +24,12 @@ import {
 import {
   changedFields,
   keepsTimes,
-  NAMING_REFUSALS,
+  type NamingRefusal,
   newRepeat,
   ownChanges,
-  PLAIN_REFUSALS,
   refusalMessage,
   type SeriesRefusal,
+  SeriesRefusalSchema,
   sameLength,
   sameTime,
 } from "./series-edits";
@@ -50,6 +50,9 @@ import {
   momentOf,
   startInstant,
 } from "./until";
+
+/** A rule that steps by hours, minutes or seconds, read on its own. */
+const SUB_DAILY_RULE = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 
 /** A rule part that ends it: COUNT or UNTIL. */
 const END_PART = /^(?:COUNT|UNTIL)=/;
@@ -88,13 +91,35 @@ function timeOfDayChange(
  * marked when the save is one only a series takes.
  */
 function naming(
-  reason: "dropsChangedOccurrences" | "resizesChangedOccurrences",
+  reason: NamingRefusal["reason"],
   originalStarts: readonly string[],
   seriesOnly: boolean
-): SeriesRefusal {
+): NamingRefusal {
   return seriesOnly
     ? { originalStarts, reason, seriesOnly: true }
     : { originalStarts, reason };
+}
+
+/** A day to read a rule's parts on: any day will do. */
+const ANY_DAY = Temporal.PlainDate.from("2026-01-01");
+
+/**
+ * `refusal` marked `unsure` when a rule it was read against can't be read
+ * here (an exclusion rule, or a day rule with parts not read): what it
+ * names may keep its changes, but that can't be told.
+ */
+function unsureWhere(
+  refusal: NamingRefusal,
+  recurrence: string[]
+): NamingRefusal {
+  const unread = recurrence.some(
+    (line) =>
+      line.startsWith("EXRULE") ||
+      (line.startsWith("RRULE:") &&
+        !SUB_DAILY_RULE.test(line) &&
+        isRuleDay(line, ANY_DAY, ANY_DAY) === null)
+  );
+  return unread ? { ...refusal, unsure: true } : refusal;
 }
 
 /**
@@ -713,7 +738,10 @@ function seriesChangeRefusal(params: {
     lost.push(...deletedLost(params));
   }
   if (lost.length > 0) {
-    return naming("dropsChangedOccurrences", lost, seriesOnly);
+    return unsureWhere(naming("dropsChangedOccurrences", lost, seriesOnly), [
+      ...(master.recurrence ?? []),
+      ...recurrence,
+    ]);
   }
   if (sameLength(times, master, zone)) {
     return null;
@@ -990,15 +1018,6 @@ export class GoogleCalendar extends Context.Service<
 >()("GoogleCalendar") {}
 
 // -- Errors --
-
-const SeriesRefusalSchema = Schema.Union([
-  Schema.Struct({ reason: Schema.Literals(PLAIN_REFUSALS) }),
-  Schema.Struct({
-    originalStarts: Schema.Array(Schema.String),
-    reason: Schema.Literals(NAMING_REFUSALS),
-    seriesOnly: Schema.optional(Schema.Literal(true)),
-  }),
-]);
 
 export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
   "GoogleApiError",
