@@ -289,7 +289,7 @@ function timesOnOwnDay(
 /**
  * Whether the series' new times give `occurrence`, changed on its own,
  * all it changed: only its times, to those of the new series' meeting on
- * its day. Google cancels it when the series' start moves, and that
+ * its day (its date, made all day). Google cancels it when the series' start moves, and that
  * meeting takes its place.
  */
 function newTimesKeep(params: {
@@ -302,15 +302,11 @@ function newTimesKeep(params: {
   times: { end: Event["end"]; start: Event["start"] };
 }): boolean {
   const { master, occurrence, originalStart, recurrence, times } = params;
-  const zone = seriesZoneOf(master);
-  const day = dayOfStart(asStart(originalStart), zone);
-  const clock = clockOf(times.start, zone);
-  if (!(day && clock && master.start.dateTime)) {
+  const slot = placeOnNewStart(originalStart, master, times.start);
+  if (!slot) {
     return false;
   }
-  const slot = googleDateTime(
-    day.toZonedDateTime({ plainTime: clock, timeZone: zone })
-  );
+  const zone = repeatZone(master, times.start);
   return (
     seriesMeetsAt({
       recurrence,
