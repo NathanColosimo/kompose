@@ -126,6 +126,22 @@ const echo = (request: Request) => ({
 });
 
 /**
+ * A series as Google lists it by iCalUID: its master and exceptions,
+ * deleted ones only when asked for.
+ */
+const listed = (query: URLSearchParams, series: Event[]) => {
+  if (query.get("iCalUID") !== series[0]?.iCalUID) {
+    return { items: [] };
+  }
+  const showDeleted = query.get("showDeleted") === "true";
+  return {
+    items: series.filter(
+      (event) => showDeleted || event.status !== "cancelled"
+    ),
+  };
+};
+
+/**
  * A Google calendar holding `master` and its `exceptions`: it lists them
  * by iCalUID, finds a series it created's occurrence by its original
  * start, and echoes writes. `answer` answers a request first when it
@@ -158,7 +174,7 @@ export const fakeGoogle = (
       return echo(request);
     }
     if (path.endsWith("/events")) {
-      return { items: [master, ...exceptions] };
+      return listed(request.url.searchParams, [master, ...exceptions]);
     }
     if (path.endsWith("/instances")) {
       const seriesId = path.split("/").at(-2) ?? "";

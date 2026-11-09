@@ -617,6 +617,65 @@ function newTimesKeep(params: {
 }
 
 /**
+ * The occurrences deleted on their own whose skip a new start leaves where
+ * the series no longer meets: its day at the new time, after a first
+ * meeting's day move under a rule whose days follow its start (monthly on
+ * the start's date, say), isn't one of the series' meetings, and the one
+ * that now is in its place would come back.
+ */
+function deletedLost(params: {
+  cancelled: string[];
+  master: Event;
+  recurrence: string[];
+  times: { end: Event["end"]; start: Event["start"] };
+}): string[] {
+  const { master, times } = params;
+  const zone = seriesZoneOf(master);
+  // Read without skips: the save's own skip for it is already there.
+  const recurrence = params.recurrence.filter(
+    (line) => !line.startsWith("EXDATE")
+  );
+  const repeatsIn = repeatZone(master, times.start);
+  const first = momentOf(times.start, repeatsIn);
+  const clock = clockOf(times.start, repeatsIn);
+  // An added (RDATE) meeting keeps its own slot: only a rule's moves.
+  const rules = (master.recurrence ?? []).filter((line) =>
+    line.startsWith("RRULE:")
+  );
+  return params.cancelled.filter((slot) => {
+    const day = dayOfStart(asStart(slot), zone);
+    const ruleMet =
+      seriesMeetsAt({
+        recurrence: rules,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) === true;
+    if (!(day && ruleMet)) {
+      return false;
+    }
+    const place = clock
+      ? googleDateTime(
+          day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
+        )
+      : day.toString();
+    const at = momentOf(asStart(place), repeatsIn);
+    // Before the new start, the series has no meeting to bring back.
+    if (!(at && first) || Temporal.Instant.compare(at, first) < 0) {
+      return false;
+    }
+    return (
+      seriesMeetsAt({
+        recurrence,
+        seriesZone: repeatsIn,
+        slot: place,
+        start: times.start,
+      }) !== true
+    );
+  });
+}
+
+/**
  * Why an Entire series write would cost the occurrences changed on their
  * own (`changed`) their changes; null if it wouldn't. Google ties each to
  * its original slot: it cancels all of them when the series' start moves
@@ -626,6 +685,8 @@ function newTimesKeep(params: {
  * already has it loses nothing, so neither is counted).
  */
 function seriesChangeRefusal(params: {
+  /** The occurrences deleted on their own, by original start. */
+  cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
   /** The fields the edit changed. */
   changes: Partial<CreateEvent>;
@@ -651,10 +712,13 @@ function seriesChangeRefusal(params: {
     .filter(({ occurrence, originalStart }) => {
       if (movesStart && occurrence.id === opened.id) {
         // The edit replaces its time and the fields it changes, but not a
-        // day of its own, which Google would give back to the series.
+        // day of its own, which Google would give back to the series,
+        // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
-        const movedDay = !ownDay?.equals(
-          dayOfStart(asStart(originalStart), zone) ?? ownDay
+        const movedDay = !(
+          (opensSeries(occurrence, master) &&
+            ownDay?.equals(dayOfStart(times.start, zone) ?? ownDay)) ||
+          ownDay?.equals(dayOfStart(asStart(originalStart), zone) ?? ownDay)
         );
         return (
           movedDay ||
@@ -684,6 +748,9 @@ function seriesChangeRefusal(params: {
       );
     })
     .map(({ originalStart }) => originalStart);
+  if (movesStart) {
+    lost.push(...deletedLost(params));
+  }
   if (lost.length > 0) {
     return naming("dropsChangedOccurrences", lost, seriesOnly);
   }
@@ -2183,6 +2250,7 @@ export function makeGoogleCalendarService(
         ? lineUpRule({ cancelled, master, rule, start: times.start })
         : rule;
       const refusal = seriesChangeRefusal({
+        cancelled,
         changed,
         changes: params.changes,
         master,
