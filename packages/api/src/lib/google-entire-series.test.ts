@@ -1385,6 +1385,43 @@ describe("Entire series start and length changes, as Google applies them", () =>
       expect(google.writes()).toEqual([]);
     });
 
+    test("is refused when it was skipped in the rule", async () => {
+      const google = fakeGoogle(
+        {
+          ...weekly,
+          recurrence: [...(weekly.recurrence ?? []), "EXDATE:20261109T140000Z"],
+        },
+        []
+      );
+      expect(
+        await refusalOf(edit("all", nov16, { recurrence: [] }))
+      ).toMatchObject({
+        data: { originalStarts: [nov9], reason: "dropsChangedOccurrences" },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    test("keeping a length of its own", async () => {
+      // Nov 9 made 9:00-10:00 on its own (the series is half an hour).
+      const longer = occurrenceOf(weekly, nov9, {
+        end: "2026-11-09T10:00:00-05:00",
+        start: nov9,
+      });
+      const google = fakeGoogle(weekly, [longer]);
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([
+        {
+          body: {
+            end: { dateTime: "2026-11-09T10:00:00-05:00" },
+            recurrence: [],
+            start: { dateTime: nov9 },
+          },
+        },
+      ]);
+    });
+
     test("writes no skips", async () => {
       const google = fakeGoogle(
         {
