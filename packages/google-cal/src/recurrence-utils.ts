@@ -881,14 +881,16 @@ function skipsAClockGap(params: {
     Temporal.PlainDate.compare(day, last) <= 0;
     day = day.add({ days: 1 })
   ) {
-    const zoned = day.toZonedDateTime({
-      plainTime: clock,
-      timeZone: seriesZone,
-    });
+    // Most days have the time: only a gap day is read further.
+    if (existsOn(day, clock, seriesZone)) {
+      continue;
+    }
+    const at = day
+      .toZonedDateTime({ plainTime: clock, timeZone: seriesZone })
+      .toInstant();
     if (
-      !existsOn(day, clock, seriesZone) &&
-      Temporal.Instant.compare(zoned.toInstant(), from) >= 0 &&
-      Temporal.Instant.compare(zoned.toInstant(), before) < 0 &&
+      Temporal.Instant.compare(at, from) >= 0 &&
+      Temporal.Instant.compare(at, before) < 0 &&
       isRuleDay(rule, start, day) === true
     ) {
       return true;
