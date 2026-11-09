@@ -1673,9 +1673,20 @@ export function makeGoogleCalendarService(
         recurrence: counted,
         start,
       });
-      // The moved meeting's skip takes one of a COUNT's places, so the
-      // rest are placed against the COUNT it ends up with.
-      const final = changeCount(counted, moved.length);
+      // The moved meeting's skip takes one of a COUNT's places when the
+      // rule meets there (an added day's takes none), so the rest are
+      // placed against the COUNT it ends up with.
+      const newZone = repeatZone(master, start);
+      const rulePlaces = moved.filter(
+        (place) =>
+          seriesMeetsAt({
+            recurrence: counted.filter((line) => line.startsWith("RRULE:")),
+            seriesZone: newZone,
+            slot: place,
+            start,
+          }) === true
+      );
+      const final = changeCount(counted, rulePlaces.length);
       const isAdded = (slot: string) =>
         addsSlot(master.recurrence ?? [], slot, zone);
       const asSlot = (value: RecurrenceValue) =>
@@ -1715,8 +1726,6 @@ export function makeGoogleCalendarService(
       // start, the meeting the user just saved, or on an added meeting it
       // keeps.
       const unskipped = final.filter((line) => !line.startsWith("EXDATE"));
-      // The new series' slots, in the zone it repeats in.
-      const newZone = repeatZone(master, start);
       const startSlot = slotOf(start, newZone);
       const splitStart =
         inFormOf(originalStart, start, newZone) ?? originalStart;
