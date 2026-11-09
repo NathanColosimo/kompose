@@ -2626,9 +2626,12 @@ export function makeGoogleCalendarService(
   /**
    * The rule a split's new part repeats with: `edited`, or the series'.
    * An unchanged COUNT carries on (a five-time series split at its third
-   * runs three more, not five). Occurrences `cancelled` after the split
-   * stay skipped where the new series meets in their place, as changed
-   * ones are put back (`carriedSlot`); an added one keeps its slot.
+   * runs three more, not five). Occurrences `cancelled` after the split,
+   * and the rule's own skips, stay skipped where their meetings go: placed
+   * by day as changed ones are put back (`placeByDay`) when the split
+   * moves to another day, meets several times a day or takes a new
+   * repeat; else on their own day at the new time (`lineUpRule`). An
+   * added one keeps its slot.
    * Refuses, before any write, if the COUNT can't be carried or if the
    * rule ends before `start`.
    */
