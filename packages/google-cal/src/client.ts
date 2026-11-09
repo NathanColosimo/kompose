@@ -870,7 +870,9 @@ function movesSeveralADay(params: {
 
 /**
  * `master`'s exceptions in Google's listing: the cancelled ones' original
- * starts, and the moved or edited ones.
+ * starts, and the moved or edited ones the series still meets in the place
+ * of (one Google detached, its slot gone, has no changes at stake; one
+ * whose rule can't be read counts).
  */
 function sortExceptions(events: SeriesListing[], master: Event) {
   const zone = seriesZoneOf(master);
@@ -886,8 +888,16 @@ function sortExceptions(events: SeriesListing[], master: Event) {
     }
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
-    } else if (Object.keys(changesOwnTo(event, master, zone)).length > 0) {
+    } else if (
       // One moved and moved back has nothing to keep.
+      Object.keys(changesOwnTo(event, master, zone)).length > 0 &&
+      seriesMeetsAt({
+        recurrence: master.recurrence ?? [],
+        seriesZone: zone,
+        slot: originalStart,
+        start: master.start,
+      }) !== false
+    ) {
       changed.push({ occurrence: event, originalStart });
     }
   }

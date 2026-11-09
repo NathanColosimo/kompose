@@ -1651,6 +1651,31 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("an occurrence Google already detached isn't at stake", async () => {
+    // The series moved from 9:00 to 10:00 before; Nov 23, renamed at 9:00,
+    // stays listed at a slot the series no longer has. Moving the series
+    // to 11:00 costs it nothing.
+    const atTen: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(atTen, [
+      { ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(atTen, "2026-11-16T10:00:00-05:00"), {
+            end: { dateTime: "2026-11-16T11:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.
