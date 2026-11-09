@@ -2205,6 +2205,26 @@ export function makeGoogleCalendarService(
       return yield* parseEventResponse(response);
     });
 
+  /** Every item of a listing Google splits into pages. */
+  const allPages = <T>(
+    fetchPage: (
+      pageToken: string | undefined
+    ) => Promise<{ items?: T[] | null; nextPageToken?: string | null }>
+  ) =>
+    Effect.gen(function* () {
+      const items: T[] = [];
+      let pageToken: string | undefined;
+      do {
+        const response = yield* Effect.tryPromise({
+          try: () => fetchPage(pageToken),
+          catch: (cause) => new GoogleApiError({ cause }),
+        });
+        items.push(...(response.items ?? []));
+        pageToken = response.nextPageToken ?? undefined;
+      } while (pageToken);
+      return items;
+    });
+
   /**
    * The original starts of a series' occurrences, as Google lists them,
    * cancelled ones too (one rescheduled keeps its place). Only for a series
@@ -2212,29 +2232,19 @@ export function makeGoogleCalendarService(
    */
   const listOccurrenceStarts = (calendarId: string, master: Event) =>
     Effect.gen(function* () {
-      const starts: string[] = [];
-      let pageToken: string | undefined;
-      do {
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            client.calendars.events.instances(master.id, {
-              calendarId,
-              maxResults: 2500,
-              pageToken,
-              showDeleted: true,
-            }),
-          catch: (cause) => new GoogleApiError({ cause }),
-        });
-        for (const item of response.items ?? []) {
-          const start = item.originalStartTime ?? item.start;
-          const slot = start && slotOf(start, seriesZoneOf(master));
-          if (slot) {
-            starts.push(slot);
-          }
-        }
-        pageToken = response.nextPageToken ?? undefined;
-      } while (pageToken);
-      return starts;
+      const items = yield* allPages((pageToken) =>
+        client.calendars.events.instances(master.id, {
+          calendarId,
+          maxResults: 2500,
+          pageToken,
+          showDeleted: true,
+        })
+      );
+      return items.flatMap((item) => {
+        const start = item.originalStartTime ?? item.start;
+        const slot = start && slotOf(start, seriesZoneOf(master));
+        return slot ? [slot] : [];
+      });
     });
 
   /**
@@ -2252,22 +2262,14 @@ export function makeGoogleCalendarService(
           new GoogleApiError({ cause: new Error("Series has no iCalUID") })
         );
       }
-      const items: unknown[] = [];
-      let pageToken: string | undefined;
-      do {
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            client.calendars.events.list(calendarId, {
-              iCalUID,
-              maxResults: 2500,
-              pageToken,
-              showDeleted: true,
-            }),
-          catch: (cause) => new GoogleApiError({ cause }),
-        });
-        items.push(...(response.items ?? []));
-        pageToken = response.nextPageToken ?? undefined;
-      } while (pageToken);
+      const items = yield* allPages((pageToken) =>
+        client.calendars.events.list(calendarId, {
+          iCalUID,
+          maxResults: 2500,
+          pageToken,
+          showDeleted: true,
+        })
+      );
       const parsed = SeriesListingSchema.safeParse(items);
       if (!parsed.success) {
         return yield* Effect.fail(
