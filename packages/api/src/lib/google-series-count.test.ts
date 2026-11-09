@@ -33,6 +33,31 @@ const carried = (
   walked: carryCountExactly(recurrence, params),
 });
 
+describe("a kept COUNT sent with its days in another order", () => {
+  test("carries the meetings left", async () => {
+    // Mondays and Wednesdays six times from Nov 9 (Nov 9, 11, 16, 18, 23,
+    // 25); renamed from Nov 16 with the same rule written MO,WE: four left.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=WE,MO;COUNT=6"],
+    };
+    const google = fakeGoogle(series, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=6"],
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4",
+    ]);
+  });
+});
+
 describe("a deleted meeting both added and the rule's", () => {
   test("doesn't cost a later meeting its place", async () => {
     // Mondays 9:00, six times from Nov 9; Nov 30 also added, and deleted
