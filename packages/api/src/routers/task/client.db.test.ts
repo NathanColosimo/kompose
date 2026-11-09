@@ -584,4 +584,51 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-21 Review todo in 2026-11-20",
     ]);
   });
+
+  test("makes a master moved to the inbox a lone task when its series splits", async () => {
+    // Daily x5; the Nov 9 master moved to the inbox; Nov 11 takes
+    // Wednesdays x2 from there on.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: null }, "this");
+          yield* u.update(
+            "2026-11-11",
+            {
+              recurrence: {
+                byDay: ["WE"],
+                count: 2,
+                freq: "WEEKLY",
+                interval: 1,
+              },
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10",
+      "2026-11-11 Review todo MASTER WEEKLY/1 WE x2",
+      "2026-11-18 Review todo in 2026-11-11",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves inbox occurrences alone when the rest of their series goes", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          // Deleting a master "following", and a master with no dated
+          // occurrence left to take its role.
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-11", { startDate: null }, "this");
+          yield* u.remove("2026-11-09", "following");
+          yield* u.create("2026-11-20", daily(2));
+          yield* u.update("2026-11-21", { startDate: null }, "this");
+          yield* u.remove("2026-11-20", "this");
+        })
+      )
+    ).toEqual(["inbox Review todo alone", "inbox Review todo alone"]);
+  });
 });
