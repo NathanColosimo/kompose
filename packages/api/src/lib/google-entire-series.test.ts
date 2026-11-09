@@ -739,6 +739,10 @@ describe("Entire series start and length changes, as Google applies them", () =>
         )
       )
     ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T10:00:00-05:00" },
+      summary: "Review",
+    });
   });
 
   test("a new time from an occurrence moved to another day on its own is refused", async () => {
