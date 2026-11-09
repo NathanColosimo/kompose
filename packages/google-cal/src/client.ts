@@ -1726,15 +1726,17 @@ export function makeGoogleCalendarService(
       if (!endsBeforeStart(recurrence, momentOf(start, newZone), newZone)) {
         return recurrence;
       }
-      // The series' own end before the meeting moved past it (its last,
-      // moved later): that meeting is all the new part has, one event. An
-      // end the save sets there is refused.
+      // The series' own end before the meeting moved past it (its last
+      // rule meeting, moved later): its rule is spent, so the new part has
+      // that meeting and any added (RDATE) ones after it; one event if
+      // none. An end the save sets there is refused.
       const ownRule =
         params.edited === undefined ||
         JSON.stringify(params.edited) ===
           JSON.stringify(master.recurrence ?? []);
       if (ownRule) {
-        return [];
+        const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
+        return repeats(added) ? added : [];
       }
       return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
     });
