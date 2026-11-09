@@ -868,6 +868,38 @@ function endedRepeat(params: {
 }
 
 /**
+ * `rule` without a skip at the series' `start` moved to another day that
+ * the save didn't add (`saved`, the rules it sends): one the series had
+ * there, or one placed there for a deleted meeting, was another meeting's
+ * (a Wednesday deleted, the first Monday moved onto it), and the meeting
+ * just placed there stays. A skip the save adds there is the user's; on
+ * the start's own day, a skip there is the first meeting's.
+ */
+function withoutOwnSkipAt(
+  rule: string[],
+  master: Event,
+  start: Event["start"],
+  saved: string[] | undefined
+): string[] {
+  const zone = seriesZoneOf(master);
+  const day = dayOfStart(start, zone);
+  if (!day || day.equals(dayOfStart(master.start, zone) ?? day)) {
+    return rule;
+  }
+  const at = momentOf(start, repeatZone(master, start));
+  const onStart = (value: RecurrenceValue) =>
+    value.instant
+      ? Boolean(at && Temporal.Instant.compare(value.instant, at) === 0)
+      : value.day.toString() === start.date;
+  const added =
+    dateValues(saved ?? [], "EXDATE", zone).some(onStart) &&
+    !dateValues(master.recurrence ?? [], "EXDATE", zone).some(onStart);
+  return added
+    ? rule
+    : keepingDateValues(rule, "EXDATE", zone, (value) => !onStart(value));
+}
+
+/**
  * What an Entire series save writes of `rule` once the occurrences changed
  * or deleted on their own are read, and what it carries of the first
  * meeting when it ends the repeat (`endedRepeat`); or why it's refused.
@@ -894,9 +926,15 @@ function keptAfterEdit(params: {
       : { carried, recurrence: [] };
   }
   // Rewritten in the new start's form, with a deleted occurrence's skip
-  // lined up where its meeting now is (`lineUpRule`).
+  // lined up where its meeting now is (`lineUpRule`), none of the series'
+  // own on a first meeting moved to another day.
   const recurrence = params.movesSlots
-    ? lineUpRule({ cancelled, master, rule, start: times.start })
+    ? withoutOwnSkipAt(
+        lineUpRule({ cancelled, master, rule, start: times.start }),
+        master,
+        times.start,
+        params.edited.recurrence
+      )
     : rule;
   return (
     seriesChangeRefusal({
@@ -1009,10 +1047,11 @@ function seriesChangeRefusal(params: {
     lost.push(...deletedLost(params));
   }
   if (lost.length > 0) {
-    return unsureWhere(naming("dropsChangedOccurrences", lost, seriesOnly), [
-      ...(master.recurrence ?? []),
-      ...recurrence,
-    ]);
+    const refusal = naming("dropsChangedOccurrences", lost, seriesOnly);
+    // A new start cancels them whatever the rule says.
+    return movesStart
+      ? refusal
+      : unsureWhere(refusal, [...(master.recurrence ?? []), ...recurrence]);
   }
   if (sameLength(times, master, zone)) {
     return null;
@@ -2270,11 +2309,12 @@ export function makeGoogleCalendarService(
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, start } = params;
+      const zone = seriesZoneOf(master);
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
         params.edited ?? master.recurrence ?? [],
         originalStart,
-        seriesZoneOf(master),
+        zone,
         "from"
       );
       // The new part's COUNT, when it keeps the series': less the places
@@ -2293,7 +2333,6 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const { listed, rule: counted } = carried;
-      const zone = seriesZoneOf(master);
       // The rule as written for the new start (a kept BYHOUR moves with
       // it), which places are read against.
       const writtenCounted = ruleForStart(

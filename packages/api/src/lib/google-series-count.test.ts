@@ -729,14 +729,15 @@ describe("carrying a COUNT through a split", () => {
 
     test("doesn't count a skip past the last meeting it lists", () => {
       // An added Dec 1 2020 makes the side before the split unclear; a
-      // stale skip in 2051, after the rule's last meeting (2049), can't be
-      // told to be a position, so neither side can be counted.
+      // stale skip in 2051, after the rule's last meeting (2049), changes
+      // no meeting, counted or not: 2026 to 2049 are left.
+      const lines = ["RDATE:20201201T090000Z", "EXDATE:20511109T090000Z"];
       expect(
-        countOn(
-          ["RDATE:20201201T090000Z", "EXDATE:20511109T090000Z"],
-          [...years(1950, 2049).map(onNov9), "2020-12-01T09:00:00Z"]
-        )
-      ).toBeNull();
+        countOn(lines, [
+          ...years(1950, 2049).map(onNov9),
+          "2020-12-01T09:00:00Z",
+        ])
+      ).toEqual(["RRULE:FREQ=YEARLY;COUNT=24", ...lines]);
     });
   });
 
@@ -752,6 +753,28 @@ describe("carrying a COUNT through a split", () => {
         seriesZone: "America/New_York",
       })
     ).toBeNull();
+  });
+
+  test("doesn't count a skip past the end on the side from the split", () => {
+    // 8:00 daily three times, from a 9:00 start (whether Google counts it
+    // can't be told), with a stale skip on Nov 20 at 8:00, after the
+    // last meeting (Nov 12). From Nov 10: three are left.
+    const byHour = "RRULE:FREQ=DAILY;BYHOUR=8;COUNT=3";
+    const skip = "EXDATE:20261120T130000Z";
+    expect(
+      carryCountFromList([byHour, skip], {
+        masterRecurrence: [byHour, skip],
+        originalStart: "2026-11-10T08:00:00-05:00",
+        seriesStart: "2026-11-09T09:00:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [
+          "2026-11-09T09:00:00-05:00",
+          "2026-11-10T08:00:00-05:00",
+          "2026-11-11T08:00:00-05:00",
+          "2026-11-12T08:00:00-05:00",
+        ],
+      })
+    ).toEqual([byHour, skip]);
   });
 
   test("leaves a count across a DST gap to Google's list", () => {

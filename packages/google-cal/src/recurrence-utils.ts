@@ -172,6 +172,28 @@ export function deleteFromListed(params: {
   return skipping(lines, theirs, seriesZone);
 }
 
+/** A This and following split of a series, as the helpers below read it. */
+interface FollowingSplit {
+  masterRecurrence: string[] | null | undefined;
+  masterStart: { date?: string | null; dateTime?: string | null };
+  originalStart: string;
+  seriesZone: string;
+}
+
+/** A split's series rules, its first start and the split, read once. */
+function readSplit(params: FollowingSplit) {
+  const recurrence = params.masterRecurrence ?? [];
+  return {
+    first: asValue(
+      params.masterStart.dateTime ?? params.masterStart.date ?? "",
+      params.seriesZone
+    ),
+    recurrence,
+    rules: recurrence.filter(isRule),
+    split: asValue(params.originalStart, params.seriesZone),
+  };
+}
+
 /**
  * How "This and following" is deleted from `originalStart`: cut the rules
  * there (`truncateRecurrenceForFollowing`); or, where that could lengthen
@@ -181,20 +203,15 @@ export function deleteFromListed(params: {
  * list says which meetings are the unsure rule's), and a rule meeting's is
  * cut as before.
  */
-export function followingDelete(params: {
-  masterRecurrence: string[] | null | undefined;
-  masterStart: { date?: string | null; dateTime?: string | null };
-  originalStart: string;
-  seriesZone: string;
-}): "cut" | "list" | "refuse" {
-  const recurrence = params.masterRecurrence ?? [];
+export function followingDelete(
+  params: FollowingSplit
+): "cut" | "list" | "refuse" {
+  const { recurrence, rules } = readSplit(params);
   if (!followingCutUnsure(params)) {
     return "cut";
   }
   if (
-    recurrence
-      .filter(isRule)
-      .every((rule) => ruleCount(rule) !== null || UNTIL_VALUE.test(rule))
+    rules.every((rule) => ruleCount(rule) !== null || UNTIL_VALUE.test(rule))
   ) {
     return "list";
   }
@@ -377,19 +394,8 @@ type SplitBlock = Extract<
  * really ended. That can happen at an added (RDATE) meeting, or, with
  * several rules, at another rule's meeting.
  */
-function followingCutUnsure(params: {
-  masterRecurrence: string[] | null | undefined;
-  masterStart: { date?: string | null; dateTime?: string | null };
-  originalStart: string;
-  seriesZone: string;
-}): boolean {
-  const recurrence = params.masterRecurrence ?? [];
-  const rules = recurrence.filter(isRule);
-  const split = asValue(params.originalStart, params.seriesZone);
-  const first = asValue(
-    params.masterStart.dateTime ?? params.masterStart.date ?? "",
-    params.seriesZone
-  );
+function followingCutUnsure(params: FollowingSplit): boolean {
+  const { first, recurrence, rules, split } = readSplit(params);
   if (
     !split ||
     (rules.length < 2 &&
@@ -426,25 +432,16 @@ export function addsSlot(
  * nothing of it comes before (it's at or before the series' start, with
  * no meeting added before it).
  */
-export function followingIsWhole(params: {
-  masterRecurrence: string[] | null | undefined;
-  masterStart: { date?: string | null; dateTime?: string | null };
-  originalStart: string;
-  seriesZone: string;
-}): boolean {
+export function followingIsWhole(params: FollowingSplit): boolean {
   const { seriesZone } = params;
-  const at = asValue(params.originalStart, seriesZone);
-  const first = asValue(
-    params.masterStart.dateTime ?? params.masterStart.date ?? "",
-    seriesZone
-  );
-  if (!(at && first)) {
+  const { first, recurrence, split } = readSplit(params);
+  if (!(split && first)) {
     return false;
   }
-  const moment = valueMoment(at, seriesZone);
+  const moment = valueMoment(split, seriesZone);
   return (
     Temporal.Instant.compare(moment, valueMoment(first, seriesZone)) <= 0 &&
-    !dateValues(params.masterRecurrence ?? [], "RDATE", seriesZone).some(
+    !dateValues(recurrence, "RDATE", seriesZone).some(
       (added) =>
         Temporal.Instant.compare(valueMoment(added, seriesZone), moment) < 0
     )
@@ -458,28 +455,19 @@ export function followingIsWhole(params: {
  * calendars write them) can't keep each one's days and phase from one
  * start, nor can an added (RDATE) meeting that isn't a rule meeting too.
  */
-export function followingSplitBlocked(params: {
-  masterRecurrence: string[] | null | undefined;
-  masterStart: { date?: string | null; dateTime?: string | null };
-  originalStart: string;
-  seriesZone: string;
-}): SplitBlock | null {
-  const recurrence = params.masterRecurrence ?? [];
-  const rules = recurrence.filter(isRule);
+export function followingSplitBlocked(
+  params: FollowingSplit
+): SplitBlock | null {
+  const { first, recurrence, rules, split } = readSplit(params);
   const exclusions = recurrence.filter((line) => line.startsWith("EXRULE"));
   if (rules.length + exclusions.length > 1) {
     return "severalRules";
   }
-  const split = asValue(params.originalStart, params.seriesZone);
   if (
     !(split && addsSlot(recurrence, params.originalStart, params.seriesZone))
   ) {
     return null;
   }
-  const first = asValue(
-    params.masterStart.dateTime ?? params.masterStart.date ?? "",
-    params.seriesZone
-  );
   const rule = rules[0];
   return rule &&
     first &&
@@ -724,12 +712,11 @@ function fromStartToSplit(
  * included; Google lists the rule's meetings, cancelled ones too, and the
  * added (RDATE) ones, but not every skip. So the positions used before the
  * split are the meetings listed there and the rule's skips it doesn't
- * list. When those can't be told (an added day there can't be told from a
- * rule day, a skip there Google doesn't list where the rule may meet may
- * or may not be a position, or a start
- * at a time its rule doesn't meet may or may not count), the positions
- * left are counted from the split on instead, the same way; null when
- * neither side can be told.
+ * list. When those can't be told (an added day there can't be told from
+ * a rule day, a skip there Google doesn't list where the rule may meet may
+ * or may not be a position, or a start at a time its rule doesn't meet may
+ * or may not count), the positions left are counted from the split on
+ * instead, the same way; null when neither side can be told.
  */
 export function carryCountFromList(
   recurrence: string[],
@@ -777,16 +764,16 @@ export function carryCountFromList(
     },
     null
   );
-  // A skip at one of the rule's meetings, as it reads here: on its day, at
-  // its time (the first pass of a repeated hour), and before a meeting
-  // Google lists, so within its COUNT, is a position.
+  // A skip after it changes no meeting, counted or not: it's left out.
+  const afterLast = (skip: RecurrenceValue) =>
+    lastMeeting === null ||
+    Temporal.Instant.compare(valueMoment(skip, seriesZone), lastMeeting) > 0;
+  // A skip at one of the rule's meetings, as it reads here (on its day, at
+  // its time, the first pass of a repeated hour), is a position.
   const onRule = (skip: RecurrenceValue) => {
     const at = skip.instant;
     const clock = at?.toZonedDateTimeISO(seriesZone).toPlainTime();
     return (
-      lastMeeting !== null &&
-      Temporal.Instant.compare(valueMoment(skip, seriesZone), lastMeeting) <
-        0 &&
       isRuleDay(rule, start.day, skip.day) === true &&
       (!(at && clock && startClock) ||
         (ruleClock(rule, startClock).equals(clock) &&
@@ -802,7 +789,11 @@ export function carryCountFromList(
       .filter(inStretch)
       .filter(
         (skip) =>
-          !(offRule(skip) || there.some((value) => sameValue(value, skip)))
+          !(
+            offRule(skip) ||
+            afterLast(skip) ||
+            there.some((value) => sameValue(value, skip))
+          )
       );
     const unclear =
       added.filter(inStretch).length > 0 ||
