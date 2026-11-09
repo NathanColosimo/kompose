@@ -3,7 +3,7 @@
  * moment, clock and length, and how often its rules meet in a day.
  */
 import { Temporal } from "temporal-polyfill";
-import { countedRuleDays, isRuleDay } from "./rule-days";
+import { countedRuleDays, isRuleDay, WEEKDAY_CODES } from "./rule-days";
 
 /** A Google date ("2026-11-16"), as an all-day start writes it. */
 export const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -1415,8 +1415,6 @@ function nearestRuleDay(
   }
   return null;
 }
-
-const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 /** The first day of `day`'s week, by the rule's WKST (Monday by default). */
 function weekStart(day: Temporal.PlainDate, rule: string): Temporal.PlainDate {
