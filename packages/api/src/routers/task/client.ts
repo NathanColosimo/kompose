@@ -702,7 +702,6 @@ function buildOccurrenceRowsFromTask(params: {
 /** Writes an update's rows for its scope (no tags), returning them. */
 const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   dbInput: TaskUpdateInput;
-  hasDbUpdates: boolean;
   recurrenceChanged: boolean;
   scope: UpdateScope;
   task: TaskSelect;
@@ -720,7 +719,7 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   if (!task.seriesMasterId && dbInput.recurrence) {
     return yield* convertToRecurring(userId, task, dbInput);
   }
-  if (params.hasDbUpdates) {
+  if (Object.keys(dbInput).length > 0) {
     // Edit this task alone, marked as an exception to its series.
     return yield* dbUpdate(userId, task.id, {
       ...dbInput,
@@ -1080,7 +1079,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
         task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
-      const hasDbUpdates = Object.keys(dbInput).length > 0;
       const recurrenceChanged = changesPattern && scope === "following";
 
       // Regenerating a series replaces its rows. When the edit doesn't set
@@ -1094,7 +1092,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
 
       const updatedTasks = yield* writeTaskUpdate({
         dbInput,
-        hasDbUpdates,
         recurrenceChanged,
         scope,
         task,
