@@ -994,12 +994,6 @@ function writeOptions(
   };
 }
 
-function getConferenceDataVersion(event: {
-  conferenceData?: unknown;
-}): number | undefined {
-  return event.conferenceData ? 1 : undefined;
-}
-
 function summarizeEventForDebug(event: CreateEvent) {
   return {
     summary: event.summary,
@@ -1445,7 +1439,7 @@ export function makeGoogleCalendarService(
       "eventType",
       event.eventType ?? "default"
     );
-    const conferenceDataVersion = getConferenceDataVersion(event);
+    const conferenceDataVersion = writeOptions(event, {}).conferenceDataVersion;
     const response = yield* Effect.tryPromise({
       try: () =>
         client.calendars.events.create(calendarId, {
@@ -1818,8 +1812,10 @@ export function makeGoogleCalendarService(
         "eventType",
         truncatedPayload.eventType ?? "default"
       );
-      const truncatedConferenceDataVersion =
-        getConferenceDataVersion(truncatedPayload);
+      const truncatedConferenceDataVersion = writeOptions(
+        truncatedPayload,
+        {}
+      ).conferenceDataVersion;
 
       const truncateMasterResponse = yield* Effect.tryPromise({
         try: () =>
@@ -1850,15 +1846,19 @@ export function makeGoogleCalendarService(
         ...event,
         recurrence,
       });
-      const newSeriesConferenceDataVersion =
-        getConferenceDataVersion(newSeriesPayload);
+      const newSeriesConferenceDataVersion = writeOptions(
+        newSeriesPayload,
+        {}
+      ).conferenceDataVersion;
 
       const restorePayload = sanitizeEventPayload({
         ...master,
         recurrence: originalRecurrence,
       });
-      const restoreConferenceDataVersion =
-        getConferenceDataVersion(restorePayload);
+      const restoreConferenceDataVersion = writeOptions(
+        restorePayload,
+        {}
+      ).conferenceDataVersion;
 
       const restoreMasterRecurrence = Effect.tryPromise({
         try: () =>
