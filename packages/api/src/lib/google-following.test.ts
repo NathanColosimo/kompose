@@ -539,6 +539,39 @@ describe("This and following", () => {
     expect(carried?.body).toMatchObject({ summary: "Planning (renamed)" });
   });
 
+  test("made timed across a clock change, places skips and changes in the new zone", async () => {
+    // All-day Mondays from Nov 9; Mar 22 2027 deleted and Mar 15 renamed on
+    // their own. From Nov 16 made 9:00 New York: after the clock change,
+    // 9:00 is 13:00 UTC.
+    const allDay: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      start: { date: "2026-11-09" },
+    };
+    const google = fakeGoogle(allDay, [
+      { ...occurrenceOf(allDay, "2027-03-22"), status: "cancelled" },
+      { ...occurrenceOf(allDay, "2027-03-15"), summary: "Planning (renamed)" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(allDay, "2026-11-16"), {
+            end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20270322T130000Z",
+    ]);
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20270315T130000Z`
+    );
+  });
+
   test("a new time carries a deleted occurrence's skip to it", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to 10:00.
     // A skip left at 9:00 would match nothing, and Nov 30 would come back.
