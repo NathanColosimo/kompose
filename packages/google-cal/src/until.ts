@@ -19,8 +19,11 @@ const INTERVAL_PART = /INTERVAL=(\d+)/;
 const COUNT_VALUE = /[:;]COUNT=(\d+)/;
 /** How far a COUNT rule's meetings are walked: fifty years of days. */
 const MAX_COUNT_DAYS = 366 * 50;
-/** A rule that repeats within a day: its times don't follow the start's. */
-const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
+/**
+ * A rule that steps by hours, minutes or seconds: it repeats within a day,
+ * so its times don't follow the start's.
+ */
+export const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ_PART = /FREQ=([A-Z]+)/;
 const BY_MONTH_PART = /BYMONTH=([^;]*)/;
 const BY_MONTH_DAY_PART = /BYMONTHDAY=/;

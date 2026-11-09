@@ -360,6 +360,28 @@ describe("This and following", () => {
     });
   });
 
+  test("a new repeat sent alone keeps the series' skips after the split", async () => {
+    // Nov 30 skipped in the rule; from Nov 16, Mondays become Mondays and
+    // Thursdays, the rule sent without the skip.
+    const google = fakeGoogle({
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261130T140000Z"],
+    });
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,TH",
+      "EXDATE:20261130T140000Z",
+    ]);
+  });
+
   test("a move to a day the rule doesn't meet skips the moved meeting's old slot", async () => {
     // From Mon Nov 16, moved to Sun Nov 15 with the Monday rule kept: the
     // new series meets at its Sunday start, so its Monday Nov 16 meeting
