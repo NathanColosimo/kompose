@@ -171,13 +171,11 @@ function lineUpRule(params: {
     }) !== false;
   // Lined up with the new start, as written (a kept BYHOUR=9 becomes the
   // new start's hour).
-  const savedRules = (
-    ruleForStart(
-      params.rule.filter((line) => line.startsWith("RRULE:")),
-      master,
-      start,
-      splitAt
-    ) ?? []
+  const savedRules = ruleForStart(
+    params.rule.filter((line) => line.startsWith("RRULE:")),
+    master,
+    start,
+    splitAt
   ).filter((line) => line.startsWith("RRULE:"));
   // Whether the saved rules meet at a deleted occurrence's new place: its
   // date if the series is now all day, the new time if it was at the
@@ -228,9 +226,11 @@ function lineUpRule(params: {
   );
   const change = timeOfDayChange(master, start);
   if (!change || meetsSeveralTimesADay(before, change.from)) {
-    return (
-      ruleForStart(skipping(rule, cancelled, zone), master, start, splitAt) ??
-      []
+    return ruleForStart(
+      skipping(rule, cancelled, zone),
+      master,
+      start,
+      splitAt
     );
   }
   const { rest, skips } = takeTimedSkips(rule, zone);
@@ -303,7 +303,7 @@ function lineUpRule(params: {
     }
   }
   const lined = skipping(
-    ruleForStart(rest, master, start, splitAt) ?? [],
+    ruleForStart(rest, master, start, splitAt),
     atOwnTime,
     zone
   );
@@ -421,7 +421,7 @@ function repeatZone(
  * occurrence can't skip the wrong times.
  */
 function ruleForStart(
-  rule: string[] | undefined,
+  rule: string[],
   master: { start: { date?: string; dateTime?: string; timeZone?: string } },
   start: { date?: string; dateTime?: string; timeZone?: string },
   /**
@@ -430,7 +430,7 @@ function ruleForStart(
    * all day counts from its time.
    */
   splitAt?: string
-): string[] | undefined {
+): string[] {
   const zone = repeatZone(master, start);
   const splitClock =
     splitAt && !DATE_ONLY.test(splitAt)
@@ -441,7 +441,7 @@ function ruleForStart(
       ? { firstDay: Temporal.PlainDate.from(start.date), firstTime: splitClock }
       : undefined;
   const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
-  return rule && matchRecurrenceToStart(rule, start, zone, from, days);
+  return matchRecurrenceToStart(rule, start, zone, from, days);
 }
 
 /**
@@ -1122,22 +1122,19 @@ function keepsCount(master: Event, rule: string[]): boolean {
  * none. Null when an end the save sets does: refused.
  */
 function withinEnd(params: {
-  edited: string[] | undefined;
-  master: Event;
+  /** Whether the save kept the series' own rule (`givesNewRepeat`). */
+  ownRule: boolean;
   recurrence: string[];
   /** The rule before it's lined up with `start` (an UNTIL as it was). */
   rule: string[];
   start: Event["start"];
   zone: string;
 }): string[] | null {
-  const { master, recurrence, zone } = params;
+  const { recurrence, zone } = params;
   if (!endsBeforeStart(params.rule, momentOf(params.start, zone), zone)) {
     return recurrence;
   }
-  const ownRule =
-    params.edited === undefined ||
-    JSON.stringify(params.edited) === JSON.stringify(master.recurrence ?? []);
-  if (!ownRule) {
+  if (!params.ownRule) {
     return null;
   }
   const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
@@ -1952,11 +1949,18 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const zone = seriesZoneOf(master);
+      // The rule as written for the new start (a kept BYHOUR moves with
+      // it), which places are read against.
+      const writtenCounted = ruleForStart(
+        counted,
+        master,
+        start,
+        originalStart
+      );
       const moved = movedOffRule({
         master,
         originalStart,
-        recurrence:
-          ruleForStart(counted, master, start, originalStart) ?? counted,
+        recurrence: writtenCounted,
         start,
       });
       // The new series' slots, in the zone it repeats in.
@@ -1967,9 +1971,9 @@ export function makeGoogleCalendarService(
       const rulePlaces = moved.filter(
         (place) =>
           seriesMeetsAt({
-            recurrence: (
-              ruleForStart(counted, master, start, originalStart) ?? counted
-            ).filter((line) => line.startsWith("RRULE:")),
+            recurrence: writtenCounted.filter((line) =>
+              line.startsWith("RRULE:")
+            ),
             seriesZone: newZone,
             slot: place,
             start,
@@ -2057,7 +2061,7 @@ export function makeGoogleCalendarService(
         });
       const placed = byPlace
         ? placeBy(
-            (ruleForStart(final, master, start, originalStart) ?? final).filter(
+            ruleForStart(final, master, start, originalStart).filter(
               (line) => !line.startsWith("EXDATE")
             )
           )
@@ -2083,8 +2087,14 @@ export function makeGoogleCalendarService(
         zone
       );
       const kept = withinEnd({
-        edited: params.edited,
-        master,
+        // Its own rule however it's written (parts reordered, its day
+        // rebuilt for a day move): not a new end.
+        ownRule: !givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: params.edited,
+          start,
+        }),
         recurrence,
         rule: final,
         start,

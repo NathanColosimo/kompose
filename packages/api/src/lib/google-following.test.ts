@@ -647,6 +647,39 @@ describe("This and following", () => {
     expect(carried?.body).toMatchObject({ summary: "Planning (Dec 10)" });
   });
 
+  test.each([
+    "RRULE:FREQ=WEEKLY;UNTIL=20261201T045959Z;BYDAY=MO",
+    "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261201T045959Z",
+  ])(
+    "the last meeting moved past the end with its own rule rewritten (%s) is one event",
+    async (rewritten) => {
+      const ending: Event = {
+        ...weekly,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261201T045959Z"],
+      };
+      const google = fakeGoogle(ending);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(ending, "2026-11-30T09:00:00-05:00"),
+              {
+                end: { dateTime: "2026-12-01T09:30:00-05:00", timeZone: zone },
+                recurrence: [rewritten],
+                start: {
+                  dateTime: "2026-12-01T09:00:00-05:00",
+                  timeZone: zone,
+                },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([]);
+    }
+  );
+
   test("a move past the series' end is refused while a later occurrence has changes", async () => {
     // Mondays until Nov 30, Nov 23 renamed on its own; from Nov 16 moved to
     // Tue Dec 1, past the end: the new part has no place for Nov 23.
