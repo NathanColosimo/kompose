@@ -391,6 +391,36 @@ describe("what Google keeps as an occurrence's own", () => {
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("a guest added keeps everyone's answers to the series", async () => {
+    // I'm invited to the series; I accepted Nov 16 alone, and from it add
+    // a guest: the series keeps my answer to it.
+    const series: Event = {
+      ...weekly,
+      attendees: [{ email: "me@example.com", responseStatus: "needsAction" }],
+    };
+    const nov16Accepted = {
+      ...occurrenceOf(series, "2026-11-16T09:00:00-05:00"),
+      attendees: [{ email: "me@example.com", responseStatus: "accepted" }],
+    };
+    const google = fakeGoogle(series, [nov16Accepted]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16Accepted, {
+            attendees: [
+              { email: "me@example.com", responseStatus: "accepted" },
+              { email: "b@example.com" },
+            ],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.attendees).toEqual([
+      { email: "me@example.com", responseStatus: "needsAction" },
+      { email: "b@example.com" },
+    ]);
+  });
+
   test("an attendee's answer to one occurrence isn't a change to it", async () => {
     // A guest accepted the series and declined Nov 30.
     const guest = { email: "guest@example.com", responseStatus: "accepted" };
@@ -1409,6 +1439,28 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ]);
   });
 
+  test("a new time and length an occurrence was moved to, at the series' length, saves", async () => {
+    // Nov 23 moved to 10:00 on its own, still half an hour; the series moves
+    // to 10:00 and an hour: Nov 23 keeps its start and takes the length.
+    const google = fakeGoogle(weekly, [
+      occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T10:30:00-05:00",
+        start: "2026-11-23T10:00:00-05:00",
+      }),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T11:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
   test("a new time an occurrence was already moved to on its own saves", async () => {
     // Nov 23 moved to 10:00 on its own; the series moves to 10:00. Google
     // cancels Nov 23's exception, and the series' 10:00 meeting is the same.
@@ -1560,6 +1612,23 @@ describe("Entire series start and length changes, as Google applies them", () =>
       expect(google.writes()).toMatchObject([
         { body: { recurrence: [], status: "tentative" } },
       ]);
+    });
+
+    test("asking Google to write its own attachment", async () => {
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, nov9),
+          attachments: [{ fileUrl: "https://example.com/agenda" }],
+        },
+      ]);
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      const [written] = google.writes();
+      expect(written?.url.searchParams.get("supportsAttachments")).toBe("true");
+      expect(written?.body).toMatchObject({
+        attachments: [{ fileUrl: "https://example.com/agenda" }],
+      });
     });
 
     test("a title the save sets is the event's", async () => {
