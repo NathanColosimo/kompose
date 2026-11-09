@@ -2466,24 +2466,27 @@ export function makeGoogleCalendarService(
               },
               { maxRetries: 0 }
             ),
-          catch: (cause) => {
-            logGoogleEventUpdateFailure({
-              operation: "update",
-              calendarId,
-              eventId: master.id,
-              scope: "following-truncate",
-              event: cutPayload,
-              cause,
-            });
-            return new GoogleApiError({ cause });
-          },
+          catch: (cause) => new GoogleApiError({ cause }),
         }).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
               unanswered ||= mayGoThrough(error);
             })
           ),
-          Effect.retry({ times: 2, while: mayGoThrough })
+          Effect.retry({ times: 2, while: mayGoThrough }),
+          // Logged once, for the last try.
+          Effect.tapError((error) =>
+            Effect.sync(() =>
+              logGoogleEventUpdateFailure({
+                operation: "update",
+                calendarId,
+                eventId: master.id,
+                scope: "following-truncate",
+                event: cutPayload,
+                cause: error.cause,
+              })
+            )
+          )
         )
       );
       if (Exit.isFailure(cut)) {
