@@ -428,9 +428,20 @@ function deletedLost(params: {
   const repeatsIn = repeatZone(master, times.start);
   const first = momentOf(times.start, repeatsIn);
   const clock = clockOf(times.start, repeatsIn);
+  // An added (RDATE) meeting keeps its own slot: only a rule's moves.
+  const rules = (master.recurrence ?? []).filter((line) =>
+    line.startsWith("RRULE:")
+  );
   return params.cancelled.filter((slot) => {
     const day = dayOfStart(asStart(slot), zone);
-    if (!day) {
+    const ruleMet =
+      seriesMeetsAt({
+        recurrence: rules,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) === true;
+    if (!(day && ruleMet)) {
       return false;
     }
     const place = clock
