@@ -1230,6 +1230,38 @@ describe("skips through a move a day on and an hour earlier", () => {
   });
 });
 
+describe("This and following moved back across midnight onto a skipped day", () => {
+  // Daily 9:00 New York, Nov 19 skipped; from Nov 20, moved to Nov 19
+  // 23:00: the meeting just saved isn't skipped.
+  const from20 = (recurrence: string[]) => {
+    const series: Event = { ...weekly, recurrence };
+    const google = fakeGoogle(series, []);
+    return {
+      google,
+      save: () =>
+        run(
+          edit("following", occurrenceOf(series, "2026-11-20T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-19T23:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-19T23:00:00-05:00", timeZone: zone },
+          })
+        ),
+    };
+  };
+
+  test.each([
+    ["no end", "RRULE:FREQ=DAILY"],
+    ["an UNTIL", "RRULE:FREQ=DAILY;UNTIL=20261120T140000Z"],
+    ["a COUNT", "RRULE:FREQ=DAILY;COUNT=12"],
+  ])("with %s, keeps the new start", async (_end, rule) => {
+    const { google, save } = from20([rule, "EXDATE:20261119T140000Z"]);
+    expect(Exit.isSuccess(await save())).toBe(true);
+    const [created] = google.writes();
+    expect(JSON.stringify(created?.body?.recurrence ?? [])).not.toContain(
+      "20261120T040000Z"
+    );
+  });
+});
+
 describe("an UNTIL through a move a day on and an hour earlier", () => {
   test("ends on its own day, as its skips stay on theirs", async () => {
     // Daily 9:00 from Nov 9 until Nov 30, Nov 20 skipped; the first meeting

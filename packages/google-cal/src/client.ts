@@ -426,11 +426,23 @@ function lineUpRule(params: {
   const onAddedMeeting = (at: string) =>
     addsSlot(lined, at, zone) &&
     !keysOf([at]).some((key) => deletedKeys.has(key));
-  return skipping(
+  const result = skipping(
     lined,
     atNewTime.filter((at) => !onAddedMeeting(at)),
     zone
   );
+  // A split's new start is the meeting just saved: no skip lands on it,
+  // even one of the old part's moved there (a start moved back across
+  // midnight onto a skipped day).
+  const startKeys = new Set(keysOf([slotOf(start, zone) ?? ""]));
+  return splitAt
+    ? keepingDateValues(
+        result,
+        "EXDATE",
+        zone,
+        (value) => !startKeys.has(skipKey(value))
+      )
+    : result;
 }
 
 /**

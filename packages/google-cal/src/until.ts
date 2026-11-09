@@ -1636,6 +1636,14 @@ export function moveSkippedDays(params: {
     const read = list.values.map((value) =>
       readRecurrenceValue(value, list.zone, seriesZone)
     );
+    // One line takes one form; a line mixing dates and date-times isn't
+    // one this can write back, so it stays as it was.
+    if (
+      read.some((value) => value?.instant) &&
+      read.some((value) => value && !value.instant)
+    ) {
+      return [line];
+    }
     const moved = read.map((value) =>
       value ? (movedSkip(value) ?? retimedSkip(value)) : null
     );
