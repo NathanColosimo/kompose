@@ -110,7 +110,7 @@ function stepsWithinADay(line: string): boolean {
  * skip asks for its rule's end again (a 3,000-meeting series with 400
  * skips saves in tens of milliseconds with it, seconds without). Shared
  * across saves and users safely: an answer depends only on its key (the
- * rule's text with its COUNT, the first start, the times and the zone),
+ * rule's text, the count, the first start, the times and the zone),
  * never on whose calendar asked, and it holds no event data.
  */
 const LAST_COUNTED = new Map<string, number | null>();
@@ -130,7 +130,7 @@ export function lastCountedMeeting(params: {
   timeZone: string;
 }): number | null {
   const { base, count, from, rule, time, timeZone } = params;
-  const key = [rule, from, base ?? "", time, timeZone].join("|");
+  const key = [rule, count, from, base ?? "", time, timeZone].join("|");
   const known = LAST_COUNTED.get(key);
   if (known !== undefined) {
     return known;
