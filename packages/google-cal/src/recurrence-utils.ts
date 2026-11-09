@@ -305,6 +305,18 @@ export function changeCount(recurrence: string[], by: number): string[] {
   });
 }
 
+/**
+ * `recurrence` with its rule ending after `count` meetings: the positions
+ * a split's new part has left, worked out from the series' own COUNT.
+ */
+function withCount(recurrence: string[], count: number): string[] {
+  return recurrence.map((line) =>
+    ruleCount(line) === null
+      ? line
+      : line.replace(COUNT_PART, `$1COUNT=${count}`)
+  );
+}
+
 /** Whether a recurrence value comes before the split at `originalStart`. */
 function beforeSplit(
   value: RecurrenceValue,
@@ -866,7 +878,7 @@ export function carryCountFromList(
     return {
       heldPlaces: countedAfter(count - before),
       leftOut: [],
-      recurrence: changeCount(recurrence, -before),
+      recurrence: withCount(recurrence, count - before),
     };
   }
   const left = positionsIn(
@@ -877,7 +889,7 @@ export function carryCountFromList(
     : {
         heldPlaces: [],
         leftOut,
-        recurrence: changeCount(recurrence, left - count),
+        recurrence: withCount(recurrence, left),
       };
 }
 
@@ -986,8 +998,8 @@ function skipsAClockGap(params: {
 }
 
 /**
- * The following part's rule with exactly the positions it has left: its
- * COUNT less the positions before the split (skips included, added days
+ * The following part's rule with exactly the positions it has left: the
+ * series' COUNT less the positions before the split (skips included, added days
  * not). Null when the walk can't tell, or finds the COUNT used up before
  * the split (it disagrees with Google, whose list then decides).
  */
@@ -1017,7 +1029,7 @@ export function carryCountExactly(
   });
   return before === null || before >= count
     ? null
-    : changeCount(recurrence, -before);
+    : withCount(recurrence, count - before);
 }
 
 /** The COUNT a series' rule ends after; null if it has none. */
