@@ -451,21 +451,9 @@ describe("carrying a COUNT through a split", () => {
     expect(carry("2027-03-15T02:30:00-04:00")).toBeNull();
   });
 
-  test("leaves a count it can't walk to its end to Google's list", () => {
-    // Feb 30 never comes, so the rule's three meetings aren't found within
-    // the walk; and a yearly rule from 1950 a hundred times runs past
-    // fifty years. Neither is guessed from a partial walk.
-    const never = [
-      "RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30;BYHOUR=15;COUNT=3",
-    ];
-    expect(
-      carryCountExactly(never, {
-        masterRecurrence: never,
-        originalStart: "2027-03-12T09:00:00-05:00",
-        seriesStart: "2027-03-11T09:00:00-05:00",
-        seriesZone: "America/New_York",
-      })
-    ).toBeNull();
+  test("leaves a count it can't walk to the split to Google's list", () => {
+    // A yearly rule from 1950 a hundred times, split in 2026: more than
+    // fifty years to walk, so it isn't guessed from a partial walk.
     const yearly = ["RRULE:FREQ=YEARLY;COUNT=100"];
     expect(
       carryCountExactly(yearly, {

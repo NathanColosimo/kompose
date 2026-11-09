@@ -1780,8 +1780,14 @@ export function makeGoogleCalendarService(
         seriesZoneOf(master),
         "from"
       );
+      // The new part's COUNT, when it keeps the series': less the places
+      // before the split (`carriedCount`), plus one for a moved meeting's
+      // skip (`moved`), less one for each skip onto the new start
+      // (`ontoStart`). A COUNT the user set is theirs, less nothing.
+      const keeps = keepsCount(master, fromSplit);
       const counted = yield* carriedCount({
         calendarId,
+        keeps,
         master,
         originalStart,
         rule: fromSplit,
@@ -1852,7 +1858,7 @@ export function makeGoogleCalendarService(
       // saved there) holds no place of its own: a carried COUNT is one less
       // for each.
       const recurrence = skipping(
-        keepsCount(master, fromSplit) ? changeCount(rule, -ontoStart) : rule,
+        keeps ? changeCount(rule, -ontoStart) : rule,
         [...placed, ...moved],
         zone
       );
@@ -1886,13 +1892,15 @@ export function makeGoogleCalendarService(
    */
   const carriedCount = (params: {
     calendarId: string;
+    /** Whether `rule` keeps the series' COUNT (`keepsCount`). */
+    keeps: boolean;
     master: Event;
     originalStart: string;
     rule: string[];
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
-      if (!keepsCount(master, rule)) {
+      if (!params.keeps) {
         return rule;
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
