@@ -1368,10 +1368,11 @@ function inFormOf(
  * when it moves to other days or meets several times a day: where the new
  * series (`rule`, written for its start) meets in their place, as a
  * changed one is put back, in the new start's form (made all day or
- * timed, by day). None lands on the new start, the meeting just saved
- * (`ontoStart`: the rule meetings that would, by moment, `ruleMeetingOf`;
- * null when one's can't be told), or on an added meeting the new series
- * keeps.
+ * timed, by day). None lands on the new start, the meeting just saved,
+ * or on an added meeting the new series keeps. `ontoStart` lists, by
+ * moment, the rule meetings (`ruleMeetingOf`) that would land on the start
+ * or have no meeting of the new series in their place: each frees no COUNT
+ * position. Null when one's can't be told.
  */
 function placeByDay(params: {
   cancelled: string[];
@@ -1401,9 +1402,21 @@ function placeByDay(params: {
     });
     const formed = inFormOf(at ?? slot, start, newZone);
     const moment = slotMoment(slot, zone);
-    if (formed === startSlot && moment) {
+    // A skipped position with no meeting of the new series after its start
+    // in its place (none there, or the start itself) frees none; a new rule
+    // not read here may meet there after all.
+    if ((formed === startSlot || at === null) && moment) {
       const meeting = ruleMeetingOf({ ...params, slot });
-      unknown ||= meeting === null;
+      const placeUnknown =
+        at === null &&
+        formed !== null &&
+        seriesMeetsAt({
+          recurrence: unskipped,
+          seriesZone: newZone,
+          slot: formed,
+          start,
+        }) === null;
+      unknown ||= meeting === null || placeUnknown;
       if (meeting) {
         ontoStart.push(moment.epochMilliseconds);
       }
