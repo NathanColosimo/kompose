@@ -234,9 +234,14 @@ export function skipping(
     return recurrence;
   }
   const skipped = new Set(dateValues(recurrence, "EXDATE", zone).map(skipKey));
+  // Each skip once, however many times it's asked for.
   const fresh = starts.filter((start) => {
     const value = asValue(start, zone);
-    return !(value && skipped.has(skipKey(value)));
+    if (!value || skipped.has(skipKey(value))) {
+      return !value;
+    }
+    skipped.add(skipKey(value));
+    return true;
   });
   if (fresh.length === 0) {
     return recurrence;

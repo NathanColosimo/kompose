@@ -438,12 +438,8 @@ export function keepingDateValues(
 interface DateListMatch {
   /** The series' added (RDATE) meetings, as epoch milliseconds. */
   added: Set<number>;
-  /** The start's time before the edit; null all day. */
-  fromTime: Temporal.PlainTime | null;
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
-  /** Whether the saved series meets on a skip's day (at the start's time). */
-  meetsOn: ((value: RecurrenceValue) => boolean) | null;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
   ownSlot: ((value: RecurrenceValue) => boolean) | null;
   /**
@@ -462,23 +458,6 @@ interface DateListMatch {
 }
 
 /**
- * Whether a once-a-day series counted from `start` meets on a value's day
- * (at its start's time): one of its `rules` meets that day, not yet ended.
- */
-function meetsOnDay(
-  rules: string[],
-  start: Temporal.PlainDate,
-  timeZone: string
-): (value: RecurrenceValue) => boolean {
-  return (value) =>
-    rules.some(
-      (rule) =>
-        isRuleDay(rule, start, value.day) === true &&
-        !endedBefore(rule, start, value.day, timeZone)
-    );
-}
-
-/**
  * An EXDATE/RDATE line in the start's form: dates for an all-day series;
  * for a timed one, each skip at the start's time on its day, so it stays
  * skipped when that time moves. RDATE times stay as they are.
@@ -488,16 +467,7 @@ function matchDateList(
   start: StartTime,
   how: DateListMatch
 ): string {
-  const {
-    added,
-    fromTime,
-    keepAsDate,
-    meetsOn,
-    ownSlot,
-    retime,
-    seriesZone,
-    severalADay,
-  } = how;
+  const { added, keepAsDate, ownSlot, retime, seriesZone, severalADay } = how;
   const list = parseDateList(line, seriesZone);
   if (!list) {
     return line;
@@ -552,15 +522,12 @@ function matchDateList(
       .toInstant();
     const kept = value.instant;
     // A skip where no rule nor the start met skips nothing: it stays as it
-    // is, so it can't land on a meeting, unless the series moved to its
-    // time, where it would cancel one: then it goes.
+    // is, so it can't land on a meeting. (One a client lined up for the new
+    // start can't be told from one that was stale, so it stays too; the
+    // server, which knows the series before the save, drops a stale one
+    // the series moves onto.)
     if (list.name === "EXDATE" && kept && ownSlot && !ownSlot(value)) {
-      const movedOnto =
-        fromTime !== null &&
-        !kept.toZonedDateTimeISO(seriesZone).toPlainTime().equals(fromTime) &&
-        Temporal.Instant.compare(kept, moment) === 0 &&
-        meetsOn?.(value) === true;
-      return movedOnto ? [] : [kept];
+      return [kept];
     }
     if (
       !(
@@ -1096,7 +1063,6 @@ export function matchRecurrenceToStart(
           );
         }
       : null;
-  const meetsOn = base && baseDay ? meetsOnDay(rules, baseDay, timeZone) : null;
   let changed = false;
   const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
@@ -1109,9 +1075,7 @@ export function matchRecurrenceToStart(
         )
       : matchDateList(line, start, {
           added,
-          fromTime: base,
           keepAsDate,
-          meetsOn,
           ownSlot,
           retime,
           seriesZone: timeZone,

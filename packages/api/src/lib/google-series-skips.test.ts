@@ -1031,6 +1031,57 @@ describe("a deleted added meeting the series moves onto", () => {
   });
 });
 
+describe("a skip the app already lined up for the new start", () => {
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+
+  test.each([
+    {
+      before: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "EXDATE;TZID=America/New_York:20261130T090000",
+      ],
+      name: "Mondays moved to Tuesdays at 10:00",
+      rule: [
+        "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        "EXDATE;TZID=America/New_York:20261201T100000",
+      ],
+      skip: "2026-12-01T15:00:00Z",
+    },
+    {
+      before: [
+        "RRULE:FREQ=DAILY",
+        "EXDATE;TZID=America/New_York:20261120T090000",
+      ],
+      name: "a daily series moved to 10:00 a day later",
+      rule: [
+        "RRULE:FREQ=DAILY",
+        "EXDATE;TZID=America/New_York:20261120T100000",
+      ],
+      skip: "2026-11-20T15:00:00Z",
+    },
+  ])("stays as written for $name", async ({ before, rule, skip }) => {
+    const series: Event = { ...weekly, recurrence: [...before] };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: at("2026-11-17T10:30:00-05:00"),
+            recurrence: [...rule],
+            start: at("2026-11-17T10:00:00-05:00"),
+          })
+        )
+      )
+    ).toBe(true);
+    const written = google.writes()[0]?.body?.recurrence as string[];
+    expect(
+      dateValues(written, "EXDATE", zone).map((value) =>
+        value.instant?.toString()
+      )
+    ).toEqual([skip]);
+  });
+});
+
 describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
   const day = (date: string) => Temporal.PlainDate.from(date);
   const nine = Temporal.PlainTime.from("09:00");
