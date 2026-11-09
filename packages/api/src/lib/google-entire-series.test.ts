@@ -584,6 +584,40 @@ describe("what Google keeps as an occurrence's own", () => {
     expect(google.writes()).toEqual([]);
   });
 
+  test("a refusal names its occurrences by date, however Google lists them", async () => {
+    // Nov 23, Nov 30 and Jan 4 renamed on their own, listed last first.
+    // The series moves to 10:00 from Nov 16.
+    const renamed = (iso: string) => ({
+      ...occurrenceOf(weekly, iso),
+      summary: "Planning (own)",
+    });
+    fakeGoogle(weekly, [
+      renamed("2027-01-04T09:00:00-05:00"),
+      renamed("2026-11-30T09:00:00-05:00"),
+      renamed("2026-11-23T09:00:00-05:00"),
+    ]);
+    const refusal = await refusalOf(
+      edit("all", nov16, {
+        end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        summary: "Planning (new)",
+      })
+    );
+    expect(refusal).toMatchObject({
+      data: {
+        originalStarts: [
+          "2026-11-23T09:00:00-05:00",
+          "2026-11-30T09:00:00-05:00",
+          "2027-01-04T09:00:00-05:00",
+        ],
+        reason: "dropsChangedOccurrences",
+      },
+      message: expect.stringContaining(
+        "(Nov 23, 2026; Nov 30, 2026; Jan 4, 2027)"
+      ),
+    });
+  });
+
   test("a rule with an exclusion it can't read is refused, not guessed", async () => {
     const google = fakeGoogle(weekly, [
       occurrenceOf(weekly, "2026-11-30T09:00:00-05:00", {

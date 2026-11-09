@@ -113,17 +113,21 @@ function timeOfDayChange(
 }
 
 /**
- * A refusal naming the occurrences (by original start) a save would cost,
- * marked when the save is one only a series takes.
+ * A refusal naming the occurrences (by original start, earliest first) a
+ * save would cost, marked when the save is one only a series takes.
  */
 function naming(
   reason: NamingRefusal["reason"],
   originalStarts: readonly string[],
   seriesOnly: boolean
 ): NamingRefusal {
-  return seriesOnly
-    ? { originalStarts, reason, seriesOnly: true }
-    : { originalStarts, reason };
+  const named = {
+    originalStarts: originalStarts.toSorted(
+      (a, b) => Date.parse(a) - Date.parse(b)
+    ),
+    reason,
+  };
+  return seriesOnly ? { ...named, seriesOnly: true } : named;
 }
 
 /**
