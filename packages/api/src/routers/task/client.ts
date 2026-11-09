@@ -1157,8 +1157,9 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       }
 
       // scope=following: delete this task and all future tasks in series.
-      // What's left before it ends its pattern there, or, when this is a
-      // master moved later alone, keeps it as a series of its own.
+      // What's left before it ends its pattern there. When the master was
+      // moved later alone, to this date or after, the occurrences before
+      // this one become a series of their own.
       yield* db.transaction(() =>
         Effect.gen(function* () {
           yield* endSeriesBefore(userId, task);
