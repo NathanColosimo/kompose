@@ -35,7 +35,7 @@ export type SeriesRefusal =
   | {
       readonly reason: (typeof NAMING_REFUSALS)[number];
       readonly originalStarts: readonly string[];
-      /** Only a series takes it: a new repeat, or a calendar move. */
+      /** Only a series takes it: a new repeat. */
       readonly seriesOnly?: true;
     };
 
