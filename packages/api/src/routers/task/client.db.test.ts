@@ -43,14 +43,15 @@ function scratchDatabaseName(url: string): string {
 // database before the first import.
 async function loadModules(url: string) {
   process.env.DATABASE_URL = url;
-  const [db, auth, task, drizzle, client] = await Promise.all([
+  const [db, auth, tag, task, drizzle, client] = await Promise.all([
     import("@kompose/db"),
     import("@kompose/db/schema/auth"),
+    import("@kompose/db/schema/tag"),
     import("@kompose/db/schema/task"),
     import("drizzle-orm"),
     import("./client"),
   ]);
-  return { auth, client, db, drizzle, task };
+  return { auth, client, db, drizzle, tag, task };
 }
 
 /** A pattern, short: "DAILY/1 x4", "WEEKLY/1 MO until 2026-11-30". */
@@ -66,10 +67,13 @@ const INBOX_LAST = "9999-12-31";
 
 /**
  * A user's tasks, one line each, by date (inbox last) then title: date,
- * title, status, "exc" for an exception, the due date, and its series
- * role: "alone", "MASTER <rule>", or "in <its master's date>".
+ * title, status, "exc" for an exception, the due date, its series role
+ * ("alone", "MASTER <rule>", or "in <its master's date>"), and its tags.
  */
-function describeRows(rows: TaskSelect[]): string[] {
+function describeRows(
+  rows: TaskSelect[],
+  tags: { name: string; taskId: string }[]
+): string[] {
   const dates = new Map(rows.map((row) => [row.id, row.startDate ?? "inbox"]));
   return rows
     .toSorted(
@@ -91,6 +95,10 @@ function describeRows(rows: TaskSelect[]): string[] {
         ...(row.isException ? ["exc"] : []),
         ...(row.dueDate ? [`due ${row.dueDate}`] : []),
         role,
+        ...tags
+          .filter((tag) => tag.taskId === row.id)
+          .map((tag) => `#${tag.name}`)
+          .sort(),
       ];
       // A pattern belongs on its master alone.
       if (row.recurrence && row.seriesMasterId !== row.id) {
@@ -136,6 +144,7 @@ describe("scratchDatabaseName", () => {
 describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
   let modules: Awaited<ReturnType<typeof loadModules>>;
   let runtime: ManagedRuntime.ManagedRuntime<Database | TaskService, never>;
+  let connected = false;
   const userIds: string[] = [];
 
   beforeAll(async () => {
@@ -146,6 +155,7 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     runtime = ManagedRuntime.make(
       Layer.mergeAll(modules.client.TaskService.layer, modules.db.DatabaseLive)
     );
+    connected = true;
     // And the connection really is to it.
     const { rows } = await runtime.runPromise(
       Effect.gen(function* () {
@@ -159,18 +169,20 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
   });
 
   afterAll(async () => {
-    // Nothing ran, and nothing connected, if beforeAll refused the database.
-    if (userIds.length === 0) {
+    // Nothing connected if beforeAll refused the database's name.
+    if (!connected) {
       return;
     }
-    await runtime.runPromise(
-      Effect.gen(function* () {
-        const db = yield* modules.db.Database;
-        yield* db
-          .delete(modules.auth.user)
-          .where(modules.drizzle.inArray(modules.auth.user.id, userIds));
-      })
-    );
+    if (userIds.length > 0) {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const db = yield* modules.db.Database;
+          yield* db
+            .delete(modules.auth.user)
+            .where(modules.drizzle.inArray(modules.auth.user.id, userIds));
+        })
+      );
+    }
     await runtime.dispose();
   });
 
@@ -202,20 +214,31 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           .select()
           .from(modules.task.taskTable)
           .where(modules.drizzle.eq(modules.task.taskTable.userId, userId));
-        const lines = describeRows(rows);
-        return result._tag === "Failure"
-          ? [
-              `error: ${(result.failure as { message?: string }).message}`,
-              ...lines,
-            ]
-          : lines;
+        const { tagTable, taskTagTable } = modules.tag;
+        const tags = yield* db
+          .select({ name: tagTable.name, taskId: taskTagTable.taskId })
+          .from(taskTagTable)
+          .innerJoin(
+            tagTable,
+            modules.drizzle.eq(tagTable.id, taskTagTable.tagId)
+          )
+          .where(modules.drizzle.eq(tagTable.userId, userId));
+        const lines = describeRows(rows, tags);
+        if (result._tag === "Success") {
+          return lines;
+        }
+        const { failure } = result;
+        return [
+          `error: ${failure instanceof Error ? failure.message : String(failure)}`,
+          ...lines,
+        ];
       })
     );
   }
 
-  /** Steps that find a task by its date, then act on it. */
+  /** Steps that find a task by its date (null: the inbox), then act on it. */
   function forUser(service: TaskService["Service"], userId: string) {
-    const find = (date: string) =>
+    const find = (date: string | null) =>
       Effect.gen(function* () {
         const db = yield* modules.db.Database;
         const rows = yield* db
@@ -241,11 +264,15 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           userId,
           ...extra,
         }),
-      remove: (date: string, scope: DeleteScope) =>
+      remove: (date: string | null, scope: DeleteScope) =>
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
-      update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
+      update: (
+        date: string | null,
+        input: TaskUpdateInput,
+        scope: UpdateScope
+      ) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
         ),
@@ -415,6 +442,21 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         })
       )
     ).toEqual(["2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10"]);
+  });
+
+  test("deletes an inbox occurrence alone, even from following", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.remove(null, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
   });
 
   test("treats a pattern sent along unchanged, in another key order, as no change", async () => {
