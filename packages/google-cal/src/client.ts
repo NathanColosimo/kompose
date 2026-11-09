@@ -159,36 +159,48 @@ function takeTimedSkips(
 }
 
 /**
- * How far a series' start moved, when less than a day (23:00 to the next
- * day's 00:30): each meeting moves by as much. Null for a longer move.
+ * How far a series' start moved by the clock, when less than a day (23:00
+ * to the next day's 00:30): each meeting may move by as much. Null for a
+ * longer move.
  */
 function shortShift(
   from: Temporal.Instant | null,
-  to: Temporal.Instant | null
+  to: Temporal.Instant | null,
+  zone: string
 ): Temporal.Duration | null {
-  return from && to && Math.abs(from.until(to).total("hours")) < 24
-    ? from.until(to)
-    : null;
+  if (!(from && to)) {
+    return null;
+  }
+  const shift = from
+    .toZonedDateTimeISO(zone)
+    .toPlainDateTime()
+    .until(to.toZonedDateTimeISO(zone).toPlainDateTime());
+  return Math.abs(shift.total("hours")) < 24 ? shift : null;
 }
 
 /**
- * A skipped meeting's place once the series' time moves: by `shift` (a
- * move of less than a day), else on its own day at `clock`.
+ * A skipped meeting's place once the series' time moves: by the clock's
+ * `shift` (a move of less than a day) where the saved series `meets`, else
+ * on its own day at `clock`.
  */
-function placeAtNewTime(
-  moment: Temporal.Instant,
-  shift: Temporal.Duration | null,
-  clock: Temporal.PlainTime,
-  zone: string
-): string {
-  const local = moment.toZonedDateTimeISO(zone);
-  return googleDateTime(
-    shift
-      ? local.add(shift)
-      : local
+function placeAtNewTime(params: {
+  clock: Temporal.PlainTime;
+  meets: (slot: string) => boolean;
+  moment: Temporal.Instant;
+  shift: Temporal.Duration | null;
+  zone: string;
+}): string {
+  const { clock, moment, shift, zone } = params;
+  const local = moment.toZonedDateTimeISO(zone).toPlainDateTime();
+  const shifted =
+    shift && googleDateTime(local.add(shift).toZonedDateTime(zone));
+  return shifted && params.meets(shifted)
+    ? shifted
+    : googleDateTime(
+        local
           .toPlainDate()
           .toZonedDateTime({ plainTime: clock, timeZone: zone })
-  );
+      );
 }
 
 /**
@@ -310,7 +322,8 @@ function lineUpRule(params: {
     keysOf([slot]).some((key) => !hadBefore.has(key));
   const shift = shortShift(
     momentOf(splitAt ? asStart(splitAt) : master.start, zone),
-    momentOf(start, zone)
+    momentOf(start, zone),
+    zone
   );
   const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
   // Whether that day's meeting before the save was skipped or deleted: a
@@ -372,7 +385,21 @@ function lineUpRule(params: {
       atOwnTime.push(slot);
     }
     if (ruleMet) {
-      atNewTime.push(placeAtNewTime(moment, shift, change.to, zone));
+      atNewTime.push(
+        placeAtNewTime({
+          clock: change.to,
+          meets: (place) =>
+            seriesMeetsAt({
+              recurrence: savedRules,
+              seriesZone: zone,
+              slot: place,
+              start,
+            }) === true,
+          moment,
+          shift,
+          zone,
+        })
+      );
     }
   }
   const lined = skipping(
@@ -2645,7 +2672,13 @@ export function makeGoogleCalendarService(
         meetsSeveralTimesADay(
           master.recurrence ?? [],
           clockOf(master.start, zone)
-        );
+        ) ||
+        givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: params.edited,
+          start,
+        });
       const split = slotMoment(originalStart, zone);
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
