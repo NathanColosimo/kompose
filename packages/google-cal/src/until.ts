@@ -693,8 +693,8 @@ export function countedRuleMeetings(params: {
  * Made all day, which timed RDATE/EXDATE values become dates. A date covers
  * the whole day, so a cancelled added meeting leaves both lists, and a skip
  * becomes a date only when every meeting that day was skipped (the rules',
- * the added ones and the start) and no added date meets then. Without `base`, a once-a-day series' skip
- * is taken as its meeting's.
+ * the added ones and the start) and no added date meets then. Without
+ * `base`, a once-a-day series' skip is taken as its meeting's.
  */
 function allDayDates(params: {
   /** The day the rules count their days from. */
