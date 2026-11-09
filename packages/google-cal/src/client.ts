@@ -1894,7 +1894,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       const count = countOf(master.recurrence);
-      if (count === undefined || countOf(rule) !== count) {
+      if (count === null || countOf(rule) !== count) {
         return rule;
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));

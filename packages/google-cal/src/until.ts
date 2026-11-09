@@ -618,7 +618,7 @@ export function ruleTimeOf(
  * counted. Used where Google can't be asked; where it can, its own list of
  * meetings decides.
  */
-function existsOn(
+export function existsOn(
   day: Temporal.PlainDate,
   time: Temporal.PlainTime,
   timeZone: string
