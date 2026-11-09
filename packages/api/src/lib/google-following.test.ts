@@ -1260,6 +1260,37 @@ describe("a split that fails part way leaves the old series whole", () => {
     ]);
   });
 
+  test("deletes the new series when Google returns another occurrence for a changed one", async () => {
+    // Nov 30 renamed on its own; the lookup for it on the new series
+    // answers with Nov 16's.
+    const renamed = {
+      ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+      summary: "Planning (Nov 30)",
+    };
+    const google = fakeGoogle(weekly, [renamed], (request) => {
+      if (request.url.pathname.endsWith("/instances")) {
+        const seriesId = request.url.pathname.split("/").at(-2) ?? "";
+        return {
+          items: [
+            occurrenceOf(
+              { ...weekly, id: seriesId },
+              "2026-11-16T09:00:00-05:00"
+            ),
+          ],
+        };
+      }
+    });
+    expect(
+      Exit.isFailure(
+        await run(edit("following", nov16, { location: "Room 2" }))
+      )
+    ).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
+      "DELETE",
+    ]);
+  });
+
   test("deletes the new series when the cut fails and the old one reads whole", async () => {
     const google = fakeGoogle(weekly, [], (request) =>
       isCut(request) ? failure(400) : undefined

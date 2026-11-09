@@ -614,7 +614,8 @@ function subDailyEndsBefore(
 /**
  * Whether `rule` ends before `split`: its UNTIL is earlier, or its last
  * COUNT meeting is, counted from the series' `first` start. Null when that
- * can't be told.
+ * can't be told, as for a COUNT when `first` isn't known (null): an UNTIL,
+ * or no end, is told without it.
  */
 function ruleEndsBefore(
   rule: string,
