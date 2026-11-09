@@ -1656,16 +1656,42 @@ function carriedSlot(params: {
   const shortMove = Boolean(
     from && to && Math.abs(from.until(to).total("hours")) < 24
   );
-  for (const place of shortMove ? [moved, ownDay] : [ownDay, moved]) {
-    if (place && meets(place)) {
-      return place;
-    }
+  // A monthly or yearly series moved within its period (the first Monday
+  // made the second Tuesday) keeps each meeting's place in its period
+  // before a fixed shift, which can land on another of its meetings; one
+  // moved into another period shifts each meeting as far.
+  const inPeriod = periodPlace({ master, recurrence, slot, splitDay, start });
+  const byPeriod = inPeriod?.samePeriod ?? false;
+  const period = inPeriod?.place ?? null;
+  let order = [ownDay, moved, period];
+  if (shortMove) {
+    order = [moved, ownDay, period];
+  } else if (byPeriod) {
+    order = [ownDay, period, moved];
   }
+  return order.find((place) => place && meets(place)) ?? null;
+}
+
+/**
+ * Where a monthly or yearly series' meeting at `slot` lands in a split's
+ * new series by its place in its period (`samePlaceInPeriod`), and whether
+ * the split moves within its period; null for other series, or several
+ * rules.
+ */
+function periodPlace(params: {
+  master: Event;
+  recurrence: string[];
+  slot: string;
+  splitDay: Temporal.PlainDate | null;
+  start: Event["start"];
+}): { place: string | null; samePeriod: boolean } | null {
+  const { master, splitDay, start } = params;
+  const zone = repeatZone(master, start);
   const rulesOf = (lines: string[]) =>
     lines.filter((line) => line.startsWith("RRULE:"));
   const [oldRule, ...oldOthers] = rulesOf(master.recurrence ?? []);
-  const [newRule, ...newOthers] = rulesOf(recurrence);
-  const day = dayOfStart(asStart(slot), zone);
+  const [newRule, ...newOthers] = rulesOf(params.recurrence);
+  const day = dayOfStart(asStart(params.slot), zone);
   const oldStart = dayOfStart(master.start, seriesZoneOf(master));
   const newStart = dayOfStart(start, zone);
   if (
@@ -1686,8 +1712,13 @@ function carriedSlot(params: {
     }),
     zone
   );
-  const place = inPeriod && slotOf(inPeriod, zone);
-  return place && meets(place) ? place : null;
+  const yearly = newRule.includes("FREQ=YEARLY");
+  return {
+    place: inPeriod && slotOf(inPeriod, zone),
+    samePeriod:
+      splitDay.year === newStart.year &&
+      (yearly || splitDay.month === newStart.month),
+  };
 }
 
 /**

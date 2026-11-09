@@ -321,6 +321,56 @@ describe("This and following", () => {
     });
   });
 
+  describe("first and third Mondays made second and third Tuesdays", () => {
+    // From Oct 5; from Nov 2 moved to Tue Nov 10, BYDAY=2TU,3TU. December's
+    // first meeting (Dec 7) is now Dec 8, its third (Dec 21) Dec 15.
+    const monthly: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-05T09:30:00-04:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=1MO,3MO"],
+      start: { dateTime: "2026-10-05T09:00:00-04:00", timeZone: zone },
+    };
+    const toTuesdays = () =>
+      edit("following", occurrenceOf(monthly, "2026-11-02T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=2TU,3TU"],
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      });
+
+    test("skips a deleted first Monday on its month's first new meeting", async () => {
+      const google = fakeGoogle(monthly, [
+        {
+          ...occurrenceOf(monthly, "2026-12-07T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(Exit.isSuccess(await run(toTuesdays()))).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=MONTHLY;BYDAY=2TU,3TU",
+        "EXDATE:20261208T140000Z",
+      ]);
+    });
+
+    test("puts a renamed third Monday back on its month's third new meeting beside the deleted first", async () => {
+      const google = fakeGoogle(monthly, [
+        {
+          ...occurrenceOf(monthly, "2026-12-07T09:00:00-05:00"),
+          status: "cancelled",
+        },
+        {
+          ...occurrenceOf(monthly, "2026-12-21T09:00:00-05:00"),
+          summary: "Planning (Dec 21)",
+        },
+      ]);
+      expect(Exit.isSuccess(await run(toTuesdays()))).toBe(true);
+      const [created, carried] = google.writes();
+      expect(created?.body?.recurrence).toContain("EXDATE:20261208T140000Z");
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20261215T140000Z`
+      );
+    });
+  });
+
   describe("a monthly series moved to another weekday of its month", () => {
     // The third Monday from Oct 19, Dec 21's deleted or renamed on its own;
     // from Nov 16 it moves to the third Tuesday. December's meeting is
