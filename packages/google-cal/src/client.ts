@@ -1379,8 +1379,8 @@ export function makeGoogleCalendarService(
    * The rule a split's new part repeats with: `edited`, or the series'.
    * Occurrences `cancelled` after the split stay skipped where the new
    * series meets in their place, as changed ones are put back
-   * (`carriedSlot`); an added one keeps its slot. Refuses, before any write, if the rule ends
-   * before `start`.
+   * (`carriedSlot`); an added one keeps its slot. Refuses, before any
+   * write, if the rule ends before `start`.
    */
   const newSeriesRecurrence = (params: {
     cancelled: string[];
