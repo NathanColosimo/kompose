@@ -650,8 +650,6 @@ function carriedSlot(params: {
   const zone = seriesZoneOf(master);
   const meets = (at: string) =>
     seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
-  // On its own day first, with the split's change of time (a rule day that
-  // didn't move), then as many days on as the split moved.
   const splitDay = dayOfStart(asStart(params.splitStart), zone);
   const ownDayStart = onDay(start, splitDay, zone);
   const ownDay =
@@ -1504,23 +1502,28 @@ export function makeGoogleCalendarService(
       );
       // A deleted or skipped rule meeting stays skipped where the new
       // series meets in its place, as a changed one is put back (read
-      // without skips: a place already skipped is still its place); an
-      // added one keeps its slot. The new series' start is the meeting the
-      // user just saved, so no skip lands on it.
+      // without skips: a place already skipped is still its place, and in
+      // the new start's form: made all day or timed, it's placed by day);
+      // an added one keeps its slot. No skip lands on the new series'
+      // start, the meeting the user just saved, or on an added meeting it
+      // keeps.
       const unskipped = fromSplit.filter((line) => !line.startsWith("EXDATE"));
       const startSlot = slotOf(start, zone);
+      const splitStart = inFormOf(originalStart, start, zone) ?? originalStart;
       const placed = [...params.cancelled, ...ownSkips].flatMap((slot) => {
         const at = isAdded(slot)
-          ? slot
-          : (carriedSlot({
+          ? null
+          : carriedSlot({
               master,
               recurrence: unskipped,
-              slot,
-              splitStart: originalStart,
+              slot: inFormOf(slot, start, zone) ?? slot,
+              splitStart,
               start,
-            }) ?? slot);
-        const formed = inFormOf(at, start, zone);
-        return formed && formed !== startSlot ? [formed] : [];
+            });
+        const formed = inFormOf(at ?? slot, start, zone);
+        const ontoAdded =
+          at !== null && formed !== null && addsSlot(fromSplit, formed, zone);
+        return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
       });
       const recurrence = skipping(
         rule,
@@ -2340,7 +2343,7 @@ export function makeGoogleCalendarService(
       if (!Array.isArray(carried)) {
         return yield* Effect.fail(refused(carried));
       }
-      const created = yield* splitSeries({
+      return yield* splitSeries({
         calendarId,
         carried,
         destinationCalendarId,
@@ -2348,8 +2351,6 @@ export function makeGoogleCalendarService(
         newSeries: sanitizeEventPayload({ ...master, ...slot, recurrence }),
         originalStart,
       });
-
-      return created;
     }
   );
 
