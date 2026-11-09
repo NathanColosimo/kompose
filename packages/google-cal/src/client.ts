@@ -256,9 +256,9 @@ function withLength(
  * doesn't move it), and a new end alone changes only the length. Only an
  * edit to the first meeting moves the series' date, and only to a day its
  * rules are known to meet on: Google always meets at a series' start, so
- * any other day would add a meeting the rules don't make. Elsewhere a date move is "This
- * and following" only. Google repeats a series in its start's zone, so
- * times are read in it.
+ * any other day would add a meeting the rules don't make. Elsewhere a date
+ * move is "This and following" only. Google repeats a series in its
+ * start's zone, so times are read in it.
  */
 function entireSeriesTimes(
   edited: CreateEvent,
