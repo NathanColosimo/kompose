@@ -178,6 +178,32 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
     .sort((a, b) => ((a.email ?? "") < (b.email ?? "") ? -1 : 1));
 }
 
+/**
+ * The guests a series write sends: the edit's list, each keeping the
+ * answer and comment the series has for them (one occurrence's answers
+ * are its own). A guest the edit adds is sent as the edit has them.
+ */
+export function seriesAttendees(
+  edited: Attendee[],
+  series: Attendee[] | undefined
+): Attendee[] {
+  const own = new Map((series ?? []).map((guest) => [guest.email, guest]));
+  return edited.map((guest) => {
+    const before = guest.email === undefined ? undefined : own.get(guest.email);
+    if (!before) {
+      return guest;
+    }
+    const { comment: _comment, responseStatus: _response, ...rest } = guest;
+    return {
+      ...rest,
+      ...(before.comment === undefined ? {} : { comment: before.comment }),
+      ...(before.responseStatus === undefined
+        ? {}
+        : { responseStatus: before.responseStatus }),
+    };
+  });
+}
+
 /** JSON with each object's keys sorted, so key order never differs. */
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, inner: unknown) =>

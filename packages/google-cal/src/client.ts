@@ -33,6 +33,7 @@ import {
   SeriesRefusalSchema,
   sameLength,
   sameTime,
+  seriesAttendees,
 } from "./series-edits";
 import {
   seriesSlotAt,
@@ -380,13 +381,21 @@ function newTimesKeep(params: {
     return false;
   }
   const zone = repeatZone(master, times.start);
+  const seriesZone = seriesZoneOf(master);
+  const meeting = seriesSlotAt(times, slot);
   // Times of its own only if it was moved off its slot (or given its own
-  // length); one at its slot follows the series to the new time.
-  const ownTimes =
-    "start" in changesOwnTo(occurrence, master, seriesZoneOf(master));
-  const own = Object.keys(
-    ownChanges(occurrence, master, seriesSlotAt(times, slot), zone)
-  ).filter((field) => ownTimes || !(field === "start" || field === "end"));
+  // length); one at its slot follows the series to the new time. One
+  // moved to the new meeting's start, at the series' length, keeps its
+  // start there, and its length was the series' to change.
+  const ownTimes = "start" in changesOwnTo(occurrence, master, seriesZone);
+  const ownLength =
+    lengthMs(occurrence.start, occurrence.end, seriesZone) !==
+    lengthMs(master.start, master.end, seriesZone);
+  const timesAtStake =
+    ownTimes && (ownLength || !sameTime(occurrence.start, meeting.start, zone));
+  const own = Object.keys(ownChanges(occurrence, master, meeting, zone)).filter(
+    (field) => timesAtStake || !(field === "start" || field === "end")
+  );
   return (
     seriesMeetsAt({
       recurrence,
@@ -698,6 +707,8 @@ function keptAfterEdit(params: {
   edited: CreateEvent;
   master: Event;
   movesSlots: boolean;
+  /** Whether the save moves the series' start (`updateEventAll`). */
+  movesStart: boolean;
   opened: Event;
   rule: string[];
   times: { end: Event["end"]; start: Event["start"] };
@@ -713,9 +724,8 @@ function keptAfterEdit(params: {
       : { carried, recurrence: [] };
   }
   const zone = seriesZoneOf(master);
-  const recurrence = sameTime(times.start, master.start, zone)
-    ? rule
-    : withoutOwnSkipAt(
+  const recurrence = params.movesStart
+    ? withoutOwnSkipAt(
         skipping(
           rule,
           deletedSlots({ cancelled, master, start: times.start }),
@@ -724,7 +734,8 @@ function keptAfterEdit(params: {
         master,
         times.start,
         params.edited.recurrence
-      );
+      )
+    : rule;
   return (
     seriesChangeRefusal({
       ...params,
@@ -752,13 +763,16 @@ function seriesChangeRefusal(params: {
   master: Event;
   /** Whether the start or the rule changes (else only the length). */
   movesSlots: boolean;
+  /** Whether the save moves the series' start. */
+  movesStart: boolean;
   opened: Event;
   recurrence: string[];
   /** The rules the save sends; left out, the series' own. */
   saved: string[] | undefined;
   times: { end: Event["end"]; start: Event["start"] };
 }): SeriesRefusal | null {
-  const { changed, master, movesSlots, opened, recurrence, times } = params;
+  const { changed, master, movesSlots, movesStart, opened, recurrence, times } =
+    params;
   const zone = seriesZoneOf(master);
   const seriesOnly = givesNewRepeat({
     from: master.start,
@@ -766,7 +780,6 @@ function seriesChangeRefusal(params: {
     saved: params.saved,
     start: times.start,
   });
-  const movesStart = !sameTime(times.start, master.start, zone);
   const lost = changed
     .filter(({ occurrence, originalStart }) => {
       if (movesStart && occurrence.id === opened.id) {
@@ -1547,7 +1560,18 @@ export function makeGoogleCalendarService(
     master: Event
   ) => {
     const changes = changedFields(edited, occurrence);
-    return { changes, event: { ...sanitizeEventPayload(master), ...changes } };
+    const event = { ...sanitizeEventPayload(master), ...changes };
+    // A guest list the edit changes keeps each guest's answer to the
+    // series, not to the occurrence it was edited through.
+    return {
+      changes,
+      event: changes.attendees
+        ? {
+            ...event,
+            attendees: seriesAttendees(changes.attendees, master.attendees),
+          }
+        : event,
+    };
   };
 
   /**
@@ -1564,6 +1588,8 @@ export function makeGoogleCalendarService(
     changes: Partial<CreateEvent>;
     edited: CreateEvent;
     master: Event;
+    /** Whether the save moves the series' start. */
+    movesStart: boolean;
     opened: Event;
     times: { end: Event["end"]; start: Event["start"] };
   }) =>
@@ -1573,11 +1599,10 @@ export function makeGoogleCalendarService(
       const rule = params.edited.recurrence
         ? withSeriesSkips(params.edited.recurrence, master)
         : (master.recurrence ?? []);
-      const movesStart = !sameTime(times.start, master.start, zone);
       // Read for what it means: the series' own skips, written again in
       // another form, aren't a new rule.
       const movesSlots =
-        movesStart ||
+        params.movesStart ||
         recurrenceValues(rule, zone) !==
           recurrenceValues(master.recurrence ?? [], zone);
       if (!(movesSlots || !sameLength(times, master, zone))) {
@@ -1623,6 +1648,9 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
       }
 
+      // Worked out once: which refusal applies, where skips go and whether
+      // the opened occurrence gets its own write all turn on it.
+      const movesStart = !sameTime(times.start, master.start, zone);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
       const { carried, recurrence } = yield* keptOccurrences({
@@ -1630,10 +1658,10 @@ export function makeGoogleCalendarService(
         changes,
         edited,
         master,
+        movesStart,
         opened: currentEvent,
         times,
       });
-      const movesStart = !sameTime(times.start, master.start, zone);
 
       const payload: CreateEvent = {
         ...event,
@@ -1654,6 +1682,11 @@ export function makeGoogleCalendarService(
             ...payload,
             calendarId,
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+            // Google writes attachments only when asked to: a first
+            // meeting's own, carried by "Repeat: None", or ones cleared.
+            ...("attachments" in carried || "attachments" in changes
+              ? { supportsAttachments: true }
+              : {}),
           }),
         catch: (cause) => {
           logGoogleEventUpdateFailure({
