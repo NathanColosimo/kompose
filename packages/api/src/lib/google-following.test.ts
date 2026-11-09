@@ -357,6 +357,32 @@ describe("This and following", () => {
     ]);
   });
 
+  test("a refusal under a rule not read here says it may keep the changes", async () => {
+    // Weeks 46 to 49 on Mondays, a rule not read here; Nov 30 renamed. From
+    // Nov 16 moved to 10:00: whether the new series meets Nov 30 can't be
+    // told, so the refusal is marked unsure.
+    const byWeek: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48,49;BYDAY=MO"],
+    };
+    fakeGoogle(byWeek, [
+      {
+        ...occurrenceOf(byWeek, "2026-11-30T09:00:00-05:00"),
+        summary: "Planning (Nov 30)",
+      },
+    ]);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(byWeek, "2026-11-16T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: { reason: "dropsChangedOccurrences", unsure: true },
+    });
+  });
+
   describe("first and third Mondays made second and third Tuesdays", () => {
     // From Oct 5; from Nov 2 moved to Tue Nov 10, BYDAY=2TU,3TU. December's
     // first meeting (Dec 7) is now Dec 8, its third (Dec 21) Dec 15.
