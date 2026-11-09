@@ -15,7 +15,7 @@ const DAY_MAP: Record<string, number> = {
 /** Safety cap when count is absent, even if an until date is set. */
 const DEFAULT_MAX_OCCURRENCES = 52; // ~1 year of weekly occurrences
 
-/** The API's error when a repeat has no start date. */
+/** The API's error and the editors' note when a repeat has no start date. */
 export const PICK_START_TO_REPEAT = "Pick a start date to repeat this task.";
 
 /**

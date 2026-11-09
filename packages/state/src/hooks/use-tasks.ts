@@ -24,6 +24,16 @@ import { uuidv7 } from "uuidv7";
 import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
+import { type HeldSave, reportHeldSaveFailure } from "../held-save";
+import { mergeSavedTasks, withoutUnchangedPattern } from "../task-cache";
+
+interface UpdateTaskVariables extends HeldSave {
+  id: string;
+  /** False to wait for the server instead of updating the cache first. */
+  optimistic?: boolean;
+  scope: UpdateScope;
+  task: TaskUpdateDecoded;
+}
 
 interface UseTasksOptions {
   refetchOnMount?: boolean | "always";
@@ -43,18 +53,22 @@ export function useTasks(options: UseTasksOptions = {}) {
   });
 
   const createTask = useMutation({
-    mutationFn: async (task: ClientTaskInsertDecoded) => {
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      quiet: _quiet,
+      ...task
+    }: ClientTaskInsertDecoded & HeldSave) => {
       const encoded = clientTaskInsertCodec.encode(task);
       const results = await orpc.tasks.create(encoded);
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onMutate: async (task: ClientTaskInsertDecoded) => {
+    onMutate: async (task: ClientTaskInsertDecoded & HeldSave) => {
       if (task.recurrence) {
         return { optimisticId: undefined, previousTasks: undefined };
       }
@@ -116,15 +130,7 @@ export function useTasks(options: UseTasksOptions = {}) {
   });
 
   const updateTask = useMutation({
-    mutationFn: async ({
-      id,
-      task,
-      scope,
-    }: {
-      id: string;
-      task: TaskUpdateDecoded;
-      scope: UpdateScope;
-    }) => {
+    mutationFn: async ({ id, task, scope }: UpdateTaskVariables) => {
       const encoded = taskUpdateCodec.encode(task);
       const results = await orpc.tasks.update({
         id,
@@ -133,29 +139,32 @@ export function useTasks(options: UseTasksOptions = {}) {
       });
       return results.map((t) => taskSelectCodec.parse(t));
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
+    onError: (err, variables, context) => {
+      reportHeldSaveFailure(notifyError, err, variables);
       if (context?.previousTasks) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onMutate: async ({
-      id,
-      task,
-      scope,
-    }: {
-      id: string;
-      task: TaskUpdateDecoded;
-      scope: UpdateScope;
-    }) => {
-      // Only optimistic update for scope="this" (single task)
-      if (scope !== "this") {
+    onMutate: async ({ id, optimistic, task, scope }: UpdateTaskVariables) => {
+      // An editor that holds open until its save ends (its Save or Mark done)
+      // skips this: an early update could unmount it (the task leaves its
+      // list) or roll its fields back over the draft on failure.
+      if (optimistic === false) {
         return { previousTasks: undefined };
       }
-
+      // Optimistic for scope "this" (one task). A "following" save that sets
+      // a status applies it to this task alone (the server keeps it), so
+      // that status shows at once too; the rest waits for the server.
+      if (scope !== "this" && task.status === undefined) {
+        return { previousTasks: undefined };
+      }
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
+      const optimisticEdit: TaskUpdateDecoded =
+        scope === "this"
+          ? withoutUnchangedPattern(previousTasks ?? [], id, task)
+          : { status: task.status };
 
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
         old?.map((t) => {
@@ -164,13 +173,15 @@ export function useTasks(options: UseTasksOptions = {}) {
           }
 
           const nextTags =
-            task.tagIds === undefined
+            optimisticEdit.tagIds === undefined
               ? t.tags
-              : tags.filter((tag) => (task.tagIds ?? []).includes(tag.id));
+              : tags.filter((tag) =>
+                  (optimisticEdit.tagIds ?? []).includes(tag.id)
+                );
 
           return {
             ...t,
-            ...task,
+            ...optimisticEdit,
             createdAt: t.createdAt,
             tags: nextTags,
             updatedAt: Temporal.Now.instant(),
@@ -179,6 +190,17 @@ export function useTasks(options: UseTasksOptions = {}) {
       );
 
       return { previousTasks };
+    },
+    // Without the early update, write the saved tasks in as soon as the
+    // server answers, so the editor that waited closes onto them (the
+    // refetch below can take a while on a cold start).
+    onSuccess: (saved, { id, optimistic, scope, task }) => {
+      if (optimistic !== false) {
+        return;
+      }
+      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
+        old ? mergeSavedTasks(old, saved, { id, scope, task }) : old
+      );
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });

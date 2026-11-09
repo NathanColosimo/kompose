@@ -1,6 +1,11 @@
-import { sameRecurrence } from "@kompose/api/lib/recurrence";
+import {
+  PICK_START_TO_REPEAT,
+  repeatEndsBeforeStart,
+  sameRecurrence,
+} from "@kompose/api/lib/recurrence";
 import type {
   TaskRecurrence,
+  TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
@@ -361,4 +366,110 @@ export function getTaskUpdateScopeDecision(params: {
   }
 
   return { action: "prompt", defaultScope: "this" };
+}
+
+/**
+ * The error for a Mark done (or not done) that failed while the editor held
+ * open on it: what failed, and that the edits are still in the editor.
+ */
+export function markStatusFailureMessage(
+  status: TaskSelectDecoded["status"]
+): string {
+  return status === "done"
+    ? "Couldn't mark the task done. Your changes are still here."
+    : "Couldn't reopen the task. Your changes are still here.";
+}
+
+/**
+ * The blocking note, naming both dates so it says what to fix: "The repeat
+ * ends Nov 13, before the task starts on Nov 14."
+ */
+function repeatEndsBeforeStartText(
+  until: string,
+  startDate: Temporal.PlainDate
+): string {
+  // A non-breaking space keeps "Nov 14" together when the note wraps.
+  const day = (date: Temporal.PlainDate) =>
+    date
+      .toLocaleString(undefined, { day: "numeric", month: "short" })
+      .replaceAll(" ", "\u00A0");
+  return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
+}
+
+/**
+ * Whether the editor's repeat stops it saving: only a pattern the edit sets
+ * (a new task's, or a changed one) that ends before the start. An unchanged
+ * series pattern isn't sent, so moving its last occurrence past the end
+ * ("Daily until Nov 14", Nov 14 moved to Nov 16) still saves.
+ */
+export function repeatBlocksSave(params: {
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+}): boolean {
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return false;
+  }
+  // A repeat counts from the start date, so it needs one.
+  if (params.next && !params.startDate) {
+    return true;
+  }
+  return repeatEndsBeforeStart(params.next, params.startDate?.toString());
+}
+
+/**
+ * What the editor says under Repeat: why it can't save ("ends before the
+ * task starts", blocking), else what a change to a recurring task's
+ * pattern will do (it applies from this occurrence on, with no scope
+ * question). Null when there's nothing to say.
+ */
+export function repeatNote(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  previous: TaskRecurrence | null;
+  startDate: Temporal.PlainDate | null | undefined;
+  /**
+   * An occurrence moved to the inbox (no date): a repeat change takes it
+   * out of its series, or makes it a series of its own.
+   */
+  undatedMember?: boolean;
+}): { blocking: boolean; text: string } | null {
+  if (repeatBlocksSave(params)) {
+    return {
+      blocking: true,
+      text:
+        params.next?.until && params.startDate
+          ? repeatEndsBeforeStartText(params.next.until, params.startDate)
+          : PICK_START_TO_REPEAT,
+    };
+  }
+  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+    return null;
+  }
+  const text = repeatChangeText(params);
+  return text ? { blocking: false, text } : null;
+}
+
+/**
+ * What a changed repeat will do, shown before Save. An inbox occurrence
+ * leaves its series or becomes one of its own; a series' change applies
+ * from the edited occurrence on, with no scope question. Null for a task
+ * that doesn't repeat.
+ */
+function repeatChangeText(params: {
+  isRecurring: boolean;
+  next: TaskRecurrence | null | undefined;
+  undatedMember?: boolean;
+}): string | null {
+  if (params.undatedMember) {
+    return params.next
+      ? "Makes this task a series of its own."
+      : "Takes this task out of its series.";
+  }
+  if (!params.isRecurring) {
+    return null;
+  }
+  return params.next
+    ? "Applies to this and later occurrences."
+    : "Stops repeating here. Later ones you haven't edited are removed.";
 }
