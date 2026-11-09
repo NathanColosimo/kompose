@@ -60,6 +60,7 @@ import {
   meetsSeveralTimesADay,
   momentOf,
   type RecurrenceValue,
+  readRecurrenceValue,
   SUB_DAILY,
   startInstant,
 } from "./until";
@@ -436,19 +437,40 @@ function recurrenceValues(recurrence: string[], zone: string): string {
 
 /**
  * The rules a save writes: the series' own when it sends none, and a rule
- * sent alone with the series' skips and added days, which a client
- * rebuilding the rule may leave out ("Repeat: None" stays none).
+ * sent alone with the series' skips and the added days still on, which a
+ * client rebuilding the rule may leave out ("Repeat: None" stays none).
+ * An added day deleted (`cancelled`) or skipped shows nothing: left out,
+ * it goes.
  */
-function savedRule(saved: string[] | undefined, master: Event): string[] {
+function savedRule(
+  saved: string[] | undefined,
+  master: Event,
+  cancelled: string[]
+): string[] {
   if (!saved) {
     return master.recurrence ?? [];
   }
   if (!repeats(saved)) {
     return saved;
   }
-  const added = saved.some((line) => line.startsWith("RDATE"))
-    ? []
-    : (master.recurrence ?? []).filter((line) => line.startsWith("RDATE"));
+  if (saved.some((line) => line.startsWith("RDATE"))) {
+    return withSeriesSkips(saved, master);
+  }
+  const own = master.recurrence ?? [];
+  const zone = seriesZoneOf(master);
+  const gone = new Set([
+    ...dateValues(own, "EXDATE", zone).map(skipKey),
+    ...cancelled.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
+    }),
+  ]);
+  const added = keepingDateValues(
+    own.filter((line) => line.startsWith("RDATE")),
+    "RDATE",
+    zone,
+    (value) => !gone.has(skipKey(value))
+  );
   return withSeriesSkips([...saved, ...added], master);
 }
 
@@ -1959,7 +1981,7 @@ export function makeGoogleCalendarService(
       const zone = seriesZoneOf(master);
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
-        savedRule(params.edited, master),
+        savedRule(params.edited, master, params.cancelled),
         originalStart,
         zone,
         "from"

@@ -407,6 +407,36 @@ describe("This and following", () => {
     ]);
   });
 
+  test("a new repeat sent alone drops a deleted added day after the split", async () => {
+    // As above, Nov 25 deleted on its own: it shows nothing, so the rule
+    // sent without it leaves it out.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261125T090000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-25T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "RDATE"
+    );
+  });
+
   test("a new time across midnight moves later meetings by as much", async () => {
     // Daily 23:30; Nov 20 deleted and Nov 22 renamed on their own. From
     // Nov 16, moved to Nov 17 00:30: each later meeting is an hour later,
