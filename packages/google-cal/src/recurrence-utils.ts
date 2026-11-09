@@ -661,6 +661,48 @@ function subDailyEndsBefore(
  * can't be told, as for a COUNT when `first` isn't known (null): an UNTIL,
  * or no end, is told without it.
  */
+/** `lastCountedMeeting`'s answers, by rule and start; cleared when full. */
+const LAST_COUNTED = new Map<string, number | null>();
+const LAST_COUNTED_LIMIT = 1000;
+
+/**
+ * A timed COUNT rule's last meeting, in epoch ms; null when it can't be
+ * told. Kept once worked out: it doesn't change, and a save asks for it
+ * once or more per skip, each a walk of the whole COUNT.
+ */
+function lastCountedMeeting(params: {
+  clock: Temporal.PlainTime;
+  count: number;
+  first: Temporal.PlainDate;
+  rule: string;
+  time: Temporal.PlainTime;
+  timeZone: string;
+}): number | null {
+  const { clock, count, first, rule, time, timeZone } = params;
+  const key = [rule, first, clock, time, timeZone].join("|");
+  const known = LAST_COUNTED.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  const meetings = countedRuleMeetings({
+    base: clock,
+    count,
+    from: first,
+    rule,
+    time,
+    timeZone,
+  });
+  let last: number | null = null;
+  for (const meeting of meetings ?? []) {
+    last = last === null ? meeting : Math.max(last, meeting);
+  }
+  if (LAST_COUNTED.size >= LAST_COUNTED_LIMIT) {
+    LAST_COUNTED.clear();
+  }
+  LAST_COUNTED.set(key, last);
+  return last;
+}
+
 function ruleEndsBefore(
   rule: string,
   first: RecurrenceValue | null,
@@ -688,15 +730,15 @@ function ruleEndsBefore(
   // Counted meeting by meeting: a time the clocks skip isn't a meeting
   // (RFC 5545; see until.ts `existsOn`).
   if (clock && time) {
-    const meetings = countedRuleMeetings({
-      base: clock,
+    const last = lastCountedMeeting({
+      clock,
       count,
-      from: first.day,
+      first: first.day,
       rule,
       time,
       timeZone: seriesZone,
     });
-    return meetings ? Math.max(...meetings) < split.epochMilliseconds : null;
+    return last === null ? null : last < split.epochMilliseconds;
   }
   const last = countedRuleDays(rule, first.day, count)?.at(-1);
   if (!last) {
