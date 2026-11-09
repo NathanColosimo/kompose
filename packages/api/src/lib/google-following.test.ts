@@ -321,6 +321,42 @@ describe("This and following", () => {
     });
   });
 
+  test("first Mondays and third Tuesdays made third Tuesdays keep a live meeting a deleted one's place shares", async () => {
+    // From Oct 5; Dec 15 deleted. From Nov 2 moved to Tue Nov 17,
+    // BYDAY=3TU: December's first meeting, Dec 7, is now Dec 15. Dec 15
+    // stays on.
+    const monthly: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-05T09:30:00-04:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=1MO,3TU"],
+      start: { dateTime: "2026-10-05T09:00:00-04:00", timeZone: zone },
+    };
+    const google = fakeGoogle(monthly, [
+      {
+        ...occurrenceOf(monthly, "2026-12-15T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(
+            "following",
+            occurrenceOf(monthly, "2026-11-02T09:00:00-05:00"),
+            {
+              end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+              recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3TU"],
+              start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+            }
+          )
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=MONTHLY;BYDAY=3TU",
+    ]);
+  });
+
   describe("first and third Mondays made second and third Tuesdays", () => {
     // From Oct 5; from Nov 2 moved to Tue Nov 10, BYDAY=2TU,3TU. December's
     // first meeting (Dec 7) is now Dec 8, its third (Dec 21) Dec 15.
