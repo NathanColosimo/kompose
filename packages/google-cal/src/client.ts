@@ -1214,8 +1214,10 @@ function seriesChangeRefusal(params: {
   /** The occurrences deleted on their own, by original start. */
   cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
-  /** The fields the edit changed. */
+  /** The fields the edit changed, as the series is written with them. */
   changes: Partial<CreateEvent>;
+  /** The form as sent, for what the opened occurrence was given. */
+  edited: CreateEvent;
   master: Event;
   /** Whether the start or the rule changes (else only the length). */
   movesSlots: boolean;
@@ -1273,12 +1275,27 @@ function seriesChangeRefusal(params: {
           });
         // An exclusion rule may drop even the series' start.
         const replaced = meetsThere === true;
+        // A field of its own the series takes is kept only when the series
+        // is written with what the form gave it (a guest list merged into
+        // the series' own isn't).
+        const takes = (field: keyof CreateEvent) =>
+          field in params.changes &&
+          Object.keys(
+            changedFields({ [field]: params.changes[field] }, {
+              ...occurrence,
+              ...params.edited,
+            } as Event)
+          ).length === 0;
         return (
           movedDay ||
           !replaced ||
-          Object.keys(
-            changesOwnTo(occurrence, master, zone, params.changes)
-          ).some((field) => field !== "start" && field !== "end")
+          Object.keys(changesOwnTo(occurrence, master, zone)).some(
+            (field) =>
+              field !== "start" &&
+              field !== "end" &&
+              // Object.keys loses the key type: each is a CreateEvent field.
+              !takes(field as keyof CreateEvent)
+          )
         );
       }
       if (movesStart) {
@@ -3633,7 +3650,10 @@ export function makeGoogleCalendarService(
       // ("Repeat: None").
       const { carried, recurrence } = yield* keptOccurrences({
         calendarId,
-        changes,
+        // As the series is written: a guest list merged into its own.
+        changes: changes.attendees
+          ? { ...changes, attendees: event.attendees }
+          : changes,
         edited,
         master,
         movesStart,
