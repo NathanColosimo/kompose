@@ -134,7 +134,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "endsBeforeStart":
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "countUnknown":
-      return "This and following isn't available for this series: how many times it has left to repeat can't be worked out. Change this and following to end after a different number of times or on a date, then try again.";
+      return "This and following isn't available for this series: how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
     case "severalTimesADay":
       return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
