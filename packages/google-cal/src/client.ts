@@ -1266,6 +1266,16 @@ function sameRepeat(a: string[], b: string[], zone: string): boolean {
   return rules(a) === rules(b);
 }
 
+/** What Google's list of a series' meetings told a kept COUNT. */
+interface CountFromList {
+  /** Skips it knows hold a place, by moment. */
+  heldPlaces: number[];
+  /** Skips the COUNT left out (`carryCountFromList`), by moment. */
+  leftOut: number[];
+  /** The meetings' original starts. */
+  listed: string[];
+}
+
 /**
  * Where a split's deleted (`cancelled`) and skipped (`skips`) meetings, by
  * original start, stay skipped in the new series (`rule`).
@@ -1280,18 +1290,15 @@ function sameRepeat(a: string[], b: string[], zone: string): boolean {
  *   whose place another one already takes (`lostPlaces`): its position is
  *   gone with it. A deleted one that isn't an added day is a rule
  *   meeting, as Google lists only a series' meetings; so is a skip on
- *   Google's list (`listed`).
+ *   Google's list (`fromList`).
  *
  * Null when the kept COUNT's change can't be told.
  */
 function placeSkips(params: {
   cancelled: string[];
-  /** Skips a COUNT read from Google's list knows hold a place, by moment. */
-  heldPlaces: number[];
+  /** What Google's list told the kept COUNT, when it was read for it. */
+  fromList: CountFromList | null;
   keeps: boolean;
-  /** Skips the kept COUNT left out (`carryCountFromList`), by moment. */
-  leftOut: number[];
-  listed: string[] | null;
   master: Event;
   originalStart: string;
   rule: string[];
@@ -1334,13 +1341,13 @@ function placeSkips(params: {
     const moment = slotMoment(slot, zone);
     if (
       cancelled.includes(slot) ||
-      (moment && params.heldPlaces.includes(moment.epochMilliseconds))
+      (moment && params.fromList?.heldPlaces.includes(moment.epochMilliseconds))
     ) {
       return true;
     }
     // Google may leave a skipped meeting off its list: only one it lists
     // is told to be a meeting.
-    return params.listed?.includes(slot) ? true : null;
+    return params.fromList?.listed.includes(slot) ? true : null;
   };
   // Each rule meeting once, however many skips it has.
   const lostPlaces = new Set<number>();
@@ -1389,7 +1396,9 @@ function placeSkips(params: {
     );
   // Left out of a COUNT read from Google's list: it holds no place.
   const leftOutAt = (moment: Temporal.Instant | null) =>
-    Boolean(moment && params.leftOut.includes(moment.epochMilliseconds));
+    Boolean(
+      moment && params.fromList?.leftOut.includes(moment.epochMilliseconds)
+    );
   const placed = [...cancelled, ...params.skips].flatMap((slot) => {
     const added = addsSlot(master.recurrence ?? [], slot, zone);
     const at = placeOf(slot, added);
@@ -2249,7 +2258,8 @@ export function makeGoogleCalendarService(
       // skip (`moved`), less one for each skip with no place of its own in
       // the new series (`lostPlaces`) and each that falls past its end
       // (`countWithinSkips`). A COUNT the user set, or one with a new
-      // repeat, is theirs, less nothing.
+      // repeat, is theirs, plus one for a moved meeting's skip and less
+      // nothing else.
       const keeps = keepsCount({
         master,
         newRepeat: params.newRepeat,
@@ -2265,7 +2275,7 @@ export function makeGoogleCalendarService(
       if (!carried) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const { heldPlaces, leftOut, listed, rule: counted } = carried;
+      const { fromList, rule: counted } = carried;
       const moved = movedOffRule({
         master,
         originalStart,
@@ -2319,10 +2329,8 @@ export function makeGoogleCalendarService(
       );
       const skips = placeSkips({
         cancelled: params.cancelled,
-        heldPlaces,
+        fromList,
         keeps,
-        leftOut,
-        listed,
         master,
         originalStart,
         rule: final,
@@ -2366,8 +2374,8 @@ export function makeGoogleCalendarService(
    * A split's new `rule` with a kept COUNT set to the occurrences left
    * after `originalStart`. Unchanged if there is none, or if the user
    * changed the COUNT: a changed COUNT is the new part's own number of
-   * meetings. Null if what's left can't be known. With Google's list of
-   * the series' meetings (`listed`) when it was read for it.
+   * meetings. Null if what's left can't be known. With what Google's list
+   * of the series' meetings told it (`fromList`) when it was read for it.
    */
   const carriedCount = (params: {
     calendarId: string;
@@ -2380,7 +2388,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       if (!params.keeps) {
-        return { heldPlaces: [], leftOut: [], listed: null, rule };
+        return { fromList: null, rule };
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
       if (!seriesStart) {
@@ -2395,16 +2403,18 @@ export function makeGoogleCalendarService(
       // A rule that can be read is counted without asking Google.
       const exact = carryCountExactly(rule, counting);
       if (exact) {
-        return { heldPlaces: [], leftOut: [], listed: null, rule: exact };
+        return { fromList: null, rule: exact };
       }
       const starts = yield* listOccurrenceStarts(calendarId, master);
-      const fromList = carryCountFromList(rule, { ...counting, starts });
+      const counted = carryCountFromList(rule, { ...counting, starts });
       return (
-        fromList && {
-          heldPlaces: fromList.heldPlaces,
-          leftOut: fromList.leftOut,
-          listed: starts,
-          rule: fromList.recurrence,
+        counted && {
+          fromList: {
+            heldPlaces: counted.heldPlaces,
+            leftOut: counted.leftOut,
+            listed: starts,
+          },
+          rule: counted.recurrence,
         }
       );
     });
