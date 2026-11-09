@@ -273,7 +273,7 @@ export function changeCount(recurrence: string[], by: number): string[] {
     const count = ruleCount(line);
     return count === null
       ? line
-      : line.replace(COUNT_PART, `$1COUNT=${Math.max(1, count + by)}`);
+      : line.replace(COUNT_PART, `$1COUNT=${count + by}`);
   });
 }
 

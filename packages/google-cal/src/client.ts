@@ -1405,12 +1405,12 @@ export function makeGoogleCalendarService(
         seriesZoneOf(master),
         "from"
       );
-      const counted = yield* carriedCount(
+      const counted = yield* carriedCount({
         calendarId,
         master,
-        fromSplit,
-        originalStart
-      );
+        originalStart,
+        rule: fromSplit,
+      });
       if (!counted) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
@@ -1457,13 +1457,14 @@ export function makeGoogleCalendarService(
    * changed the COUNT: a changed COUNT is the new part's own number of
    * meetings. Null if what's left can't be known.
    */
-  const carriedCount = (
-    calendarId: string,
-    master: Event,
-    rule: string[],
-    originalStart: string
-  ) =>
+  const carriedCount = (params: {
+    calendarId: string;
+    master: Event;
+    originalStart: string;
+    rule: string[];
+  }) =>
     Effect.gen(function* () {
+      const { calendarId, master, originalStart, rule } = params;
       const count = countOf(master.recurrence);
       if (count === undefined || countOf(rule) !== count) {
         return rule;
