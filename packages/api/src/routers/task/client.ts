@@ -287,7 +287,7 @@ function getDueDateForOccurrence(params: {
  * recurrence unchanged, treat it as "no recurrence update" instead of a
  * destructive recurrence-change request.
  */
-function shouldCompareFollowingRecurrenceChange(
+function shouldCompareRecurrenceChange(
   task: TaskSelect,
   input: TaskUpdateInput
 ): boolean {
@@ -325,7 +325,7 @@ const changesSeriesRecurrence = (
   input: TaskUpdateInput
 ) =>
   Effect.gen(function* () {
-    if (!shouldCompareFollowingRecurrenceChange(task, input)) {
+    if (!shouldCompareRecurrenceChange(task, input)) {
       return false;
     }
     const comparableRecurrence = yield* resolveComparableRecurrence(
