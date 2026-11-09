@@ -460,6 +460,85 @@ describe("This and following", () => {
     ]);
   });
 
+  test("refuses to carry a changed occurrence onto an added meeting kept", async () => {
+    // Mondays 9:00 plus an added Tue Dec 1 9:00; Nov 30 moved to 13:00 on
+    // its own. From Nov 16 moved to Tuesdays: Nov 30's place is Dec 1,
+    // which the added meeting holds.
+    const added: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261201T090000",
+      ],
+    };
+    const google = fakeGoogle(added, [
+      occurrenceOf(added, "2026-11-30T09:00:00-05:00", {
+        end: "2026-11-30T13:30:00-05:00",
+        start: "2026-11-30T13:00:00-05:00",
+      }),
+    ]);
+    expect(
+      await refusalOf(
+        edit("following", occurrenceOf(added, "2026-11-16T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+          recurrence: [
+            "RRULE:FREQ=WEEKLY;BYDAY=TU",
+            "RDATE;TZID=America/New_York:20261201T090000",
+          ],
+          start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-30T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("Repeat: None from an occurrence ends the series there, later changes too", async () => {
+    // Nov 30 renamed on its own; from Nov 16, the repeat is ended.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        summary: "Planning (renamed)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(await run(edit("following", nov16, { recurrence: [] })))
+    ).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
+      "PUT",
+    ]);
+  });
+
+  test("made all day, a renamed occurrence is carried to its day", async () => {
+    // Nov 30 renamed on its own; from Nov 16 made all day.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        summary: "Planning (renamed)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { date: "2026-11-17" },
+            start: { date: "2026-11-16" },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261130`
+    );
+    expect(carried?.body).toMatchObject({ summary: "Planning (renamed)" });
+  });
+
   test("a new time carries a deleted occurrence's skip to it", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to 10:00.
     // A skip left at 9:00 would match nothing, and Nov 30 would come back.

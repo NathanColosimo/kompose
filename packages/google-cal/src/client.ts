@@ -786,22 +786,59 @@ function followingOccurrences(params: {
       opened: true as const,
       originalStart,
     },
-    ...params.exceptions.map((exception) => ({
-      // An added (RDATE) meeting keeps its slot, as its RDATE does; a
-      // rule meeting moves with the series.
-      at: addsSlot(master.recurrence ?? [], exception.originalStart, zone)
-        ? sameForm(exception.originalStart, start)
-        : carriedSlot({
-            master,
-            recurrence: params.recurrence,
-            slot: exception.originalStart,
-            splitStart: originalStart,
-            start,
-          }),
-      changes: changesOwnTo(exception.occurrence, master, changes, zone),
-      originalStart: exception.originalStart,
-    })),
+    ...params.exceptions.map((exception) => {
+      const exceptionOwn = changesOwnTo(
+        exception.occurrence,
+        master,
+        changes,
+        zone
+      );
+      return {
+        at: carriedAt({
+          master,
+          originalStart,
+          own: exceptionOwn,
+          recurrence: params.recurrence,
+          slot: exception.originalStart,
+          start,
+        }),
+        changes: exceptionOwn,
+        originalStart: exception.originalStart,
+      };
+    }),
   ];
+}
+
+/**
+ * Where a changed occurrence at `slot` goes in a split's new series: an
+ * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
+ * moves with the series, placed by day when the series is made all day or
+ * timed. Its own times have no place in a series of the other form: null.
+ */
+function carriedAt(params: {
+  master: Event;
+  originalStart: string;
+  own: Partial<CreateEvent>;
+  recurrence: string[];
+  slot: string;
+  start: Event["start"];
+}): string | null {
+  const { master, own, slot, start } = params;
+  const zone = seriesZoneOf(master);
+  if (addsSlot(master.recurrence ?? [], slot, zone)) {
+    return sameForm(slot, start);
+  }
+  if (!sameForm(slot, start) && (own.start || own.end)) {
+    return null;
+  }
+  return carriedSlot({
+    master,
+    recurrence: params.recurrence,
+    slot: inFormOf(slot, start, zone) ?? slot,
+    splitStart:
+      inFormOf(params.originalStart, start, zone) ?? params.originalStart,
+    start,
+  });
 }
 
 /** `slot` when it has `start`'s form (a date, or a date-time); else null. */
@@ -855,7 +892,17 @@ function placeCarried(params: {
       });
     const moment = at && meets === true ? slotMoment(at, params.zone) : null;
     const taken = moment && placed.get(moment.epochMilliseconds);
-    if (!(at && moment) || taken || moment.epochMilliseconds === held) {
+    // An added (RDATE) meeting the new series keeps holds its slot too.
+    const ontoAdded =
+      at !== null &&
+      at !== originalStart &&
+      addsSlot(params.recurrence, at, params.zone);
+    if (
+      !(at && moment) ||
+      taken ||
+      ontoAdded ||
+      moment.epochMilliseconds === held
+    ) {
       lost.add(taken || originalStart).add(originalStart);
       continue;
     }
@@ -887,7 +934,7 @@ function summarizeEventForDebug(event: CreateEvent) {
 }
 
 function logGoogleEventUpdateFailure(params: {
-  operation: "create" | "update";
+  operation: "create" | "delete" | "update";
   calendarId: string;
   eventId?: string;
   scope?: string;
@@ -1677,12 +1724,24 @@ export function makeGoogleCalendarService(
       );
       // Google takes an id of base32hex characters (0-9, a-v).
       const seriesId = crypto.randomUUID().replaceAll("-", "");
+      // Its failure leaves both series (a meeting shown twice): logged, and
+      // the error that caused the rollback returned.
       const discardNew = Effect.tryPromise({
         try: () =>
           client.calendars.events.delete(seriesId, {
             calendarId: destinationCalendarId,
           }),
-        catch: (cause) => new GoogleApiError({ cause }),
+        catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "delete",
+            calendarId: destinationCalendarId,
+            eventId: seriesId,
+            scope: "following-rollback",
+            event: newSeries,
+            cause,
+          });
+          return new GoogleApiError({ cause });
+        },
       }).pipe(Effect.ignore);
 
       // A new part that doesn't repeat ("Repeat: None") is one event, with
@@ -2029,7 +2088,9 @@ export function makeGoogleCalendarService(
         occurrences: followingOccurrences({
           changes,
           edited,
-          exceptions: exceptions.changed,
+          // A new part that doesn't repeat ends the series there, so later
+          // occurrences go with it, as a delete does.
+          exceptions: repeats(recurrence) ? exceptions.changed : [],
           keptTimes,
           master,
           opened: currentEvent,
