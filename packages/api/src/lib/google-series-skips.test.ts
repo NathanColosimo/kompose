@@ -1230,6 +1230,38 @@ describe("skips through a move a day on and an hour earlier", () => {
   });
 });
 
+describe("This and following moved onto a day skipped whole, made all day", () => {
+  test("keeps the meeting just saved", async () => {
+    // Mondays 9:00, Nov 23 also added and skipped. From Nov 16, moved to
+    // Nov 23 all day: Nov 23 is the meeting just saved.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE:20261123T140000Z",
+        "EXDATE:20261123T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { date: "2026-11-24" },
+            start: { date: "2026-11-23" },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created] = google.writes();
+    expect(created?.body?.start).toEqual({ date: "2026-11-23" });
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "RDATE;VALUE=DATE:20261123",
+    ]);
+  });
+});
+
 describe("This and following moved back across midnight onto a skipped day", () => {
   // Daily 9:00 New York, Nov 19 skipped; from Nov 20, moved to Nov 19
   // 23:00: the meeting just saved isn't skipped.
