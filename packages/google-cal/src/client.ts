@@ -543,8 +543,8 @@ function deletedLost(params: {
  * fields the save doesn't set, and its own times when the save keeps the
  * series' times (or it's the one opened, whose times the form shows), are
  * carried into the event left (`carried`). Any other changed occurrence,
- * a first meeting deleted on its own, or own times the save changes, is
- * `lost`.
+ * a first meeting deleted on its own or skipped in the rule, or own times
+ * the save changes, is `lost`.
  */
 function endedRepeat(params: {
   cancelled: string[];
@@ -558,7 +558,17 @@ function endedRepeat(params: {
   const { master, times } = params;
   const zone = seriesZoneOf(master);
   const firstSlot = slotOf(master.start, zone);
+  const first = momentOf(master.start, zone);
+  const skipped = dateValues(master.recurrence ?? [], "EXDATE", zone).some(
+    (value) =>
+      value.instant && first
+        ? Temporal.Instant.compare(value.instant, first) === 0
+        : value.day.toString() === master.start.date
+  );
   const lost = params.cancelled.filter((slot) => slot === firstSlot);
+  if (skipped && firstSlot && !lost.includes(firstSlot)) {
+    lost.push(firstSlot);
+  }
   let carried: Partial<CreateEvent> = {};
   for (const { occurrence, originalStart } of params.changed) {
     if (originalStart !== firstSlot) {
@@ -578,8 +588,9 @@ function endedRepeat(params: {
     } else if (!(start && end)) {
       carried = fields;
     } else if (
+      // The save leaves the series' times, or gives its own length.
       sameTime(times.start, master.start, zone) &&
-      sameLength(occurrence, times, zone)
+      (sameLength(times, master, zone) || sameLength(occurrence, times, zone))
     ) {
       carried = { ...fields, end, start };
     } else {
