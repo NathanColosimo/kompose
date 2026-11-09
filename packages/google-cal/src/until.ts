@@ -322,6 +322,35 @@ export function dateValues(
 }
 
 /**
+ * `recurrence` with only the skipped (EXDATE) or added (RDATE) values
+ * `keep` accepts, each line otherwise as written: a value that doesn't
+ * parse stays, and a line left with none goes.
+ */
+export function keepingDateValues(
+  recurrence: string[],
+  name: "EXDATE" | "RDATE",
+  seriesZone: string,
+  keep: (value: RecurrenceValue) => boolean
+): string[] {
+  return recurrence.flatMap((line) => {
+    const list = line.startsWith(name) ? parseDateList(line, seriesZone) : null;
+    if (!list) {
+      return [line];
+    }
+    const kept = list.values.filter((value) => {
+      const read = readRecurrenceValue(value, list.zone, seriesZone);
+      return !read || keep(read);
+    });
+    if (kept.length === list.values.length) {
+      return [line];
+    }
+    return kept.length > 0
+      ? [`${line.slice(0, line.indexOf(":") + 1)}${kept.join(",")}`]
+      : [];
+  });
+}
+
+/**
  * The time of day a rule meets, parts it leaves out from the series'
  * time `base`; null for a sub-daily rule.
  */
