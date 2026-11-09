@@ -130,7 +130,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "addedOccurrence":
       return "This and following isn't available for an occurrence added to the series on its own: a new series starting here would repeat its rule from this day and time, moving its meetings.";
     case "deleteFromAddedOccurrence":
-      return "Deleting this and following isn't available from this added occurrence: one of the series' rules never ends, and where another ends can't be worked out.";
+      return "Deleting this and following isn't available from this added occurrence: one of the series' rules never ends, and where another ends can't be worked out. Delete occurrences one at a time instead, or this and following from a regular occurrence of the series.";
     case "endsBeforeStart":
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "countUnknown":
@@ -216,8 +216,9 @@ const same = (field: keyof CreateEvent, a: unknown, b: unknown) =>
 
 /**
  * The fields a save changed from `from` (the occurrence as the client
- * loaded it). A field left out is unchanged (send "" or [] to clear one),
- * so a client may send the whole form or only what changed.
+ * loaded it). A field left out is unchanged, so a client may send the
+ * whole form or only what changed; one sent empty ("", [] or undefined, as
+ * the editors clear a color) is cleared.
  */
 export function changedFields(
   edited: Partial<CreateEvent>,
@@ -226,7 +227,7 @@ export function changedFields(
   return Object.fromEntries(
     SERIES_FIELDS.filter(
       (field) =>
-        edited[field] !== undefined && !same(field, edited[field], from[field])
+        Object.hasOwn(edited, field) && !same(field, edited[field], from[field])
     ).map((field) => [field, edited[field]])
   );
 }

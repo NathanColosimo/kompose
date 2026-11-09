@@ -52,6 +52,24 @@ describe("Entire series", () => {
     });
   });
 
+  test("a color the save clears is cleared", async () => {
+    // The web editor's "default color" sends colorId as undefined.
+    const colored: Event = { ...weekly, colorId: "5" };
+    const google = fakeGoogle(colored);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(colored, "2026-11-16T09:00:00-05:00"), {
+            colorId: undefined,
+          })
+        )
+      )
+    ).toBe(true);
+    const [written] = google.writes();
+    expect(written?.url.pathname).toEndWith("/events/series");
+    expect(written?.body).not.toHaveProperty("colorId");
+  });
+
   test("an edit to the first occurrence moves the series' date", async () => {
     // Its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
     const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
