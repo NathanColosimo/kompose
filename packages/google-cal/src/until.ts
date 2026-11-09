@@ -545,6 +545,11 @@ interface DateListMatch {
   added: Set<number>;
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
+  /**
+   * A once-a-day meeting's day at the new time (`meetingDayMover`): a
+   * skip of it moves as many days, across midnight too.
+   */
+  moveDay: (day: Temporal.PlainDate) => Temporal.PlainDate;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
   ownSlot: ((value: RecurrenceValue) => boolean) | null;
   /**
@@ -632,10 +637,11 @@ function matchDateList(
   // meeting moves. A skip never moves onto an added meeting: it would
   // cancel it.
   const moments = values.flatMap((value) => {
-    const moment = value.day
+    const kept = value.instant;
+    // A timed skip follows its meeting's day; a date skips its own day.
+    const moment = (kept ? how.moveDay(value.day) : value.day)
       .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
       .toInstant();
-    const kept = value.instant;
     // A date skipped the whole day: its added meetings too.
     if (list.name === "EXDATE" && !kept) {
       return [moment, ...addedOn(value.day)];
@@ -1398,6 +1404,7 @@ export function matchRecurrenceToStart(
       : matchDateList(line, start, {
           added,
           keepAsDate,
+          moveDay: (day) => (rules[0] ? moveMeetingDay(rules[0], day) : day),
           ownSlot,
           retime,
           seriesZone: timeZone,

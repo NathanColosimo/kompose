@@ -1312,6 +1312,46 @@ describe("a COUNT across the spring clock change", () => {
   });
 });
 
+describe("a skip lined up by the client through a move across midnight", () => {
+  // Daily 23:00 New York, Nov 30 skipped; This and following from Nov 16
+  // moved to Nov 17 00:30. Nov 30's meeting is now Dec 1 00:30.
+  const series: Event = {
+    ...weekly,
+    end: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+    recurrence: ["RRULE:FREQ=DAILY", "EXDATE:20261201T040000Z"],
+    start: { dateTime: "2026-11-09T23:00:00-05:00", timeZone: zone },
+  };
+  const start = { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone };
+  const sent = () =>
+    matchRecurrenceToStart(series.recurrence ?? [], start, zone, {
+      dateTime: "2026-11-16T23:00:00-05:00",
+      timeZone: zone,
+    });
+
+  test("moves with its meeting to the next day", () => {
+    expect(sent()).toEqual(["RRULE:FREQ=DAILY", "EXDATE:20261201T053000Z"]);
+  });
+
+  test("saved, skips that meeting alone", async () => {
+    const google = fakeGoogle(series, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T23:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T01:00:00-05:00", timeZone: zone },
+            recurrence: sent(),
+            start,
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261201T053000Z",
+    ]);
+  });
+});
+
 describe("a series whose time has seconds", () => {
   test("moves a deleted meeting's skip to the new time", async () => {
     // Mondays 9:00:30, Nov 30 deleted; the series moves to 10:00.
