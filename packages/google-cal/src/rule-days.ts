@@ -320,13 +320,15 @@ const MAX_DAYS = 366 * 50;
  * its time (`countsStart`, the default); another rule counts that day
  * only if it's one of its own.
  */
-export function countedRuleDays(
-  rule: string,
-  start: Temporal.PlainDate,
-  count: number,
-  options: { countsStart?: boolean; through?: Temporal.PlainDate } = {}
-): Temporal.PlainDate[] | null {
-  const { countsStart = true, through } = options;
+export function countedRuleDays(params: {
+  count: number;
+  /** Whether the series' start counts as the first, rule day or not. */
+  countsStart?: boolean;
+  rule: string;
+  start: Temporal.PlainDate;
+  through?: Temporal.PlainDate;
+}): Temporal.PlainDate[] | null {
+  const { count, countsStart = true, rule, start, through } = params;
   const read = readRule(rule);
   if (!read) {
     return null;

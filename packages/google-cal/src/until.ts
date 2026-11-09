@@ -139,7 +139,7 @@ function ruleLastDay(params: {
   // out can only put the end late, so the rule is taken as still meeting,
   // which each caller treats as the safe way to be wrong.
   return (
-    countedRuleDays(rule, start, count, { countsStart: false })?.at(-1) ?? null
+    countedRuleDays({ count, countsStart: false, rule, start })?.at(-1) ?? null
   );
 }
 

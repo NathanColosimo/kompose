@@ -740,7 +740,7 @@ function ruleEndsBefore(
     });
     return last === null ? null : last < split.epochMilliseconds;
   }
-  const last = countedRuleDays(rule, first.day, count)?.at(-1);
+  const last = countedRuleDays({ count, rule, start: first.day })?.at(-1);
   if (!last) {
     return null;
   }
@@ -998,7 +998,10 @@ function positionsBefore(params: {
     return [...meetings].filter((ms) => ms < at).length;
   }
   return (
-    countedRuleDays(rule, seriesStart.day, count, {
+    countedRuleDays({
+      count,
+      rule,
+      start: seriesStart.day,
       through: split.day,
     })?.filter((day) => Temporal.PlainDate.compare(day, split.day) < 0)
       .length ?? null
