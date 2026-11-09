@@ -22,7 +22,7 @@ import {
   splitAddedDays,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
-import { isRuleDay } from "./rule-days";
+import { isRuleDay, samePlaceInPeriod } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -926,7 +926,9 @@ function onDay(
  * `start` with `recurrence`: on its own day with the split's change of time
  * when the new series meets there (a rule day that didn't move), else as
  * many days on as the split moved (`placeInNewSeries`) when it meets
- * there; null when it meets at neither, or that can't be told.
+ * there, else, in a monthly or yearly series, at the meeting as many into
+ * its month or year (`samePlaceInPeriod`); null when it meets at none, or
+ * that can't be told.
  */
 function carriedSlot(params: {
   master: Event;
@@ -960,7 +962,36 @@ function carriedSlot(params: {
     splitStart: params.splitStart,
     zone,
   });
-  return moved && meets(moved) ? moved : null;
+  if (moved && meets(moved)) {
+    return moved;
+  }
+  const rulesOf = (lines: string[]) =>
+    lines.filter((line) => line.startsWith("RRULE:"));
+  const [oldRule, ...oldOthers] = rulesOf(master.recurrence ?? []);
+  const [newRule, ...newOthers] = rulesOf(recurrence);
+  const day = dayOfStart(asStart(slot), zone);
+  const oldStart = dayOfStart(master.start, seriesZoneOf(master));
+  const newStart = dayOfStart(start, zone);
+  if (
+    !(oldRule && newRule && day && oldStart && newStart && splitDay) ||
+    oldOthers.length + newOthers.length > 0
+  ) {
+    return null;
+  }
+  const inPeriod = onDay(
+    start,
+    samePlaceInPeriod({
+      day,
+      newRule,
+      newStart,
+      oldRule,
+      oldStart,
+      split: splitDay,
+    }),
+    zone
+  );
+  const place = inPeriod && slotOf(inPeriod, zone);
+  return place && meets(place) ? place : null;
 }
 
 /**
