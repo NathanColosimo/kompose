@@ -354,6 +354,7 @@ function newTimesKeep(params: {
     ).every(
       // A value the edit gives the whole series is the new meeting's too.
       (field) => {
+        // Object.keys loses the key type: each is a CreateEvent field.
         const value = params.changes[field as keyof CreateEvent];
         return (
           value !== undefined &&
@@ -532,17 +533,33 @@ function seriesChangeRefusal(params: {
         // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
         const first = opensSeries(occurrence, master);
+        const newDay = dayOfStart(times.start, zone);
+        // A first meeting whose day the series takes, or is given, keeps it.
+        const firstDayKept =
+          first &&
+          (ownDay?.equals(newDay ?? ownDay) ||
+            !newDay?.equals(dayOfStart(master.start, zone) ?? newDay));
         const movedDay = !(
-          (first && ownDay?.equals(dayOfStart(times.start, zone) ?? ownDay)) ||
+          firstDayKept ||
           ownDay?.equals(dayOfStart(asStart(originalStart), zone) ?? ownDay)
         );
-        // The saved series must still meet in its place (the first meeting's
-        // is the new start).
-        const place = placeOnNewStart(originalStart, master, times.start);
+        // The saved series must still meet in its place (the first
+        // meeting's is the new start, unless the save skips it).
+        const repeatsIn = repeatZone(master, times.start);
+        const startSlot = slotOf(times.start, repeatsIn);
+        const place = first
+          ? startSlot
+          : placeOnNewStart(originalStart, master, times.start);
         const replaced =
-          first ||
-          (place !== null &&
-            keptOrEnded({ master, place, recurrence, start: times.start }));
+          place !== null &&
+          (first
+            ? seriesMeetsAt({
+                recurrence,
+                seriesZone: repeatsIn,
+                slot: place,
+                start: times.start,
+              }) !== false
+            : keptOrEnded({ master, place, recurrence, start: times.start }));
         return (
           movedDay ||
           !replaced ||
@@ -611,8 +628,10 @@ function movesSeveralADay(
   const from = clockOf(master.start, zone);
   const was = clockOf(occurrence.start, zone);
   const now = clockOf(edited.start, zone);
+  // Made all day, its times go too.
   const moves =
     timeOfDayChange(master, start) !== null ||
+    Boolean(start.date) ||
     Boolean(was && now && !was.equals(now));
   return Boolean(
     from && moves && meetsSeveralTimesADay(master.recurrence ?? [], from)

@@ -983,6 +983,66 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()[0]?.body?.start).toEqual({ date: "2026-11-10" });
   });
 
+  test("a new start the save skips, from a first meeting moved on its own, is refused", async () => {
+    // Nov 9 moved to 11:00 on its own; from it, 10:00 with Nov 9 10:00
+    // skipped: nothing is left in its place.
+    const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00", {
+      end: "2026-11-09T11:30:00-05:00",
+      start: "2026-11-09T11:00:00-05:00",
+    });
+    fakeGoogle(weekly, [first]);
+    expect(
+      await refusalOf(
+        edit("all", first, {
+          end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261109T150000Z"],
+          start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
+  });
+
+  test("a first meeting moved on its own to one day, then to another, saves", async () => {
+    // Daily from Nov 9; Nov 9 moved to Nov 10 11:00 on its own; from it,
+    // moved to Nov 11 11:00 for the Entire series.
+    const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+    const moved = occurrenceOf(daily, "2026-11-09T09:00:00-05:00", {
+      end: "2026-11-10T11:30:00-05:00",
+      start: "2026-11-10T11:00:00-05:00",
+    });
+    const google = fakeGoogle(daily, [moved]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", moved, {
+            end: { dateTime: "2026-11-11T11:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-11T11:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.start).toMatchObject({
+      dateTime: "2026-11-11T11:00:00-05:00",
+    });
+  });
+
+  test("a series that meets several times a day made all day is refused", async () => {
+    const twice: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=DAILY;BYHOUR=9", "RRULE:FREQ=DAILY;BYHOUR=15"],
+    };
+    const google = fakeGoogle(twice);
+    expect(
+      await refusalOf(
+        edit("all", twice, {
+          end: { date: "2026-11-10" },
+          start: { date: "2026-11-09" },
+        })
+      )
+    ).toMatchObject({ data: { reason: "severalTimesADay" } });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [
