@@ -1452,6 +1452,34 @@ describe("a COUNT with stale skips at another time", () => {
   });
 });
 
+describe("a COUNT through a move off the rule's days, the old place also an added day", () => {
+  test("keeps that place's COUNT position", async () => {
+    // Mondays four times from Nov 9, Nov 16 also an added day; from Nov 16
+    // moved to Sun Nov 15, Mondays kept: Nov 15, 23 and 30 are left.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+        "RDATE:20261116T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"
+    );
+  });
+});
+
 describe("a COUNT sent with a new repeat", () => {
   test("is the new part's own, so a later changed meeting keeps its place", async () => {
     // Mondays and Wednesdays ten times from Nov 9, Mon Dec 7 renamed; from

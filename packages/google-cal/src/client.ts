@@ -1283,13 +1283,15 @@ function slotMoment(slot: string, zone: string): Temporal.Instant | null {
 
 /**
  * `master`'s exceptions in Google's listing, all or those after `after`
- * (an original start): the cancelled ones' original starts, and the
- * moved or edited ones.
+ * (an original start): the cancelled ones' original starts, and the moved
+ * or edited ones the series still meets in the place of (one Google
+ * detached, its slot gone, has no changes at stake; one whose rule can't
+ * be read counts).
  */
 function sortExceptions(
   events: SeriesListing[],
   master: Event,
-  after: string | null
+  after?: string
 ) {
   const zone = seriesZoneOf(master);
   const from = after ? slotMoment(after, zone) : null;
@@ -1309,8 +1311,16 @@ function sortExceptions(
     }
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
-    } else if (Object.keys(changesOwnTo(event, master, zone)).length > 0) {
+    } else if (
       // One moved and moved back has nothing to keep.
+      Object.keys(changesOwnTo(event, master, zone)).length > 0 &&
+      seriesMeetsAt({
+        recurrence: master.recurrence ?? [],
+        seriesZone: zone,
+        slot: originalStart,
+        start: master.start,
+      }) !== false
+    ) {
       changed.push({ occurrence: event, originalStart });
     }
   }
@@ -2603,11 +2613,7 @@ export function makeGoogleCalendarService(
    * which returns only the master and its exceptions, so an endless
    * series isn't expanded.
    */
-  const exceptionsOf = (
-    calendarId: string,
-    master: Event,
-    after: string | null
-  ) =>
+  const exceptionsOf = (calendarId: string, master: Event, after?: string) =>
     Effect.gen(function* () {
       const iCalUID = master.iCalUID;
       if (!iCalUID) {
@@ -2713,11 +2719,18 @@ export function makeGoogleCalendarService(
       // The new series' slots, in the zone it repeats in.
       const newZone = repeatZone(master, start);
       // The moved meeting's skip takes one of a COUNT's places when the
-      // rule meets there (an added day's takes none), so the rest are
-      // placed against the COUNT it ends up with.
-      // (`movedOffRule` places it only where the series meets.)
+      // rule meets there, an added day or not (an added day's alone takes
+      // none), so the rest are placed against the COUNT it ends up with.
       const rulePlaces = moved.filter(
-        (place) => !addsSlot(writtenCounted, place, zone)
+        (place) =>
+          seriesMeetsAt({
+            recurrence: writtenCounted.filter((line) =>
+              line.startsWith("RRULE:")
+            ),
+            seriesZone: newZone,
+            slot: place,
+            start,
+          }) === true
       );
       const final = changeCount(counted, rulePlaces.length);
       // Moved to other days, or in a series that meets several times a day
@@ -3187,8 +3200,7 @@ export function makeGoogleCalendarService(
       }
       const { cancelled, changed } = yield* exceptionsOf(
         params.calendarId,
-        master,
-        null
+        master
       );
       const kept = keptAfterEdit({
         ...params,
