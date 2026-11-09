@@ -152,9 +152,13 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
   if (field !== "attendees" || !Array.isArray(value)) {
     return value ?? null;
   }
-  return (value as Attendee[]).map(
-    ({ comment: _comment, responseStatus: _response, ...attendee }) => attendee
-  );
+  // In any order: the same guests listed differently are no change.
+  return (value as Attendee[])
+    .map(
+      ({ comment: _comment, responseStatus: _response, ...attendee }) =>
+        attendee
+    )
+    .sort((a, b) => ((a.email ?? "") < (b.email ?? "") ? -1 : 1));
 }
 
 /** JSON with each object's keys sorted, so key order never differs. */
