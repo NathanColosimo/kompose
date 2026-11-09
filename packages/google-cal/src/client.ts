@@ -955,7 +955,7 @@ function slotMoment(slot: string, zone: string): Temporal.Instant | null {
 function sortExceptions(
   events: SeriesListing[],
   master: Event,
-  after: string | null
+  after?: string
 ) {
   const zone = seriesZoneOf(master);
   const from = after ? slotMoment(after, zone) : null;
@@ -1959,11 +1959,7 @@ export function makeGoogleCalendarService(
    * which returns only the master and its exceptions, so an endless
    * series isn't expanded.
    */
-  const exceptionsOf = (
-    calendarId: string,
-    master: Event,
-    after: string | null
-  ) =>
+  const exceptionsOf = (calendarId: string, master: Event, after?: string) =>
     Effect.gen(function* () {
       const iCalUID = master.iCalUID;
       if (!iCalUID) {
@@ -2398,8 +2394,7 @@ export function makeGoogleCalendarService(
       }
       const { cancelled, changed } = yield* exceptionsOf(
         params.calendarId,
-        master,
-        null
+        master
       );
       const kept = keptAfterEdit({
         ...params,
