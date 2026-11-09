@@ -1600,6 +1600,34 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a rule sent without the series' skip, otherwise its own, isn't a new rule", async () => {
+    // A rule not read here, Nov 16 skipped (written with its zone), Nov 30
+    // renamed on its own; a new title for the Entire series from Dec 7,
+    // sent with the rule alone.
+    const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;BYWEEKNO=1,2,3,47,48,49,50";
+    const series: Event = {
+      ...weekly,
+      recurrence: [rule, "EXDATE;TZID=America/New_York:20261116T090000"],
+    };
+    const google = fakeGoogle(series, [
+      { ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-12-07T09:00:00-05:00"), {
+            recurrence: [rule],
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      rule,
+      "EXDATE:20261116T140000Z",
+    ]);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.

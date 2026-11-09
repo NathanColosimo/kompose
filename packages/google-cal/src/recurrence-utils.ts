@@ -74,7 +74,7 @@ export function repeats(recurrence: string[] | undefined): boolean {
 }
 
 /** A skip's key: its moment, or its date for an all-day one. */
-function skipKey(value: RecurrenceValue): string {
+export function skipKey(value: RecurrenceValue): string {
   return value.instant
     ? String(value.instant.epochMilliseconds)
     : value.day.toString();

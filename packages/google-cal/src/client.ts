@@ -6,6 +6,7 @@ import {
   repeats,
   sanitizeEventPayload,
   seriesMeetsAt,
+  skipKey,
   skipping,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
@@ -56,6 +57,32 @@ import {
 
 /** A rule part that ends it: COUNT or UNTIL. */
 const END_PART = /^(?:COUNT|UNTIL)=/;
+
+/** A rule line without its end (COUNT, UNTIL). */
+function withoutEnd(line: string): string {
+  const [name, parts = ""] = line.split(":");
+  return `${name}:${parts
+    .split(";")
+    .filter((part) => !END_PART.test(part))
+    .join(";")}`;
+}
+
+/**
+ * `recurrence` as what it means, however it's written: its rules' parts,
+ * and its skipped and added moments.
+ */
+function recurrenceValues(recurrence: string[], zone: string): string {
+  const rules = recurrence
+    .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
+    .map((line) => {
+      const [name, parts = ""] = line.split(":");
+      return `${name}:${parts.split(";").sort().join(";")}`;
+    })
+    .sort();
+  const values = (name: "EXDATE" | "RDATE") =>
+    dateValues(recurrence, name, zone).map(skipKey).sort();
+  return JSON.stringify([rules, values("EXDATE"), values("RDATE")]);
+}
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -468,14 +495,7 @@ function keptOrEnded(params: {
   const seriesZone = repeatZone(master, start);
   // Read without skips: the save's own skip for it is already there.
   const rules = params.recurrence.filter((line) => line.startsWith("RRULE:"));
-  const unbounded = rules.map(
-    (line) =>
-      `RRULE:${line
-        .slice("RRULE:".length)
-        .split(";")
-        .filter((part) => !END_PART.test(part))
-        .join(";")}`
-  );
+  const unbounded = rules.map(withoutEnd);
   const meets = (recurrence: string[]) =>
     seriesMeetsAt({ recurrence, seriesZone, slot: place, start }) === true;
   return meets(rules) || meets(unbounded);
@@ -1509,9 +1529,12 @@ export function makeGoogleCalendarService(
         ? withSeriesSkips(params.edited.recurrence, master)
         : (master.recurrence ?? []);
       const movesStart = !sameTime(times.start, master.start, zone);
+      // Read for what it means: the series' own skips, written again in
+      // another form, aren't a new rule.
       const movesSlots =
         movesStart ||
-        JSON.stringify(rule) !== JSON.stringify(master.recurrence ?? []);
+        recurrenceValues(rule, zone) !==
+          recurrenceValues(master.recurrence ?? [], zone);
       if (!(movesSlots || !sameLength(times, master, zone))) {
         return { carried: {}, recurrence: rule };
       }
