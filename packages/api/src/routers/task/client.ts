@@ -927,15 +927,11 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
-  // A kept edited occurrence holds the new series' first date.
-  const keptDates = keepEdited
-    ? new Set([...otherKeptDates, pattern.startDate])
-    : otherKeptDates;
   const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
     input,
     keepEdited,
-    keptDates,
+    keptDates: otherKeptDates,
     pattern,
     seriesMasterId,
     task,
@@ -1418,6 +1414,8 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
+      // Each transaction below is scoped to this fiber by drizzle's effect
+      // driver, so the helpers' queries join it.
       const db = yield* Database;
       // Without a start date there's no "following": delete it alone.
       const alone = scope === "this" || !task.startDate;
