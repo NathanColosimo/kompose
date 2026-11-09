@@ -828,9 +828,13 @@ export function carryCountFromList(
   };
   // The positions in a stretch of the series: what Google lists there and
   // the rule's skips it doesn't, or null when an added day or an unlisted
-  // skip that may be a position falls in it.
+  // skip that may be a position falls in it. An added day off the rule's
+  // days or time is no position: Google lists it, but it isn't counted.
   const positionsIn = (inStretch: (value: RecurrenceValue) => boolean) => {
-    const there = listed.filter(inStretch);
+    const addedThere = added.filter(inStretch);
+    const there = listed
+      .filter(inStretch)
+      .filter((value) => !addedThere.some((day) => sameValue(day, value)));
     const unlisted = skipped
       .filter(inStretch)
       .filter(
@@ -842,7 +846,7 @@ export function carryCountFromList(
           )
       );
     const unclear =
-      added.filter(inStretch).length > 0 ||
+      addedThere.some((day) => !offRule(day)) ||
       unlisted.some((skip) => !onRule(skip));
     return unclear ? null : there.length + unlisted.length;
   };
