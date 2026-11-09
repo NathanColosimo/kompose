@@ -1149,6 +1149,74 @@ function inFormOf(
 }
 
 /**
+ * Where a split's skipped or deleted rule meetings (`slots`) stay skipped
+ * when it moves to other days or meets several times a day: where the new
+ * series (`rule`, written for its start) meets in their place, as a
+ * changed one is put back, in the new start's form (made all day or
+ * timed, by day). None lands on the new start, the meeting just saved
+ * (`ontoStart`: the rule meetings that would, by moment), or on an added
+ * meeting the new series keeps.
+ */
+function placeByDay(params: {
+  master: Event;
+  originalStart: string;
+  rule: string[];
+  slots: string[];
+  start: Event["start"];
+}): { ontoStart: number[]; placed: string[] } {
+  const { master, originalStart, start } = params;
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const startSlot = slotOf(start, newZone);
+  // A place already skipped is still its place.
+  const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
+  const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
+  const ontoStart: number[] = [];
+  const placed = params.slots.flatMap((slot) => {
+    const at = carriedSlot({
+      master,
+      recurrence: unskipped,
+      slot: inFormOf(slot, start, newZone) ?? slot,
+      splitStart,
+      start,
+    });
+    const formed = inFormOf(at ?? slot, start, newZone);
+    const moment = slotMoment(slot, zone);
+    if (formed === startSlot && moment && ruleMeetingAt(slot, master)) {
+      ontoStart.push(moment.epochMilliseconds);
+    }
+    const ontoAdded =
+      at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
+    return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
+  });
+  return { ontoStart, placed };
+}
+
+/**
+ * The deleted added (RDATE) days on a split's new start that are also rule
+ * meetings, by moment: each holds a COUNT place the new start takes.
+ * `lineUpRule` keeps added days' skips, so they're counted here.
+ */
+function addedOntoStart(params: {
+  cancelled: string[];
+  master: Event;
+  start: Event["start"];
+}): number[] {
+  const { master, start } = params;
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const startSlot = slotOf(start, newZone);
+  return params.cancelled.flatMap((slot) => {
+    const moment = slotMoment(slot, zone);
+    return moment &&
+      inFormOf(slot, start, newZone) === startSlot &&
+      ruleMeetingAt(slot, master)
+      ? [moment.epochMilliseconds]
+      : [];
+  });
+}
+
+/**
  * Whether a split's new `rule` keeps the series' COUNT, which is then
  * carried on (a COUNT the user changed is the new part's own).
  */
@@ -2040,7 +2108,6 @@ export function makeGoogleCalendarService(
           master.recurrence ?? [],
           clockOf(master.start, zone)
         );
-      const startSlot = slotOf(start, newZone);
       const split = slotMoment(originalStart, zone);
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
@@ -2069,45 +2136,27 @@ export function makeGoogleCalendarService(
       // A skip whose place is the new start (the meeting just saved there)
       // is dropped, and holds no place of its own: a carried COUNT is one
       // less for each rule meeting, however many skips it has.
-      const ontoStart = new Set<number>();
-      const placeBy = (writtenRule: string[]) =>
-        [
-          ...params.cancelled.filter((slot) => !isAdded(slot)),
-          ...ownSkips,
-        ].flatMap((slot) => {
-          // In the new start's form: made all day or timed, it's placed
-          // by day. Never onto an added meeting the new series keeps.
-          const at = carriedSlot({
+      const byDay = byPlace
+        ? placeByDay({
             master,
-            recurrence: writtenRule,
-            slot: inFormOf(slot, start, newZone) ?? slot,
-            splitStart:
-              inFormOf(originalStart, start, newZone) ?? originalStart,
+            originalStart,
+            rule: ruleForStart(final, master, start, originalStart),
+            slots: [
+              ...params.cancelled.filter((slot) => !isAdded(slot)),
+              ...ownSkips,
+            ],
             start,
-          });
-          const formed = inFormOf(at ?? slot, start, newZone);
-          const moment = slotMoment(slot, zone);
-          if (
-            formed === startSlot &&
-            at !== null &&
-            moment &&
-            ruleMeetingAt(slot, master)
-          ) {
-            ontoStart.add(moment.epochMilliseconds);
-          }
-          const ontoAdded =
-            at !== null &&
-            formed !== null &&
-            addsSlot(writtenRule, formed, newZone);
-          return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
-        });
-      const placed = byPlace
-        ? placeBy(
-            ruleForStart(final, master, start, originalStart).filter(
-              (line) => !line.startsWith("EXDATE")
-            )
-          )
-        : [];
+          })
+        : { ontoStart: [], placed: [] };
+      const placed = byDay.placed;
+      const ontoStart = new Set([
+        ...byDay.ontoStart,
+        ...addedOntoStart({
+          cancelled: params.cancelled.filter(isAdded),
+          master,
+          start,
+        }),
+      ]);
       const recurrence = skipping(
         lineUpRule({
           cancelled: byPlace
