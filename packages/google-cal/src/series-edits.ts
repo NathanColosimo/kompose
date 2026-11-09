@@ -5,7 +5,7 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { isRuleDay } from "./rule-days";
+import { isRuleDay, WEEKDAY_CODES } from "./rule-days";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
@@ -18,7 +18,7 @@ import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
  * meetings (Kompose writes one rule and no RDATE), and Kompose doesn't
  * write those shapes.
  */
-export const PLAIN_REFUSALS = [
+const PLAIN_REFUSALS = [
   // This and following in a series with several rules (or an exclusion
   // rule): a new series has one start, and Google counts every rule's
   // days, phase and COUNT from it.
@@ -44,7 +44,7 @@ export const PLAIN_REFUSALS = [
  * or whose own length it would overwrite (a new length). Writing them back
  * afterwards can fail with nothing to restore them from.
  */
-export const NAMING_REFUSALS = [
+const NAMING_REFUSALS = [
   "dropsChangedOccurrences",
   "resizesChangedOccurrences",
 ] as const;
@@ -229,9 +229,6 @@ const DAY_PARTS = new Set([
 
 const WEEKLY = /FREQ=WEEKLY/;
 const BYDAY_VALUE = /BYDAY=([^;]+)/;
-
-/** Weekday codes, Monday first, as a rule writes them. */
-const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 /** A rule line's parts, sorted, without its day parts when `dropDays`. */
 function ruleParts(line: string, dropDays: boolean): string {
