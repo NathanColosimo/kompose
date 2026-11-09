@@ -572,13 +572,14 @@ describe("This and following", () => {
     );
   });
 
-  test("the last meeting moved past the series' end is saved as one event", async () => {
-    for (const [until, to] of [
-      // Google's own "ends Nov 30"; moved to Tue Dec 1.
-      ["20261201T045959Z", "2026-12-01T09:00:00-05:00"],
-      // An end at the last meeting's start; moved to 10:00.
-      ["20261130T140000Z", "2026-11-30T10:00:00-05:00"],
-    ] as const) {
+  test.each([
+    // Google's own "ends Nov 30"; moved to Tue Dec 1.
+    ["20261201T045959Z", "2026-12-01T09:00:00-05:00"],
+    // An end at the last meeting's start; moved to 10:00.
+    ["20261130T140000Z", "2026-11-30T10:00:00-05:00"],
+  ])(
+    "the last meeting moved past the series' end (UNTIL=%s) is one event",
+    async (until, to) => {
       const ending: Event = {
         ...weekly,
         recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=${until}`],
@@ -610,7 +611,7 @@ describe("This and following", () => {
         "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T135959Z",
       ]);
     }
-  });
+  );
 
   test("a new time carries a deleted occurrence's skip to it", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to 10:00.
