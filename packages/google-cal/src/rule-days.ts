@@ -245,14 +245,12 @@ const MAX_DAYS = 366 * 50;
  * A COUNT rule's first `count` days, walked from the series' `start` day;
  * null when they can't be told. COUNT counts these, EXDATE skips included
  * and RDATE days not. Google counts the series' start as its first, rule
- * day or not, for a rule at its time (`countsStart`); another rule counts
- * that day only if it's one of its own.
+ * day or not.
  */
 export function countedRuleDays(
   rule: string,
   start: Temporal.PlainDate,
-  count: number,
-  countsStart = true
+  count: number
 ): Temporal.PlainDate[] | null {
   const read = readRule(rule);
   if (!read) {
@@ -261,7 +259,7 @@ export function countedRuleDays(
   const days: Temporal.PlainDate[] = [];
   for (let offset = 0; offset < MAX_DAYS && days.length < count; offset += 1) {
     const day = start.add({ days: offset });
-    if ((offset === 0 && countsStart) || matches(read, start, day)) {
+    if (offset === 0 || matches(read, start, day)) {
       days.push(day);
     }
   }

@@ -13,6 +13,7 @@ import {
   occurrenceOf,
   refusalOf,
   run,
+  weekly,
 } from "./google-test-fixtures";
 
 // A COUNT carried on through a split: exactly the meetings left.
@@ -287,11 +288,13 @@ describe("carrying a COUNT through a split", () => {
     ).toEqual([rule]);
   });
 
-  test("leaves a count to Google's list only when a counted day skips its time", () => {
+  test("leaves a count to Google's list only when a counted day before the split skips its time", () => {
     // Daily at 2:30 three times from a 9:00 start; New York has no 2:30
-    // on Mar 14 2027. From Mar 11, the meetings run through Mar 14: left
-    // to Google's list. From Mar 14 itself, that 2:30 is before the
-    // start, so the meetings (Mar 15-17) can be counted.
+    // on Mar 14 2027. Split at Mar 12, before that day, none is used
+    // whatever Google does on Mar 14: all three are left. Split at Mar 15,
+    // whether Mar 14 counted can't be told: left to Google's list. From
+    // Mar 14 itself, that 2:30 is before the start, so the meetings (Mar
+    // 15-17) can be counted.
     const rule = "RRULE:FREQ=DAILY;BYHOUR=2;BYMINUTE=30;COUNT=3";
     const carry = (seriesStart: string, originalStart: string) =>
       carryCountExactly([rule], {
@@ -302,6 +305,9 @@ describe("carrying a COUNT through a split", () => {
       });
     expect(
       carry("2027-03-11T09:00:00-05:00", "2027-03-12T02:30:00-05:00")
+    ).toEqual([rule]);
+    expect(
+      carry("2027-03-11T09:00:00-05:00", "2027-03-15T02:30:00-04:00")
     ).toBeNull();
     expect(
       carry("2027-03-14T09:00:00-04:00", "2027-03-16T02:30:00-04:00")
@@ -505,5 +511,27 @@ describe("carrying a COUNT through a split", () => {
         seriesZone: "America/New_York",
       })
     ).toBeNull();
+  });
+});
+
+describe("a COUNT the user changed", () => {
+  test("is written as they set it", async () => {
+    const five: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5"],
+    };
+    const google = fakeGoogle(five);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(five, "2026-11-23T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10",
+    ]);
   });
 });

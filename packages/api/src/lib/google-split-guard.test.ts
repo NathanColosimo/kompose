@@ -111,8 +111,8 @@ describe("where This and following can start", () => {
         seriesZone: zone,
       });
     expect(unsure(hourly)).toBe("cut");
-    // On the hour and half hour: its end isn't worked out, so a delete
-    // from the added meeting reads it from Google's list, not a guess.
+    // With a BYMINUTE list: its end isn't worked out, so a delete from the
+    // added meeting reads it from Google's list, not a guess.
     expect(unsure("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10")).toBe("list");
     // Every hour from Oct 31, across the Nov 1 clock change: can't tell
     // which hour it ends, so from the list too.
@@ -325,7 +325,7 @@ describe("This and following from an added meeting, or with several rules", () =
     expect(
       await deleteWith([
         "2026-11-09T09:00:00-05:00",
-        "2026-11-09T09:30:00-05:00",
+        "2026-11-09T10:00:00-05:00",
         "2026-11-16T09:00:00-05:00",
       ])
     ).toEqual([

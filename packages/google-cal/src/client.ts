@@ -8,6 +8,7 @@ import {
   carryCountFromList,
   countOf,
   deleteFromListed,
+  endsBeforeStart,
   followingDelete,
   followingIsWhole,
   followingSplitBlocked,
@@ -18,6 +19,7 @@ import {
   splitAddedDays,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
+import { isRuleDay } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -53,10 +55,10 @@ import {
   DATE_ONLY,
   dayOfStart,
   googleDateTime,
+  lengthMs,
   meetsSeveralTimesADay,
   momentOf,
   startInstant,
-  untilMoment,
 } from "./until";
 
 interface GoogleWatchChannelInput {
@@ -104,8 +106,8 @@ function naming(
 
 /**
  * Whether the save's rules (`saved`) give `master` a new repeat, which one
- * occurrence can't take. Moving the first meeting (`from`, the series'
- * start or a split's slot) to another day moves the series' days with it.
+ * occurrence can't take. Moving the first meeting (`from`) to another day
+ * moves the series' days with it.
  */
 function givesNewRepeat(params: {
   from: Event["start"];
@@ -153,8 +155,6 @@ function splitBlockedError(
   return blocked ? refused({ reason: blocked }) : null;
 }
 
-const RULE_UNTIL = /[:;]UNTIL=([^;]+)/;
-
 /**
  * Whether `occurrence` is its series' first meeting: the master, or the
  * occurrence at its start (not an added meeting before it).
@@ -172,23 +172,6 @@ function opensSeries(occurrence: Event, master: Event): boolean {
   return Boolean(
     original && first && Temporal.Instant.compare(original, first) === 0
   );
-}
-
-/**
- * Whether a new series' rule ends (UNTIL) before its own first meeting:
- * Google would keep only that meeting.
- */
-function endsBeforeStart(
-  recurrence: string[],
-  start: { date?: string; dateTime?: string; timeZone?: string },
-  zone: string
-): boolean {
-  const until = recurrence
-    .find((line) => line.startsWith("RRULE:"))
-    ?.match(RULE_UNTIL)?.[1];
-  const last = until ? untilMoment(until, zone) : null;
-  const first = momentOf(start, zone);
-  return Boolean(last && first && Temporal.Instant.compare(last, first) < 0);
 }
 
 /**
@@ -225,24 +208,77 @@ function originalStartOf(occurrence: Event, zone: string): string | null {
 }
 
 /**
+ * `master`'s times from its own start with `edited`'s length (or span of
+ * days, all day); null when the forms differ or a time doesn't parse.
+ */
+function withLength(
+  master: Event,
+  edited: Pick<CreateEvent, "end" | "start">
+): { end: Event["end"]; start: Event["start"] } | null {
+  const zone = seriesZoneOf(master);
+  if (master.start.date && edited.start.date && edited.end.date) {
+    const days = Temporal.PlainDate.from(edited.start.date).until(
+      edited.end.date
+    ).days;
+    return {
+      end: {
+        date: Temporal.PlainDate.from(master.start.date)
+          .add({ days: Math.max(1, days) })
+          .toString(),
+      },
+      start: master.start,
+    };
+  }
+  const from = startInstant(master.start, zone);
+  const length = lengthMs(edited.start, edited.end, zone);
+  if (!(from && length !== null) || edited.start.date) {
+    return null;
+  }
+  return {
+    end: {
+      dateTime: googleDateTime(
+        from.add({ milliseconds: length }).toZonedDateTimeISO(zone)
+      ),
+      timeZone: master.end.timeZone ?? master.start.timeZone,
+    },
+    start: master.start,
+  };
+}
+
+/**
  * A series' times after an "Entire series" edit through `occurrence`.
  * Times the edit left keep the series' (an occurrence moved on its own
- * doesn't move it). Only an edit to the first meeting moves the series'
- * date; elsewhere a date move is "This and following" only. Google
- * repeats a series in its start's zone, so times are read in it.
+ * doesn't move it), and a new end alone changes only the length. Only an
+ * edit to the first meeting moves the series' date, and only to a day its
+ * rules meet on: Google always meets at a series' start, so any other day
+ * would add a meeting the rules don't make. Elsewhere a date move is "This
+ * and following" only. Google repeats a series in its start's zone, so
+ * times are read in it.
  */
 function entireSeriesTimes(
   edited: CreateEvent,
   occurrence: Event,
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
   const kept = { end: master.end, start: master.start };
-  if (keepsTimes(edited, occurrence, seriesZoneOf(master))) {
+  if (keepsTimes(edited, occurrence, zone)) {
     return kept;
+  }
+  if (sameTime(edited.start, occurrence.start, zone)) {
+    return withLength(master, edited) ?? kept;
   }
   const end = inSeriesZone(edited.end, master.end);
   const start = inSeriesZone(edited.start, master.start);
-  if (opensSeries(occurrence, master)) {
+  const rules = (edited.recurrence ?? master.recurrence ?? []).filter((line) =>
+    line.startsWith("RRULE:")
+  );
+  const day = dayOfStart(start, zone);
+  const rulesMeet =
+    !day ||
+    rules.length === 0 ||
+    rules.some((rule) => isRuleDay(rule, day, day) !== false);
+  if (opensSeries(occurrence, master) && rulesMeet) {
     return { end, start };
   }
   return (
@@ -1141,7 +1177,7 @@ export function makeGoogleCalendarService(
    * runs three more, not five). Occurrences `cancelled` after the split
    * stay skipped on their own days, not shifted onto days the user never
    * deleted. Refuses, before any write, if the COUNT can't be carried or
-   * the rule ends before `start`.
+   * if the rule ends before `start`.
    */
   const newSeriesRecurrence = (params: {
     calendarId: string;
@@ -1175,7 +1211,8 @@ export function makeGoogleCalendarService(
         params.cancelled,
         seriesZoneOf(master)
       );
-      if (endsBeforeStart(recurrence, start, repeatZone(master, start))) {
+      const zone = repeatZone(master, start);
+      if (endsBeforeStart(recurrence, momentOf(start, zone), zone)) {
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
       }
       return recurrence;
@@ -1197,11 +1234,14 @@ export function makeGoogleCalendarService(
       if (count === undefined || countOf(rule) !== count) {
         return rule;
       }
+      const seriesStart = slotOf(master.start, seriesZoneOf(master));
+      if (!seriesStart) {
+        return null;
+      }
       const counting = {
         masterRecurrence: master.recurrence ?? [],
         originalStart,
-        seriesStart:
-          slotOf(master.start, seriesZoneOf(master)) ?? originalStart,
+        seriesStart,
         seriesZone: seriesZoneOf(master),
       };
       // A rule that can be read is counted without asking Google.
@@ -1301,12 +1341,14 @@ export function makeGoogleCalendarService(
       // A new part that doesn't repeat ("Repeat: None") is one event with
       // no occurrences: the one carried (at its start) goes on it.
       const repeating = repeats(newSeries.recurrence);
+      // A part that doesn't repeat is one event: no recurrence lines.
       const written = repeating
         ? newSeries
         : Object.assign(
             {},
             newSeries,
-            ...params.carried.map((carried) => carried.changes)
+            ...params.carried.map((carried) => carried.changes),
+            { recurrence: [] }
           );
       const conferenceDataVersion = getConferenceDataVersion(written);
       const created = yield* Effect.gen(function* () {
