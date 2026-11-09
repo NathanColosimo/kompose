@@ -1262,6 +1262,37 @@ describe("This and following moved back across midnight onto a skipped day", () 
   });
 });
 
+describe("a series whose time has seconds", () => {
+  test("moves a deleted meeting's skip to the new time", async () => {
+    // Mondays 9:00:30, Nov 30 deleted; the series moves to 10:00.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T09:30:30-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-09T09:00:30-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-30T09:00:30-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20261130T150000Z",
+    ]);
+  });
+});
+
 describe("an UNTIL through a move a day on and an hour earlier", () => {
   test("ends on its own day, as its skips stay on theirs", async () => {
     // Daily 9:00 from Nov 9 until Nov 30, Nov 20 skipped; the first meeting

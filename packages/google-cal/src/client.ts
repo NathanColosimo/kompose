@@ -204,10 +204,7 @@ function placeAtNewTime(params: {
   const turn = clockTurn(change.from, change.to, params.sameDay);
   const at = (time: Temporal.PlainDateTime) =>
     googleDateTime(time.toZonedDateTime(zone));
-  const tried = [
-    at(local.add({ minutes: turn })),
-    shift && at(local.add(shift)),
-  ];
+  const tried = [at(local.add(turn)), shift && at(local.add(shift))];
   return (
     tried.find((place) => place && params.meets(place)) ??
     at(local.toPlainDate().toPlainDateTime(change.to))
