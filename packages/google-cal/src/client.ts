@@ -1127,9 +1127,9 @@ export function makeGoogleCalendarService(
       const resizes = !sameLength(times, master, zone);
       if (movesSlots || resizes) {
         const { cancelled, changed } = yield* exceptionsOf(calendarId, master);
-        const sameForm =
+        const keepsForm =
           Boolean(master.start.date) === Boolean(times.start.date);
-        if (sameForm && !sameTime(times.start, master.start, zone)) {
+        if (keepsForm && !sameTime(times.start, master.start, zone)) {
           // Google brings back an occurrence deleted on its own when the
           // series' start moves, so it stays deleted as a skip where its
           // meeting now is (`deletedSlots`).
