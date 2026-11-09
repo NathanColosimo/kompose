@@ -513,6 +513,37 @@ function followingTimes(
 }
 
 /**
+ * Where a rule's occurrence of `master` at `slot` (an original start)
+ * lands in a This and following new series from `splitStart`, starting at
+ * `start` with `recurrence`: moved as the split moved (`placeInNewSeries`)
+ * when the new series meets there, else where it was when the new series
+ * meets there (a rule day that didn't move); null when it meets at
+ * neither, or that can't be told.
+ */
+function carriedSlot(params: {
+  master: Event;
+  recurrence: string[];
+  slot: string;
+  splitStart: string;
+  start: Event["start"];
+}): string | null {
+  const { master, recurrence, slot, start } = params;
+  const zone = seriesZoneOf(master);
+  const meets = (at: string) =>
+    seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
+  const moved = placeInNewSeries({
+    newStart: start,
+    originalStart: slot,
+    splitStart: params.splitStart,
+    zone,
+  });
+  if (moved && meets(moved)) {
+    return moved;
+  }
+  return meets(slot) ? sameForm(slot, start) : null;
+}
+
+/**
  * The occurrences a "This and following" new series carries, and where:
  * the opened one at its start with its own changes (its times only if
  * the edit left them), and later changed ones at their new places.
@@ -527,6 +558,8 @@ function followingOccurrences(params: {
   master: Event;
   opened: Event;
   originalStart: string;
+  /** The new series' rule. */
+  recurrence: string[];
   /** The new series' start. */
   start: Event["start"];
 }) {
@@ -553,12 +586,19 @@ function followingOccurrences(params: {
       // rule meeting moves with the series.
       at: addsSlot(master.recurrence ?? [], exception.originalStart, zone)
         ? sameForm(exception.originalStart, start)
-        : placeInNewSeries({
+        : (carriedSlot({
+            master,
+            recurrence: params.recurrence,
+            slot: exception.originalStart,
+            splitStart: originalStart,
+            start,
+          }) ??
+          placeInNewSeries({
             newStart: start,
             originalStart: exception.originalStart,
             splitStart: originalStart,
             zone,
-          }),
+          })),
       changes: changesOwnTo(exception.occurrence, master, changes, zone),
       originalStart: exception.originalStart,
     })),
@@ -1259,22 +1299,30 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const zone = seriesZoneOf(master);
-      const movesDay = !dayOfStart(asStart(originalStart), zone)?.equals(
-        dayOfStart(start, zone) ?? Temporal.PlainDate.from("0001-01-01")
-      );
-      const cancelled = movesDay
+      const fromDay = dayOfStart(asStart(originalStart), zone);
+      const toDay = dayOfStart(start, zone);
+      const movesDay = !(fromDay && toDay && fromDay.equals(toDay));
+      // Moved to other days, a deleted rule meeting's skip goes where the
+      // new series meets in its place; one already at its new place isn't
+      // lined up again.
+      const placed = movesDay
         ? params.cancelled.map((slot) =>
             addsSlot(master.recurrence ?? [], slot, zone)
               ? slot
-              : (placeInNewSeries({
-                  newStart: start,
-                  originalStart: slot,
+              : (carriedSlot({
+                  master,
+                  recurrence: counted,
+                  slot,
                   splitStart: originalStart,
-                  zone,
+                  start,
                 }) ?? slot)
           )
-        : params.cancelled;
-      const recurrence = skipping(counted, cancelled, zone);
+        : [];
+      const recurrence = skipping(
+        counted,
+        movesDay ? placed : params.cancelled,
+        zone
+      );
       const ends = repeatZone(master, start);
       if (endsBeforeStart(recurrence, momentOf(start, ends), ends)) {
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
@@ -1709,6 +1757,7 @@ export function makeGoogleCalendarService(
           master,
           opened: currentEvent,
           originalStart,
+          recurrence,
           start: times.start,
         }),
         recurrence,

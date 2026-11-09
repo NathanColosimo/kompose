@@ -30,8 +30,10 @@ export const PLAIN_REFUSALS = [
   // can't be told.
   "deleteFromAddedOccurrence",
   // A kept COUNT whose meetings left can't be told: the rule can't be
-  // walked, and Google's list can't tell a skip or an added day before the
-  // split from one of the rule's own.
+  // walked, and Google's list can't tell a skip or an added day from one
+  // of the rule's own on either side of the split. (An UNTIL at the last
+  // meeting Google lists would end it right, but the series would no
+  // longer end after a set number of times, as the user set it.)
   "countUnknown",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.

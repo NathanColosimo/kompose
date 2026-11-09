@@ -151,12 +151,12 @@ describe("a COUNT carried from Google's list", () => {
   });
 });
 
-describe("a COUNT carried from Google's list past a clock change", () => {
-  test("doesn't count a start at a time its rule doesn't meet", async () => {
+describe("a COUNT whose series starts at another time than its rule", () => {
+  test("is counted from Google's list from the split on", async () => {
     // From Thu Mar 11 2027 9:00, daily at 2:30 four times: Mar 12, 13, 15
-    // and 16 (2:30 doesn't exist on Mar 14), and the start. The gap before
-    // the split stops the walk; from Google's list, two of the rule's
-    // meetings come before Mar 15, so two are left.
+    // and 16 (2:30 doesn't exist on Mar 14). Whether Google counts the 9:00
+    // start isn't known, so the walk leaves it; Google lists two of the
+    // rule's meetings from Mar 15 on, so two are left.
     const series: Event = {
       ...weekly,
       end: { dateTime: "2027-03-11T09:30:00-05:00", timeZone: zone },
