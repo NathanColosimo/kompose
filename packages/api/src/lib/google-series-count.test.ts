@@ -1119,6 +1119,51 @@ describe("a COUNT read from Google's list, the split keeping the series' times",
   });
 });
 
+describe("a COUNT read from Google's list, a last skip it doesn't list", () => {
+  // 8:00 daily four times from a 9:00 Nov 9 start (whether Google counts it
+  // can't be told), Nov 12 skipped and not listed: Nov 10 and 11 are left.
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=DAILY;BYHOUR=8;COUNT=4",
+      "EXDATE:20261112T130000Z",
+    ],
+  };
+  const listing = () =>
+    fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: [
+              occurrenceOf(series, "2026-11-09T09:00:00-05:00"),
+              occurrenceOf(series, "2026-11-10T08:00:00-05:00"),
+              occurrenceOf(series, "2026-11-11T08:00:00-05:00"),
+            ],
+          }
+        : undefined
+    );
+  const from10 = occurrenceOf(series, "2026-11-10T08:00:00-05:00");
+
+  test.each([
+    ["renamed", { summary: "Planning (new)" }],
+    [
+      "moved to 8:30",
+      {
+        end: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+      },
+    ],
+  ])("keeps both when %s", async (_how, changes) => {
+    const google = listing();
+    expect(Exit.isSuccess(await run(edit("following", from10, changes)))).toBe(
+      true
+    );
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "COUNT=2"
+    );
+  });
+});
+
 describe("a COUNT through a move past a deleted meeting", () => {
   test.each([
     ["Tue Nov 24", "2026-11-24"],

@@ -1411,6 +1411,15 @@ function placeByDay(params: {
   // A place already skipped is still its place.
   const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
+  // Counted from Google's list, a skip after its last meeting wasn't
+  // counted (`carryCountFromList`): it holds no place to free.
+  const lastListed = (params.listed ?? [])
+    .filter((slot) => !addsSlot(master.recurrence ?? [], slot, zone))
+    .flatMap((slot) => {
+      const at = slotMoment(slot, zone);
+      return at ? [at.epochMilliseconds] : [];
+    })
+    .reduce((last, at) => Math.max(last, at), Number.NEGATIVE_INFINITY);
   const ontoStart: number[] = [];
   let unknown = false;
   const placed = params.slots.flatMap((slot) => {
@@ -1426,7 +1435,10 @@ function placeByDay(params: {
     // A skipped position with no meeting of the new series after its start
     // in its place (none there, or the start itself) frees none; a new rule
     // not read here may meet there after all.
-    if ((formed === startSlot || at === null) && moment) {
+    const uncounted = Boolean(
+      params.listed && moment && moment.epochMilliseconds > lastListed
+    );
+    if ((formed === startSlot || at === null) && moment && !uncounted) {
       const meeting = ruleMeetingOf({ ...params, slot });
       const placeUnknown =
         at === null &&
