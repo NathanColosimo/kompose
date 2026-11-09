@@ -912,12 +912,12 @@ function matchClock(
 }
 
 /**
- * An RRULE line with its UNTIL in the start's form, on the series' last
+ * An RRULE line with its UNTIL in the start's form, on the rule's last
  * day: a date-time UNTIL's own day, or the day before when that day's
- * meeting (at `base`, the start's time before the edit) starts after it,
- * as a split's cut, the second before its meeting, does. A once-a-day
- * series moved to a new time of day (`retimed`) ends at that day's end
- * too, so its last meeting stays and none is added.
+ * meeting (at the rule's time, from `base`, the start's before the edit)
+ * starts after it, as a split's cut, the second before its meeting, does.
+ * A once-a-day series moved to a new time of day (`retimed`) ends at that
+ * day's end too, so its last meeting stays and none is added.
  */
 function matchUntil(
   line: string,
@@ -939,9 +939,12 @@ function matchUntil(
   if (timed !== allDay && !(timed && params.retimed)) {
     return line;
   }
+  // This rule's own time that day: in a series with rules at several
+  // times, not every rule meets at the start's.
+  const clock = base ? ruleTimeOf(line, base) : null;
   const meeting =
-    value.instant && base
-      ? value.day.toZonedDateTime({ plainTime: base, timeZone }).toInstant()
+    value.instant && clock
+      ? value.day.toZonedDateTime({ plainTime: clock, timeZone }).toInstant()
       : null;
   const day =
     meeting &&

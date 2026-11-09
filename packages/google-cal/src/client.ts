@@ -238,9 +238,28 @@ function lineUpRule(params: {
     return Boolean(value && !hadBefore.has(skipKey(value)));
   };
   const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
+  // Whether that day's meeting before the save was skipped or deleted: a
+  // skip at its new time then keeps it so (a client may have moved the
+  // old skip there, onto one where nothing met).
+  const deletedKeysBefore = new Set([
+    ...hadBefore,
+    ...cancelled.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
+    }),
+  ]);
+  const meetingWasDeleted = (moment: Temporal.Instant) => {
+    const was = moment
+      .toZonedDateTimeISO(zone)
+      .toPlainDate()
+      .toZonedDateTime({ plainTime: change.from, timeZone: zone })
+      .toInstant();
+    return deletedKeysBefore.has(String(was.epochMilliseconds));
+  };
   // An added meeting the saved rule still adds keeps its time, as does a
   // skip where nothing met (it skips nothing, so it can't move onto one),
-  // unless the series now meets at that time, where it would cancel one.
+  // unless the series now meets at that time, where it would cancel one
+  // the user didn't delete.
   const keepsOwnTime = (
     slot: string,
     moment: Temporal.Instant,
@@ -254,7 +273,7 @@ function lineUpRule(params: {
     if (added && addsSlot(rule, slot, zone)) {
       return !(atNewClock && savedMeetsAt(slot));
     }
-    return !(added || ruleMet || atNewClock);
+    return !(added || ruleMet || (atNewClock && !meetingWasDeleted(moment)));
   };
   const atNewTime: string[] = [];
   const atOwnTime: string[] = skips.filter(isNew);
@@ -2123,7 +2142,7 @@ export function makeGoogleCalendarService(
   /**
    * The rule an Entire series save writes, once what it would cost the
    * occurrences changed or deleted on their own is checked: a deleted one
-   * stays deleted as a skip where its meeting now is (`deletedSlots`), as
+   * stays deleted as a skip where its meeting now is (`lineUpRule`), as
    * Google brings it back when the start moves; one changed whose changes
    * Google would undo is refused before writing (`seriesChangeRefusal`).
    */

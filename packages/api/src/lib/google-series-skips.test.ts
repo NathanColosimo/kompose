@@ -211,6 +211,40 @@ describe("an Entire series save that keeps its slots", () => {
   });
 });
 
+describe("a skip a client moved onto one where nothing met", () => {
+  test("keeps the moved meeting skipped", async () => {
+    // Mondays 9:00, Nov 30 skipped at 9:00, plus an old skip at 10:00
+    // where nothing met. From Nov 16 moved to 10:00; the client sends its
+    // 9:00 skip moved to 10:00, which is the old one too.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "EXDATE:20261130T140000Z,20261130T150000Z",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=MO",
+              "EXDATE:20261130T150000Z",
+            ],
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20261130T150000Z",
+    ]);
+  });
+});
+
 describe("This and following made all day on another day", () => {
   test("drops a deleted added meeting from both lists", async () => {
     // Mondays at 9:00 plus an added Wed Dec 2 at 15:00, deleted on its

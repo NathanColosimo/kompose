@@ -84,6 +84,21 @@ describe("matchRecurrenceToStart", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261124T045959Z"]);
   });
 
+  test("ends each rule's UNTIL by that rule's own time", () => {
+    // Mondays at the start's 9:00, and Tuesdays at 15:00 until noon Dec 1:
+    // made all day, it ends Nov 30, so Tue Dec 1 isn't added.
+    const [, tuesdays] = matchRecurrenceToStart(
+      [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15;UNTIL=20261201T170000Z",
+      ],
+      { date: "2026-11-09" },
+      zone,
+      { dateTime: "2026-11-09T09:00:00-05:00" }
+    );
+    expect(tuesdays).toContain("UNTIL=20261130");
+  });
+
   test("keeps a skipped occurrence skipped in the new form", () => {
     // Made all day: the skipped 9:00 (UTC 14:00) becomes its date.
     expect(
