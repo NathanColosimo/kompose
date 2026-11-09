@@ -932,9 +932,9 @@ describe("a COUNT through a move onto a meeting skipped twice over", () => {
         )
       )
     ).toBe(true);
-    expect(google.writes()[0]?.body?.recurrence?.[0]).toBe(
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2",
+    ]);
   });
 
   test("doesn't count a skip where nothing met", async () => {
@@ -957,9 +957,9 @@ describe("a COUNT through a move onto a meeting skipped twice over", () => {
         )
       )
     ).toBe(true);
-    expect(google.writes()[0]?.body?.recurrence?.[0]).toBe(
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+    ]);
   });
 });
 
