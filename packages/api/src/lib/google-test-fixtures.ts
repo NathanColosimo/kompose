@@ -158,7 +158,18 @@ export const fakeGoogle = (
       return echo(request);
     }
     if (path.endsWith("/events")) {
-      return { items: [master, ...exceptions] };
+      // As Google lists a series by iCalUID: its master and exceptions,
+      // deleted ones only when asked for.
+      const query = request.url.searchParams;
+      if (query.get("iCalUID") !== master.iCalUID) {
+        return { items: [] };
+      }
+      const showDeleted = query.get("showDeleted") === "true";
+      return {
+        items: [master, ...exceptions].filter(
+          (event) => showDeleted || event.status !== "cancelled"
+        ),
+      };
     }
     if (path.endsWith("/instances")) {
       const seriesId = path.split("/").at(-2) ?? "";
