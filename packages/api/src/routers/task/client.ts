@@ -40,11 +40,16 @@ import {
   parsePlainDate,
   regeneratedOccurrenceRows,
   type SystemManagedTaskField,
-  type TaskInsertInput,
   type TaskInsertRow,
   type TaskUpdateInput,
   withMovedDueDate,
 } from "./occurrence-rows";
+
+type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
+  createdAt?: never;
+  tagIds?: string[];
+  updatedAt?: never;
+};
 
 function stripSystemManagedTaskFields<
   T extends Partial<Record<SystemManagedTaskField, unknown>>,
@@ -724,10 +729,13 @@ function buildRecurringTaskRows(
  */
 function editsThisTask(
   task: TaskSelect,
-  hasDbUpdates: boolean,
+  dbInput: TaskUpdateInput,
   tagIds: string[] | undefined
 ): boolean {
-  return hasDbUpdates || (task.seriesMasterId !== null && tagIds !== undefined);
+  return (
+    Object.keys(dbInput).length > 0 ||
+    (task.seriesMasterId !== null && tagIds !== undefined)
+  );
 }
 
 /**
@@ -746,7 +754,6 @@ function allRetagged(rows: TaskSelect[]): WrittenRows {
 /** Writes an update's rows for its scope (no tags), returning them. */
 const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   dbInput: TaskUpdateInput;
-  hasDbUpdates: boolean;
   /** The pattern the edit sets, checked. */
   newPattern: CheckedPattern | null;
   normalizedTagIds: string[] | undefined;
@@ -770,7 +777,7 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
       yield* convertToRecurring(userId, task, dbInput, params.newPattern)
     );
   }
-  if (editsThisTask(task, params.hasDbUpdates, params.normalizedTagIds)) {
+  if (editsThisTask(task, dbInput, params.normalizedTagIds)) {
     // Edit this task alone, marked as an exception to its series.
     return allRetagged(
       yield* dbUpdate(userId, task.id, {
@@ -911,19 +918,12 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  // Every changed row goes back, once, latest write wins (so clients see
-  // the moved exceptions in their new series), but only the edited
-  // occurrence and the new rows take the edit's tags: the other kept
-  // exceptions keep their own.
-  const rows = new Map(
-    [...updatedAnchor, ...endedMaster, ...inserted, ...moved].map((row) => [
-      row.id,
-      row,
-    ])
-  );
+  // Every changed row goes back (updateTask reads them fresh by id), but
+  // only the edited occurrence and the new rows take the edit's tags: the
+  // other kept exceptions keep their own.
   return {
     retagIds: [...(keepEdited ? [task.id] : []), ...ids(inserted)],
-    rows: [...rows.values()],
+    rows: [...updatedAnchor, ...endedMaster, ...inserted, ...moved],
   };
 });
 
@@ -1229,7 +1229,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
         task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
-      const hasDbUpdates = Object.keys(dbInput).length > 0;
       // One occurrence can't repeat differently from its series: a new
       // pattern (or "Repeat: None") applies from this occurrence on.
       if (changesPattern && scope === "this") {
@@ -1265,7 +1264,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         Effect.gen(function* () {
           const written = yield* writeTaskUpdate({
             dbInput,
-            hasDbUpdates,
             newPattern,
             normalizedTagIds,
             recurrenceChanged: changesPattern,
