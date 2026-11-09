@@ -266,11 +266,7 @@ export function skipping(
   // Each skip once, however many times it's asked for.
   const fresh = starts.filter((start) => {
     const value = asValue(start, zone);
-    if (!value || skipped.has(skipKey(value))) {
-      return !value;
-    }
-    skipped.add(skipKey(value));
-    return true;
+    return !value || firstSeen(skipped, value);
   });
   if (fresh.length === 0) {
     return recurrence;
@@ -380,14 +376,20 @@ function valueMoment(
 /** The values, each moment (or day) once. */
 function unique(values: RecurrenceValue[]): RecurrenceValue[] {
   const seen = new Set<string>();
-  return values.filter((value) => {
-    const key = skipKey(value);
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
+  return values.filter((value) => firstSeen(seen, value));
+}
+
+/**
+ * Whether `value` is new to `seen`, adding it: two values are the same
+ * skip when their `skipKey`s match.
+ */
+function firstSeen(seen: Set<string>, value: RecurrenceValue): boolean {
+  const key = skipKey(value);
+  if (seen.has(key)) {
+    return false;
+  }
+  seen.add(key);
+  return true;
 }
 
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
