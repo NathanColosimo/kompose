@@ -602,12 +602,13 @@ function deletedSlots(params: {
 }
 
 /**
- * The rule meetings deleted on their own, or skipped in the rule (EXDATE)
- * by a skip the save sends as it was, whose place after a new start (where
- * `deletedSlots` skips them) isn't one of the saved series': after a first
- * meeting's day move under a rule whose days follow its start (monthly on
- * the start's date, say), the meeting now in its place would come back. A
- * skip the client moved or dropped was placed by it.
+ * The rule meetings deleted on their own, or, after a day move, skipped in
+ * the rule (EXDATE) by a skip the save sends as it was, whose place after
+ * a new start (where `deletedSlots` skips them) isn't one of the saved
+ * series': after a first meeting's day move under a rule whose days follow
+ * its start (monthly on the start's date, say), the meeting now in its
+ * place would come back. A skip the client moved or dropped was placed by
+ * it; one on a start that keeps its day stays on its meeting's day.
  */
 function deletedLost(params: {
   cancelled: string[];
@@ -623,7 +624,9 @@ function deletedLost(params: {
   const sent = new Set(
     dateValues(params.saved ?? own, "EXDATE", zone).map(skipKey)
   );
-  const ruleSkips = dateValues(own, "EXDATE", zone)
+  const day = dayOfStart(times.start, zone);
+  const movesDay = !day?.equals(dayOfStart(master.start, zone) ?? day);
+  const ruleSkips = dateValues(movesDay ? own : [], "EXDATE", zone)
     .filter((value) => sent.has(skipKey(value)))
     .map((value) =>
       value.instant
