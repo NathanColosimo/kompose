@@ -447,8 +447,8 @@ function repeatZone(
  */
 function ruleForStart(
   rule: string[],
-  master: { start: { date?: string; dateTime?: string; timeZone?: string } },
-  start: { date?: string; dateTime?: string; timeZone?: string },
+  master: Pick<Event, "start">,
+  start: Event["start"],
   /**
    * A split's original start (the new series' first meeting before the
    * edit). Times are read from it, not the old start, and a COUNT made

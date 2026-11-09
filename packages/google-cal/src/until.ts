@@ -647,9 +647,7 @@ export function countedRuleMeetings(params: {
   // (15:00 beside a 9:00 start) doesn't meet then.
   const atStart = base !== null && Temporal.PlainTime.compare(time, base) === 0;
   const meetings = new Set<number>(
-    first !== null && base && atStart && existsOn(from, base, timeZone)
-      ? [first]
-      : []
+    first !== null && atStart && existsOn(from, time, timeZone) ? [first] : []
   );
   if (meetings.size === count) {
     return meetings;
@@ -1395,9 +1393,9 @@ export function moveSkippedDays(params: {
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime() ?? null;
   // A skip another rule still needs stays, and no skip lands on another
   // rule's meeting. A rule that can't be read counts as meeting.
-  const otherRules = recurrence
-    .filter((line) => line.startsWith("RRULE:"))
-    .slice(1);
+  const otherRules = recurrence.filter(
+    (line) => line.startsWith("RRULE:") && line !== newRule
+  );
   const othersMeet = (
     day: Temporal.PlainDate,
     time: Temporal.PlainTime | null,
