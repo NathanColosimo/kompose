@@ -2388,7 +2388,7 @@ export function makeGoogleCalendarService(
       (keepsTimes(edited, occurrence, zone) &&
         repeats(edited.recurrence ?? master.recurrence) &&
         !newRepeat({
-          dayMoved: false,
+          moved: null,
           own: master.recurrence ?? [],
           saved: edited.recurrence,
         })));
