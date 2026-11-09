@@ -36,9 +36,9 @@ export function truncateRecurrenceForFollowing(
   recurrence: string[],
   originalStart: string,
   /** The series' zone, for the days of its RDATE values. */
-  seriesZone = "UTC",
+  seriesZone: string,
   /** The series' first start, where a COUNT counts from. */
-  seriesStart?: string
+  seriesStart: string | undefined
 ): string[] {
   const split = asValue(originalStart, seriesZone);
   if (!split) {
