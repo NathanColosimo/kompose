@@ -608,6 +608,7 @@ function newTimesKeep(params: {
     ).every(
       // A value the edit gives the whole series is the new meeting's too.
       (field) => {
+        // Object.keys loses the key type: each is a CreateEvent field.
         const value = params.changes[field as keyof CreateEvent];
         return (
           value !== undefined &&
@@ -763,17 +764,33 @@ function seriesChangeRefusal(params: {
         // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
         const first = opensSeries(occurrence, master);
+        const newDay = dayOfStart(times.start, zone);
+        // A first meeting whose day the series takes, or is given, keeps it.
+        const firstDayKept =
+          first &&
+          (ownDay?.equals(newDay ?? ownDay) ||
+            !newDay?.equals(dayOfStart(master.start, zone) ?? newDay));
         const movedDay = !(
-          (first && ownDay?.equals(dayOfStart(times.start, zone) ?? ownDay)) ||
+          firstDayKept ||
           ownDay?.equals(dayOfStart(asStart(originalStart), zone) ?? ownDay)
         );
-        // The saved series must still meet in its place (the first meeting's
-        // is the new start).
-        const place = placeOnNewStart(originalStart, master, times.start);
+        // The saved series must still meet in its place (the first
+        // meeting's is the new start, unless the save skips it).
+        const repeatsIn = repeatZone(master, times.start);
+        const startSlot = slotOf(times.start, repeatsIn);
+        const place = first
+          ? startSlot
+          : placeOnNewStart(originalStart, master, times.start);
         const replaced =
-          first ||
-          (place !== null &&
-            keptOrEnded({ master, place, recurrence, start: times.start }));
+          place !== null &&
+          (first
+            ? seriesMeetsAt({
+                recurrence,
+                seriesZone: repeatsIn,
+                slot: place,
+                start: times.start,
+              }) !== false
+            : keptOrEnded({ master, place, recurrence, start: times.start }));
         return (
           movedDay ||
           !replaced ||
@@ -842,8 +859,10 @@ function movesSeveralADay(
   const from = clockOf(master.start, zone);
   const was = clockOf(occurrence.start, zone);
   const now = clockOf(edited.start, zone);
+  // Made all day, its times go too.
   const moves =
     timeOfDayChange(master, start) !== null ||
+    Boolean(start.date) ||
     Boolean(was && now && !was.equals(now));
   return Boolean(
     from && moves && meetsSeveralTimesADay(master.recurrence ?? [], from)
@@ -1096,11 +1115,13 @@ function withinEnd(params: {
   edited: string[] | undefined;
   master: Event;
   recurrence: string[];
+  /** The rule before it's lined up with `start` (an UNTIL as it was). */
+  rule: string[];
   start: Event["start"];
   zone: string;
 }): string[] | null {
   const { master, recurrence, zone } = params;
-  if (!endsBeforeStart(recurrence, momentOf(params.start, zone), zone)) {
+  if (!endsBeforeStart(params.rule, momentOf(params.start, zone), zone)) {
     return recurrence;
   }
   const ownRule =
@@ -1989,6 +2010,10 @@ export function makeGoogleCalendarService(
       const ownSkips = dateValues(final, "EXDATE", zone)
         .filter(ownSkip)
         .map(asSlot);
+      // A skip whose place is the new start (the meeting just saved there)
+      // is dropped, and holds no place of its own: a carried COUNT is one
+      // less for each.
+      let ontoStart = 0;
       const placeBy = (writtenRule: string[]) =>
         [
           ...params.cancelled.filter((slot) => !isAdded(slot)),
@@ -2005,6 +2030,9 @@ export function makeGoogleCalendarService(
             start,
           });
           const formed = inFormOf(at ?? slot, start, newZone);
+          if (formed === startSlot && at !== null) {
+            ontoStart += 1;
+          }
           const ontoAdded =
             at !== null &&
             formed !== null &&
@@ -2025,7 +2053,9 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            final,
+            countOf(master.recurrence) === countOf(fromSplit)
+              ? changeCount(final, -ontoStart)
+              : final,
             "EXDATE",
             zone,
             (value) => !ownSkip(value)
@@ -2040,6 +2070,7 @@ export function makeGoogleCalendarService(
         edited: params.edited,
         master,
         recurrence,
+        rule: final,
         start,
         zone: newZone,
       });

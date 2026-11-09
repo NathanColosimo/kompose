@@ -576,13 +576,8 @@ describe("This and following", () => {
   test.each([
     // Google's own "ends Nov 30"; moved to Tue Dec 1: one event.
     ["20261201T045959Z", "2026-12-01T09:00:00-05:00", []],
-    // An end at the last meeting's start; moved to 10:00, the end follows
-    // its meeting to the end of that day: still only Nov 30.
-    [
-      "20261130T140000Z",
-      "2026-11-30T10:00:00-05:00",
-      ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261201T045959Z"],
-    ],
+    // An end at the last meeting's start; moved to 10:00: one event too.
+    ["20261130T140000Z", "2026-11-30T10:00:00-05:00", []],
   ])(
     "the last meeting moved past the series' end (UNTIL=%s) is all the new part has",
     async (until, to, recurrence) => {

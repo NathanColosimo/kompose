@@ -802,16 +802,13 @@ function ruleCount(line: string): number | null {
  * it isn't known, so Google's list decides (`carryCountFromList`).
  */
 function positionsBefore(params: {
+  count: number;
   rule: string;
   seriesStart: RecurrenceValue;
   seriesZone: string;
   split: RecurrenceValue;
 }): number | null {
-  const { rule, seriesStart, seriesZone, split } = params;
-  const count = ruleCount(rule);
-  if (count === null) {
-    return null;
-  }
+  const { count, rule, seriesStart, seriesZone, split } = params;
   if (seriesStart.instant && split.instant) {
     const seriesClock = seriesStart.instant
       .toZonedDateTimeISO(seriesZone)
@@ -914,7 +911,13 @@ export function carryCountExactly(
   if (!(rule && count !== null && seriesStart && split)) {
     return null;
   }
-  const before = positionsBefore({ rule, seriesStart, seriesZone, split });
+  const before = positionsBefore({
+    count,
+    rule,
+    seriesStart,
+    seriesZone,
+    split,
+  });
   return before === null || before >= count
     ? null
     : changeCount(recurrence, -before);
