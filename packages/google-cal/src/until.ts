@@ -27,6 +27,7 @@ const BY_MONTH_PART = /BYMONTH=([^;]*)/;
 const BY_MONTH_DAY_PART = /BYMONTHDAY=/;
 const BY_DAY_PART = /BYDAY=([^;]*)/;
 const WEEK_START_PART = /WKST=([A-Z]{2})/;
+const TIME_PART = /BY(?:HOUR|MINUTE|SECOND)=/;
 /**
  * A time part a rule sets to one value. Google meets a rule once a day, at
  * the start's time, and ignores a list ("BYHOUR=9,15"), so a list reads as
@@ -79,6 +80,26 @@ export function ruleClock(
     minute: parts.get("BYMINUTE") ?? base.minute,
     second: parts.get("BYSECOND") ?? base.second,
   });
+}
+
+/** A sub-daily rule's steps in a day. */
+const STEPS_A_DAY: Record<string, number> = {
+  HOURLY: 24,
+  MINUTELY: 24 * 60,
+  SECONDLY: 24 * 60 * 60,
+};
+
+/**
+ * Whether a sub-daily rule meets more than once a day: unless it steps
+ * whole days at a time (`FREQ=HOURLY;INTERVAL=24`) with no time parts.
+ */
+function stepsWithinADay(line: string): boolean {
+  const steps = STEPS_A_DAY[FREQ_PART.exec(line)?.[1] ?? ""];
+  if (!steps) {
+    return false;
+  }
+  const interval = Number(INTERVAL_PART.exec(line)?.[1] ?? "1");
+  return interval % steps !== 0 || TIME_PART.test(line);
 }
 
 /**
@@ -139,7 +160,7 @@ export function meetsSeveralTimesADay(
   if (base) {
     times.add(ruleTime("", base));
   }
-  return rules.some((line) => SUB_DAILY.test(line)) || times.size > 1;
+  return rules.some(stepsWithinADay) || times.size > 1;
 }
 
 /**
