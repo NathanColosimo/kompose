@@ -234,28 +234,25 @@ function lineUpRule(params: {
   // A skip the series didn't have before the save was written for the new
   // start (a client lined it up): it stays as written.
   const hadBefore = new Set(dateValues(before, "EXDATE", zone).map(skipKey));
-  const isNew = (slot: string) => {
-    const value = readRecurrenceValue(slot, zone, zone);
-    return Boolean(value && !hadBefore.has(skipKey(value)));
-  };
+  // Slots' skip keys, to match against skips read from rules.
+  const keysOf = (slots: string[]) =>
+    slots.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
+    });
+  const isNew = (slot: string) =>
+    keysOf([slot]).some((key) => !hadBefore.has(key));
   const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
   // Whether that day's meeting before the save was skipped or deleted: a
   // skip at its new time then keeps it so (a client may have moved the
   // old skip there, onto one where nothing met).
-  const deletedKeysBefore = new Set([
-    ...hadBefore,
-    ...cancelled.flatMap((slot) => {
-      const value = readRecurrenceValue(slot, zone, zone);
-      return value ? [skipKey(value)] : [];
-    }),
-  ]);
+  const deletedKeysBefore = new Set([...hadBefore, ...keysOf(cancelled)]);
   const meetingWasDeleted = (moment: Temporal.Instant) => {
-    const was = moment
-      .toZonedDateTimeISO(zone)
-      .toPlainDate()
+    const day = moment.toZonedDateTimeISO(zone).toPlainDate();
+    const was = day
       .toZonedDateTime({ plainTime: change.from, timeZone: zone })
       .toInstant();
-    return deletedKeysBefore.has(String(was.epochMilliseconds));
+    return deletedKeysBefore.has(skipKey({ day, instant: was }));
   };
   // An added meeting the saved rule still adds keeps its time, as does a
   // skip where nothing met (it skips nothing, so it can't move onto one),
@@ -307,19 +304,11 @@ function lineUpRule(params: {
     atOwnTime,
     zone
   );
-  const deletedKeys = new Set(
-    deleted.flatMap((slot) => {
-      const value = readRecurrenceValue(slot, zone, zone);
-      return value ? [skipKey(value)] : [];
-    })
-  );
+  const deletedKeys = new Set(keysOf(deleted));
   // An added meeting the saved series has, unless it was deleted too.
-  const onAddedMeeting = (at: string) => {
-    const value = readRecurrenceValue(at, zone, zone);
-    return (
-      addsSlot(lined, at, zone) && !(value && deletedKeys.has(skipKey(value)))
-    );
-  };
+  const onAddedMeeting = (at: string) =>
+    addsSlot(lined, at, zone) &&
+    !keysOf([at]).some((key) => deletedKeys.has(key));
   return skipping(
     lined,
     atNewTime.filter((at) => !onAddedMeeting(at)),

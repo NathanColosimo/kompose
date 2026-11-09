@@ -99,6 +99,21 @@ describe("matchRecurrenceToStart", () => {
     expect(tuesdays).toContain("UNTIL=20261130");
   });
 
+  test("keeps a date skip in a series that meets several times a day", () => {
+    const rule = [
+      "RRULE:FREQ=HOURLY;INTERVAL=6;UNTIL=20261205T045959Z",
+      "EXDATE;VALUE=DATE:20261130",
+    ];
+    expect(
+      matchRecurrenceToStart(
+        rule,
+        { dateTime: "2026-11-09T09:00:00-05:00" },
+        zone,
+        { dateTime: "2026-11-09T09:00:00-05:00" }
+      )
+    ).toContain("EXDATE;VALUE=DATE:20261130");
+  });
+
   test("keeps a skipped occurrence skipped in the new form", () => {
     // Made all day: the skipped 9:00 (UTC 14:00) becomes its date.
     expect(

@@ -520,10 +520,14 @@ function matchDateList(
   }
   // Times of their own stay theirs: an RDATE's, or any in a rule with
   // several times a day (moving a skipped 15:00 to the start's 9:00 would
-  // un-skip it).
+  // un-skip it). There, a date stays a date too: it covers the whole day,
+  // not one time in it.
   const timed = values.flatMap(({ day, instant }) =>
     instant ? [{ day, instant }] : []
   );
+  if (severalADay && timed.length < values.length) {
+    return line;
+  }
   if (
     (list.name === "RDATE" || severalADay) &&
     timed.length === values.length
