@@ -419,6 +419,28 @@ describe("what Google keeps as an occurrence's own", () => {
     ]);
   });
 
+  test("attachments cleared through an occurrence with its own are cleared on it too", async () => {
+    // The series has A; Nov 16 has B of its own. From Nov 16, attachments
+    // are cleared for the entire series.
+    const series: Event = {
+      ...weekly,
+      attachments: [{ fileUrl: "https://example.com/a" }],
+    };
+    const own = {
+      ...occurrenceOf(series, "2026-11-16T09:00:00-05:00"),
+      attachments: [{ fileUrl: "https://example.com/b" }],
+    };
+    const google = fakeGoogle(series, [own]);
+    expect(
+      Exit.isSuccess(await run(edit("all", own, { attachments: [] })))
+    ).toBe(true);
+    const writes = google.writes();
+    expect(writes).toHaveLength(2);
+    for (const write of writes) {
+      expect(write.url.searchParams.get("supportsAttachments")).toBe("true");
+    }
+  });
+
   test("a guest added keeps everyone's answers to the series", async () => {
     // I'm invited to the series; I accepted Nov 16 alone, and from it add
     // a guest: the series keeps my answer to it.
@@ -1702,6 +1724,24 @@ describe("Entire series start and length changes, as Google applies them", () =>
       expect(google.writes()).toMatchObject([
         { body: { recurrence: [], status: "tentative" } },
       ]);
+    });
+
+    test("keeping the meeting link it dropped on its own dropped", async () => {
+      const meet = {
+        conferenceId: "abc-defg-hij",
+        entryPoints: [
+          { entryPointType: "video", uri: "https://meet.google.com/abc" },
+        ],
+      };
+      const google = fakeGoogle({ ...weekly, conferenceData: meet }, [
+        { ...occurrenceOf(weekly, nov9), conferenceData: undefined },
+      ]);
+      expect(
+        Exit.isSuccess(await run(edit("all", nov16, { recurrence: [] })))
+      ).toBe(true);
+      const [written] = google.writes();
+      expect(written?.url.searchParams.get("conferenceDataVersion")).toBe("1");
+      expect(written?.body).not.toHaveProperty("conferenceData");
     });
 
     test("asking Google to write its own attachment", async () => {
