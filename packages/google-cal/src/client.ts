@@ -418,18 +418,19 @@ function oneForm(time: Event["start"]): Event["start"] {
     : { dateTime: time.dateTime, timeZone: time.timeZone };
 }
 
-/** Whether the series' own rules (not an added day) meet at `slot`. */
-function ruleMeetingAt(slot: string, master: Event): boolean {
-  return (
-    seriesMeetsAt({
-      recurrence: (master.recurrence ?? []).filter((line) =>
-        line.startsWith("RRULE:")
-      ),
-      seriesZone: seriesZoneOf(master),
-      slot,
-      start: master.start,
-    }) === true
-  );
+/**
+ * Whether the series' own rules (not an added day) meet at `slot`; null
+ * when a rule can't be read.
+ */
+function ruleMeetingAt(slot: string, master: Event): boolean | null {
+  return seriesMeetsAt({
+    recurrence: (master.recurrence ?? []).filter((line) =>
+      line.startsWith("RRULE:")
+    ),
+    seriesZone: seriesZoneOf(master),
+    slot,
+    start: master.start,
+  });
 }
 
 /**
@@ -499,7 +500,7 @@ function deletedSlots(params: {
     return cancelled;
   }
   return cancelled.map((slot) =>
-    ruleMeetingAt(slot, master) || !keepsForm
+    ruleMeetingAt(slot, master) === true || !keepsForm
       ? (placeOnNewStart(slot, master, start) ?? slot)
       : slot
   );
@@ -521,16 +522,21 @@ function deletedLost(params: {
   const { master, recurrence, times } = params;
   const first = momentOf(times.start, repeatZone(master, times.start));
   return params.cancelled.filter((slot) => {
-    const place = ruleMeetingAt(slot, master)
-      ? placeOnNewStart(slot, master, times.start)
-      : null;
+    const ruleMet = ruleMeetingAt(slot, master);
+    const place =
+      ruleMet === false ? null : placeOnNewStart(slot, master, times.start);
     const at =
       place && momentOf(asStart(place), repeatZone(master, times.start));
     // Before the new start, the series has no meeting to bring back.
     if (!(place && at && first) || Temporal.Instant.compare(at, first) < 0) {
       return false;
     }
-    return !keptOrEnded({ master, place, recurrence, start: times.start });
+    // A rule that can't be read can't tell where its meeting went: lost,
+    // as a changed one there is.
+    return (
+      ruleMet === null ||
+      !keptOrEnded({ master, place, recurrence, start: times.start })
+    );
   });
 }
 
