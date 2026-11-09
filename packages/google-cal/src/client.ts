@@ -386,9 +386,7 @@ function newTimesKeep(params: {
   // moved to the new meeting's start, at the series' length, keeps its
   // start there, and its length was the series' to change.
   const ownTimes = "start" in changesOwnTo(occurrence, master, seriesZone);
-  const ownLength =
-    lengthMs(occurrence.start, occurrence.end, seriesZone) !==
-    lengthMs(master.start, master.end, seriesZone);
+  const ownLength = !sameLength(occurrence, master, seriesZone);
   const timesAtStake =
     ownTimes && (ownLength || !sameTime(occurrence.start, meeting.start, zone));
   const own = Object.keys(ownChanges(occurrence, master, meeting, zone)).filter(
