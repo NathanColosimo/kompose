@@ -160,6 +160,17 @@ export function changedFields(
   );
 }
 
+/**
+ * `edited` with an empty repeat left out: it keeps the series' rule, as it
+ * always has. Clients sent one for a rule not loaded yet; "Repeat: None"
+ * isn't asked for this way.
+ */
+export function keptRepeat(edited: CreateEvent): CreateEvent {
+  return edited.recurrence?.length === 0
+    ? { ...edited, recurrence: undefined }
+    : edited;
+}
+
 /** The rule parts that pick which days it meets on. */
 const DAY_PARTS = new Set([
   "BYDAY",

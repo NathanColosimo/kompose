@@ -977,8 +977,8 @@ function buildEditPayload(
       },
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      // An empty list asks the server for "Repeat: None"; this form starts
-      // empty until the series' rule loads, so it sends none instead.
+      // This form's repeat starts empty until the series' rule loads: an
+      // empty one isn't a choice, so it isn't sent.
       recurrence: values.recurrence?.length
         ? values.recurrence
         : ctx.event?.recurrence,
