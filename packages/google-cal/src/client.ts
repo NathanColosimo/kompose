@@ -1237,6 +1237,15 @@ function placeSkips(params: {
     // is told to be a meeting.
     return params.listed?.includes(slot) ? true : null;
   };
+  // Counted from Google's list, a skip after its last meeting wasn't
+  // counted (`carryCountFromList`): it holds no place to free.
+  const lastListed = (params.listed ?? [])
+    .filter((slot) => !addsSlot(master.recurrence ?? [], slot, zone))
+    .flatMap((slot) => {
+      const at = slotMoment(slot, zone);
+      return at ? [at.epochMilliseconds] : [];
+    })
+    .reduce((last, at) => Math.max(last, at), Number.NEGATIVE_INFINITY);
   // Each rule meeting once, however many skips it has.
   const ontoStart = new Set<number>();
   let unknown = false;
@@ -1261,7 +1270,10 @@ function placeSkips(params: {
         slot: formed,
         start,
       }) === null;
-    if (noPlace && moment) {
+    const uncounted = Boolean(
+      params.listed && moment && moment.epochMilliseconds > lastListed
+    );
+    if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || placeUnknown;
       if (ruleMeeting) {
         ontoStart.add(moment.epochMilliseconds);
