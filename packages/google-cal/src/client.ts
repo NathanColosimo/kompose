@@ -1288,15 +1288,15 @@ function sameRepeat(a: string[], b: string[], zone: string): boolean {
   return rules(a) === rules(b);
 }
 
-/** What Google's list of a series' meetings told a kept COUNT. */
-interface CountFromList {
-  /** Skips it knows hold a place, by moment. */
-  heldPlaces: number[];
-  /** Skips the COUNT left out (`carryCountFromList`), by moment. */
-  leftOut: number[];
-  /** The meetings' original starts. */
-  listed: string[];
-}
+/**
+ * What Google's list of a series' meetings told a kept COUNT: the skips
+ * that hold a place and those it left out (`carryCountFromList`), and the
+ * meetings' original starts (`listed`).
+ */
+type CountFromList = Pick<
+  NonNullable<ReturnType<typeof carryCountFromList>>,
+  "heldPlaces" | "leftOut"
+> & { listed: string[] };
 
 /**
  * Where a split's deleted (`cancelled`) and skipped (`skips`) meetings, by
@@ -1399,18 +1399,15 @@ function placeSkips(params: {
       slot: formed,
       start,
     }) === null;
-  // A skipped position with no meeting of the new series after its start
-  // in its place (none there, the start itself, or another's) frees none.
-  // Only a rule meeting's skip takes a place another one could share.
-  const noPlaceFor = (skip: {
-    added: boolean;
+  // Only a rule meeting's skip with a place claims it, once per skip, in
+  // the order they're placed: true when another one already took it.
+  const claimPlace = (skip: {
     at: string | null;
     formed: string | null;
     moment: Temporal.Instant | null;
     ruleMeeting: boolean | null;
   }) =>
-    skip.formed === startSlot ||
-    (skip.at === null && !skip.added) ||
+    skip.formed !== startSlot &&
     Boolean(
       skip.ruleMeeting &&
         skip.at &&
@@ -1429,7 +1426,10 @@ function placeSkips(params: {
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
-    const noPlace = noPlaceFor({ added, at, formed, moment, ruleMeeting });
+    // A skipped position with no meeting of the new series after its start
+    // in its place (none there, the start itself, or another's) frees none.
+    const shared = claimPlace({ at, formed, moment, ruleMeeting });
+    const noPlace = formed === startSlot || (at === null && !added) || shared;
     const uncounted = leftOutAt(moment);
     if (noPlace && moment && !uncounted) {
       unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
@@ -2276,6 +2276,8 @@ export function makeGoogleCalendarService(
    * ones are put back (`carriedSlot`); an added one keeps its slot.
    * Refuses, before any write, if the COUNT can't be carried or if the
    * rule ends before `start`.
+   * With whether `edited` gives the series a new repeat (`newRepeat`,
+   * `givesNewRepeat`), which one occurrence can't take.
    */
   const newSeriesRecurrence = (params: {
     calendarId: string;
@@ -2402,7 +2404,7 @@ export function makeGoogleCalendarService(
         zone
       );
       if (!endsBeforeStart(recurrence, momentOf(start, newZone), newZone)) {
-        return recurrence;
+        return { newRepeat: isNewRepeat, recurrence };
       }
       // The series' own end before the new start (a meeting moved past
       // it): its rule is spent, so the new part has that meeting and any
@@ -2413,7 +2415,10 @@ export function makeGoogleCalendarService(
       const ownRule = !isNewRepeat;
       if (ownRule) {
         const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
-        return repeats(added) ? added : [];
+        return {
+          newRepeat: isNewRepeat,
+          recurrence: repeats(added) ? added : [],
+        };
       }
       return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
     });
@@ -2972,20 +2977,16 @@ export function makeGoogleCalendarService(
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
-      const isNewRepeat = givesNewRepeat({
-        from: asStart(originalStart),
-        master,
-        saved: edited.recurrence,
-        start: times.start,
-      });
-      const recurrence = yield* newSeriesRecurrence({
-        calendarId,
-        cancelled: exceptions.cancelled,
-        edited: edited.recurrence,
-        master,
-        originalStart,
-        start: times.start,
-      });
+      const { newRepeat: isNewRepeat, recurrence } = yield* newSeriesRecurrence(
+        {
+          calendarId,
+          cancelled: exceptions.cancelled,
+          edited: edited.recurrence,
+          master,
+          originalStart,
+          start: times.start,
+        }
+      );
       const carried = placeCarried({
         occurrences: followingOccurrences({
           changes,
@@ -3301,7 +3302,7 @@ export function makeGoogleCalendarService(
       // their changes there.
       const slot = seriesSlotAt(master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
-      const recurrence = yield* newSeriesRecurrence({
+      const { recurrence } = yield* newSeriesRecurrence({
         calendarId,
         cancelled: exceptions.cancelled,
         edited: undefined,
