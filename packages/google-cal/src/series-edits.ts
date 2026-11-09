@@ -43,17 +43,33 @@ export type SeriesRefusal =
 /** A refusal that names the occurrences it's for. */
 type NamingRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
 
-/** "Mar 31": an original start's day, as the refusal names it. */
-function dayName(originalStart: string): string {
+/**
+ * "Mar 31": an original start's day, as the refusal names it, with its
+ * year ("Mar 31, 2027") when the refusal spans more than one.
+ */
+function dayName(originalStart: string, withYear: boolean): string {
   return Temporal.PlainDate.from(originalStart.slice(0, 10)).toLocaleString(
     "en-US",
-    { day: "numeric", month: "short" }
+    withYear
+      ? { day: "numeric", month: "short", year: "numeric" }
+      : { day: "numeric", month: "short" }
   );
 }
 
-/** "Nov 23, Nov 30": the occurrences a refusal names. */
+/** Whether a refusal's occurrences fall in more than one year. */
+function spansYears(originalStarts: readonly string[]): boolean {
+  return new Set(originalStarts.map((start) => start.slice(0, 4))).size > 1;
+}
+
+/**
+ * "Nov 23, Nov 30": the occurrences a refusal names ("Dec 28, 2026; Jan 4,
+ * 2027" across years).
+ */
 function namedDays(originalStarts: readonly string[]): string {
-  return originalStarts.map(dayName).join(", ");
+  const withYear = spansYears(originalStarts);
+  return originalStarts
+    .map((start) => dayName(start, withYear))
+    .join(withYear ? "; " : ", ");
 }
 
 /**
@@ -65,7 +81,7 @@ function elsewhere(refusal: NamingRefusal): string {
     .map((start) => start.slice(0, 10))
     .sort()
     .at(-1);
-  const following = `This and following${last ? ` from an occurrence after ${dayName(last)}` : ""}`;
+  const following = `This and following${last ? ` from an occurrence after ${dayName(last, spansYears(refusal.originalStarts))}` : ""}`;
   return refusal.seriesOnly
     ? `Save it with ${following}.`
     : `Save it for this occurrence only, or with ${following}.`;
