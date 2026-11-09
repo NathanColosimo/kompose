@@ -2400,12 +2400,15 @@ export function makeGoogleCalendarService(
                 : {}),
             }),
           catch: (cause) => {
-            logGoogleEventUpdateFailure({
-              operation: "create",
-              calendarId: destinationCalendarId,
-              event: written,
-              cause,
-            });
+            // Taken is no failure: it's read back below.
+            if (!(cause instanceof ConflictError)) {
+              logGoogleEventUpdateFailure({
+                operation: "create",
+                calendarId: destinationCalendarId,
+                event: written,
+                cause,
+              });
+            }
             return new GoogleApiError({ cause });
           },
         }).pipe(
