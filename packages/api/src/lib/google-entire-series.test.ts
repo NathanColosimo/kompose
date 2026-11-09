@@ -391,6 +391,76 @@ describe("what Google keeps as an occurrence's own", () => {
     expect(google.writes()).toHaveLength(1);
   });
 
+  describe("a guest added with a new time", () => {
+    // The series has a and b; the series moves to 10:00, which cancels each
+    // occurrence's own changes, and c is added.
+    const series: Event = {
+      ...weekly,
+      attendees: [{ email: "a@example.com" }, { email: "b@example.com" }],
+    };
+    const tenAm = {
+      end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+    };
+
+    test("is refused from an occurrence that dropped a guest on its own", async () => {
+      // Nov 16 dropped b: the series is written a, b, c, and Nov 16 would
+      // get b back.
+      const dropped = {
+        ...occurrenceOf(series, "2026-11-16T09:00:00-05:00"),
+        attendees: [{ email: "a@example.com" }],
+      };
+      const google = fakeGoogle(series, [dropped]);
+      expect(
+        await refusalOf(
+          edit("all", dropped, {
+            ...tenAm,
+            attendees: [{ email: "a@example.com" }, { email: "c@example.com" }],
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: ["2026-11-16T09:00:00-05:00"],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    test("is refused for another occurrence whose own guests are what was sent", async () => {
+      // Nov 16 dropped b and sends a, c; Nov 23 has a and c of its own. The
+      // series is written a, b, c, which neither has.
+      const dropped = {
+        ...occurrenceOf(series, "2026-11-16T09:00:00-05:00"),
+        attendees: [{ email: "a@example.com" }],
+      };
+      const google = fakeGoogle(series, [
+        dropped,
+        {
+          ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+          attendees: [{ email: "a@example.com" }, { email: "c@example.com" }],
+        },
+      ]);
+      expect(
+        await refusalOf(
+          edit("all", dropped, {
+            ...tenAm,
+            attendees: [{ email: "a@example.com" }, { email: "c@example.com" }],
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: [
+            "2026-11-16T09:00:00-05:00",
+            "2026-11-23T09:00:00-05:00",
+          ],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+  });
+
   test("a guest added from an occurrence leaves the guests it dropped on its own", async () => {
     // The series has a and b; Nov 16 dropped b on its own. From it, c is
     // added: the series keeps b and gains c.
