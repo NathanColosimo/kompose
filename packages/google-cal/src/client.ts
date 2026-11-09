@@ -4,6 +4,9 @@ import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
   addsSlot,
+  carryCountExactly,
+  carryCountFromList,
+  countOf,
   deleteFromListed,
   followingDelete,
   followingIsWhole,
@@ -1149,7 +1152,7 @@ export function makeGoogleCalendarService(
     start: Event["start"];
   }) =>
     Effect.gen(function* () {
-      const { master, originalStart, start } = params;
+      const { calendarId, master, originalStart, start } = params;
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
         params.edited ?? master.recurrence ?? [],
@@ -1157,9 +1160,18 @@ export function makeGoogleCalendarService(
         seriesZoneOf(master),
         "from"
       );
+      const counted = yield* carriedCount(
+        calendarId,
+        master,
+        fromSplit,
+        originalStart
+      );
+      if (!counted) {
+        return yield* Effect.fail(refused({ reason: "countUnknown" }));
+      }
       // Occurrences deleted on their own after the split stay skipped.
       const recurrence = skipping(
-        fromSplit,
+        counted,
         params.cancelled,
         seriesZoneOf(master)
       );
@@ -1167,6 +1179,38 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
       }
       return recurrence;
+    });
+
+  /**
+   * A split's new `rule` with a kept COUNT set to the occurrences left
+   * after `originalStart`. Unchanged if the user changed the COUNT or
+   * there is none; null if what's left can't be known.
+   */
+  const carriedCount = (
+    calendarId: string,
+    master: Event,
+    rule: string[],
+    originalStart: string
+  ) =>
+    Effect.gen(function* () {
+      const count = countOf(master.recurrence);
+      if (count === undefined || countOf(rule) !== count) {
+        return rule;
+      }
+      const counting = {
+        masterRecurrence: master.recurrence ?? [],
+        originalStart,
+        seriesStart:
+          slotOf(master.start, seriesZoneOf(master)) ?? originalStart,
+        seriesZone: seriesZoneOf(master),
+      };
+      // A rule that can be read is counted without asking Google.
+      const exact = carryCountExactly(rule, counting);
+      if (exact) {
+        return exact;
+      }
+      const starts = yield* listOccurrenceStarts(calendarId, master);
+      return carryCountFromList(rule, { ...counting, starts });
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */

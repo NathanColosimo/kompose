@@ -24,6 +24,7 @@ const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
   MINUTELY: "minutes",
   SECONDLY: "seconds",
 };
+const COUNT_PART = /([:;])COUNT=[^;]+/;
 
 /**
  * The series' rule cut to end just before the occurrence at `originalStart`.
@@ -233,6 +234,21 @@ export function skipping(
   ];
 }
 
+/**
+ * The following part's rule with its COUNT less the `used` occurrences
+ * before the split (a five-time series split at its third runs three).
+ */
+function withRemainingCount(recurrence: string[], used: number): string[] {
+  return recurrence.map((line) => {
+    const count = line.startsWith("RRULE:")
+      ? Number(COUNT_REGEX.exec(line)?.[1])
+      : Number.NaN;
+    return Number.isFinite(count)
+      ? line.replace(COUNT_PART, `$1COUNT=${Math.max(1, count - used)}`)
+      : line;
+  });
+}
+
 /** Whether a recurrence value comes before the split at `originalStart`. */
 function beforeSplit(
   value: RecurrenceValue,
@@ -289,6 +305,19 @@ function valueMoment(
     value.instant ??
     value.day.toZonedDateTime({ timeZone: seriesZone }).toInstant()
   );
+}
+
+/** The values, each moment (or day) once. */
+function unique(values: RecurrenceValue[]): RecurrenceValue[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const key = skipKey(value);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
@@ -601,7 +630,209 @@ function ruleEndsBefore(
   return Temporal.Instant.compare(lastAt, split) < 0;
 }
 
+/**
+ * Whether the series adds a meeting (RDATE) from its start up to the split
+ * at `originalStart`: Google's list can't tell it from a rule's own there,
+ * so a COUNT can't be carried from that list (`carryCountFromList`).
+ */
+export function addedBeforeSplit(params: {
+  masterRecurrence: string[];
+  originalStart: string;
+  seriesStart: string;
+  seriesZone: string;
+}): boolean {
+  return dateValues(params.masterRecurrence, "RDATE", params.seriesZone).some(
+    (value) => fromStartToSplit(value, params)
+  );
+}
+
+/**
+ * Whether `value` is from the series' start (a skip an earlier split left
+ * before it isn't one of its meetings) up to the split.
+ */
+function fromStartToSplit(
+  value: RecurrenceValue,
+  params: { originalStart: string; seriesStart: string; seriesZone: string }
+): boolean {
+  const { originalStart, seriesStart, seriesZone } = params;
+  return (
+    !beforeSplit(value, seriesStart, seriesZone) &&
+    beforeSplit(value, originalStart, seriesZone)
+  );
+}
+
+/**
+ * The following part's rule with the COUNT carried on, counted from
+ * `starts` (Google's list of the series' meetings) when the rule can't be
+ * walked (`carryCountExactly`). COUNT counts rule positions, skipped ones
+ * included; Google lists the rule's meetings, cancelled ones too, and the
+ * added (RDATE) ones. So the positions used before the split are the
+ * meetings listed there, and what's left can't be known (null) when an
+ * added day there can't be told from a rule day, or a skip there Google
+ * doesn't list can't be told to be a position.
+ */
+export function carryCountFromList(
+  recurrence: string[],
+  params: {
+    masterRecurrence: string[];
+    originalStart: string;
+    seriesZone: string;
+    /** Every occurrence's original start, as Google lists them. */
+    starts: string[];
+    /** The series' own first start, where its rule counts from. */
+    seriesStart: string;
+  }
+): string[] | null {
+  const { masterRecurrence, seriesZone, starts } = params;
+  const before = (value: RecurrenceValue) => fromStartToSplit(value, params);
+  if (addedBeforeSplit(params)) {
+    return null;
+  }
+  const listed = unique(
+    starts
+      .map((start) => asValue(start, seriesZone))
+      .filter((value): value is RecurrenceValue => value !== null)
+      .filter(before)
+  );
+  const skipped = dateValues(masterRecurrence, "EXDATE", seriesZone);
+  if (
+    skipped
+      .filter(before)
+      .some((skip) => !listed.some((value) => sameValue(value, skip)))
+  ) {
+    return null;
+  }
+  return withRemainingCount(recurrence, listed.length);
+}
+
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/**
+ * How many of a COUNT `rule`'s positions (meetings, or days for an all-day
+ * series) come before `split`. Google counts the series' start as its
+ * first, rule day or not. Null when they can't be told.
+ */
+function positionsBefore(params: {
+  rule: string;
+  seriesStart: RecurrenceValue;
+  seriesZone: string;
+  split: RecurrenceValue;
+}): number | null {
+  const { rule, seriesStart, seriesZone, split } = params;
+  const count = Number(COUNT_REGEX.exec(rule)?.[1]);
+  if (!Number.isFinite(count)) {
+    return null;
+  }
+  const seriesClock = seriesStart.instant
+    ?.toZonedDateTimeISO(seriesZone)
+    .toPlainTime();
+  if (seriesClock && seriesStart.instant && split.instant) {
+    const clock = ruleClock(rule, seriesClock);
+    const meetings = countedRuleMeetings({
+      base: seriesClock,
+      count,
+      from: seriesStart.day,
+      rule,
+      time: clock,
+      timeZone: seriesZone,
+    });
+    if (
+      !meetings ||
+      skipsAClockGap({
+        clock,
+        from: seriesStart.instant,
+        meetings,
+        rule,
+        seriesZone,
+      })
+    ) {
+      return null;
+    }
+    const at = split.instant.epochMilliseconds;
+    return [...meetings].filter((ms) => ms < at).length;
+  }
+  return (
+    countedRuleDays(rule, seriesStart.day, count)?.filter(
+      (day) => Temporal.PlainDate.compare(day, split.day) < 0
+    ).length ?? null
+  );
+}
+
+/**
+ * Whether a rule's counted `meetings` pass a rule day whose `clock` time
+ * the clocks skip (2:30 AM on the spring-forward night). RFC 5545 drops
+ * that meeting; Google's list shows what Google did, so the count is left
+ * to it (see until.ts `existsOn`).
+ */
+function skipsAClockGap(params: {
+  clock: Temporal.PlainTime;
+  from: Temporal.Instant;
+  meetings: Set<number>;
+  rule: string;
+  seriesZone: string;
+}): boolean {
+  const { clock, from, meetings, rule, seriesZone } = params;
+  const start = from.toZonedDateTimeISO(seriesZone).toPlainDate();
+  const last = Temporal.Instant.fromEpochMilliseconds(Math.max(...meetings))
+    .toZonedDateTimeISO(seriesZone)
+    .toPlainDate();
+  for (
+    let day = start;
+    Temporal.PlainDate.compare(day, last) <= 0;
+    day = day.add({ days: 1 })
+  ) {
+    const zoned = day.toZonedDateTime({
+      plainTime: clock,
+      timeZone: seriesZone,
+    });
+    if (
+      Temporal.PlainTime.compare(zoned.toPlainTime(), clock) !== 0 &&
+      Temporal.Instant.compare(zoned.toInstant(), from) >= 0 &&
+      isRuleDay(rule, start, day) === true
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The following part's rule with exactly the positions it has left: its
+ * COUNT less the positions before the split (skips included, added days
+ * not). Null when the walk can't tell, or with several rules (such a
+ * series can't be split).
+ */
+export function carryCountExactly(
+  recurrence: string[],
+  params: {
+    masterRecurrence: string[];
+    originalStart: string;
+    seriesStart: string;
+    seriesZone: string;
+  }
+): string[] | null {
+  const { masterRecurrence, originalStart, seriesZone } = params;
+  const [rule, ...others] = masterRecurrence.filter(isRule);
+  const seriesStart = asValue(params.seriesStart, seriesZone);
+  const split = asValue(originalStart, seriesZone);
+  if (!(rule && seriesStart && split) || others.length > 0) {
+    return null;
+  }
+  const before = positionsBefore({ rule, seriesStart, seriesZone, split });
+  return before === null ? null : withRemainingCount(recurrence, before);
+}
+
+/** The COUNT a series' rule ends after, if it has one. */
+export function countOf(recurrence: string[] | undefined): number | undefined {
+  for (const line of recurrence ?? []) {
+    const count = line.startsWith("RRULE:")
+      ? Number(COUNT_REGEX.exec(line)?.[1])
+      : Number.NaN;
+    if (Number.isFinite(count)) {
+      return count;
+    }
+  }
+}
 
 // Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {
