@@ -884,7 +884,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
 
   test("reads every page of the series' exceptions", async () => {
     // Google lists Nov 23, renamed on its own, on a second page.
-    const renamed = {
+    const onSecondPage = {
       ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
       summary: "Planning (renamed)",
     };
@@ -893,7 +893,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
         return;
       }
       return request.url.searchParams.get("pageToken") === "2"
-        ? { items: [renamed] }
+        ? { items: [onSecondPage] }
         : { items: [weekly], nextPageToken: "2" };
     });
     expect(
