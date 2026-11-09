@@ -944,6 +944,57 @@ describe("a skipped added meeting the save removes, its skip in the rule", () =>
   );
 });
 
+describe("a This and following move onto a deleted added meeting", () => {
+  test("keeps the meeting just saved there", async () => {
+    // Mondays 9:00 plus an added Tue Nov 17 9:00, deleted on its own; from
+    // Nov 16, moved to Nov 17 9:00: the moved meeting is there.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "RDATE:20261117T140000Z"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-17T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const created = google.writes()[0]?.body?.recurrence;
+    expect(JSON.stringify(created)).not.toContain("EXDATE");
+  });
+});
+
+describe("an Entire series rule change alone", () => {
+  test("adds no skip for a rule meeting deleted on its own", async () => {
+    // Nov 23 deleted on its own; Mondays become Mondays and Wednesdays.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, { recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"] })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+    ]);
+  });
+});
+
 describe("a removed added day's skip the saved series still needs", () => {
   test.each([["all"], ["following"]] as const)(
     "stays when the saved rule meets there (%s)",

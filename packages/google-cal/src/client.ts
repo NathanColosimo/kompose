@@ -928,9 +928,23 @@ function keptAfterEdit(params: {
   // Rewritten in the new start's form, with a deleted occurrence's skip
   // lined up where its meeting now is (`lineUpRule`), none of the series'
   // own on a first meeting moved to another day.
+  // A rule change alone keeps a deleted rule meeting's slot, or drops it:
+  // either way it needs no skip. A deleted added day's may become the
+  // rule's, and stays skipped.
+  const zone = seriesZoneOf(master);
+  const movesStart = !sameTime(times.start, master.start, zone);
   const recurrence = params.movesSlots
     ? withoutOwnSkipAt(
-        lineUpRule({ cancelled, master, rule, start: times.start }),
+        lineUpRule({
+          cancelled: movesStart
+            ? cancelled
+            : cancelled.filter((slot) =>
+                addsSlot(master.recurrence ?? [], slot, zone)
+              ),
+          master,
+          rule,
+          start: times.start,
+        }),
         master,
         times.start,
         params.edited.recurrence
@@ -2452,8 +2466,14 @@ export function makeGoogleCalendarService(
       }
       const recurrence = skipping(
         lineUpRule({
+          // An added meeting's skip on the new start would hide the
+          // meeting just saved there.
           cancelled: byPlace
-            ? params.cancelled.filter(isAdded)
+            ? params.cancelled.filter(
+                (slot) =>
+                  isAdded(slot) &&
+                  inFormOf(slot, start, newZone) !== slotOf(start, newZone)
+              )
             : params.cancelled,
           master,
           rule: keepingDateValues(
