@@ -764,12 +764,13 @@ function newTimesKeep(params: {
     Object.keys(
       ownChanges(occurrence, master, seriesSlotAt(times, slot), zone)
     ).every(
-      // A value the edit gives the whole series is the new meeting's too.
+      // A value the edit gives the whole series (a cleared one too) is the
+      // new meeting's too.
       (field) => {
         // Object.keys loses the key type: each is a CreateEvent field.
         const value = params.changes[field as keyof CreateEvent];
         return (
-          value !== undefined &&
+          Object.hasOwn(params.changes, field) &&
           Object.keys(changedFields({ [field]: value }, occurrence)).length ===
             0
         );
