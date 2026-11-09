@@ -248,7 +248,9 @@ function entireSeriesTimes(
     !day ||
     rules.length === 0 ||
     rules.some((rule) => isRuleDay(rule, day, day) === true);
-  if (opensSeries(occurrence, master) && rulesMeet) {
+  // A day the opened meeting already had on its own isn't a new one.
+  const movesDay = !day?.equals(dayOfStart(occurrence.start, zone) ?? day);
+  if (opensSeries(occurrence, master) && rulesMeet && movesDay) {
     return { end, start };
   }
   return (
@@ -287,6 +289,8 @@ function timesOnOwnDay(
  * meeting takes its place.
  */
 function newTimesKeep(params: {
+  /** The fields the edit changed, which the new series' meeting takes. */
+  changes: Partial<CreateEvent>;
   master: Event;
   occurrence: Event;
   originalStart: string;
@@ -310,8 +314,19 @@ function newTimesKeep(params: {
       slot,
       start: times.start,
     }) === true &&
-    Object.keys(ownChanges(occurrence, master, seriesSlotAt(times, slot), zone))
-      .length === 0
+    Object.keys(
+      ownChanges(occurrence, master, seriesSlotAt(times, slot), zone)
+    ).every(
+      // A value the edit gives the whole series is the new meeting's too.
+      (field) => {
+        const value = params.changes[field as keyof CreateEvent];
+        return (
+          value !== undefined &&
+          Object.keys(changedFields({ [field]: value }, occurrence)).length ===
+            0
+        );
+      }
+    )
   );
 }
 
@@ -345,13 +360,15 @@ function deletedSlots(params: {
         slot,
         start: master.start,
       }) === true;
-    const clock = clockOf(start, zone);
+    // Made timed, the series repeats in its new start's zone.
+    const repeatsIn = repeatZone(master, start);
+    const clock = clockOf(start, repeatsIn);
     if (!(day && (ruleMet || !keepsForm))) {
       return slot;
     }
     return clock
       ? googleDateTime(
-          day.toZonedDateTime({ plainTime: clock, timeZone: zone })
+          day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
         )
       : day.toString();
   });
@@ -391,14 +408,23 @@ function seriesChangeRefusal(params: {
   const lost = changed
     .filter(({ occurrence, originalStart }) => {
       if (movesStart && occurrence.id === opened.id) {
-        // The edit replaces its times, and the fields it changes.
-        return Object.keys(changesOwnTo(occurrence, master, zone)).some(
-          (field) =>
-            field !== "start" && field !== "end" && !(field in params.changes)
+        // The edit replaces its time and the fields it changes, but not a
+        // day of its own, which Google would give back to the series.
+        const ownDay = dayOfStart(occurrence.start, zone);
+        const movedDay = !ownDay?.equals(
+          dayOfStart(asStart(originalStart), zone) ?? ownDay
+        );
+        return (
+          movedDay ||
+          Object.keys(changesOwnTo(occurrence, master, zone)).some(
+            (field) =>
+              field !== "start" && field !== "end" && !(field in params.changes)
+          )
         );
       }
       if (movesStart) {
         return !newTimesKeep({
+          changes: params.changes,
           master,
           occurrence,
           originalStart,
