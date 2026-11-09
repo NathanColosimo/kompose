@@ -371,14 +371,27 @@ function seriesChangeRefusal(params: {
 }
 
 /**
- * Whether `start` moves the time of day of a series that meets several
- * times a day. Such a start can't move without moving one time onto
- * another, or off its own.
+ * Whether an Entire series edit through `occurrence` gives a series that
+ * meets several times a day a new time of day: the series' start's, or
+ * the opened meeting's own (a 15:00 meeting moved, its start's 9:00 kept).
+ * Such a time can't move without moving one time onto another, or off its
+ * own.
  */
-function movesSeveralADay(master: Event, start: Event["start"]): boolean {
-  const change = timeOfDayChange(master, start);
+function movesSeveralADay(
+  master: Event,
+  start: Event["start"],
+  edited: CreateEvent,
+  occurrence: Event
+): boolean {
+  const zone = seriesZoneOf(master);
+  const from = clockOf(master.start, zone);
+  const was = clockOf(occurrence.start, zone);
+  const now = clockOf(edited.start, zone);
+  const moves =
+    timeOfDayChange(master, start) !== null ||
+    Boolean(was && now && !was.equals(now));
   return Boolean(
-    change && meetsSeveralTimesADay(master.recurrence ?? [], change.from)
+    from && moves && meetsSeveralTimesADay(master.recurrence ?? [], from)
   );
 }
 
@@ -1452,7 +1465,7 @@ export function makeGoogleCalendarService(
       const zone = seriesZoneOf(master);
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
       const times = entireSeriesTimes(edited, currentEvent, master);
-      if (movesSeveralADay(master, times.start)) {
+      if (movesSeveralADay(master, times.start, edited, currentEvent)) {
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
       }
 
