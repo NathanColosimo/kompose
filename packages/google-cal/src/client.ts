@@ -2150,21 +2150,21 @@ function addedOntoStart(params: {
 /**
  * How many places a kept COUNT (`keeps`) loses to skips that free none:
  * one for each rule meeting skipped on the new start, with no place in
- * the new series, or sharing another's (`byDay`), or an added day on the
+ * the new series, or sharing another's (`skips`), or an added day on the
  * new start that is a rule meeting too (`added`); by moment, once however
  * many skips it has. None for a COUNT the user set; null when one's can't
  * be told.
  */
 function countPlacesLost(params: {
   added: number[] | null;
-  byDay: number[] | null;
   keeps: boolean;
+  skips: number[] | null;
 }): number | null {
-  const { added, byDay } = params;
+  const { added, skips } = params;
   if (!params.keeps) {
     return 0;
   }
-  return added && byDay ? new Set([...byDay, ...added]).size : null;
+  return added && skips ? new Set([...skips, ...added]).size : null;
 }
 
 /**
@@ -3149,7 +3149,7 @@ export function makeGoogleCalendarService(
       // A skip whose place is the new start (the meeting just saved there)
       // is dropped, and holds no place of its own: a carried COUNT is one
       // less for each rule meeting, however many skips it has.
-      const byDay = byPlace
+      const placement = byPlace
         ? placeByDay({
             cancelled: params.cancelled,
             fromList,
@@ -3173,15 +3173,15 @@ export function makeGoogleCalendarService(
               start,
             }),
           };
-      const placed = byDay.placed;
+      const placed = placement.placed;
       const placesLost = countPlacesLost({
         added: addedOntoStart({
           cancelled: params.cancelled.filter(isAdded),
           master,
           start,
         }),
-        byDay: byDay.placesLost,
         keeps,
+        skips: placement.placesLost,
       });
       const lowered =
         placesLost === null
@@ -3191,7 +3191,7 @@ export function makeGoogleCalendarService(
               master,
               places: placesLost,
               rule: final,
-              ruleSkips: byDay.ruleSkips,
+              ruleSkips: placement.ruleSkips,
               splitAt: originalStart,
               start,
             });
