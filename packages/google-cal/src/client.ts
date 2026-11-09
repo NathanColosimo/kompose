@@ -1821,6 +1821,10 @@ export function makeGoogleCalendarService(
             ...payload,
             calendarId,
             ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+            // Google writes attachments only when asked to.
+            ...("attachments" in carried.changes
+              ? { supportsAttachments: true }
+              : {}),
           }),
         catch: (cause) => {
           logGoogleEventUpdateFailure({

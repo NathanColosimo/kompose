@@ -203,6 +203,32 @@ describe("This and following", () => {
     });
   });
 
+  test("carries an occurrence's own reminder and attachment", async () => {
+    // Nov 30 has a reminder and a file of its own; from Nov 16 renamed.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        attachments: [{ fileUrl: "https://example.com/agenda" }],
+        reminders: {
+          overrides: [{ method: "popup", minutes: 5 }],
+          useDefault: false,
+        },
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("following", nov16, { summary: "Planning (new)" }))
+      )
+    ).toBe(true);
+    const carried = google.writes()[1];
+    expect(carried?.url.searchParams.get("supportsAttachments")).toBe("true");
+    expect(carried?.body).toMatchObject({
+      attachments: [{ fileUrl: "https://example.com/agenda" }],
+      reminders: { overrides: [{ method: "popup", minutes: 5 }] },
+      summary: "Planning (new)",
+    });
+  });
+
   test("a move to another day carries a deleted occurrence's skip to the new day", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to
     // Tuesdays, so the skip moves to Tue Dec 1, as a changed Nov 30 would.
