@@ -2683,8 +2683,8 @@ export function makeGoogleCalendarService(
       // The new part's COUNT, when it keeps the series': less the places
       // before the split (`carriedCount`), plus one for a moved meeting's
       // skip (`moved`), less one for each skip with no place of its own in
-      // the new series (`lostPlaces`) and each that falls past its end
-      // (`countWithinSkips`). A COUNT the user set, or one with a new
+      // the new series (`placesOnStart`) and each that falls past its end
+      // (`lowerCount`). A COUNT the user set, or one with a new
       // repeat, is theirs, plus one for a moved meeting's skip and less
       // nothing else.
       const keeps = keepsCount({
