@@ -116,18 +116,18 @@ describe("a COUNT carried from Google's list", () => {
   });
 
   test("counts before the split without a skip from before the series began", async () => {
-    // The same 1977 skip, and a Dec 1, 2031 skip after the split that the
-    // list can't tell from a meeting: counted from the series' start to
-    // the split, where 1978 to 2028 are used.
+    // The same 1977 skip, and a 10:00 Nov 9, 2031 skip after the split
+    // that the list can't tell from a meeting: counted from the series'
+    // start to the split, where 1978 to 2028 are used.
     const { google, rename } = yearly([
       "EXDATE:19771109T090000Z",
-      "EXDATE:20311201T090000Z",
+      "EXDATE:20311109T100000Z",
     ]);
     expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
       "EXDATE:19771109T090000Z",
-      "EXDATE:20311201T090000Z",
+      "EXDATE:20311109T100000Z",
     ]);
   });
 
@@ -143,20 +143,38 @@ describe("a COUNT carried from Google's list", () => {
   });
 
   test("counts from the split on when a skip before it can't be told to be a meeting", async () => {
-    // Dec 1, 2029 isn't a meeting, but the rule can't be walked to show
-    // it; Google lists 2030 to 2125 from the split, so 96 are left.
-    const { google, rename } = yearly(["EXDATE:20291201T090000Z"]);
+    // Nov 9, 2029 at 10:00 isn't a meeting, but on a rule day it can't be
+    // told not to be one; Google lists 2030 to 2125 from the split, so 96
+    // are left.
+    const { google, rename } = yearly(["EXDATE:20291109T100000Z"]);
+    expect(Exit.isSuccess(await run(rename(2030)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=96",
+      "EXDATE:20291109T100000Z",
+    ]);
+  });
+
+  test("counts past skips on days the rule doesn't meet", async () => {
+    // Dec 1 isn't one of the rule's days, so neither skip is a position:
+    // split at 2030, 52 are used, so 96 are left.
+    const { google, rename } = yearly([
+      "EXDATE:20291201T090000Z",
+      "EXDATE:20311201T090000Z",
+    ]);
     expect(Exit.isSuccess(await run(rename(2030)))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=96",
       "EXDATE:20291201T090000Z",
+      "EXDATE:20311201T090000Z",
     ]);
   });
 
   test("refuses when skips it can't place fall on both sides of the split", async () => {
+    // Skips on the rule's own days, at another time, that Google doesn't
+    // list: whether each is a position can't be told.
     const { google, rename } = yearly([
-      "EXDATE:20291201T090000Z",
-      "EXDATE:20311201T090000Z",
+      "EXDATE:20291109T100000Z",
+      "EXDATE:20311109T100000Z",
     ]);
     expect(await refusalOf(rename(2030))).toMatchObject({
       data: { reason: "countUnknown" },
