@@ -1044,6 +1044,31 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a new time and end that drop the opened occurrence are refused", async () => {
+    // Nov 23 moved to 11:00 on its own; from it, 12:00 and twice only: the
+    // series ends Nov 16, before it.
+    const moved = occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+      end: "2026-11-23T11:30:00-05:00",
+      start: "2026-11-23T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [moved]);
+    expect(
+      await refusalOf(
+        edit("all", moved, {
+          end: { dateTime: "2026-11-23T12:30:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2"],
+          start: { dateTime: "2026-11-23T12:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [

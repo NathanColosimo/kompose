@@ -781,16 +781,17 @@ function seriesChangeRefusal(params: {
         const place = first
           ? startSlot
           : placeOnNewStart(originalStart, master, times.start);
-        const replaced =
+        // Read with the saved end and skips: the opened one isn't past an
+        // end the save sets, which would drop it.
+        const meetsThere =
           place !== null &&
-          (first
-            ? seriesMeetsAt({
-                recurrence,
-                seriesZone: repeatsIn,
-                slot: place,
-                start: times.start,
-              }) !== false
-            : keptOrEnded({ master, place, recurrence, start: times.start }));
+          seriesMeetsAt({
+            recurrence,
+            seriesZone: repeatsIn,
+            slot: place,
+            start: times.start,
+          });
+        const replaced = first ? meetsThere !== false : meetsThere === true;
         return (
           movedDay ||
           !replaced ||
@@ -1103,6 +1104,15 @@ function inFormOf(
   const day = dayOfStart(asStart(slot), zone);
   const formed = onDay(start, day, zone);
   return formed && slotOf(formed, zone);
+}
+
+/**
+ * Whether a split's new `rule` keeps the series' COUNT, which is then
+ * carried on (a COUNT the user changed is the new part's own).
+ */
+function keepsCount(master: Event, rule: string[]): boolean {
+  const count = countOf(master.recurrence);
+  return count !== null && countOf(rule) === count;
 }
 
 /**
@@ -2059,7 +2069,7 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            countOf(master.recurrence) === countOf(fromSplit)
+            keepsCount(master, fromSplit)
               ? changeCount(final, -ontoStart.size)
               : final,
             "EXDATE",
@@ -2099,8 +2109,7 @@ export function makeGoogleCalendarService(
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
-      const count = countOf(master.recurrence);
-      if (count === null || countOf(rule) !== count) {
+      if (!keepsCount(master, rule)) {
         return rule;
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
