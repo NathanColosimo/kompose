@@ -183,28 +183,34 @@ function shortShift(
 }
 
 /**
- * A skipped meeting's place once the series' time moves: by the clock's
- * `shift` (a move of less than a day) where the saved series `meets`, else
- * on its own day at `clock`.
+ * A skipped meeting's place once the series' time moves, the first the
+ * saved series `meets` at: the time of day's change (within twelve hours,
+ * across midnight too: 9:00 to 8:00 is an hour earlier, 23:00 to 00:30 an
+ * hour and a half later), then the clock's whole `shift` (a move of less
+ * than a day); else on its own day at the new time.
  */
 function placeAtNewTime(params: {
-  clock: Temporal.PlainTime;
+  change: { from: Temporal.PlainTime; to: Temporal.PlainTime };
   meets: (slot: string) => boolean;
   moment: Temporal.Instant;
   shift: Temporal.Duration | null;
   zone: string;
 }): string {
-  const { clock, moment, shift, zone } = params;
+  const { change, moment, shift, zone } = params;
   const local = moment.toZonedDateTimeISO(zone).toPlainDateTime();
-  const shifted =
-    shift && googleDateTime(local.add(shift).toZonedDateTime(zone));
-  return shifted && params.meets(shifted)
-    ? shifted
-    : googleDateTime(
-        local
-          .toPlainDate()
-          .toZonedDateTime({ plainTime: clock, timeZone: zone })
-      );
+  const minutes = change.from.until(change.to).total("minutes");
+  // The change's nearest way round the clock.
+  const turn = ((((minutes + 720) % 1440) + 1440) % 1440) - 720;
+  const at = (time: Temporal.PlainDateTime) =>
+    googleDateTime(time.toZonedDateTime(zone));
+  const tried = [
+    at(local.add({ minutes: turn })),
+    shift && at(local.add(shift)),
+  ];
+  return (
+    tried.find((place) => place && params.meets(place)) ??
+    at(local.toPlainDate().toPlainDateTime(change.to))
+  );
 }
 
 /**
@@ -391,7 +397,7 @@ function lineUpRule(params: {
     if (ruleMet) {
       atNewTime.push(
         placeAtNewTime({
-          clock: change.to,
+          change,
           meets: (place) =>
             seriesMeetsAt({
               recurrence: savedRules,
