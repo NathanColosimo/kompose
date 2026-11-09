@@ -1614,14 +1614,15 @@ function placeSkips(params: {
       ruleSkips.add(formed);
     }
   };
-  const placed = [...cancelled, ...params.skips].flatMap((slot) => {
+  // Each skip's place, worked out once: then the skips written, and (for
+  // a kept COUNT) the account of places, in that order.
+  const skips = [...cancelled, ...params.skips].map((slot) => {
     const added = addsSlot(master.recurrence ?? [], slot, zone);
     const at = placeOf(slot, added);
     const formed = inFormOf(at ?? slot, start, newZone);
-    const ontoLive = landsOnLive(at, formed);
-    if (params.keeps) {
-      tally({ added, at, formed, ontoLive, slot });
-    }
+    return { added, at, formed, ontoLive: landsOnLive(at, formed), slot };
+  });
+  const placed = skips.flatMap(({ at, formed, ontoLive }) => {
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
     return formed && formed !== startSlot && !ontoAdded && !ontoLive
@@ -1630,6 +1631,9 @@ function placeSkips(params: {
   });
   if (!params.keeps) {
     return { lostPlaces: 0, placed, ruleSkips: [] };
+  }
+  for (const skip of skips) {
+    tally(skip);
   }
   return unknown
     ? null
