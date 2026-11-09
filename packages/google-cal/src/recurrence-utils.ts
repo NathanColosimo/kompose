@@ -9,6 +9,7 @@ import {
   dateValues,
   existsOn,
   keepingDateValues,
+  lastCountedMeeting,
   type RecurrenceValue,
   readRecurrenceValue,
   ruleClock,
@@ -656,53 +657,6 @@ function subDailyEndsBefore(
 }
 
 /**
- * `lastCountedMeeting`'s answers, by rule and start; cleared when full.
- * It's what keeps a save of a long COUNT series with many skips fast: each
- * skip asks for its rule's end again (a 3,000-meeting series with 400
- * skips saves in tens of milliseconds with it, seconds without).
- */
-const LAST_COUNTED = new Map<string, number | null>();
-const LAST_COUNTED_LIMIT = 1000;
-
-/**
- * A timed COUNT rule's last meeting, in epoch ms; null when it can't be
- * told. Kept once worked out: it doesn't change, and a save asks for it
- * once or more per skip, each a walk of the whole COUNT.
- */
-function lastCountedMeeting(params: {
-  clock: Temporal.PlainTime;
-  count: number;
-  first: Temporal.PlainDate;
-  rule: string;
-  time: Temporal.PlainTime;
-  timeZone: string;
-}): number | null {
-  const { clock, count, first, rule, time, timeZone } = params;
-  const key = [rule, first, clock, time, timeZone].join("|");
-  const known = LAST_COUNTED.get(key);
-  if (known !== undefined) {
-    return known;
-  }
-  const meetings = countedRuleMeetings({
-    base: clock,
-    count,
-    from: first,
-    rule,
-    time,
-    timeZone,
-  });
-  let last: number | null = null;
-  for (const meeting of meetings ?? []) {
-    last = last === null ? meeting : Math.max(last, meeting);
-  }
-  if (LAST_COUNTED.size >= LAST_COUNTED_LIMIT) {
-    LAST_COUNTED.clear();
-  }
-  LAST_COUNTED.set(key, last);
-  return last;
-}
-
-/**
  * Whether `rule` ends before `split`: its UNTIL is earlier, or its last
  * COUNT meeting is, counted from the series' `first` start. Null when that
  * can't be told, as for a COUNT when `first` isn't known (null): an UNTIL,
@@ -736,9 +690,9 @@ function ruleEndsBefore(
   // (RFC 5545; see until.ts `existsOn`).
   if (clock && time) {
     const last = lastCountedMeeting({
-      clock,
+      base: clock,
       count,
-      first: first.day,
+      from: first.day,
       rule,
       time,
       timeZone: seriesZone,
