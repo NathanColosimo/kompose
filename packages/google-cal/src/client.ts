@@ -1,8 +1,12 @@
-import { Context, Effect, Exit, Layer, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { APIConnectionError, NotFoundError } from "./api-client/core/error";
+import {
+  APIConnectionError,
+  ConflictError,
+  NotFoundError,
+} from "./api-client/core/error";
 import {
   addsSlot,
   carryCountExactly,
@@ -2568,7 +2572,13 @@ export function makeGoogleCalendarService(
             });
             return new GoogleApiError({ cause });
           },
-        });
+        }).pipe(
+          // Taken: a try whose answer was lost made it (the id is ours).
+          Effect.catchIf(
+            (error) => error.cause instanceof ConflictError,
+            () => getEvent(destinationCalendarId, seriesId)
+          )
+        );
         const series = yield* parseEventResponse(response);
         yield* Effect.forEach(
           repeating ? params.carried : [],
@@ -2589,9 +2599,6 @@ export function makeGoogleCalendarService(
         recurrence: cutRecurrence,
       });
       const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
-      // A cut Google never answered (a timeout, a dropped connection) may
-      // still go through after it's read back.
-      let unanswered = false;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
           // Sent once: a retry's answer would hide that an earlier try,
@@ -2617,12 +2624,17 @@ export function makeGoogleCalendarService(
               event: cutPayload,
               cause,
             });
-            unanswered = cause instanceof APIConnectionError;
             return new GoogleApiError({ cause });
           },
         })
       );
       if (Exit.isFailure(cut)) {
+        // A cut Google never answered (a timeout, a dropped connection) may
+        // still go through after it's read back.
+        const failure = Cause.findErrorOption(cut.cause);
+        const unanswered =
+          Option.isSome(failure) &&
+          failure.value.cause instanceof APIConnectionError;
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
         if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;

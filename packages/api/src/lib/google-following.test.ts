@@ -1171,6 +1171,32 @@ describe("a split that fails part way leaves the old series whole", () => {
   const readsSeries = (request: Request) =>
     request.method === "GET" && request.url.pathname.endsWith("/events/series");
 
+  test("goes on when a create made it but its answer was lost", async () => {
+    // The first try drops its connection after Google stored the series; the
+    // retry finds the id taken.
+    let created: Request["body"] = null;
+    const google = fakeGoogle(weekly, [], (request) => {
+      if (request.method === "POST") {
+        if (!created) {
+          created = request.body;
+          throw new TypeError("network down");
+        }
+        return failure(409);
+      }
+      if (
+        request.method === "GET" &&
+        created &&
+        request.url.pathname.endsWith(`/events/${String(created.id)}`)
+      ) {
+        return created;
+      }
+    });
+    expect(Exit.isSuccess(await run(rename()))).toBe(true);
+    expect(google.writes().map((write) => write.method)).not.toContain(
+      "DELETE"
+    );
+  });
+
   test("deletes the new series when it can't be created", async () => {
     const google = fakeGoogle(weekly, [], (request) =>
       request.method === "POST" ? failure(400) : undefined
