@@ -2210,6 +2210,29 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
       toTime: params.timed === false ? null : nine,
     });
 
+  test("moves a skip to the new rule's own hour", () => {
+    // Mondays with BYHOUR=9, Nov 23 skipped; moved to Tuesdays at 10:00
+    // with BYHOUR=10: the skip is Tue Nov 24 at 10:00.
+    expect(
+      moveSkippedDays({
+        from: day("2026-11-09"),
+        fromTime: nine,
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=10",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=10",
+          "EXDATE:20261123T140000Z",
+        ],
+        seriesZone: zone,
+        to: day("2026-11-10"),
+        toTime: Temporal.PlainTime.from("10:00"),
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=10",
+      "EXDATE:20261124T150000Z",
+    ]);
+  });
+
   test("leaves a skip past the old rule's end", () => {
     // Monthly on the 1st, three times from Jan 1; May 1, past the end, is
     // skipped. Moved to the 31st, it would cancel the new third meeting.

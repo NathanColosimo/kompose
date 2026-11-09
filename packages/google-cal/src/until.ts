@@ -233,6 +233,35 @@ function withRuleClock(
   });
 }
 
+/** A rule's single value for a time part (BYHOUR=10); null for none or a list. */
+function singlePart(rule: string, part: string): number | null {
+  const value = rule
+    .slice(rule.indexOf(":") + 1)
+    .split(";")
+    .find((entry) => entry.startsWith(`${part}=`))
+    ?.slice(part.length + 1);
+  return value && !value.includes(",") ? Number(value) : null;
+}
+
+/**
+ * Where a rule's meeting at `own` lands when the pattern moves to `newRule`
+ * from `start`: a time part the new rule sets once is its (BYHOUR=9 made
+ * BYHOUR=10), else as `withRuleClock` keeps it.
+ */
+function movedClock(params: {
+  newRule: string;
+  oldRule: string;
+  own: Temporal.PlainTime;
+  start: Temporal.PlainTime;
+}): Temporal.PlainTime {
+  const kept = withRuleClock(params.oldRule, params.own, params.start);
+  return Temporal.PlainTime.from({
+    hour: singlePart(params.newRule, "BYHOUR") ?? kept.hour,
+    minute: singlePart(params.newRule, "BYMINUTE") ?? kept.minute,
+    second: singlePart(params.newRule, "BYSECOND") ?? kept.second,
+  });
+}
+
 /**
  * Whether a series meets more than once a day: a sub-daily rule, or rules
  * at different times. With the start's time `base`, the start counts as a
@@ -1693,7 +1722,7 @@ export function moveSkippedDays(params: {
     const day = placeOf(value.day);
     const movedTime =
       time && toTime && !SUB_DAILY.test(oldRule)
-        ? withRuleClock(oldRule, time, toTime)
+        ? movedClock({ newRule, oldRule, own: time, start: toTime })
         : time;
     return day &&
       !isAdded(day, movedTime) &&
