@@ -1916,6 +1916,22 @@ function placeCarried(params: {
     : carried;
 }
 
+/**
+ * The options Google needs to write what `sets` gives on purpose: a meeting
+ * link or its removal only at conference data version 1, attachments only
+ * when asked to. A link the payload keeps is written at version 1 too.
+ */
+function writeOptions(
+  payload: { conferenceData?: unknown },
+  sets: Partial<CreateEvent>
+): { conferenceDataVersion?: number; supportsAttachments?: boolean } {
+  const conference = "conferenceData" in sets || payload.conferenceData;
+  return {
+    ...(conference ? { conferenceDataVersion: 1 } : {}),
+    ...("attachments" in sets ? { supportsAttachments: true } : {}),
+  };
+}
+
 function getConferenceDataVersion(event: {
   conferenceData?: unknown;
 }): number | undefined {
@@ -2402,7 +2418,9 @@ export function makeGoogleCalendarService(
     calendarId: string,
     eventId: string,
     event: CreateEvent,
-    currentEvent: Event
+    currentEvent: Event,
+    /** The fields this write sets on purpose, cleared ones too. */
+    sets: Partial<CreateEvent> = {}
   ) =>
     Effect.gen(function* () {
       const payload = buildThisOccurrenceUpdatePayload(event, currentEvent);
@@ -2411,13 +2429,12 @@ export function makeGoogleCalendarService(
         "eventType",
         payload.eventType ?? "default"
       );
-      const conferenceDataVersion = getConferenceDataVersion(payload);
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(eventId, {
             ...payload,
             calendarId,
-            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+            ...writeOptions(payload, sets),
           }),
         catch: (cause) => {
           logGoogleEventUpdateFailure({
@@ -3108,19 +3125,14 @@ export function makeGoogleCalendarService(
         "eventType",
         payload.eventType ?? "default"
       );
-      const conferenceDataVersion = getConferenceDataVersion(payload);
-
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
             ...payload,
             calendarId,
-            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
-            // Google writes attachments only when asked to: a first
-            // meeting's own, carried by "Repeat: None", or ones cleared.
-            ...("attachments" in carried || "attachments" in changes
-              ? { supportsAttachments: true }
-              : {}),
+            // A first meeting's own, carried by "Repeat: None", or ones
+            // the edit sets or clears.
+            ...writeOptions(payload, { ...changes, ...carried }),
           }),
         catch: (cause) => {
           logGoogleEventUpdateFailure({
@@ -3178,7 +3190,8 @@ export function makeGoogleCalendarService(
       params.calendarId,
       occurrence.id,
       { ...sanitizeEventPayload(occurrence), ...changes, ...times },
-      occurrence
+      occurrence,
+      changes
     ).pipe(Effect.asVoid);
   };
 
