@@ -143,8 +143,11 @@ function takeTimedSkips(
  *   goes there, but never onto an added (RDATE) meeting that stays;
  * - an added meeting keeps its time, so its skip stays. It also goes to
  *   the new time if a rule or the start met there, or if the save drops
- *   that added day and the saved rule meets there;
- * - a skip where nothing met stays where it is.
+ *   that added day and the saved rule meets there (unless that day's own
+ *   meeting, still on, moves there);
+ * - a skip where nothing met stays where it is, and so do the rule's own
+ *   when the start moves to another day too (the new time on their day is
+ *   another meeting's).
  * A skip that would stay at its own time where the saved series now meets
  * (the series moved onto it) goes instead: kept, it would cancel that
  * meeting.
@@ -246,7 +249,15 @@ function lineUpRule(params: {
     });
   const isNew = (slot: string) =>
     keysOf([slot]).some((key) => !hadBefore.has(key));
-  const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
+  // Moved to another day too, the new time on a skip's own day is another
+  // meeting's: the rule's own skips stay as they were.
+  const fromDay = dayOfStart(splitAt ? asStart(splitAt) : master.start, zone);
+  const toDay = dayOfStart(start, zone);
+  const movesDay = Boolean(fromDay && toDay && !fromDay.equals(toDay));
+  const deleted = [
+    ...cancelled,
+    ...skips.filter((slot) => !(isNew(slot) || movesDay)),
+  ];
   // Whether that day's meeting before the save was skipped or deleted: a
   // skip at its new time then keeps it so (a client may have moved the
   // old skip there, onto one where nothing met).
@@ -257,6 +268,15 @@ function lineUpRule(params: {
       .toZonedDateTime({ plainTime: change.from, timeZone: zone })
       .toInstant();
     return deletedKeysBefore.has(skipKey({ day, instant: was }));
+  };
+  // Whether that day's rule meeting, still on, moves to the new time: a
+  // removed added day's skip there would cancel it.
+  const liveRuleMeetingMovesTo = (moment: Temporal.Instant) => {
+    const day = moment.toZonedDateTimeISO(zone).toPlainDate();
+    const was = googleDateTime(
+      day.toZonedDateTime({ plainTime: change.from, timeZone: zone })
+    );
+    return ruleMetAt(was) && !meetingWasDeleted(moment);
   };
   // An added meeting the saved rule still adds keeps its time, as does a
   // skip where nothing met (it skips nothing, so it can't move onto one),
@@ -278,7 +298,7 @@ function lineUpRule(params: {
     return !(added || ruleMet || (atNewClock && !meetingWasDeleted(moment)));
   };
   const atNewTime: string[] = [];
-  const atOwnTime: string[] = skips.filter(isNew);
+  const atOwnTime: string[] = skips.filter((slot) => isNew(slot) || movesDay);
   for (const slot of deleted) {
     const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
     if (!moment) {
@@ -288,7 +308,11 @@ function lineUpRule(params: {
     const added = addsSlot(before, slot, zone);
     const stillAdded = added && addsSlot(rule, slot, zone);
     const ruleMet =
-      ruleMetAt(slot) || (added && !stillAdded && savedMeetsAt(slot));
+      ruleMetAt(slot) ||
+      (added &&
+        !stillAdded &&
+        savedMeetsAt(slot) &&
+        !liveRuleMeetingMovesTo(moment));
     if (keepsOwnTime(slot, moment, ruleMet)) {
       atOwnTime.push(slot);
     }
