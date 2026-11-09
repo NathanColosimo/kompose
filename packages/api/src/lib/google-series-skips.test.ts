@@ -1419,6 +1419,23 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
     ]);
   });
 
+  test("leaves a skip where nothing met where it is", () => {
+    // Mondays at 9:00 with a stale 8:00 Nov 30 skip: moved to Tuesdays, it
+    // would cancel Dec 1's 9:00 meeting.
+    expect(
+      moved({
+        from: "2026-11-09",
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        skips: "EXDATE;TZID=America/New_York:20261130T080000",
+        to: "2026-11-10",
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE;TZID=America/New_York:20261130T080000",
+    ]);
+  });
+
   test("moves an all-day skip as a date", () => {
     expect(
       moved({

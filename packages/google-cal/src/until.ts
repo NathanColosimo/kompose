@@ -1370,10 +1370,11 @@ export function moveSkippedDays(params: {
       : null;
   };
   const severalADay = meetsSeveralTimesADay(recurrence, fromTime);
-  // Several times a day, a skip moves only if the moved rule meets then:
-  // another rule's (a 15:00 rule left on Mondays) stays with it.
+  // A timed skip moves only if the moved rule meets then: another rule's
+  // (a 15:00 rule left on Mondays) stays with it, as does one where
+  // nothing met (it would cancel a meeting where it lands).
   const ownSkip = (value: RecurrenceValue) =>
-    !(severalADay && value.instant) ||
+    !(value.instant && (severalADay || fromTime)) ||
     ruleAtTime(
       oldRule,
       value.instant.toZonedDateTimeISO(seriesZone).toPlainTime(),
