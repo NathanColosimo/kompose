@@ -323,13 +323,24 @@ function entireSeriesTimes(
 
 /**
  * An Entire series edit's times on the opened occurrence's own day (the
- * series keeps its dates). Its own times if they don't parse.
+ * series keeps its dates). A time the edit kept is the occurrence's own,
+ * moment for moment (rebuilt from its clock, a time in an hour a clock
+ * change repeats could move). Its own times if they don't parse.
  */
 function timesOnOwnDay(
   occurrence: Event,
   edited: CreateEvent,
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
+  if (sameTime(edited.start, occurrence.start, zone)) {
+    return {
+      end: sameTime(edited.end, occurrence.end, zone)
+        ? occurrence.end
+        : inSeriesZone(edited.end, master.end),
+      start: occurrence.start,
+    };
+  }
   return (
     seriesTimesForEdit({
       editedEnd: inSeriesZone(edited.end, master.end),
@@ -411,15 +422,38 @@ function withSeriesSkips(rule: string[], master: Event): string[] {
 }
 
 /**
+ * `recurrence` as what it means, however Google writes it back: its rules'
+ * parts, and its skipped and added moments.
+ */
+function recurrenceValues(recurrence: string[], zone: string): string {
+  const rules = recurrence
+    .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
+    .map((line) => {
+      const [name, parts = ""] = line.split(":");
+      return `${name}:${parts.split(";").sort().join(";")}`;
+    })
+    .sort();
+  const values = (name: "EXDATE" | "RDATE") =>
+    dateValues(recurrence, name, zone).map(skipKey).sort();
+  return JSON.stringify([rules, values("EXDATE"), values("RDATE")]);
+}
+
+/**
  * The rules a save writes: the series' own when it sends none, and a rule
- * sent alone with the series' skips, which a client rebuilding the rule
- * may leave out ("Repeat: None" stays none).
+ * sent alone with the series' skips and added days, which a client
+ * rebuilding the rule may leave out ("Repeat: None" stays none).
  */
 function savedRule(saved: string[] | undefined, master: Event): string[] {
   if (!saved) {
     return master.recurrence ?? [];
   }
-  return repeats(saved) ? withSeriesSkips(saved, master) : saved;
+  if (!repeats(saved)) {
+    return saved;
+  }
+  const added = saved.some((line) => line.startsWith("RDATE"))
+    ? []
+    : (master.recurrence ?? []).filter((line) => line.startsWith("RDATE"));
+  return withSeriesSkips([...saved, ...added], master);
 }
 
 /**
@@ -1046,17 +1080,24 @@ function carriedSlot(params: {
       splitStart: params.splitStart,
       zone,
     });
-  if (ownDay && meets(ownDay)) {
-    return ownDay;
-  }
   const moved = placeInNewSeries({
     newStart: start,
     originalStart: slot,
     splitStart: params.splitStart,
     zone,
   });
-  if (moved && meets(moved)) {
-    return moved;
+  // A new time less than a day off (23:30 to 00:30 the next day) moves
+  // each meeting by as much, across midnight too; a longer move keeps a
+  // rule day's meetings on their own day first.
+  const from = momentOf(asStart(params.splitStart), zone);
+  const to = momentOf(start, zone);
+  const shortMove = Boolean(
+    from && to && Math.abs(from.until(to).total("hours")) < 24
+  );
+  for (const place of shortMove ? [moved, ownDay] : [ownDay, moved]) {
+    if (place && meets(place)) {
+      return place;
+    }
   }
   const rulesOf = (lines: string[]) =>
     lines.filter((line) => line.startsWith("RRULE:"));
@@ -2305,11 +2346,12 @@ export function makeGoogleCalendarService(
       if (Exit.isFailure(current)) {
         return "unknown" as const;
       }
-      const now = JSON.stringify(current.value.recurrence);
-      if (now === JSON.stringify(master.recurrence)) {
+      const zone = seriesZoneOf(master);
+      const now = recurrenceValues(current.value.recurrence ?? [], zone);
+      if (now === recurrenceValues(master.recurrence ?? [], zone)) {
         return "unchanged" as const;
       }
-      return now === JSON.stringify(cutRecurrence)
+      return now === recurrenceValues(cutRecurrence, zone)
         ? ("cut" as const)
         : ("unknown" as const);
     });
@@ -2396,9 +2438,11 @@ export function makeGoogleCalendarService(
           },
         });
         const series = yield* parseEventResponse(response);
-        for (const carried of repeating ? params.carried : []) {
-          yield* putBack(destinationCalendarId, seriesId, carried);
-        }
+        yield* Effect.forEach(
+          repeating ? params.carried : [],
+          (carried) => putBack(destinationCalendarId, seriesId, carried),
+          { concurrency: 4, discard: true }
+        );
         return series;
       }).pipe(Effect.onError(() => discardNew));
 
