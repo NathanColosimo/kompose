@@ -1517,8 +1517,10 @@ function placeSkips(params: {
       if (ruleMeeting) {
         lostPlaces.add(moment.epochMilliseconds);
       }
-    } else if (ruleMeeting && formed && !uncounted && !keepsSlots) {
-      // Kept where it was, it falls within the COUNT as before.
+    } else if (ruleMeeting && at && formed && !uncounted && !keepsSlots) {
+      // Placed in the new series, it falls within the COUNT as before. An
+      // added day's skip stays at its own time, where the new rule may not
+      // meet, so it's no place to count (the rule's meeting there is left).
       ruleSkips.add(formed);
     }
     const ontoAdded =

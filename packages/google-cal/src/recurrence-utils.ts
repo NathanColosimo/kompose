@@ -299,10 +299,13 @@ export function skipping(
 export function changeCount(recurrence: string[], by: number): string[] {
   return recurrence.map((line) => {
     const count = ruleCount(line);
-    return count === null
-      ? line
-      : line.replace(COUNT_PART, `$1COUNT=${count + by}`);
+    return count === null ? line : setCount(line, count + by);
   });
+}
+
+/** A rule line ending after `count` meetings. */
+function setCount(line: string, count: number): string {
+  return line.replace(COUNT_PART, `$1COUNT=${count}`);
 }
 
 /**
@@ -311,9 +314,7 @@ export function changeCount(recurrence: string[], by: number): string[] {
  */
 function withCount(recurrence: string[], count: number): string[] {
   return recurrence.map((line) =>
-    ruleCount(line) === null
-      ? line
-      : line.replace(COUNT_PART, `$1COUNT=${count}`)
+    ruleCount(line) === null ? line : setCount(line, count)
   );
 }
 
