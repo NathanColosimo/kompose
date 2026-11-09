@@ -2012,8 +2012,8 @@ export function makeGoogleCalendarService(
         .map(asSlot);
       // A skip whose place is the new start (the meeting just saved there)
       // is dropped, and holds no place of its own: a carried COUNT is one
-      // less for each.
-      let ontoStart = 0;
+      // less for each rule meeting, however many skips it has.
+      const ontoStart = new Set<number>();
       const placeBy = (writtenRule: string[]) =>
         [
           ...params.cancelled.filter((slot) => !isAdded(slot)),
@@ -2030,8 +2030,14 @@ export function makeGoogleCalendarService(
             start,
           });
           const formed = inFormOf(at ?? slot, start, newZone);
-          if (formed === startSlot && at !== null) {
-            ontoStart += 1;
+          const moment = slotMoment(slot, zone);
+          if (
+            formed === startSlot &&
+            at !== null &&
+            moment &&
+            ruleMeetingAt(slot, master)
+          ) {
+            ontoStart.add(moment.epochMilliseconds);
           }
           const ontoAdded =
             at !== null &&
@@ -2054,7 +2060,7 @@ export function makeGoogleCalendarService(
           master,
           rule: keepingDateValues(
             countOf(master.recurrence) === countOf(fromSplit)
-              ? changeCount(final, -ontoStart)
+              ? changeCount(final, -ontoStart.size)
               : final,
             "EXDATE",
             zone,
