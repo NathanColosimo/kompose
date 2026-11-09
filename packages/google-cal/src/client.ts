@@ -518,16 +518,17 @@ function seriesChangeRefusal(params: {
         const place = first
           ? startSlot
           : placeOnNewStart(originalStart, master, times.start);
-        const replaced =
+        // Read with the saved end and skips: the opened one isn't past an
+        // end the save sets, which would drop it.
+        const meetsThere =
           place !== null &&
-          (first
-            ? seriesMeetsAt({
-                recurrence,
-                seriesZone: repeatsIn,
-                slot: place,
-                start: times.start,
-              }) !== false
-            : keptOrEnded({ master, place, recurrence, start: times.start }));
+          seriesMeetsAt({
+            recurrence,
+            seriesZone: repeatsIn,
+            slot: place,
+            start: times.start,
+          });
+        const replaced = first ? meetsThere !== false : meetsThere === true;
         return (
           movedDay ||
           !replaced ||
