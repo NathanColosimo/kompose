@@ -1408,6 +1408,31 @@ describe("Entire series start and length changes, as Google applies them", () =>
       expect(google.writes()).toEqual([]);
     });
 
+    test("is refused, unsure, when an exclusion rule may drop it", async () => {
+      // Daily, with Mondays excluded (Nov 9, the start, is one).
+      const google = fakeGoogle(
+        {
+          ...weekly,
+          recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=MO"],
+        },
+        []
+      );
+      expect(
+        await refusalOf(
+          edit("all", occurrenceOf(weekly, "2026-11-10T09:00:00-05:00"), {
+            recurrence: [],
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: [nov9],
+          reason: "dropsChangedOccurrences",
+          unsure: true,
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
     test("keeping a length of its own", async () => {
       // Nov 9 made 9:00-10:00 on its own (the series is half an hour).
       const longer = occurrenceOf(weekly, nov9, {
@@ -1933,26 +1958,79 @@ describe("newRepeat", () => {
     // Monthly on the first Saturday, moved to the second Sunday: the
     // editor rebuilds which day it picks, in any form.
     const own = ["RRULE:FREQ=MONTHLY;BYDAY=SA;BYSETPOS=1"];
+    // Sat Nov 7 to Sun Nov 8.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-11-07"),
+      to: Temporal.PlainDate.from("2026-11-08"),
+    };
     for (const rule of [
       "RRULE:FREQ=MONTHLY;BYDAY=2SU",
       "RRULE:FREQ=MONTHLY;BYDAY=SU;BYSETPOS=2",
     ]) {
-      expect(newRepeat({ dayMoved: true, own, saved: [rule] })).toBe(false);
+      expect(newRepeat({ moved, own, saved: [rule] })).toBe(false);
     }
-    // Every other month is a new repeat, and so is a new day kept.
+    // Every other month is a new repeat, and so is a new day kept, and two
+    // days a month.
     expect(
       newRepeat({
-        dayMoved: true,
+        moved,
         own,
         saved: ["RRULE:FREQ=MONTHLY;INTERVAL=2;BYDAY=2SU"],
       })
     ).toBe(true);
     expect(
+      newRepeat({ moved: null, own, saved: ["RRULE:FREQ=MONTHLY;BYDAY=2SU"] })
+    ).toBe(true);
+    expect(
       newRepeat({
-        dayMoved: false,
+        moved,
         own,
-        saved: ["RRULE:FREQ=MONTHLY;BYDAY=2SU"],
+        saved: ["RRULE:FREQ=MONTHLY;BYDAY=2SU,4SU"],
       })
+    ).toBe(true);
+  });
+
+  test("a first meeting moved with days added names no single occurrence", async () => {
+    // Nov 23 renamed on its own; the first meeting moves from Mon Nov 9 to
+    // Tue Nov 10, and the rule to Tuesdays and Thursdays: only a series
+    // takes that, so the words offer This and following alone.
+    const google = fakeGoogle(weekly, [
+      { ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,TH"],
+          start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({
+      data: { reason: "dropsChangedOccurrences", seriesOnly: true },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a weekly rule moved to a new day keeps its other days", () => {
+    // Mon Nov 9 moved to Tue Nov 10.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-11-09"),
+      to: Temporal.PlainDate.from("2026-11-10"),
+    };
+    const saving = (own: string, saved: string) =>
+      newRepeat({ moved, own: [own], saved: [saved] });
+    expect(
+      saving("RRULE:FREQ=WEEKLY;BYDAY=MO", "RRULE:FREQ=WEEKLY;BYDAY=TU")
+    ).toBe(false);
+    expect(
+      saving("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "RRULE:FREQ=WEEKLY;BYDAY=WE,TU")
+    ).toBe(false);
+    // A day added, or another changed, is a new repeat.
+    expect(
+      saving("RRULE:FREQ=WEEKLY;BYDAY=MO", "RRULE:FREQ=WEEKLY;BYDAY=TU,TH")
+    ).toBe(true);
+    expect(
+      saving("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "RRULE:FREQ=WEEKLY;BYDAY=TU,TH")
     ).toBe(true);
   });
 });
