@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
 import {
   splitAddedDays,
@@ -172,6 +171,62 @@ describe("This and following", () => {
       start: { dateTime: "2026-11-17T11:00:00-05:00", timeZone: zone },
       summary: "Planning (moved)",
     });
+  });
+
+  test("from a moved occurrence, a new end alone keeps the series' slot", async () => {
+    // Nov 16 was moved to Tue Nov 17 11:00-11:30 on its own; only its end
+    // goes to 12:00. The new series stays on Mondays at 9:00, an hour
+    // long, and Nov 16 keeps its own start with the new end.
+    const opened = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-17T11:30:00-05:00",
+      start: "2026-11-17T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [opened]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", opened, {
+            end: { dateTime: "2026-11-17T12:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body).toMatchObject({
+      end: { dateTime: "2026-11-16T10:00:00-05:00" },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+      start: { dateTime: "2026-11-16T09:00:00-05:00" },
+    });
+    expect(carried?.body).toMatchObject({
+      end: { dateTime: "2026-11-17T12:00:00-05:00" },
+      start: { dateTime: "2026-11-17T11:00:00-05:00" },
+    });
+  });
+
+  test("a move to another day carries a deleted occurrence's skip to the new day", async () => {
+    // Nov 30 was deleted on its own; from Nov 16 the series moves to
+    // Tuesdays, so the skip moves to Tue Dec 1, as a changed Nov 30 would.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+            start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE:20261201T140000Z",
+    ]);
   });
 
   test("from the first occurrence, edits the series itself", async () => {
@@ -987,7 +1042,9 @@ describe("cutting the old series", () => {
     expect(
       truncateRecurrenceForFollowing(
         ["EXDATE;VALUE=DATE:20261103", "RRULE:FREQ=DAILY;COUNT=10"],
-        "2026-11-10"
+        "2026-11-10",
+        zone,
+        "2026-11-01"
       )
     ).toEqual([
       "EXDATE;VALUE=DATE:20261103",
@@ -999,7 +1056,9 @@ describe("cutting the old series", () => {
     expect(
       truncateRecurrenceForFollowing(
         ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20270101T000000Z"],
-        "2026-11-10T09:00:00-05:00"
+        "2026-11-10T09:00:00-05:00",
+        zone,
+        "2026-11-03T09:00:00-05:00"
       )
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261110T135959Z"]);
   });
@@ -1008,7 +1067,9 @@ describe("cutting the old series", () => {
     expect(
       truncateRecurrenceForFollowing(
         ["RRULE:COUNT=5;FREQ=DAILY"],
-        "2026-11-10T09:00:00-05:00"
+        "2026-11-10T09:00:00-05:00",
+        zone,
+        "2026-11-08T09:00:00-05:00"
       )
     ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261110T135959Z"]);
   });
@@ -1032,7 +1093,12 @@ describe("cutting the old series", () => {
     const rule = ["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261101,20261109"];
     // The old part ends before Nov 3: Nov 9 isn't its any more.
     expect(
-      truncateRecurrenceForFollowing(rule, "2026-11-03", "America/New_York")
+      truncateRecurrenceForFollowing(
+        rule,
+        "2026-11-03",
+        "America/New_York",
+        "2026-11-01"
+      )
     ).toEqual([
       "RRULE:FREQ=WEEKLY;UNTIL=20261102",
       "RDATE;VALUE=DATE:20261101",

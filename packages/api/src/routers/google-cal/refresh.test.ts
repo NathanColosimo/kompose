@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Effect, Exit, Option } from "effect";
 

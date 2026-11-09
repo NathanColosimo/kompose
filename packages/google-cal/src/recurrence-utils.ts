@@ -36,9 +36,9 @@ export function truncateRecurrenceForFollowing(
   recurrence: string[],
   originalStart: string,
   /** The series' zone, for the days of its RDATE values. */
-  seriesZone = "UTC",
+  seriesZone: string,
   /** The series' first start, where a COUNT counts from. */
-  seriesStart?: string
+  seriesStart: string | undefined
 ): string[] {
   const split = asValue(originalStart, seriesZone);
   if (!split) {
@@ -689,22 +689,6 @@ function ruleEndsBefore(
 }
 
 /**
- * Whether the series adds a meeting (RDATE) from its start up to the split
- * at `originalStart`: Google's list can't tell it from a rule's own there,
- * so a COUNT can't be carried from that list (`carryCountFromList`).
- */
-function addedBeforeSplit(params: {
-  masterRecurrence: string[];
-  originalStart: string;
-  seriesStart: string;
-  seriesZone: string;
-}): boolean {
-  return dateValues(params.masterRecurrence, "RDATE", params.seriesZone).some(
-    (value) => fromStartToSplit(value, params)
-  );
-}
-
-/**
  * Whether `value` is from the series' start (a skip an earlier split left
  * before it isn't one of its meetings) up to the split.
  */
@@ -724,10 +708,12 @@ function fromStartToSplit(
  * `starts` (Google's list of the series' meetings) when the rule can't be
  * walked (`carryCountExactly`). COUNT counts rule positions, skipped ones
  * included; Google lists the rule's meetings, cancelled ones too, and the
- * added (RDATE) ones. So the positions used before the split are the
- * meetings listed there, and what's left can't be known (null) when an
- * added day there can't be told from a rule day, or a skip there Google
- * doesn't list can't be told to be a position.
+ * added (RDATE) ones, but not every skip. So the positions used before the
+ * split are the meetings listed there. When those can't be told (an added
+ * day there can't be told from a rule day, a skip there Google doesn't
+ * list may or may not be a position, or a start at a time its rule doesn't
+ * meet may or may not count), the positions left are counted from the
+ * split on instead, the same way; null when neither side can be told.
  */
 export function carryCountFromList(
   recurrence: string[],
@@ -741,36 +727,48 @@ export function carryCountFromList(
     seriesStart: string;
   }
 ): string[] | null {
-  const { masterRecurrence, seriesZone, starts } = params;
-  const before = (value: RecurrenceValue) => fromStartToSplit(value, params);
-  if (addedBeforeSplit(params)) {
+  const { masterRecurrence, originalStart, seriesZone } = params;
+  const rule = masterRecurrence.find(isRule);
+  const count = rule ? ruleCount(rule) : null;
+  const start = asValue(params.seriesStart, seriesZone);
+  if (!(rule && count !== null && start)) {
     return null;
   }
-  // The series' start is one of the rule's positions only when the rule
-  // meets at its time, as the walk counts it (`countedRuleMeetings`).
-  const start = asValue(params.seriesStart, seriesZone);
-  const startClock = start?.instant
-    ?.toZonedDateTimeISO(seriesZone)
-    .toPlainTime();
-  const rule = masterRecurrence.find(isRule);
-  const startCounts =
-    !(rule && startClock) || ruleClock(rule, startClock).equals(startClock);
   const listed = unique(
-    starts
+    params.starts
       .map((value) => asValue(value, seriesZone))
       .filter((value): value is RecurrenceValue => value !== null)
-      .filter(before)
-      .filter((value) => startCounts || !(start && sameValue(value, start)))
   );
+  const added = dateValues(masterRecurrence, "RDATE", seriesZone);
   const skipped = dateValues(masterRecurrence, "EXDATE", seriesZone);
-  if (
-    skipped
-      .filter(before)
-      .some((skip) => !listed.some((value) => sameValue(value, skip)))
-  ) {
-    return null;
+  // The positions in a stretch of the series: what Google lists there, or
+  // null when an added day or an unlisted skip falls in it.
+  const positionsIn = (inStretch: (value: RecurrenceValue) => boolean) => {
+    const there = listed.filter(inStretch);
+    const unclear =
+      added.filter(inStretch).length > 0 ||
+      skipped
+        .filter(inStretch)
+        .some((skip) => !there.some((value) => sameValue(value, skip)));
+    return unclear ? null : there.length;
+  };
+  const startClock = start.instant
+    ?.toZonedDateTimeISO(seriesZone)
+    .toPlainTime();
+  const startAtRuleTime =
+    !startClock || ruleClock(rule, startClock).equals(startClock);
+  const before = startAtRuleTime
+    ? positionsIn((value) => fromStartToSplit(value, params))
+    : null;
+  if (before !== null) {
+    return withRemainingCount(recurrence, before);
   }
-  return withRemainingCount(recurrence, listed.length);
+  const left = positionsIn(
+    (value) => !beforeSplit(value, originalStart, seriesZone)
+  );
+  return left === null || left === 0
+    ? null
+    : withRemainingCount(recurrence, count - left);
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
@@ -784,7 +782,9 @@ function ruleCount(line: string): number | null {
 /**
  * How many of a COUNT `rule`'s positions (meetings, or days for an all-day
  * series) come before `split`. Google counts the series' start as its
- * first, rule day or not. Null when they can't be told.
+ * first, rule day or not, when it's at the rule's time. Null when they
+ * can't be told, a start at another time among them: whether Google counts
+ * it isn't known, so Google's list decides (`carryCountFromList`).
  */
 function positionsBefore(params: {
   rule: string;
@@ -802,6 +802,9 @@ function positionsBefore(params: {
     .toPlainTime();
   if (seriesClock && seriesStart.instant && split.instant) {
     const clock = ruleClock(rule, seriesClock);
+    if (!clock.equals(seriesClock)) {
+      return null;
+    }
     const meetings = countedRuleMeetings({
       base: seriesClock,
       count,
