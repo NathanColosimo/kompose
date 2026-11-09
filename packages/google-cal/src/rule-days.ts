@@ -9,7 +9,8 @@
  */
 import { Temporal } from "temporal-polyfill";
 
-const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+/** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
+export const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 const READ_PARTS = new Set([
   "FREQ",
   "INTERVAL",
@@ -62,7 +63,7 @@ function readRule(rule: string): Rule | null {
     const match = ORDINAL_DAY.exec(code);
     return {
       nth: match?.[1] ? Number(match[1]) : null,
-      weekday: WEEKDAYS.indexOf(match?.[2] ?? "") + 1,
+      weekday: WEEKDAY_CODES.indexOf(match?.[2] ?? "") + 1,
     };
   });
   const byMonth = list("BYMONTH").map(Number);
@@ -86,7 +87,7 @@ function readRule(rule: string): Rule | null {
     bySetPos,
     freq,
     interval: Number(parts.get("INTERVAL") ?? 1) || 1,
-    weekStart: WEEKDAYS.indexOf(parts.get("WKST") ?? "MO") + 1 || 1,
+    weekStart: WEEKDAY_CODES.indexOf(parts.get("WKST") ?? "MO") + 1 || 1,
   };
 }
 
