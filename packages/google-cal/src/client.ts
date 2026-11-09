@@ -690,7 +690,7 @@ function entireSeriesTimes(params: {
   // A day the opened meeting already had on its own isn't a new one.
   const movesDay = !day?.equals(dayOfStart(occurrence.start, zone) ?? day);
   if (opensSeries(occurrence, master) && rulesMeet && movesDay) {
-    return { end: oneForm(end), start: oneForm(start) };
+    return { end, start };
   }
   return (
     seriesTimesForEdit({
@@ -863,16 +863,6 @@ function withOneForm(edited: CreateEvent, occurrence: Event): CreateEvent {
       : { date: time.date };
   };
   return { ...edited, end: pick(edited.end), start: pick(edited.start) };
-}
-
-/**
- * A time in one form: a date when it has one (a form that toggled to all
- * day can keep its old date-time), else its date-time.
- */
-function oneForm(time: Event["start"]): Event["start"] {
-  return time.date
-    ? { date: time.date }
-    : { dateTime: time.dateTime, timeZone: time.timeZone };
 }
 
 /**
