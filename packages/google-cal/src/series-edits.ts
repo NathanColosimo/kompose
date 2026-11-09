@@ -100,9 +100,9 @@ function elsewhere(refusal: NamingRefusal): string {
 export function refusalMessage(refusal: SeriesRefusal): string {
   switch (refusal.reason) {
     case "severalRules":
-      return "This and following isn't available for a series with more than one rule.";
+      return "This and following isn't available for a series with more than one rule: a new series has one start, and Google would count every rule's days from it, moving their meetings.";
     case "addedOccurrence":
-      return "This and following isn't available for an occurrence added to the series on its own.";
+      return "This and following isn't available for an occurrence added to the series on its own: a new series starting here would repeat its rule from this day and time, moving its meetings.";
     case "deleteFromAddedOccurrence":
       return "Deleting this and following isn't available from this added occurrence: one of the series' rules never ends, and where another ends can't be worked out.";
     case "endsBeforeStart":

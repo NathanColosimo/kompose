@@ -2,6 +2,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
+import { NotFoundError } from "./api-client/core/error";
 import {
   addsSlot,
   carryCountExactly,
@@ -677,7 +678,9 @@ function carriedSlot(params: {
   start: Event["start"];
 }): string | null {
   const { master, recurrence, slot, start } = params;
-  const zone = seriesZoneOf(master);
+  // The new series repeats in its start's zone (an all-day one made timed
+  // takes the new start's).
+  const zone = repeatZone(master, start);
   const meets = (at: string) =>
     seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
   const splitDay = dayOfStart(asStart(params.splitStart), zone);
@@ -716,7 +719,7 @@ function movedOffRule(params: {
   start: Event["start"];
 }): string[] {
   const { master, originalStart, recurrence, start } = params;
-  const zone = seriesZoneOf(master);
+  const zone = repeatZone(master, start);
   const day = dayOfStart(start, zone);
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   if (
@@ -725,7 +728,11 @@ function movedOffRule(params: {
   ) {
     return [];
   }
-  const ownDay = onDay(start, dayOfStart(asStart(originalStart), zone), zone);
+  const ownDay = onDay(
+    start,
+    dayOfStart(asStart(originalStart), seriesZoneOf(master)),
+    zone
+  );
   const place = ownDay && slotOf(ownDay, zone);
   return place &&
     place !== slotOf(start, zone) &&
@@ -835,12 +842,13 @@ function carriedAt(params: {
   if (!sameForm(slot, start) && (own.start || own.end)) {
     return null;
   }
+  const newZone = repeatZone(master, start);
   return carriedSlot({
     master,
     recurrence: params.recurrence,
-    slot: inFormOf(slot, start, zone) ?? slot,
+    slot: inFormOf(slot, start, newZone) ?? slot,
     splitStart:
-      inFormOf(params.originalStart, start, zone) ?? params.originalStart,
+      inFormOf(params.originalStart, start, newZone) ?? params.originalStart,
     start,
   });
 }
@@ -1606,19 +1614,22 @@ export function makeGoogleCalendarService(
       // start, the meeting the user just saved, or on an added meeting it
       // keeps.
       const unskipped = final.filter((line) => !line.startsWith("EXDATE"));
-      const startSlot = slotOf(start, zone);
-      const splitStart = inFormOf(originalStart, start, zone) ?? originalStart;
+      // The new series' slots, in the zone it repeats in.
+      const newZone = repeatZone(master, start);
+      const startSlot = slotOf(start, newZone);
+      const splitStart =
+        inFormOf(originalStart, start, newZone) ?? originalStart;
       const placed = [...params.cancelled, ...ownSkips].flatMap((slot) => {
         const at = isAdded(slot)
           ? null
           : carriedSlot({
               master,
               recurrence: unskipped,
-              slot: inFormOf(slot, start, zone) ?? slot,
+              slot: inFormOf(slot, start, newZone) ?? slot,
               splitStart,
               start,
             });
-        const formed = inFormOf(at ?? slot, start, zone);
+        const formed = inFormOf(at ?? slot, start, newZone);
         const ontoAdded =
           at !== null && formed !== null && addsSlot(final, formed, zone);
         return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
@@ -1782,6 +1793,10 @@ export function makeGoogleCalendarService(
             calendarId: destinationCalendarId,
           }),
         catch: (cause) => {
+          // Not found: the create never went through, so nothing is left.
+          if (cause instanceof NotFoundError) {
+            return new GoogleApiError({ cause });
+          }
           logGoogleEventUpdateFailure({
             operation: "delete",
             calendarId: destinationCalendarId,
