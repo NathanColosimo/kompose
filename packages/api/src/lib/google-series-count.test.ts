@@ -714,6 +714,58 @@ describe("a COUNT through a move to a day its rule doesn't meet", () => {
   });
 });
 
+describe("a COUNT through a move to a day its rule doesn't meet, with more", () => {
+  const series: Event = {
+    ...weekly,
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"],
+  };
+  const move = (from: string, to: string) =>
+    edit("following", occurrenceOf(series, from), {
+      end: { dateTime: to.replace("T10:00", "T10:30"), timeZone: zone },
+      recurrence: series.recurrence,
+      start: { dateTime: to, timeZone: zone },
+    });
+
+  test("places a deleted meeting against the COUNT the series ends up with", async () => {
+    // Nov 30 deleted on its own; from Nov 16, moved to Sun Nov 15 at 10:00.
+    // The new series meets Sun 15, Nov 23 and Nov 30 at 10:00 (Mon 16
+    // skipped), so Nov 30's skip goes to 10:00.
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          move("2026-11-16T09:00:00-05:00", "2026-11-15T10:00:00-05:00")
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "EXDATE:20261130T150000Z,20261116T150000Z",
+    ]);
+  });
+
+  test("from the last meeting, keeps the one saved and adds none", async () => {
+    // From Nov 30, the last, moved to Sun Nov 29 at 10:00: one meeting.
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          move("2026-11-30T09:00:00-05:00", "2026-11-29T10:00:00-05:00")
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"],
+      start: { dateTime: "2026-11-29T10:00:00-05:00" },
+    });
+  });
+});
+
 describe("a COUNT the user changed", () => {
   test("is written as they set it", async () => {
     const five: Event = {

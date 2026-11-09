@@ -648,6 +648,30 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
+  test("a new time keeps a deleted occurrence deleted at it", async () => {
+    // Nov 23 deleted on its own; the series moves to 10:00.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", weekly, {
+            end: { dateTime: "2026-11-09T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20261123T150000Z",
+    ]);
+  });
+
   test("a new time an occurrence was already moved to on its own saves", async () => {
     // Nov 23 moved to 10:00 on its own; the series moves to 10:00. Google
     // cancels Nov 23's exception, and the series' 10:00 meeting is the same.
