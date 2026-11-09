@@ -204,29 +204,50 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
 }
 
 /**
- * The guests a series write sends: the edit's list, each keeping the
- * answer and comment the series has for them (one occurrence's answers
- * are its own). A guest the edit adds is sent as the edit has them.
+ * The guests a series write sends: the series' own, less those the edit
+ * removed (on the occurrence it was made through, not sent) and with
+ * those it added (sent, on neither). A guest an occurrence added or
+ * dropped on its own is its own, not the series'. Each guest keeps the
+ * answer and comment the series has for them.
  */
-export function seriesAttendees(
-  edited: Attendee[],
-  series: Attendee[] | undefined
-): Attendee[] {
-  const own = new Map((series ?? []).map((guest) => [guest.email, guest]));
-  return edited.map((guest) => {
-    const before = guest.email === undefined ? undefined : own.get(guest.email);
-    if (!before) {
-      return guest;
+export function seriesAttendees(params: {
+  edited: Attendee[];
+  occurrence: Attendee[] | undefined;
+  series: Attendee[] | undefined;
+}): Attendee[] {
+  const emails = (guests: Attendee[] | undefined) =>
+    new Set((guests ?? []).flatMap((guest) => guest.email ?? []));
+  const onOccurrence = emails(params.occurrence);
+  const onSeries = emails(params.series);
+  const sent = new Map(
+    params.edited.flatMap((guest) =>
+      guest.email ? [[guest.email, guest]] : []
+    )
+  );
+  const kept = (params.series ?? []).flatMap((guest) => {
+    const edit = guest.email === undefined ? undefined : sent.get(guest.email);
+    if (!edit) {
+      const removed =
+        guest.email !== undefined && onOccurrence.has(guest.email);
+      return removed ? [] : [guest];
     }
-    const { comment: _comment, responseStatus: _response, ...rest } = guest;
-    return {
-      ...rest,
-      ...(before.comment === undefined ? {} : { comment: before.comment }),
-      ...(before.responseStatus === undefined
-        ? {}
-        : { responseStatus: before.responseStatus }),
-    };
+    const { comment: _comment, responseStatus: _response, ...rest } = edit;
+    return [
+      {
+        ...rest,
+        ...(guest.comment === undefined ? {} : { comment: guest.comment }),
+        ...(guest.responseStatus === undefined
+          ? {}
+          : { responseStatus: guest.responseStatus }),
+      },
+    ];
   });
+  const added = params.edited.filter(
+    (guest) =>
+      guest.email === undefined ||
+      !(onSeries.has(guest.email) || onOccurrence.has(guest.email))
+  );
+  return [...kept, ...added];
 }
 
 /** JSON with each object's keys sorted, so key order never differs. */
