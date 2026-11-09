@@ -2037,12 +2037,12 @@ export function makeGoogleCalendarService(
         skips: ownSkips,
         start,
       });
-      // A skipped meeting whose place is the new start (the meeting just
-      // saved there) holds no place of its own: a carried COUNT is one less
-      // for each.
       if (!skips) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
+      // A skipped meeting whose place is the new start (the meeting just
+      // saved there) holds no place of its own: a carried COUNT is one less
+      // for each.
       const recurrence = skipping(
         changeCount(rule, -skips.ontoStart),
         [...skips.placed, ...moved],

@@ -673,6 +673,33 @@ describe("carrying a COUNT through a split", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
   });
 
+  test("counts a skip Google doesn't list at a meeting of a rule it reads", () => {
+    // Daily 2:30 AM New York ten times from Mar 10 2027, Mar 12 and Mar 17
+    // skipped (Google doesn't list them); Mar 14's 2:30 doesn't exist, so
+    // the rule isn't walked. Before a split at Mar 16: Mar 10 to 15, the
+    // skipped Mar 12 in, six positions, so four are left.
+    const rule = "RRULE:FREQ=DAILY;COUNT=10";
+    const skips = "EXDATE:20270312T073000Z,20270317T063000Z";
+    expect(
+      carryCountFromList([rule, skips], {
+        masterRecurrence: [rule, skips],
+        originalStart: "2027-03-16T02:30:00-04:00",
+        seriesStart: "2027-03-10T02:30:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [
+          "2027-03-10T02:30:00-05:00",
+          "2027-03-11T02:30:00-05:00",
+          "2027-03-13T02:30:00-05:00",
+          "2027-03-14T03:30:00-04:00",
+          "2027-03-15T02:30:00-04:00",
+          "2027-03-16T02:30:00-04:00",
+          "2027-03-18T02:30:00-04:00",
+          "2027-03-19T02:30:00-04:00",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=4", skips]);
+  });
+
   test("leaves a COUNT the walk finds used up before the split to Google's list", () => {
     // Mondays three times from Nov 30 end Dec 14; a split at Jan 4 means
     // the walk and Google disagree.
