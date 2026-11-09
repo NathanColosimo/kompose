@@ -181,10 +181,11 @@ const same = (field: keyof CreateEvent, a: unknown, b: unknown) =>
   canonical(comparable(field, a)) === canonical(comparable(field, b));
 
 /**
- * The fields a save changed from `from` (the occurrence as the client
- * loaded it). A field left out is unchanged, so a client may send the
- * whole form or only what changed; one sent empty ("", [] or undefined, as
- * the editors clear a color) is cleared.
+ * The fields a save changed from `from` (the occurrence as the server
+ * reads it from Google just before the write). A field left out is
+ * unchanged, so a client may send the whole form or only what changed; one
+ * sent empty ("", [] or undefined, as the editors clear a color) is
+ * cleared.
  */
 export function changedFields(
   edited: Partial<CreateEvent>,
