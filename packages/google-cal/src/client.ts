@@ -859,6 +859,7 @@ function followingOccurrences(params: {
     {
       at: slotOf(start, zone),
       changes: openedChanges,
+      opened: true as const,
       originalStart,
     },
     ...params.exceptions.map((exception) => ({
@@ -893,6 +894,8 @@ function placeCarried(params: {
   occurrences: {
     at: string | null;
     changes: Partial<CreateEvent>;
+    /** The opened one: its slot is the new series' start, held even bare. */
+    opened?: true;
     originalStart: string;
   }[];
   recurrence: string[];
@@ -906,6 +909,14 @@ function placeCarried(params: {
   // Each slot holds one occurrence: two that land on one can't both keep
   // their changes.
   const placed = new Map<number, string>();
+  // The opened one's slot, held though it carries nothing: it isn't named.
+  const bare = params.occurrences.find(
+    (occurrence) =>
+      occurrence.opened && Object.keys(occurrence.changes).length === 0
+  );
+  const held = bare?.at
+    ? (slotMoment(bare.at, params.zone)?.epochMilliseconds ?? null)
+    : null;
   for (const { at, changes, originalStart } of params.occurrences) {
     if (Object.keys(changes).length === 0) {
       continue;
@@ -920,7 +931,7 @@ function placeCarried(params: {
       });
     const moment = at && meets === true ? slotMoment(at, params.zone) : null;
     const taken = moment && placed.get(moment.epochMilliseconds);
-    if (!(at && moment) || taken) {
+    if (!(at && moment) || taken || moment.epochMilliseconds === held) {
       lost.add(taken || originalStart).add(originalStart);
       continue;
     }
@@ -1578,22 +1589,29 @@ export function makeGoogleCalendarService(
       const movesDay = !(fromDay && toDay && fromDay.equals(toDay));
       // Moved to other days, a deleted rule meeting's skip goes where the
       // new series meets in its place (read against the rule as it's
-      // written for the new start); one already at its new place isn't
-      // lined up again.
-      const writtenRule =
-        ruleForStart(counted, master, start, originalStart) ?? counted;
+      // written for the new start, its skips aside: a place already skipped
+      // is still its place); one already at its new place isn't lined up
+      // again.
+      const writtenRule = (
+        ruleForStart(counted, master, start, originalStart) ?? counted
+      ).filter((line) => !line.startsWith("EXDATE"));
+      // The new series' start is the meeting the user just saved: no skip
+      // lands on it.
+      const startSlot = slotOf(start, zone);
       const placed = movesDay
-        ? params.cancelled.map((slot) =>
-            addsSlot(master.recurrence ?? [], slot, zone)
-              ? slot
-              : (carriedSlot({
-                  master,
-                  recurrence: writtenRule,
-                  slot,
-                  splitStart: originalStart,
-                  start,
-                }) ?? slot)
-          )
+        ? params.cancelled
+            .map((slot) =>
+              addsSlot(master.recurrence ?? [], slot, zone)
+                ? slot
+                : (carriedSlot({
+                    master,
+                    recurrence: writtenRule,
+                    slot,
+                    splitStart: originalStart,
+                    start,
+                  }) ?? slot)
+            )
+            .filter((slot) => slot !== startSlot)
         : [];
       const recurrence = skipping(
         lineUpRule({

@@ -1115,6 +1115,41 @@ test("a day and time move with the rule's own hour carries a deleted occurrence'
   ).toEqual(["2026-12-01T15:00:00Z"]);
 });
 
+test("a day move doesn't shift a skip because its own place is already skipped", async () => {
+  // Weekdays at 9:00 with Thu Nov 26 both an EXDATE and listed as
+  // cancelled; from Nov 16 moved to Tue Nov 17 10:00. Thursdays still
+  // meet, so Nov 26 stays skipped (at 10:00) and Fri Nov 27 isn't.
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR",
+      "EXDATE:20261126T140000Z",
+    ],
+  };
+  const google = fakeGoogle(series, [
+    {
+      ...occurrenceOf(series, "2026-11-26T09:00:00-05:00"),
+      status: "cancelled",
+    },
+  ]);
+  expect(
+    Exit.isSuccess(
+      await run(
+        edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+          end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+        })
+      )
+    )
+  ).toBe(true);
+  const written = google.writes()[0]?.body?.recurrence as string[];
+  expect(
+    dateValues(written, "EXDATE", zone).map((value) =>
+      value.instant?.toString()
+    )
+  ).toEqual(["2026-11-26T15:00:00Z"]);
+});
+
 describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
   const day = (date: string) => Temporal.PlainDate.from(date);
   const nine = Temporal.PlainTime.from("09:00");
