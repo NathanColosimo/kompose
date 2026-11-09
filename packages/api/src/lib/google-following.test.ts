@@ -1384,14 +1384,33 @@ describe("a split that fails part way leaves the old series whole", () => {
     ]);
   });
 
-  test("leaves both series when the cut gets a server error, even if the old one reads whole", async () => {
-    // A write Google answered with a 503 may still go through.
+  test("leaves both series when every try at the cut gets a server error, even if the old one reads whole", async () => {
+    // A write Google answered with a 503 may still go through; it's tried
+    // three times.
     const google = fakeGoogle(weekly, [], (request) =>
       isCut(request) ? failure(503) : undefined
     );
     expect(Exit.isFailure(await run(rename()))).toBe(true);
     expect(google.writes().map((write) => write.method)).toEqual([
       "POST",
+      "PUT",
+      "PUT",
+      "PUT",
+    ]);
+  });
+
+  test("finishes the split when a cut that got a server error goes through on a retry", async () => {
+    let tries = 0;
+    const google = fakeGoogle(weekly, [], (request) => {
+      if (isCut(request)) {
+        tries += 1;
+        return tries === 1 ? failure(503) : undefined;
+      }
+    });
+    expect(Exit.isSuccess(await run(rename()))).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
+      "PUT",
       "PUT",
     ]);
   });
