@@ -234,23 +234,6 @@ const makeMaster = Effect.fn("makeMaster")(function* (
     : followed;
 });
 
-/**
- * Take an undated occurrence (moved to the inbox) out of its series, as a
- * standalone task: it has no place in a pattern. A master hands its role
- * to the next occurrence first.
- */
-const releaseFromSeries = Effect.fn("releaseFromSeries")(function* (
-  userId: string,
-  task: TaskSelect
-) {
-  const handedOff =
-    task.seriesMasterId === task.id
-      ? yield* handOffMasterRole(userId, task)
-      : [];
-  const released = yield* dbUpdate(userId, task.id, STANDALONE);
-  return [...handedOff, ...released];
-});
-
 const dbDeleteBySeriesFrom = (
   userId: string,
   seriesMasterId: string,
@@ -1174,8 +1157,9 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
 
 /**
  * A repeat change on an undated occurrence (moved to the inbox): it leaves
- * its series as a standalone task, and a new pattern makes it a series of
- * its own, from the start date the edit gives it.
+ * its series as a standalone task (a master hands its role to the next
+ * occurrence first), and a new pattern makes it a series of its own, from
+ * the start date the edit gives it.
  */
 const repatternUndated = Effect.fn("repatternUndated")(function* (
   userId: string,
@@ -1183,12 +1167,14 @@ const repatternUndated = Effect.fn("repatternUndated")(function* (
   input: TaskUpdateInput,
   newPattern: CheckedPattern | null
 ) {
-  const released = yield* releaseFromSeries(userId, task);
-  const standalone: TaskSelect = { ...task, ...STANDALONE };
+  const handedOff =
+    task.seriesMasterId === task.id
+      ? yield* handOffMasterRole(userId, task)
+      : [];
   const rows = newPattern
-    ? yield* convertToRecurring(userId, standalone, input, newPattern)
-    : yield* dbUpdate(userId, task.id, input);
-  return { retagIds: ids(rows), rows: [...released, ...rows] };
+    ? yield* convertToRecurring(userId, task, input, newPattern)
+    : yield* dbUpdate(userId, task.id, { ...input, ...STANDALONE });
+  return { retagIds: ids(rows), rows: [...handedOff, ...rows] };
 });
 
 /** Handle scope=following update for recurring task */
