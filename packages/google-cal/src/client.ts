@@ -1065,8 +1065,8 @@ function keepsCount(master: Event, rule: string[]): boolean {
  * None lands on the new series' start, the meeting the user just saved:
  * a kept COUNT (`keeps`) loses the place of each rule meeting that would
  * (`ontoStart`; a deleted one that isn't an added day is one, as Google
- * lists only its meetings, as is a skip on a day of Google's list,
- * `listed`). Null when that COUNT's can't be told.
+ * lists only its meetings, as is a skip Google lists, `listed`). Null
+ * when that COUNT's can't be told.
  */
 function placeSkips(params: {
   cancelled: string[];
@@ -1093,7 +1093,9 @@ function placeSkips(params: {
     if (cancelled.includes(slot)) {
       return true;
     }
-    return params.listed ? params.listed.includes(slot) : null;
+    // Google may leave a skipped meeting off its list: only one it lists
+    // is told to be a meeting.
+    return params.listed?.includes(slot) ? true : null;
   };
   // Each rule meeting once, however many skips it has.
   const ontoStart = new Set<number>();

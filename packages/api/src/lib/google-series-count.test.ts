@@ -958,6 +958,18 @@ describe("a COUNT read from Google's list through a move onto a skip", () => {
     );
   const meeting = (start: string) => occurrenceOf(series, start);
 
+  test("is refused when Google doesn't list it: its place can't be told", async () => {
+    const google = listing([
+      meeting("2026-11-09T09:00:00-05:00"),
+      meeting("2027-11-15T09:00:00-05:00"),
+      meeting("2029-11-12T09:00:00-05:00"),
+    ]);
+    expect(await refusalOf(moveFrom2027())).toMatchObject({
+      data: { reason: "countUnknown" },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("drops its place when Google lists it as a meeting", async () => {
     const google = listing([
       meeting("2026-11-09T09:00:00-05:00"),
