@@ -371,6 +371,31 @@ function newTimesKeep(params: {
 }
 
 /**
+ * A rule a save sends with the series' skips it leaves out: a client that
+ * rebuilds the rule may send it alone. A day the rule skips whole (a date)
+ * already covers that day's skips.
+ */
+function withSeriesSkips(rule: string[], master: Event): string[] {
+  const zone = seriesZoneOf(master);
+  const skippedDays = new Set(
+    dateValues(rule, "EXDATE", zone)
+      .filter((value) => value.instant === null)
+      .map((value) => value.day.toString())
+  );
+  return skipping(
+    rule,
+    dateValues(master.recurrence ?? [], "EXDATE", zone)
+      .filter((value) => !skippedDays.has(value.day.toString()))
+      .map((value) =>
+        value.instant
+          ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
+          : value.day.toString()
+      ),
+    zone
+  );
+}
+
+/**
  * `edited` with its times in one form. A form keeps the other form's field
  * beside the new one, so when both are sent the one the opened occurrence
  * didn't have is the user's choice.
@@ -2133,18 +2158,8 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { master, times } = params;
       const zone = seriesZoneOf(master);
-      // A new rule keeps the series' skips: a client that rebuilds the rule
-      // may send it alone.
       const rule = params.edited.recurrence
-        ? skipping(
-            params.edited.recurrence,
-            dateValues(master.recurrence ?? [], "EXDATE", zone).map((value) =>
-              value.instant
-                ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
-                : value.day.toString()
-            ),
-            zone
-          )
+        ? withSeriesSkips(params.edited.recurrence, master)
         : (master.recurrence ?? []);
       const movesStart = !sameTime(times.start, master.start, zone);
       const movesSlots =
