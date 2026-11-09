@@ -1,6 +1,6 @@
 /**
- * A series' UNTIL and EXDATE/RDATE lines, kept in the form Google requires:
- * dates for an all-day series, date-times for a timed one.
+ * Reading a series' times: its UNTIL and EXDATE/RDATE values, a start's
+ * moment, clock and length, and how often its rules meet in a day.
  */
 import { Temporal } from "temporal-polyfill";
 import { countedRuleDays, isRuleDay } from "./rule-days";

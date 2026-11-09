@@ -84,6 +84,133 @@ describe("This and following to other days", () => {
   });
 });
 
+describe("This and following to other days, with skips and added meetings", () => {
+  test("a rule skip doesn't land on an added meeting kept", async () => {
+    // Mondays 9:00, Nov 30 skipped, plus an added Tue Dec 1 10:00; from
+    // Nov 16 moved to Tuesdays at 10:00. Nov 30's place is the added Dec 1.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "EXDATE:20261130T140000Z",
+        "RDATE;TZID=America/New_York:20261201T100000",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE:20261130T140000Z",
+              "RDATE;TZID=America/New_York:20261201T100000",
+            ],
+            start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).not.toContainEqual(
+      expect.stringContaining("EXDATE")
+    );
+  });
+
+  test("made all day, skips and deleted occurrences go to their days", async () => {
+    // Mondays 9:00, Dec 7 skipped, Nov 30 deleted; from Nov 16 moved to
+    // Tuesdays, all day.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261207T140000Z"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { date: "2026-11-18" },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE:20261207T140000Z",
+            ],
+            start: { date: "2026-11-17" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE;VALUE=DATE:20261201,20261208",
+    ]);
+  });
+
+  test("made timed, skips and deleted occurrences go to their days at the new time", async () => {
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE;VALUE=DATE:20261207"],
+      start: { date: "2026-11-09" },
+    };
+    // The all-day occurrence originally on `day`.
+    const onDay = (day: string): Event => ({
+      ...series,
+      end: { date: Temporal.PlainDate.from(day).add({ days: 1 }).toString() },
+      id: `series_${day.replaceAll("-", "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+    });
+    const google = fakeGoogle(series, [
+      { ...onDay("2026-11-30"), status: "cancelled" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", onDay("2026-11-16"), {
+            end: { dateTime: "2026-11-17T10:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE;VALUE=DATE:20261207",
+            ],
+            start: { dateTime: "2026-11-17T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE:20261201T150000Z,20261208T150000Z",
+    ]);
+  });
+});
+
+describe("an Entire series save that keeps its slots", () => {
+  test("writes another app's date values as they were", async () => {
+    // A 9:00 series with a date UNTIL and skip, renamed.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261214",
+        "EXDATE;VALUE=DATE:20261130",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(edit("all", series, { summary: "Planning (renamed)" }))
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual(series.recurrence);
+  });
+});
+
 describe("This and following made all day on another day", () => {
   test("drops a deleted added meeting from both lists", async () => {
     // Mondays at 9:00 plus an added Wed Dec 2 at 15:00, deleted on its

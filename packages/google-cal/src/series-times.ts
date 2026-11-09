@@ -12,7 +12,7 @@ import {
   startInstant,
 } from "./until";
 
-export interface EventTime {
+interface EventTime {
   date?: string;
   dateTime?: string;
   timeZone?: string;
