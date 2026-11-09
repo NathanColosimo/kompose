@@ -110,7 +110,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Non-recurring moves use `this`.
 
 #### Backend safety: partial failure recovery for `following`
-- `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server; the edit UI only offers `following` for updates.
+- `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves (`splitSeries`). It creates the new series first (under an id it chooses), puts back the occurrences changed on their own, and only then cuts the old series. A failure before the cut deletes the new series. If the cut fails, the old series is read back: cut, the split stands; unchanged, the new series is deleted; unreadable or changed some other way, both stay and the error is returned (a meeting shown twice rather than lost). This runs on the server; the edit UI only offers `following` for updates.
 
 #### Error feedback
 - Mutations surface failures via toast errors:

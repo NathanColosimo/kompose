@@ -2,6 +2,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
+import { NotFoundError } from "./api-client/core/error";
 import {
   addsSlot,
   carryCountExactly,
@@ -894,7 +895,9 @@ function carriedSlot(params: {
   start: Event["start"];
 }): string | null {
   const { master, recurrence, slot, start } = params;
-  const zone = seriesZoneOf(master);
+  // The new series repeats in its start's zone (an all-day one made timed
+  // takes the new start's).
+  const zone = repeatZone(master, start);
   const meets = (at: string) =>
     seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
   const splitDay = dayOfStart(asStart(params.splitStart), zone);
@@ -933,7 +936,7 @@ function movedOffRule(params: {
   start: Event["start"];
 }): string[] {
   const { master, originalStart, recurrence, start } = params;
-  const zone = seriesZoneOf(master);
+  const zone = repeatZone(master, start);
   const day = dayOfStart(start, zone);
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   if (
@@ -942,7 +945,11 @@ function movedOffRule(params: {
   ) {
     return [];
   }
-  const ownDay = onDay(start, dayOfStart(asStart(originalStart), zone), zone);
+  const ownDay = onDay(
+    start,
+    dayOfStart(asStart(originalStart), seriesZoneOf(master)),
+    zone
+  );
   const place = ownDay && slotOf(ownDay, zone);
   return place &&
     place !== slotOf(start, zone) &&
@@ -1052,12 +1059,13 @@ function carriedAt(params: {
   if (!sameForm(slot, start) && (own.start || own.end)) {
     return null;
   }
+  const newZone = repeatZone(master, start);
   return carriedSlot({
     master,
     recurrence: params.recurrence,
-    slot: inFormOf(slot, start, zone) ?? slot,
+    slot: inFormOf(slot, start, newZone) ?? slot,
     splitStart:
-      inFormOf(params.originalStart, start, zone) ?? params.originalStart,
+      inFormOf(params.originalStart, start, newZone) ?? params.originalStart,
     start,
   });
 }
@@ -1803,10 +1811,9 @@ export function makeGoogleCalendarService(
           master.recurrence ?? [],
           clockOf(master.start, zone)
         );
-      const writtenRule = (
-        ruleForStart(final, master, start, originalStart) ?? final
-      ).filter((line) => !line.startsWith("EXDATE"));
-      const startSlot = slotOf(start, zone);
+      // The new series' slots, in the zone it repeats in.
+      const newZone = repeatZone(master, start);
+      const startSlot = slotOf(start, newZone);
       const split = slotMoment(originalStart, zone);
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
@@ -1832,27 +1839,34 @@ export function makeGoogleCalendarService(
       const ownSkips = dateValues(final, "EXDATE", zone)
         .filter(ownSkip)
         .map(asSlot);
+      const placeBy = (writtenRule: string[]) =>
+        [
+          ...params.cancelled.filter((slot) => !isAdded(slot)),
+          ...ownSkips,
+        ].flatMap((slot) => {
+          // In the new start's form: made all day or timed, it's placed
+          // by day. Never onto an added meeting the new series keeps.
+          const at = carriedSlot({
+            master,
+            recurrence: writtenRule,
+            slot: inFormOf(slot, start, newZone) ?? slot,
+            splitStart:
+              inFormOf(originalStart, start, newZone) ?? originalStart,
+            start,
+          });
+          const formed = inFormOf(at ?? slot, start, newZone);
+          const ontoAdded =
+            at !== null &&
+            formed !== null &&
+            addsSlot(writtenRule, formed, newZone);
+          return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
+        });
       const placed = byPlace
-        ? [
-            ...params.cancelled.filter((slot) => !isAdded(slot)),
-            ...ownSkips,
-          ].flatMap((slot) => {
-            // In the new start's form: made all day or timed, it's placed
-            // by day. Never onto an added meeting the new series keeps.
-            const at = carriedSlot({
-              master,
-              recurrence: writtenRule,
-              slot: inFormOf(slot, start, zone) ?? slot,
-              splitStart: inFormOf(originalStart, start, zone) ?? originalStart,
-              start,
-            });
-            const formed = inFormOf(at ?? slot, start, zone);
-            const ontoAdded =
-              at !== null &&
-              formed !== null &&
-              addsSlot(writtenRule, formed, zone);
-            return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
-          })
+        ? placeBy(
+            (ruleForStart(final, master, start, originalStart) ?? final).filter(
+              (line) => !line.startsWith("EXDATE")
+            )
+          )
         : [];
       const recurrence = skipping(
         lineUpRule({
@@ -2030,6 +2044,10 @@ export function makeGoogleCalendarService(
             calendarId: destinationCalendarId,
           }),
         catch: (cause) => {
+          // Not found: the create never went through, so nothing is left.
+          if (cause instanceof NotFoundError) {
+            return new GoogleApiError({ cause });
+          }
           logGoogleEventUpdateFailure({
             operation: "delete",
             calendarId: destinationCalendarId,
