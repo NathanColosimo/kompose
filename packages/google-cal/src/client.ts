@@ -2558,6 +2558,10 @@ export function makeGoogleCalendarService(
               ...written,
               id: seriesId,
               ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+              // Google writes attachments only when asked to.
+              ...(written.attachments?.length
+                ? { supportsAttachments: true }
+                : {}),
             }),
           catch: (cause) => {
             logGoogleEventUpdateFailure({
