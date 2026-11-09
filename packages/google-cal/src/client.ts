@@ -2819,7 +2819,7 @@ export function makeGoogleCalendarService(
       // series' start is the meeting the user just saved, so no skip lands
       // on it.
       const fromDay = dayOfStart(asStart(originalStart), zone);
-      const toDay = dayOfStart(start, zone);
+      const toDay = dayOfStart(start, newZone);
       const byPlace =
         !(fromDay && toDay && fromDay.equals(toDay)) ||
         meetsSeveralTimesADay(
