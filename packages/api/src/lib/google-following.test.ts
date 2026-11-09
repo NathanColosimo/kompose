@@ -1491,6 +1491,30 @@ describe("a split that fails part way leaves the old series whole", () => {
     ]);
   });
 
+  test("finishes the split when a cut Google rate-limited with a 403 goes through on a retry", async () => {
+    // Google often names a rate limit in a 403 rather than send a 429.
+    let tries = 0;
+    const google = fakeGoogle(weekly, [], (request) => {
+      if (isCut(request)) {
+        tries += 1;
+        return tries === 1
+          ? new Response(
+              JSON.stringify({
+                error: { code: 403, errors: [{ reason: "rateLimitExceeded" }] },
+              }),
+              { status: 403 }
+            )
+          : undefined;
+      }
+    });
+    expect(Exit.isSuccess(await run(rename()))).toBe(true);
+    expect(google.writes().map((write) => write.method)).toEqual([
+      "POST",
+      "PUT",
+      "PUT",
+    ]);
+  });
+
   test("finishes the split when a cut that got a server error goes through on a retry", async () => {
     let tries = 0;
     const google = fakeGoogle(weekly, [], (request) => {
