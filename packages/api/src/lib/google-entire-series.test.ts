@@ -1529,6 +1529,51 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
+  test("new notes leave an occurrence's own times in a repeated hour as they are", async () => {
+    // Nov 1 moved on its own to the second 1:30-2:00 that night (clocks go
+    // back at 2:00); new notes for the Entire series through it.
+    const sundays: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-25T09:30:00-04:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=SU"],
+      start: { dateTime: "2026-10-25T09:00:00-04:00", timeZone: zone },
+    };
+    const moved = occurrenceOf(sundays, "2026-11-01T09:00:00-05:00", {
+      end: "2026-11-01T02:00:00-05:00",
+      start: "2026-11-01T01:30:00-05:00",
+    });
+    const google = fakeGoogle(sundays, [moved]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("all", moved, { description: "Bring the draft" }))
+      )
+    ).toBe(true);
+    // Only the series is written: Nov 1 keeps its own times untouched.
+    expect(google.writes()).toHaveLength(1);
+  });
+
+  test("guests listed in another order are no change of its own", async () => {
+    const guests = [{ email: "a@example.com" }, { email: "b@example.com" }];
+    const series: Event = { ...weekly, attendees: guests };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        attendees: [...guests].reverse(),
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.

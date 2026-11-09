@@ -28,7 +28,7 @@ const carried = (
   recurrence: string[],
   params: Parameters<typeof carryCountFromList>[1]
 ) => ({
-  listed: carryCountFromList(recurrence, params),
+  listed: carryCountFromList(recurrence, params)?.recurrence ?? null,
   walked: carryCountExactly(recurrence, params),
 });
 
@@ -669,7 +669,7 @@ describe("carrying a COUNT through a split", () => {
         starts: [8, 9, 16, 23].map(
           (day) => `2026-11-${String(day).padStart(2, "0")}T09:00:00-05:00`
         ),
-      })
+      })?.recurrence ?? null
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
   });
 
@@ -696,7 +696,7 @@ describe("carrying a COUNT through a split", () => {
           "2027-03-18T02:30:00-04:00",
           "2027-03-19T02:30:00-04:00",
         ],
-      })
+      })?.recurrence ?? null
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=4", skips]);
   });
 
@@ -711,7 +711,7 @@ describe("carrying a COUNT through a split", () => {
         seriesStart: "1950-11-09T09:00:00Z",
         seriesZone: "UTC",
         starts,
-      });
+      })?.recurrence ?? null;
     const onNov9 = (year: number) => `${year}-11-09T09:00:00Z`;
 
     test("counts a skip written twice once", () => {
@@ -773,7 +773,7 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-11T08:00:00-05:00",
           "2026-11-12T08:00:00-05:00",
         ],
-      })
+      })?.recurrence ?? null
     ).toEqual([byHour, skip]);
   });
 
@@ -1048,12 +1048,41 @@ describe("a COUNT read from Google's list through a move onto a skip", () => {
     );
   const meeting = (start: string) => occurrenceOf(series, start);
 
-  test("is refused when Google doesn't list it: its place can't be told", async () => {
+  test("drops its place when Google doesn't list it but the count holds it", async () => {
+    // Three places are left from 2027, and Google lists only two of them
+    // (2027 and 2029): the skipped 2028 is the third.
     const google = listing([
       meeting("2026-11-09T09:00:00-05:00"),
       meeting("2027-11-15T09:00:00-05:00"),
       meeting("2029-11-12T09:00:00-05:00"),
     ]);
+    expect(Exit.isSuccess(await run(moveFrom2027()))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2",
+    ]);
+  });
+
+  test("is refused when Google doesn't list it and the count can't tell", async () => {
+    // A stale skip (2030, past the end) Google doesn't list either: which
+    // of the two holds the third place can't be told.
+    const google = fakeGoogle(
+      {
+        ...series,
+        recurrence: [...(series.recurrence ?? []), "EXDATE:20301111T140000Z"],
+      },
+      [],
+      (request) =>
+        request.url.pathname.endsWith("/events/series/instances") &&
+        !request.url.searchParams.get("originalStart")
+          ? {
+              items: [
+                meeting("2026-11-09T09:00:00-05:00"),
+                meeting("2027-11-15T09:00:00-05:00"),
+                meeting("2029-11-12T09:00:00-05:00"),
+              ],
+            }
+          : undefined
+    );
     expect(await refusalOf(moveFrom2027())).toMatchObject({
       data: { reason: "countUnknown" },
     });
@@ -1160,6 +1189,46 @@ describe("a COUNT read from Google's list, a last skip it doesn't list", () => {
     );
     expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
       "COUNT=2"
+    );
+  });
+});
+
+describe("a COUNT read from Google's list, counted before the split", () => {
+  test("drops the place of a last skip it doesn't list that the move takes", async () => {
+    // Monday of week 46 four times from 2026 (a rule not read here), the
+    // last (2029) skipped and not listed. From 2028, moved onto 2029's
+    // place: one meeting was left, the one moved.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=4",
+        "EXDATE:20291112T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: [
+              occurrenceOf(series, "2026-11-09T09:00:00-05:00"),
+              occurrenceOf(series, "2027-11-15T09:00:00-05:00"),
+              occurrenceOf(series, "2028-11-13T09:00:00-05:00"),
+            ],
+          }
+        : undefined
+    );
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2028-11-13T09:00:00-05:00"), {
+            end: { dateTime: "2029-11-12T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2029-11-12T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "COUNT=1"
     );
   });
 });

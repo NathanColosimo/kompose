@@ -578,13 +578,24 @@ function entireSeriesTimes(
 
 /**
  * An Entire series edit's times on the opened occurrence's own day (the
- * series keeps its dates). Its own times if they don't parse.
+ * series keeps its dates). A time the edit kept is the occurrence's own,
+ * moment for moment (rebuilt from its clock, a time in an hour a clock
+ * change repeats could move). Its own times if they don't parse.
  */
 function timesOnOwnDay(
   occurrence: Event,
   edited: CreateEvent,
   master: Event
 ): { end: Event["end"]; start: Event["start"] } {
+  const zone = seriesZoneOf(master);
+  if (sameTime(edited.start, occurrence.start, zone)) {
+    return {
+      end: sameTime(edited.end, occurrence.end, zone)
+        ? occurrence.end
+        : inSeriesZone(edited.end, master.end),
+      start: occurrence.start,
+    };
+  }
   return (
     seriesTimesForEdit({
       editedEnd: inSeriesZone(edited.end, master.end),
@@ -666,15 +677,59 @@ function withSeriesSkips(rule: string[], master: Event): string[] {
 }
 
 /**
- * The rules a save writes: the series' own when it sends none, and a rule
- * sent alone with the series' skips, which a client rebuilding the rule
- * may leave out ("Repeat: None" stays none).
+ * `recurrence` as what it means, however Google writes it back: its rules'
+ * parts, and its skipped and added moments.
  */
-function savedRule(saved: string[] | undefined, master: Event): string[] {
+function recurrenceValues(recurrence: string[], zone: string): string {
+  const rules = recurrence
+    .filter((line) => line.startsWith("RRULE:") || line.startsWith("EXRULE:"))
+    .map((line) => {
+      const [name, parts = ""] = line.split(":");
+      return `${name}:${parts.split(";").sort().join(";")}`;
+    })
+    .sort();
+  const values = (name: "EXDATE" | "RDATE") =>
+    dateValues(recurrence, name, zone).map(skipKey).sort();
+  return JSON.stringify([rules, values("EXDATE"), values("RDATE")]);
+}
+
+/**
+ * The rules a save writes: the series' own when it sends none, and a rule
+ * sent alone with the series' skips and the added days still on, which a
+ * client rebuilding the rule may leave out ("Repeat: None" stays none).
+ * An added day deleted (`cancelled`) or skipped shows nothing: left out,
+ * it goes.
+ */
+function savedRule(
+  saved: string[] | undefined,
+  master: Event,
+  cancelled: string[]
+): string[] {
   if (!saved) {
     return master.recurrence ?? [];
   }
-  return repeats(saved) ? withSeriesSkips(saved, master) : saved;
+  if (!repeats(saved)) {
+    return saved;
+  }
+  if (saved.some((line) => line.startsWith("RDATE"))) {
+    return withSeriesSkips(saved, master);
+  }
+  const own = master.recurrence ?? [];
+  const zone = seriesZoneOf(master);
+  const gone = new Set([
+    ...dateValues(own, "EXDATE", zone).map(skipKey),
+    ...cancelled.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
+    }),
+  ]);
+  const added = keepingDateValues(
+    own.filter((line) => line.startsWith("RDATE")),
+    "RDATE",
+    zone,
+    (value) => !gone.has(skipKey(value))
+  );
+  return withSeriesSkips([...saved, ...added], master);
 }
 
 /**
@@ -1290,17 +1345,24 @@ function carriedSlot(params: {
       splitStart: params.splitStart,
       zone,
     });
-  if (ownDay && meets(ownDay)) {
-    return ownDay;
-  }
   const moved = placeInNewSeries({
     newStart: start,
     originalStart: slot,
     splitStart: params.splitStart,
     zone,
   });
-  if (moved && meets(moved)) {
-    return moved;
+  // A new time less than a day off (23:30 to 00:30 the next day) moves
+  // each meeting by as much, across midnight too; a longer move keeps a
+  // rule day's meetings on their own day first.
+  const from = momentOf(asStart(params.splitStart), zone);
+  const to = momentOf(start, zone);
+  const shortMove = Boolean(
+    from && to && Math.abs(from.until(to).total("hours")) < 24
+  );
+  for (const place of shortMove ? [moved, ownDay] : [ownDay, moved]) {
+    if (place && meets(place)) {
+      return place;
+    }
   }
   const rulesOf = (lines: string[]) =>
     lines.filter((line) => line.startsWith("RRULE:"));
@@ -1397,6 +1459,10 @@ function inFormOf(
  */
 function placeByDay(params: {
   cancelled: string[];
+  /** Skips a COUNT read from Google's list knows hold a place, by moment. */
+  heldPlaces: number[];
+  /** Skips the kept COUNT left out (`carryCountFromList`), by moment. */
+  leftOut: number[];
   listed: string[] | null;
   master: Event;
   originalStart: string;
@@ -1411,15 +1477,6 @@ function placeByDay(params: {
   // A place already skipped is still its place.
   const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
-  // Counted from Google's list, a skip after its last meeting wasn't
-  // counted (`carryCountFromList`): it holds no place to free.
-  const lastListed = (params.listed ?? [])
-    .filter((slot) => !addsSlot(master.recurrence ?? [], slot, zone))
-    .flatMap((slot) => {
-      const at = slotMoment(slot, zone);
-      return at ? [at.epochMilliseconds] : [];
-    })
-    .reduce((last, at) => Math.max(last, at), Number.NEGATIVE_INFINITY);
   const ontoStart: number[] = [];
   let unknown = false;
   const placed = params.slots.flatMap((slot) => {
@@ -1436,7 +1493,7 @@ function placeByDay(params: {
     // in its place (none there, or the start itself) frees none; a new rule
     // not read here may meet there after all.
     const uncounted = Boolean(
-      params.listed && moment && moment.epochMilliseconds > lastListed
+      moment && params.leftOut.includes(moment.epochMilliseconds)
     );
     if ((formed === startSlot || at === null) && moment && !uncounted) {
       const meeting = ruleMeetingOf({ ...params, slot });
@@ -1471,19 +1528,25 @@ function placeByDay(params: {
  */
 function ruleMeetingOf(params: {
   cancelled: string[];
+  heldPlaces: number[];
   listed: string[] | null;
   master: Event;
   slot: string;
 }): boolean | null {
   const { master, slot } = params;
+  const zone = seriesZoneOf(master);
   const read = ruleMeetingAt(slot, master);
   if (read !== null) {
     return read;
   }
-  if (addsSlot(master.recurrence ?? [], slot, seriesZoneOf(master))) {
+  if (addsSlot(master.recurrence ?? [], slot, zone)) {
     return null;
   }
-  if (params.cancelled.includes(slot)) {
+  const moment = slotMoment(slot, zone);
+  if (
+    params.cancelled.includes(slot) ||
+    (moment && params.heldPlaces.includes(moment.epochMilliseconds))
+  ) {
     return true;
   }
   // Google may leave a skipped meeting off its list: only one it lists is
@@ -2358,7 +2421,7 @@ export function makeGoogleCalendarService(
       const zone = seriesZoneOf(master);
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
-        savedRule(params.edited, master),
+        savedRule(params.edited, master, params.cancelled),
         originalStart,
         zone,
         "from"
@@ -2378,7 +2441,7 @@ export function makeGoogleCalendarService(
       if (!carried) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      const { listed, rule: counted } = carried;
+      const { counted: heldPlaces, leftOut, listed, rule: counted } = carried;
       // The rule as written for the new start (a kept BYHOUR moves with
       // it), which places are read against.
       const writtenCounted = ruleForStart(
@@ -2459,6 +2522,8 @@ export function makeGoogleCalendarService(
       const byDay = byPlace
         ? placeByDay({
             cancelled: params.cancelled,
+            heldPlaces,
+            leftOut,
             listed,
             master,
             originalStart,
@@ -2544,7 +2609,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       if (!params.keeps) {
-        return { listed: null, rule };
+        return { counted: [], leftOut: [], listed: null, rule };
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
       if (!seriesStart) {
@@ -2559,11 +2624,18 @@ export function makeGoogleCalendarService(
       // A rule that can be read is counted without asking Google.
       const exact = carryCountExactly(rule, counting);
       if (exact) {
-        return { listed: null, rule: exact };
+        return { counted: [], leftOut: [], listed: null, rule: exact };
       }
       const starts = yield* listOccurrenceStarts(calendarId, master);
       const fromList = carryCountFromList(rule, { ...counting, starts });
-      return fromList && { listed: starts, rule: fromList };
+      return (
+        fromList && {
+          counted: fromList.counted,
+          leftOut: fromList.leftOut,
+          listed: starts,
+          rule: fromList.recurrence,
+        }
+      );
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */
@@ -2636,11 +2708,12 @@ export function makeGoogleCalendarService(
       if (Exit.isFailure(current)) {
         return "unknown" as const;
       }
-      const now = JSON.stringify(current.value.recurrence);
-      if (now === JSON.stringify(master.recurrence)) {
+      const zone = seriesZoneOf(master);
+      const now = recurrenceValues(current.value.recurrence ?? [], zone);
+      if (now === recurrenceValues(master.recurrence ?? [], zone)) {
         return "unchanged" as const;
       }
-      return now === JSON.stringify(cutRecurrence)
+      return now === recurrenceValues(cutRecurrence, zone)
         ? ("cut" as const)
         : ("unknown" as const);
     });
@@ -2727,9 +2800,11 @@ export function makeGoogleCalendarService(
           },
         });
         const series = yield* parseEventResponse(response);
-        for (const carried of repeating ? params.carried : []) {
-          yield* putBack(destinationCalendarId, seriesId, carried);
-        }
+        yield* Effect.forEach(
+          repeating ? params.carried : [],
+          (carried) => putBack(destinationCalendarId, seriesId, carried),
+          { concurrency: 4, discard: true }
+        );
         return series;
       }).pipe(Effect.onError(() => discardNew));
 

@@ -382,6 +382,98 @@ describe("This and following", () => {
     ]);
   });
 
+  test("a new repeat sent alone keeps the series' added days after the split", async () => {
+    // Mondays plus an added Wed Nov 25; from Nov 16, Mondays become
+    // Mondays and Thursdays, the rule sent without the added day.
+    const google = fakeGoogle({
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261125T090000",
+      ],
+    });
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,TH",
+      "RDATE;TZID=America/New_York:20261125T090000",
+    ]);
+  });
+
+  test("a new repeat sent alone drops a deleted added day after the split", async () => {
+    // As above, Nov 25 deleted on its own: it shows nothing, so the rule
+    // sent without it leaves it out.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261125T090000",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-25T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "RDATE"
+    );
+  });
+
+  test("a new time across midnight moves later meetings by as much", async () => {
+    // Daily 23:30; Nov 20 deleted and Nov 22 renamed on their own. From
+    // Nov 16, moved to Nov 17 00:30: each later meeting is an hour later,
+    // the next day.
+    const late: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(late, [
+      {
+        ...occurrenceOf(late, "2026-11-20T23:30:00-05:00"),
+        status: "cancelled",
+      },
+      { ...occurrenceOf(late, "2026-11-22T23:30:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(late, "2026-11-16T23:30:00-05:00"), {
+            end: { dateTime: "2026-11-17T00:59:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261121T053000Z",
+    ]);
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261123T053000Z`
+    );
+  });
+
   test("a move to a day the rule doesn't meet skips the moved meeting's old slot", async () => {
     // From Mon Nov 16, moved to Sun Nov 15 with the Monday rule kept: the
     // new series meets at its Sunday start, so its Monday Nov 16 meeting
@@ -1546,7 +1638,8 @@ describe("This and following, where the new series sits", () => {
   test("refuses two moved occurrences that would land on one meeting", async () => {
     // Mondays plus an added Tue Dec 1, both Nov 30 and Dec 1 moved on
     // their own. From Nov 16 the series moves to Tuesdays: Nov 30 would
-    // land on Dec 1, which the added meeting holds.
+    // land on Dec 1, which the added meeting (kept, with its own move)
+    // holds.
     const series = {
       ...weekly,
       recurrence: [
@@ -1586,7 +1679,7 @@ describe("This and following, where the new series sits", () => {
         ...(refusal as { data: { originalStarts: string[] } }).data
           .originalStarts,
       ].sort()
-    ).toEqual(["2026-11-30T09:00:00-05:00", "2026-12-01T09:00:00-05:00"]);
+    ).toEqual(["2026-11-30T09:00:00-05:00"]);
     expect(google.writes()).toEqual([]);
   });
 });
