@@ -1068,6 +1068,68 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a new repeat sent alone keeps the series' skips", async () => {
+    // Nov 23 skipped; the repeat becomes Mondays and Wednesdays, sent alone.
+    const skipped: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261123T140000Z"],
+    };
+    const google = fakeGoogle(skipped);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", skipped, {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+      "EXDATE:20261123T140000Z",
+    ]);
+  });
+
+  test("an all-day series made timed from a form that keeps the date saves the time", async () => {
+    const allDay: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { date: "2026-11-09" },
+    };
+    const opened = {
+      ...allDay,
+      end: { date: "2026-11-17" },
+      id: "series_20261116",
+      originalStartTime: { date: "2026-11-16" },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: "2026-11-16" },
+    };
+    const google = fakeGoogle(allDay, [opened]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", opened, {
+            end: {
+              date: "2026-11-17",
+              dateTime: "2026-11-16T10:00:00-05:00",
+              timeZone: zone,
+            },
+            start: {
+              date: "2026-11-16",
+              dateTime: "2026-11-16T09:00:00-05:00",
+              timeZone: zone,
+            },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.start).toMatchObject({
+      dateTime: "2026-11-09T09:00:00-05:00",
+    });
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [
