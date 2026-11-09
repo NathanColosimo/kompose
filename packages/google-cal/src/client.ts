@@ -1329,7 +1329,7 @@ function placeByDay(params: {
  * deleted one that isn't an added day is, as Google lists only a series'
  * meetings, and so is one on Google's list of them (`listed`, when it was
  * read). Null when that can't be told: an added day's could be the rule's
- * too.
+ * too, and Google may leave a skip off its list.
  */
 function ruleMeetingOf(params: {
   cancelled: string[];
@@ -1348,7 +1348,9 @@ function ruleMeetingOf(params: {
   if (params.cancelled.includes(slot)) {
     return true;
   }
-  return params.listed ? params.listed.includes(slot) : null;
+  // Google may leave a skipped meeting off its list: only one it lists is
+  // told to be a meeting.
+  return params.listed?.includes(slot) ? true : null;
 }
 
 /**
