@@ -572,6 +572,46 @@ describe("This and following", () => {
     );
   });
 
+  test("the last meeting moved past the series' end is saved as one event", async () => {
+    for (const [until, to] of [
+      // Google's own "ends Nov 30"; moved to Tue Dec 1.
+      ["20261201T045959Z", "2026-12-01T09:00:00-05:00"],
+      // An end at the last meeting's start; moved to 10:00.
+      ["20261130T140000Z", "2026-11-30T10:00:00-05:00"],
+    ] as const) {
+      const ending: Event = {
+        ...weekly,
+        recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=${until}`],
+      };
+      const google = fakeGoogle(ending);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(ending, "2026-11-30T09:00:00-05:00"),
+              {
+                end: {
+                  dateTime: to.replace(":00:00-", ":30:00-"),
+                  timeZone: zone,
+                },
+                start: { dateTime: to, timeZone: zone },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      const [created, cut] = google.writes();
+      expect(created?.body).toMatchObject({
+        recurrence: [],
+        start: { dateTime: to },
+      });
+      expect(cut?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T135959Z",
+      ]);
+    }
+  });
+
   test("a new time carries a deleted occurrence's skip to it", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to 10:00.
     // A skip left at 9:00 would match nothing, and Nov 30 would come back.

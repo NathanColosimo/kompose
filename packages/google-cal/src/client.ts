@@ -1689,11 +1689,20 @@ export function makeGoogleCalendarService(
         ],
         zone
       );
-      const ends = repeatZone(master, start);
-      if (endsBeforeStart(recurrence, momentOf(start, ends), ends)) {
-        return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
+      if (!endsBeforeStart(recurrence, momentOf(start, newZone), newZone)) {
+        return recurrence;
       }
-      return recurrence;
+      // The series' own end before the meeting moved past it (its last,
+      // moved later): that meeting is all the new part has, one event. An
+      // end the save sets there is refused.
+      const ownRule =
+        params.edited === undefined ||
+        JSON.stringify(params.edited) ===
+          JSON.stringify(master.recurrence ?? []);
+      if (ownRule) {
+        return [];
+      }
+      return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */

@@ -328,7 +328,7 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 }
 
 /** Why a series can't be split at an occurrence ("This and following"). */
-export type SplitBlock = Extract<
+type SplitBlock = Extract<
   SeriesRefusal["reason"],
   "addedOccurrence" | "severalRules"
 >;
