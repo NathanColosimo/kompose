@@ -448,7 +448,7 @@ function repeatZone(
  */
 function ruleForStart(
   rule: string[],
-  master: Pick<Event, "start">,
+  master: Pick<Event, "recurrence" | "start">,
   start: Event["start"],
   /**
    * A split's original start (the new series' first meeting before the
@@ -462,10 +462,15 @@ function ruleForStart(
     splitAt && !DATE_ONLY.test(splitAt)
       ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
       : null;
+  const before = master.recurrence ?? [];
   const days =
     start.date && splitClock
-      ? { firstDay: Temporal.PlainDate.from(start.date), firstTime: splitClock }
-      : undefined;
+      ? {
+          before,
+          firstDay: Temporal.PlainDate.from(start.date),
+          firstTime: splitClock,
+        }
+      : { before };
   const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
   return matchRecurrenceToStart(rule, start, zone, from, days);
 }

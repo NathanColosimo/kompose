@@ -21,6 +21,69 @@ import {
 // Skips (EXDATE) and occurrences deleted on their own stay where their
 // meetings go when a save moves a series' time or makes it all day.
 
+describe("an Entire series save the client lined up", () => {
+  test("made all day, keeps a day with a live added meeting", async () => {
+    // Daily 9:00 New York; Nov 30's 9:00 skipped, an added 15:00 that day
+    // still on. Made all day, the client keeps Nov 30 as an added date;
+    // the server's copy of the old skip mustn't cancel it.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=DAILY",
+        "EXDATE:20261130T140000Z",
+        "RDATE:20261130T200000Z",
+      ],
+    };
+    const start = { date: "2026-11-09" };
+    const sent = matchRecurrenceToStart(
+      series.recurrence ?? [],
+      start,
+      zone,
+      series.start
+    );
+    expect(sent).toContain("RDATE;VALUE=DATE:20261130");
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { date: "2026-11-10" },
+            recurrence: sent,
+            start,
+          })
+        )
+      )
+    ).toBe(true);
+    const written = google.writes()[0]?.body?.recurrence ?? [];
+    expect(written).toContain("RDATE;VALUE=DATE:20261130");
+    expect(JSON.stringify(written)).not.toContain("EXDATE");
+  });
+
+  test("an end the save sets is read at the new time", async () => {
+    // Mondays 9:00 to Nov 30; moved to 8:00 and set to end with Dec 7's
+    // 8:00 meeting, which stays.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-09T08:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207T130000Z"],
+            start: { dateTime: "2026-11-09T08:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207T130000Z",
+    ]);
+  });
+});
+
 describe("a skipped added meeting in the hour a clock change repeats", () => {
   test("stays the only skip when the series moves to another time", async () => {
     // Daily at 1:30 New York from Oct 25, with an added meeting at Nov 1's
@@ -1423,13 +1486,15 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
     skips: string;
     to: string;
     timed?: boolean;
+    /** The rule the recurrence holds; the new one when left out. */
+    recurrenceRule?: string;
   }) =>
     moveSkippedDays({
       from: day(params.from),
       fromTime: params.timed === false ? null : nine,
       newRule: params.newRule,
       oldRule: params.oldRule,
-      recurrence: [params.newRule, params.skips],
+      recurrence: [params.recurrenceRule ?? params.newRule, params.skips],
       seriesZone: zone,
       to: day(params.to),
       toTime: params.timed === false ? null : nine,
@@ -1493,6 +1558,19 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
         toTime: half,
       })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261101T063000Z"]);
+  });
+
+  test("moves a skip with the old rule still in the recurrence", () => {
+    expect(
+      moved({
+        from: "2026-11-09",
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        skips: "EXDATE:20261123T140000Z",
+        to: "2026-11-10",
+        recurrenceRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      }).at(-1)
+    ).toBe("EXDATE:20261124T140000Z");
   });
 
   test("leaves a skip where nothing met where it is", () => {

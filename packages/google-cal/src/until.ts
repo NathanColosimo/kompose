@@ -680,7 +680,7 @@ export function countedRuleMeetings(params: {
  * Made all day, which timed RDATE/EXDATE values become dates. A date covers
  * the whole day, so a cancelled added meeting leaves both lists, and a skip
  * becomes a date only when every meeting that day was skipped (the rules',
- * the added ones and the start). Without `base`, a once-a-day series' skip
+ * the added ones and the start) and no added date meets then. Without `base`, a once-a-day series' skip
  * is taken as its meeting's.
  */
 function allDayDates(params: {
@@ -797,6 +797,14 @@ function allDayDates(params: {
       })
       .map((moment) => moment.epochMilliseconds)
   );
+  const skippedDays = new Set(
+    dateValues(recurrence, "EXDATE", timeZone).flatMap((value) =>
+      value.instant ? [] : [value.day.toString()]
+    )
+  );
+  const liveDays = new Set(
+    [...addedDates(recurrence, timeZone)].filter((day) => !skippedDays.has(day))
+  );
   return (name, value) => {
     const ms = value.instant?.epochMilliseconds;
     if (ms === undefined || cancelled.has(ms)) {
@@ -804,6 +812,10 @@ function allDayDates(params: {
     }
     if (name !== "EXDATE") {
       return true;
+    }
+    // A day added whole (and not skipped whole) meets whatever is skipped.
+    if (liveDays.has(value.day.toString())) {
+      return false;
     }
     const listed = ruleMeetings(value.day);
     if (!listed) {
@@ -997,8 +1009,16 @@ export function matchRecurrenceToStart(
   days?: {
     /** The day the rules count from, when it isn't the new start's. */
     rulesFrom?: Temporal.PlainDate;
-    /** The series' first day (COUNT counts from it); null if not known. */
-    firstDay: Temporal.PlainDate | null;
+    /**
+     * The series' first day (COUNT counts from it); null if not known.
+     * Left out, the new start's.
+     */
+    firstDay?: Temporal.PlainDate | null;
+    /**
+     * The series' rules before the edit. An UNTIL they don't have was set
+     * for the new start, so it's read at its time, not the old one.
+     */
+    before?: readonly string[];
     /**
      * The first meeting's time, when not `seriesStart`'s: COUNT counts from
      * it, and it fills a rule's left-out time parts.
@@ -1031,7 +1051,10 @@ export function matchRecurrenceToStart(
   const convertsRule = Boolean(start.date) && !days?.viaOccurrence;
   const countBase = days?.firstTime ?? base;
   if (start.date) {
-    countFrom = days ? days.firstDay : Temporal.PlainDate.from(start.date);
+    countFrom =
+      days?.firstDay === undefined
+        ? Temporal.PlainDate.from(start.date)
+        : days.firstDay;
   }
   const keepAsDate = start.date
     ? allDayDates({
@@ -1130,14 +1153,20 @@ export function matchRecurrenceToStart(
         }
       : null;
   let changed = false;
+  const untilOf = (line: string) => UNTIL_PART.exec(line)?.[2];
+  const ownUntils = days?.before && new Set(days.before.map(untilOf));
+  // An UNTIL the edit set was written for the new start's time.
+  const newUntil = (line: string) =>
+    Boolean(ownUntils && newTime && !ownUntils.has(untilOf(line)));
   const next = recurrence.flatMap((line) => {
     const matched = line.startsWith("RRULE:")
       ? matchClock(
           matchUntil(line, {
             allDay,
-            base,
+            base: newUntil(line) ? newTime : base,
             retimed: Boolean(
-              base &&
+              !newUntil(line) &&
+                base &&
                 newTime &&
                 !severalADay &&
                 Temporal.PlainTime.compare(base, newTime) !== 0
@@ -1345,6 +1374,7 @@ export function moveSkippedDays(params: {
   newRule: string;
   /** The rule before the move: only its own days move. */
   oldRule: string;
+  /** The series' recurrence, its rule the new one or still the old one. */
   recurrence: string[];
   seriesZone: string;
   to: Temporal.PlainDate;
@@ -1394,7 +1424,7 @@ export function moveSkippedDays(params: {
   // A skip another rule still needs stays, and no skip lands on another
   // rule's meeting. A rule that can't be read counts as meeting.
   const otherRules = recurrence.filter(
-    (line) => line.startsWith("RRULE:") && line !== newRule
+    (line) => line.startsWith("RRULE:") && line !== newRule && line !== oldRule
   );
   const othersMeet = (
     day: Temporal.PlainDate,
