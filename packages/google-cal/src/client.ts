@@ -1,10 +1,18 @@
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
+  addsSlot,
+  deleteFromListed,
+  followingDelete,
+  followingIsWhole,
+  followingSplitBlocked,
+  repeats,
   sanitizeEventPayload,
   seriesMeetsAt,
+  skipping,
+  splitAddedDays,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
 import {
@@ -25,6 +33,7 @@ import {
   newRepeat,
   ownChanges,
   PLAIN_REFUSALS,
+  placeInNewSeries,
   refusalMessage,
   type SeriesRefusal,
   sameLength,
@@ -44,6 +53,7 @@ import {
   meetsSeveralTimesADay,
   momentOf,
   startInstant,
+  untilMoment,
 } from "./until";
 
 interface GoogleWatchChannelInput {
@@ -123,6 +133,26 @@ function refused(refusal: SeriesRefusal): GoogleApiError {
 }
 
 /**
+ * Refuses "This and following" where a new series can't start: at an
+ * added meeting, or in a series with several rules (the apps don't offer
+ * it there either). Null when the split is fine.
+ */
+function splitBlockedError(
+  master: Event,
+  originalStart: string
+): GoogleApiError | null {
+  const blocked = followingSplitBlocked({
+    masterRecurrence: master.recurrence,
+    masterStart: master.start,
+    originalStart,
+    seriesZone: seriesZoneOf(master),
+  });
+  return blocked ? refused({ reason: blocked }) : null;
+}
+
+const RULE_UNTIL = /[:;]UNTIL=([^;]+)/;
+
+/**
  * Whether `occurrence` is its series' first meeting: the master, or the
  * occurrence at its start (not an added meeting before it).
  */
@@ -139,6 +169,23 @@ function opensSeries(occurrence: Event, master: Event): boolean {
   return Boolean(
     original && first && Temporal.Instant.compare(original, first) === 0
   );
+}
+
+/**
+ * Whether a new series' rule ends (UNTIL) before its own first meeting:
+ * Google would keep only that meeting.
+ */
+function endsBeforeStart(
+  recurrence: string[],
+  start: { date?: string; dateTime?: string; timeZone?: string },
+  zone: string
+): boolean {
+  const until = recurrence
+    .find((line) => line.startsWith("RRULE:"))
+    ?.match(RULE_UNTIL)?.[1];
+  const last = until ? untilMoment(until, zone) : null;
+  const first = momentOf(start, zone);
+  return Boolean(last && first && Temporal.Instant.compare(last, first) < 0);
 }
 
 /**
@@ -352,6 +399,13 @@ const SeriesListingSchema = z.array(
 );
 type SeriesListing = z.infer<typeof SeriesListingSchema>[number];
 
+/** An occurrence's own changes to put back on a new series, and where. */
+interface CarriedOccurrence {
+  /** Its slot in the new series (its original start there). */
+  at: string;
+  changes: Partial<CreateEvent>;
+}
+
 /**
  * `occurrence`'s own changes (see `ownChanges`) less the fields `edited`
  * sets for its whole series, which the series carries.
@@ -375,6 +429,103 @@ function changesOwnTo(
   return Object.fromEntries(
     Object.entries(own).filter(([field]) => !(field in edited))
   );
+}
+
+/**
+ * The occurrences a "This and following" new series carries, and where:
+ * the opened one at its start with its own changes (its times only if
+ * the edit left them), and later changed ones at their new places.
+ */
+function followingOccurrences(params: {
+  /** The fields the edit changed, which the new series carries. */
+  changes: Partial<CreateEvent>;
+  exceptions: { occurrence: Event; originalStart: string }[];
+  /** Whether the edit left the opened occurrence's times. */
+  keptTimes: boolean;
+  master: Event;
+  opened: Event;
+  originalStart: string;
+  /** The new series' start. */
+  start: Event["start"];
+}) {
+  const { changes, master, originalStart, start } = params;
+  const zone = seriesZoneOf(master);
+  const own = changesOwnTo(params.opened, master, changes, zone);
+  const { end: _end, start: _start, ...ownFields } = own;
+  return [
+    {
+      at: slotOf(start, zone),
+      changes: params.keptTimes ? own : ownFields,
+      originalStart,
+    },
+    ...params.exceptions.map((exception) => ({
+      // An added (RDATE) meeting keeps its slot, as its RDATE does; a
+      // rule meeting moves with the series.
+      at: addsSlot(master.recurrence ?? [], exception.originalStart, zone)
+        ? sameForm(exception.originalStart, start)
+        : placeInNewSeries({
+            newStart: start,
+            originalStart: exception.originalStart,
+            splitStart: originalStart,
+            zone,
+          }),
+      changes: changesOwnTo(exception.occurrence, master, changes, zone),
+      originalStart: exception.originalStart,
+    })),
+  ];
+}
+
+/** `slot` when it has `start`'s form (a date, or a date-time); else null. */
+function sameForm(slot: string, start: Event["start"]): string | null {
+  return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
+}
+
+/**
+ * The occurrences with changes a new series can carry. Google keeps an
+ * occurrence's changes only at a slot its series meets at, so any without
+ * one are refused by original start, before anything is written.
+ */
+function placeCarried(params: {
+  occurrences: {
+    at: string | null;
+    changes: Partial<CreateEvent>;
+    originalStart: string;
+  }[];
+  recurrence: string[];
+  /** Whether the save is one only a series takes (`SeriesRefusal`). */
+  seriesOnly: boolean;
+  start: Event["start"];
+  zone: string;
+}): CarriedOccurrence[] | SeriesRefusal {
+  const carried: CarriedOccurrence[] = [];
+  const lost = new Set<string>();
+  // Each slot holds one occurrence: two that land on one can't both keep
+  // their changes.
+  const placed = new Map<number, string>();
+  for (const { at, changes, originalStart } of params.occurrences) {
+    if (Object.keys(changes).length === 0) {
+      continue;
+    }
+    const meets =
+      at &&
+      seriesMeetsAt({
+        recurrence: params.recurrence,
+        seriesZone: params.zone,
+        slot: at,
+        start: params.start,
+      });
+    const moment = at && meets === true ? slotMoment(at, params.zone) : null;
+    const taken = moment && placed.get(moment.epochMilliseconds);
+    if (!(at && moment) || taken) {
+      lost.add(taken || originalStart).add(originalStart);
+      continue;
+    }
+    placed.set(moment.epochMilliseconds, originalStart);
+    carried.push({ at, changes });
+  }
+  return lost.size > 0
+    ? naming("dropsChangedOccurrences", [...lost], params.seriesOnly)
+    : carried;
 }
 
 function getConferenceDataVersion(event: {
@@ -906,6 +1057,38 @@ export function makeGoogleCalendarService(
     });
 
   /**
+   * The original starts of a series' occurrences, as Google lists them,
+   * cancelled ones too (one rescheduled keeps its place). Only for a series
+   * whose every rule ends, so the list does too.
+   */
+  const listOccurrenceStarts = (calendarId: string, master: Event) =>
+    Effect.gen(function* () {
+      const starts: string[] = [];
+      let pageToken: string | undefined;
+      do {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            client.calendars.events.instances(master.id, {
+              calendarId,
+              maxResults: 2500,
+              pageToken,
+              showDeleted: true,
+            }),
+          catch: (cause) => new GoogleApiError({ cause }),
+        });
+        for (const item of response.items ?? []) {
+          const start = item.originalStartTime ?? item.start;
+          const slot = start && slotOf(start, seriesZoneOf(master));
+          if (slot) {
+            starts.push(slot);
+          }
+        }
+        pageToken = response.nextPageToken ?? undefined;
+      } while (pageToken);
+      return starts;
+    });
+
+  /**
    * `master`'s exceptions, sorted by `sortExceptions`. Listed by iCalUID,
    * which returns only the master and its exceptions, so an endless
    * series isn't expanded.
@@ -947,6 +1130,214 @@ export function makeGoogleCalendarService(
         );
       }
       return sortExceptions(parsed.data, master, after);
+    });
+
+  /**
+   * The rule a split's new part repeats with: `edited`, or the series'.
+   * An unchanged COUNT carries on (a five-time series split at its third
+   * runs three more, not five). Occurrences `cancelled` after the split
+   * stay skipped on their own days, not shifted onto days the user never
+   * deleted. Refuses, before any write, if the COUNT can't be carried or
+   * the rule ends before `start`.
+   */
+  const newSeriesRecurrence = (params: {
+    calendarId: string;
+    cancelled: string[];
+    edited: string[] | undefined;
+    master: Event;
+    originalStart: string;
+    start: Event["start"];
+  }) =>
+    Effect.gen(function* () {
+      const { master, originalStart, start } = params;
+      // Added days before the split stay with the old part.
+      const fromSplit = splitAddedDays(
+        params.edited ?? master.recurrence ?? [],
+        originalStart,
+        seriesZoneOf(master),
+        "from"
+      );
+      // Occurrences deleted on their own after the split stay skipped.
+      const recurrence = skipping(
+        fromSplit,
+        params.cancelled,
+        seriesZoneOf(master)
+      );
+      if (endsBeforeStart(recurrence, start, repeatZone(master, start))) {
+        return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
+      }
+      return recurrence;
+    });
+
+  /** Writes a carried occurrence's own changes onto its new series' one. */
+  const putBack = (
+    calendarId: string,
+    seriesId: string,
+    carried: CarriedOccurrence
+  ) =>
+    Effect.gen(function* () {
+      const listed = yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.instances(seriesId, {
+            calendarId,
+            maxResults: 1,
+            originalStart: carried.at,
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+      const occurrence = yield* parseEventResponse(listed.items?.[0]);
+      // Written like a single occurrence's update, so it keeps its place.
+      const payload = {
+        ...sanitizeEventPayload(occurrence),
+        originalStartTime: occurrence.originalStartTime,
+        recurringEventId: occurrence.recurringEventId,
+        ...carried.changes,
+      };
+      // Google changes or removes a meeting link only at version 1; one
+      // the occurrence dropped on its own is a change too.
+      const conferenceDataVersion =
+        "conferenceData" in carried.changes
+          ? 1
+          : getConferenceDataVersion(payload);
+      yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(occurrence.id, {
+            ...payload,
+            calendarId,
+            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+          }),
+        catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId: occurrence.id,
+            scope: "following-carry",
+            event: payload,
+            cause,
+          });
+          return new GoogleApiError({ cause });
+        },
+      });
+    });
+
+  /**
+   * Splits `master` at `originalStart` into `newSeries` (in
+   * `destinationCalendarId`), all or nothing. The new series is created
+   * first, under an id chosen here, with `carried` put back on it; then
+   * the old one is cut to end before the split (Google drops its later
+   * occurrences). A failure before the cut deletes the new series. After
+   * a failed cut the old series is read back: rule changed, the split
+   * stands; unchanged, the new one is deleted and the call fails; unread,
+   * both stay (a meeting shown twice beats one lost) and the call fails.
+   */
+  const splitSeries = (params: {
+    calendarId: string;
+    carried: CarriedOccurrence[];
+    destinationCalendarId: string;
+    master: Event;
+    newSeries: CreateEvent;
+    originalStart: string;
+  }) =>
+    Effect.gen(function* () {
+      const { calendarId, destinationCalendarId, master, newSeries } = params;
+      yield* Effect.annotateCurrentSpan(
+        "eventType",
+        newSeries.eventType ?? "default"
+      );
+      // Google takes an id of base32hex characters (0-9, a-v).
+      const seriesId = crypto.randomUUID().replaceAll("-", "");
+      const discardNew = Effect.tryPromise({
+        try: () =>
+          client.calendars.events.delete(seriesId, {
+            calendarId: destinationCalendarId,
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      }).pipe(Effect.ignore);
+
+      // A new part that doesn't repeat ("Repeat: None") is one event with
+      // no occurrences: the one carried (at its start) goes on it.
+      const repeating = repeats(newSeries.recurrence);
+      const written = repeating
+        ? newSeries
+        : Object.assign(
+            {},
+            newSeries,
+            ...params.carried.map((carried) => carried.changes)
+          );
+      const conferenceDataVersion = getConferenceDataVersion(written);
+      const created = yield* Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            client.calendars.events.create(destinationCalendarId, {
+              ...written,
+              id: seriesId,
+              ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
+            }),
+          catch: (cause) => {
+            logGoogleEventUpdateFailure({
+              operation: "create",
+              calendarId: destinationCalendarId,
+              event: written,
+              cause,
+            });
+            return new GoogleApiError({ cause });
+          },
+        });
+        const series = yield* parseEventResponse(response);
+        for (const carried of repeating ? params.carried : []) {
+          yield* putBack(destinationCalendarId, seriesId, carried);
+        }
+        return series;
+      }).pipe(Effect.onError(() => discardNew));
+
+      const cutRecurrence = truncateRecurrenceForFollowing(
+        master.recurrence ?? [],
+        params.originalStart,
+        seriesZoneOf(master),
+        master.start.dateTime ?? master.start.date
+      );
+      const cutPayload = sanitizeEventPayload({
+        ...master,
+        recurrence: cutRecurrence,
+      });
+      const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
+      const cut = yield* Effect.exit(
+        Effect.tryPromise({
+          try: () =>
+            client.calendars.events.update(master.id, {
+              ...cutPayload,
+              calendarId,
+              ...(cutConferenceDataVersion
+                ? { conferenceDataVersion: cutConferenceDataVersion }
+                : {}),
+            }),
+          catch: (cause) => {
+            logGoogleEventUpdateFailure({
+              operation: "update",
+              calendarId,
+              eventId: master.id,
+              scope: "following-truncate",
+              event: cutPayload,
+              cause,
+            });
+            return new GoogleApiError({ cause });
+          },
+        })
+      );
+      if (Exit.isFailure(cut)) {
+        const current = yield* Effect.exit(getEvent(calendarId, master.id));
+        if (Exit.isFailure(current)) {
+          return yield* Effect.failCause(cut.cause);
+        }
+        if (
+          JSON.stringify(current.value.recurrence) ===
+          JSON.stringify(master.recurrence)
+        ) {
+          yield* discardNew;
+          return yield* Effect.failCause(cut.cause);
+        }
+      }
+      return created;
     });
 
   /**
@@ -1074,9 +1465,51 @@ export function makeGoogleCalendarService(
     ).pipe(Effect.asVoid);
   };
 
+  /**
+   * Whether "This and following" from `occurrence` is the whole series:
+   * nothing of it comes before (it's at or before the series' start, with
+   * no meeting added before it). Otherwise it splits there.
+   */
+  const isWholeSeries = (occurrence: Event, master: Event) => {
+    const zone = seriesZoneOf(master);
+    const originalStart = originalStartOf(occurrence, zone);
+    return Boolean(
+      originalStart &&
+        followingIsWhole({
+          masterRecurrence: master.recurrence,
+          masterStart: master.start,
+          originalStart,
+          seriesZone: zone,
+        })
+    );
+  };
+
+  /**
+   * Whether a This and following save from `occurrence` is an Entire
+   * series save: it's the whole series (`isWholeSeries`), and either opens
+   * it or keeps its times and repeat (still repeating). From an added
+   * meeting before the series' start, a new time, date or repeat is that
+   * meeting's alone, which the series' own can't take.
+   */
+  const wholeSeriesEdit = (
+    edited: CreateEvent,
+    occurrence: Event,
+    master: Event,
+    zone: string
+  ) =>
+    isWholeSeries(occurrence, master) &&
+    (opensSeries(occurrence, master) ||
+      (keepsTimes(edited, occurrence, zone) &&
+        repeats(edited.recurrence ?? master.recurrence) &&
+        !newRepeat({
+          dayMoved: false,
+          own: master.recurrence ?? [],
+          saved: edited.recurrence,
+        })));
+
   const updateEventFollowing = (
     calendarId: string,
-    event: CreateEvent,
+    edited: CreateEvent,
     currentEvent: Event
   ) =>
     Effect.gen(function* () {
@@ -1088,131 +1521,76 @@ export function makeGoogleCalendarService(
           })
         );
       }
-
-      const startIso =
-        currentEvent.originalStartTime?.dateTime ??
-        currentEvent.originalStartTime?.date ??
-        currentEvent.start.dateTime ??
-        currentEvent.start.date;
-      const masterStartIso = master.start.dateTime ?? master.start.date;
-
-      if (!(startIso && masterStartIso)) {
+      const zone = seriesZoneOf(master);
+      if (wholeSeriesEdit(edited, currentEvent, master, zone)) {
+        return yield* updateEventAll(calendarId, edited, currentEvent, master);
+      }
+      const originalStart = originalStartOf(currentEvent, zone);
+      if (!originalStart) {
         return yield* Effect.fail(
           new GoogleApiError({
             cause: new Error("Event start is not a date or dateTime"),
           })
         );
       }
-
-      const occurrenceStart = new Date(startIso);
-      const masterStart = new Date(masterStartIso);
-
-      // First occurrence → "following" is the same as "all"
-      if (occurrenceStart.getTime() <= masterStart.getTime()) {
-        return yield* updateEventAll(calendarId, event, currentEvent, master);
+      const blocked = splitBlockedError(master, originalStart);
+      if (blocked) {
+        return yield* Effect.fail(blocked);
       }
-
-      const originalRecurrence = [...master.recurrence];
-      const recurrence = event.recurrence?.length
-        ? event.recurrence
-        : master.recurrence;
-
-      const truncatedRecurrence = truncateRecurrenceForFollowing(
-        master.recurrence,
-        occurrenceStart,
-        Boolean(master.start.date)
-      );
-
-      const truncatedPayload = sanitizeEventPayload({
-        ...master,
-        recurrence: truncatedRecurrence,
+      const { changes, event } = asSeriesEdit(edited, currentEvent, master);
+      // Times the edit left: the new series starts at the original slot,
+      // with the series' time and length (the occurrence's own move stays
+      // an exception). Else at the edit's, in the series' zone.
+      const keptTimes = keepsTimes(edited, currentEvent, zone);
+      const times = keptTimes
+        ? seriesSlotAt(master, originalStart)
+        : {
+            end: inSeriesZone(edited.end, master.end),
+            start: inSeriesZone(edited.start, master.start),
+          };
+      const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
+      // Left out keeps the series' pattern; an empty list ends it
+      // ("Repeat: None").
+      const recurrence = yield* newSeriesRecurrence({
+        calendarId,
+        cancelled: exceptions.cancelled,
+        edited: edited.recurrence,
+        master,
+        originalStart,
+        start: times.start,
       });
-      yield* Effect.annotateCurrentSpan(
-        "eventType",
-        truncatedPayload.eventType ?? "default"
-      );
-      const truncatedConferenceDataVersion =
-        getConferenceDataVersion(truncatedPayload);
-
-      const truncateMasterResponse = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.update(master.id, {
-            ...truncatedPayload,
-            calendarId,
-            ...(truncatedConferenceDataVersion
-              ? { conferenceDataVersion: truncatedConferenceDataVersion }
-              : {}),
-          }),
-        catch: (cause) => {
-          logGoogleEventUpdateFailure({
-            operation: "update",
-            calendarId,
-            eventId: master.id,
-            scope: "following-truncate",
-            event: truncatedPayload,
-            cause,
-          });
-          return new GoogleApiError({ cause });
-        },
-      });
-
-      yield* parseEventResponse(truncateMasterResponse);
-
-      const newSeriesPayload = sanitizeEventPayload({
-        ...master,
-        ...event,
+      const carried = placeCarried({
+        occurrences: followingOccurrences({
+          changes,
+          exceptions: exceptions.changed,
+          keptTimes,
+          master,
+          opened: currentEvent,
+          originalStart,
+          start: times.start,
+        }),
         recurrence,
+        seriesOnly: givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: edited.recurrence,
+          start: times.start,
+        }),
+        start: times.start,
+        zone: repeatZone(master, times.start),
       });
-      const newSeriesConferenceDataVersion =
-        getConferenceDataVersion(newSeriesPayload);
-
-      const restorePayload = sanitizeEventPayload({
-        ...master,
-        recurrence: originalRecurrence,
+      if (!Array.isArray(carried)) {
+        return yield* Effect.fail(refused(carried));
+      }
+      return yield* splitSeries({
+        calendarId,
+        carried,
+        destinationCalendarId: calendarId,
+        master,
+        // The new part keeps the series' zone (its times are in it).
+        newSeries: { ...event, ...times, recurrence },
+        originalStart,
       });
-      const restoreConferenceDataVersion =
-        getConferenceDataVersion(restorePayload);
-
-      const restoreMasterRecurrence = Effect.tryPromise({
-        try: () =>
-          client.calendars.events.update(master.id, {
-            ...restorePayload,
-            calendarId,
-            ...(restoreConferenceDataVersion
-              ? { conferenceDataVersion: restoreConferenceDataVersion }
-              : {}),
-          }),
-        catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
-      }).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-        Effect.asVoid
-      );
-
-      const createResponse = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.create(calendarId, {
-            ...newSeriesPayload,
-            ...(newSeriesConferenceDataVersion
-              ? { conferenceDataVersion: newSeriesConferenceDataVersion }
-              : {}),
-          }),
-        catch: (cause) => {
-          logGoogleEventUpdateFailure({
-            operation: "create",
-            calendarId,
-            event: newSeriesPayload,
-            cause,
-          });
-          return new GoogleApiError({ cause });
-        },
-      }).pipe(
-        Effect.catch((createError) =>
-          // Best-effort rollback; keep the create failure even if restoring recurrence fails.
-          restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
-        )
-      );
-
-      return yield* parseEventResponse(createResponse);
     });
 
   const updateEvent = Effect.fn("GoogleCalendar.updateEvent")(function* (
@@ -1293,6 +1671,48 @@ export function makeGoogleCalendarService(
       }).pipe(Effect.asVoid);
     });
 
+  /**
+   * `master`'s rule with its meetings from `originalStart` on deleted. From
+   * an added meeting, in a rule whose end can't be worked out, Google's
+   * list of the series' meetings says where it ends.
+   */
+  const deletedFrom = (
+    calendarId: string,
+    master: Event,
+    originalStart: string
+  ) =>
+    Effect.gen(function* () {
+      const zone = seriesZoneOf(master);
+      const recurrence = master.recurrence ?? [];
+      const seriesStart = master.start.dateTime ?? master.start.date;
+      const how = followingDelete({
+        masterRecurrence: recurrence,
+        masterStart: master.start,
+        originalStart,
+        seriesZone: zone,
+      });
+      if (how === "cut") {
+        return truncateRecurrenceForFollowing(
+          recurrence,
+          originalStart,
+          zone,
+          seriesStart
+        );
+      }
+      if (how === "refuse") {
+        return yield* Effect.fail(
+          refused({ reason: "deleteFromAddedOccurrence" })
+        );
+      }
+      return deleteFromListed({
+        listed: yield* listOccurrenceStarts(calendarId, master),
+        originalStart,
+        recurrence,
+        seriesStart,
+        seriesZone: zone,
+      });
+    });
+
   const deleteEventFollowing = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
       const instance = yield* getEvent(calendarId, eventId);
@@ -1319,11 +1739,11 @@ export function makeGoogleCalendarService(
         );
       }
 
-      const originalStartIso =
-        instance.originalStartTime?.dateTime ??
-        instance.originalStartTime?.date ??
-        instance.start.dateTime ??
-        instance.start.date;
+      if (isWholeSeries(instance, master)) {
+        return yield* deleteEventAll(calendarId, master.id);
+      }
+
+      const originalStartIso = originalStartOf(instance, seriesZoneOf(master));
 
       if (!originalStartIso) {
         return yield* Effect.fail(
@@ -1333,12 +1753,10 @@ export function makeGoogleCalendarService(
         );
       }
 
-      const occurrenceStart = new Date(originalStartIso);
-
-      const truncatedRecurrence = truncateRecurrenceForFollowing(
-        master.recurrence,
-        occurrenceStart,
-        Boolean(master.start.date)
+      const truncatedRecurrence = yield* deletedFrom(
+        calendarId,
+        master,
+        originalStartIso
       );
 
       yield* Effect.tryPromise({
@@ -1408,7 +1826,10 @@ export function makeGoogleCalendarService(
     }
   );
 
-  /** Moves a series from one of its occurrences on to another calendar. */
+  /**
+   * Moves a series from one of its occurrences on to another calendar: the
+   * old series ends before it, and a new one starts there.
+   */
   const moveFollowingEvents = Effect.fn("GoogleCalendar.moveFollowingEvents")(
     function* (
       calendarId: string,
@@ -1424,97 +1845,73 @@ export function makeGoogleCalendarService(
         );
       }
 
-      const originalStartIso =
-        instance.originalStartTime?.dateTime ??
-        instance.originalStartTime?.date ??
-        instance.start.dateTime ??
-        instance.start.date;
+      if (isWholeSeries(instance, master)) {
+        return yield* moveSingleEvent(
+          calendarId,
+          master.id,
+          destinationCalendarId
+        );
+      }
 
-      if (!originalStartIso) {
+      const zone = seriesZoneOf(master);
+      const originalStart = originalStartOf(instance, zone);
+      if (!originalStart) {
         return yield* Effect.fail(
           new GoogleApiError({
             cause: new Error("Event start is not a date or dateTime"),
           })
         );
       }
-
-      const occurrenceStart = new Date(originalStartIso);
-
-      // 1) Cut off the original series up to the edited occurrence.
-      const originalRecurrence = [...master.recurrence];
-      const truncatedRecurrence = truncateRecurrenceForFollowing(
-        master.recurrence,
-        occurrenceStart,
-        Boolean(master.start.date)
-      );
-
-      const truncatedMasterResponse = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.update(master.id, {
-            ...sanitizeEventPayload({
-              ...master,
-              recurrence: truncatedRecurrence,
-            }),
-            calendarId,
-          }),
-        catch: (cause) => new GoogleApiError({ cause }),
-      });
-
-      const truncatedMasterParsed = EventSchema.safeParse(
-        truncatedMasterResponse
-      );
-      if (!truncatedMasterParsed.success) {
-        return yield* Effect.fail(
-          new GoogleCalendarZodError({ cause: truncatedMasterParsed.error })
-        );
+      const blocked = splitBlockedError(master, originalStart);
+      if (blocked) {
+        return yield* Effect.fail(blocked);
       }
 
-      // 2) Create a new series in the destination calendar starting at this occurrence.
-      const newSeriesPayload = sanitizeEventPayload({
-        ...master,
-        ...instance,
-        start: instance.start,
-        end: instance.end,
-        recurrence: master.recurrence,
+      // The new series starts at this occurrence's original slot with the
+      // series' fields and length; it and later changed occurrences keep
+      // their changes there.
+      const slot = seriesSlotAt(master, originalStart);
+      const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
+      const recurrence = yield* newSeriesRecurrence({
+        calendarId,
+        cancelled: exceptions.cancelled,
+        edited: undefined,
+        master,
+        originalStart,
+        start: slot.start,
+      });
+      const carried = placeCarried({
+        occurrences: [
+          {
+            at: originalStart,
+            changes: changesOwnTo(instance, master, {}, zone),
+            originalStart,
+          },
+          ...exceptions.changed.map((exception) => ({
+            at: exception.originalStart,
+            changes: changesOwnTo(exception.occurrence, master, {}, zone),
+            originalStart: exception.originalStart,
+          })),
+        ],
+        recurrence,
+        // One occurrence can't move to another calendar.
+        seriesOnly: true,
+        start: slot.start,
+        zone,
+      });
+      if (!Array.isArray(carried)) {
+        return yield* Effect.fail(refused(carried));
+      }
+      const created = yield* splitSeries({
+        calendarId,
+        carried,
+        destinationCalendarId,
+        master,
+        newSeries: sanitizeEventPayload({ ...master, ...slot, recurrence }),
+        originalStart,
       });
 
-      const restoreMasterRecurrence = Effect.tryPromise({
-        try: () =>
-          client.calendars.events.update(master.id, {
-            ...sanitizeEventPayload({
-              ...master,
-              recurrence: originalRecurrence,
-            }),
-            calendarId,
-          }),
-        catch: (restoreCause) => new GoogleApiError({ cause: restoreCause }),
-      }).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-        Effect.asVoid
-      );
-
-      const createResponse = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.create(
-            destinationCalendarId,
-            newSeriesPayload
-          ),
-        catch: (cause) => new GoogleApiError({ cause }),
-      }).pipe(
-        Effect.catch((createError) =>
-          // Best-effort rollback; keep the create failure even if restoring recurrence fails.
-          restoreMasterRecurrence.pipe(Effect.andThen(Effect.fail(createError)))
-        )
-      );
-
-      const createdParsed = EventSchema.safeParse(createResponse);
-      if (!createdParsed.success) {
-        return yield* Effect.fail(
-          new GoogleCalendarZodError({ cause: createdParsed.error })
-        );
-      }
-
-      return createdParsed.data;
+      return created;
     }
   );
 

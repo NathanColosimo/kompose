@@ -6,7 +6,7 @@
  */
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
-import { lengthMs, startInstant } from "./until";
+import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
 /**
  * Why a series write is refused, before anything changes, with no
@@ -293,4 +293,49 @@ export function ownChanges(
   return keepsTimes(occurrence, slot, zone)
     ? fields
     : { ...fields, end: occurrence.end, start: occurrence.start };
+}
+
+/**
+ * Where an old occurrence lands when the series' first meeting moved from
+ * `splitStart` to `newStart`: as many days on, at the new time of day.
+ * Null when the series changes between timed and all day.
+ */
+export function placeInNewSeries(params: {
+  newStart: Pick<Event["start"], "date" | "dateTime" | "timeZone">;
+  originalStart: string;
+  splitStart: string;
+  zone: string;
+}): string | null {
+  const { newStart, originalStart, splitStart, zone } = params;
+  const allDay = DATE_ONLY.test(splitStart);
+  if (
+    allDay !== Boolean(newStart.date) ||
+    allDay !== DATE_ONLY.test(originalStart)
+  ) {
+    return null;
+  }
+  if (newStart.date) {
+    const shift = Temporal.PlainDate.from(splitStart).until(newStart.date);
+    return Temporal.PlainDate.from(originalStart).add(shift).toString();
+  }
+  const from = startInstant({ dateTime: splitStart }, zone);
+  const to = startInstant(newStart, zone);
+  const original = startInstant({ dateTime: originalStart }, zone);
+  if (!(from && to && original)) {
+    return null;
+  }
+  const days = from
+    .toZonedDateTimeISO(zone)
+    .toPlainDate()
+    .until(to.toZonedDateTimeISO(zone).toPlainDate());
+  return googleDateTime(
+    original
+      .toZonedDateTimeISO(zone)
+      .toPlainDate()
+      .add(days)
+      .toZonedDateTime({
+        plainTime: to.toZonedDateTimeISO(zone).toPlainTime(),
+        timeZone: zone,
+      })
+  );
 }
