@@ -1005,9 +1005,40 @@ describe("a whole day skipped in a timed series", () => {
 });
 
 describe("an Entire series save that moves the first meeting's day and time", () => {
-  test("leaves the rule's own skips where they were", async () => {
+  test.each([
+    ["weekly", "RRULE:FREQ=WEEKLY;BYDAY=MO", "2026-11-16"],
+    ["daily", "RRULE:FREQ=DAILY", "2026-11-10"],
+  ])(
+    "moves the rule's own skips to the new time (%s)",
+    async (_how, rule, day) => {
+      // 9:00 from Mon Nov 9, Nov 30 skipped; the first meeting moves to a
+      // later day at 10:00: Nov 30 stays skipped at 10:00.
+      const series: Event = {
+        ...weekly,
+        recurrence: [rule, "EXDATE:20261130T140000Z"],
+      };
+      const google = fakeGoogle(series);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("all", series, {
+              end: { dateTime: `${day}T10:30:00-05:00`, timeZone: zone },
+              start: { dateTime: `${day}T10:00:00-05:00`, timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        rule,
+        "EXDATE:20261130T150000Z",
+      ]);
+    }
+  );
+
+  test("moves them by as much across midnight", async () => {
     // Daily 23:00 from Nov 9, Nov 20 skipped; the first meeting moves to
-    // Nov 10 00:30. Nov 20 00:30 is Nov 19's meeting now: no skip there.
+    // Nov 10 00:30. Nov 20's meeting is Nov 21 00:30 now; Nov 20 00:30 is
+    // Nov 19's.
     const series: Event = {
       ...weekly,
       end: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
@@ -1025,9 +1056,10 @@ describe("an Entire series save that moves the first meeting's day and time", ()
         )
       )
     ).toBe(true);
-    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
-      "20261120T053000Z"
-    );
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261121T053000Z",
+    ]);
   });
 });
 

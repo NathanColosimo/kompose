@@ -133,6 +133,39 @@ function takeTimedSkips(
 }
 
 /**
+ * How far a series' start moved, when less than a day (23:00 to the next
+ * day's 00:30): each meeting moves by as much. Null for a longer move.
+ */
+function shortShift(
+  from: Temporal.Instant | null,
+  to: Temporal.Instant | null
+): Temporal.Duration | null {
+  return from && to && Math.abs(from.until(to).total("hours")) < 24
+    ? from.until(to)
+    : null;
+}
+
+/**
+ * A skipped meeting's place once the series' time moves: by `shift` (a
+ * move of less than a day), else on its own day at `clock`.
+ */
+function placeAtNewTime(
+  moment: Temporal.Instant,
+  shift: Temporal.Duration | null,
+  clock: Temporal.PlainTime,
+  zone: string
+): string {
+  const local = moment.toZonedDateTimeISO(zone);
+  return googleDateTime(
+    shift
+      ? local.add(shift)
+      : local
+          .toPlainDate()
+          .toZonedDateTime({ plainTime: clock, timeZone: zone })
+  );
+}
+
+/**
  * The saved `rule` lined up with the series' new `start`, with the
  * occurrences deleted on their own (`cancelled`) skipped.
  *
@@ -145,9 +178,9 @@ function takeTimedSkips(
  *   the new time if a rule or the start met there, or if the save drops
  *   that added day and the saved rule meets there (unless that day's own
  *   meeting, still on, moves there);
- * - a skip where nothing met stays where it is, and so do the rule's own
- *   when the start moves to another day too (the new time on their day is
- *   another meeting's).
+ * - a skip where nothing met stays where it is.
+ * A move of the start of less than a day (across midnight too) moves each
+ * skip by as much; a longer one keeps it on its day at the new time.
  * A skip that would stay at its own time where the saved series now meets
  * (the series moved onto it) goes instead: kept, it would cancel that
  * meeting.
@@ -249,15 +282,11 @@ function lineUpRule(params: {
     });
   const isNew = (slot: string) =>
     keysOf([slot]).some((key) => !hadBefore.has(key));
-  // Moved to another day too, the new time on a skip's own day is another
-  // meeting's: the rule's own skips stay as they were.
-  const fromDay = dayOfStart(splitAt ? asStart(splitAt) : master.start, zone);
-  const toDay = dayOfStart(start, zone);
-  const movesDay = Boolean(fromDay && toDay && !fromDay.equals(toDay));
-  const deleted = [
-    ...cancelled,
-    ...skips.filter((slot) => !(isNew(slot) || movesDay)),
-  ];
+  const shift = shortShift(
+    momentOf(splitAt ? asStart(splitAt) : master.start, zone),
+    momentOf(start, zone)
+  );
+  const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
   // Whether that day's meeting before the save was skipped or deleted: a
   // skip at its new time then keeps it so (a client may have moved the
   // old skip there, onto one where nothing met).
@@ -298,7 +327,7 @@ function lineUpRule(params: {
     return !(added || ruleMet || (atNewClock && !meetingWasDeleted(moment)));
   };
   const atNewTime: string[] = [];
-  const atOwnTime: string[] = skips.filter((slot) => isNew(slot) || movesDay);
+  const atOwnTime: string[] = skips.filter(isNew);
   for (const slot of deleted) {
     const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
     if (!moment) {
@@ -317,14 +346,7 @@ function lineUpRule(params: {
       atOwnTime.push(slot);
     }
     if (ruleMet) {
-      atNewTime.push(
-        googleDateTime(
-          moment
-            .toZonedDateTimeISO(zone)
-            .toPlainDate()
-            .toZonedDateTime({ plainTime: change.to, timeZone: zone })
-        )
-      );
+      atNewTime.push(placeAtNewTime(moment, shift, change.to, zone));
     }
   }
   const lined = skipping(
