@@ -1557,6 +1557,27 @@ function carriedAt(params: {
   });
 }
 
+/** Whether an occurrence's original start is `slot` (an original start). */
+function sameSlot(
+  originalStart: Event["originalStartTime"],
+  slot: string
+): boolean {
+  if (!originalStart) {
+    return false;
+  }
+  // Both in one zone: a date reads the same day in either, a date-time
+  // carries its own offset.
+  const at = slotOf(originalStart, "UTC");
+  const atMoment = at && slotMoment(at, "UTC");
+  const slotAt = slotMoment(slot, "UTC");
+  return Boolean(
+    atMoment &&
+      slotAt &&
+      DATE_ONLY.test(at) === DATE_ONLY.test(slot) &&
+      atMoment.equals(slotAt)
+  );
+}
+
 /** `slot` when it has `start`'s form (a date, or a date-time); else null. */
 function sameForm(slot: string, start: Event["start"]): string | null {
   return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
@@ -2436,6 +2457,16 @@ export function makeGoogleCalendarService(
         catch: (cause) => new GoogleApiError({ cause }),
       });
       const occurrence = yield* parseEventResponse(listed.items?.[0]);
+      // Only the occurrence at its place takes its changes: any other
+      // answer fails the split before the cut (Google's reference doesn't
+      // say how it reads an all-day series' date there).
+      if (!sameSlot(occurrence.originalStartTime, carried.at)) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Google returned another occurrence"),
+          })
+        );
+      }
       // Written like a single occurrence's update, so it keeps its place.
       const payload = {
         ...sanitizeEventPayload(occurrence),
