@@ -1225,6 +1225,76 @@ describe("Entire series start and length changes, as Google applies them", () =>
     ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
   });
 
+  test("made all day, an occurrence already all day on its own saves", async () => {
+    // Nov 23 made all day on its own; the whole series is made all day.
+    // Google cancels Nov 23's exception, and the series' Nov 23 is the same.
+    const nov23 = occurrenceOf(weekly, "2026-11-23T09:00:00-05:00");
+    const allDayOn = (end: string): Event => ({
+      ...nov23,
+      end: { date: end },
+      start: { date: "2026-11-23" },
+    });
+    const google = fakeGoogle(weekly, [allDayOn("2026-11-24")]);
+    const madeAllDay = () =>
+      edit("all", nov16, {
+        end: { date: "2026-11-17" },
+        start: { date: "2026-11-16" },
+      });
+    expect(Exit.isSuccess(await run(madeAllDay()))).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { date: "2026-11-09" },
+    });
+    // Two days long on its own, it would lose its second day: refused.
+    fakeGoogle(weekly, [allDayOn("2026-11-25")]);
+    expect(await refusalOf(madeAllDay())).toMatchObject({
+      data: { reason: "dropsChangedOccurrences" },
+    });
+  });
+
+  test("made timed, an occurrence already at that time on its own saves", async () => {
+    // Mondays all day; Nov 23 set to 10:00 on its own; the whole series
+    // is set to 10:00.
+    const allDay: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      start: { date: "2026-11-09" },
+    };
+    const onDay = (day: string, times?: Pick<Event, "end" | "start">) => ({
+      ...allDay,
+      end: { date: Temporal.PlainDate.from(day).add({ days: 1 }).toString() },
+      id: `series_${day.replace(/-/g, "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+      ...times,
+    });
+    const at = (day: string, time: string) => ({
+      dateTime: `${day}T${time}:00-05:00`,
+      timeZone: zone,
+    });
+    const nov23At = (start: string) =>
+      onDay("2026-11-23", {
+        end: at("2026-11-23", "10:30"),
+        start: at("2026-11-23", start),
+      });
+    const google = fakeGoogle(allDay, [nov23At("10:00")]);
+    const madeTimed = () =>
+      edit("all", onDay("2026-11-16"), {
+        end: at("2026-11-16", "10:30"),
+        start: at("2026-11-16", "10:00"),
+      });
+    expect(Exit.isSuccess(await run(madeTimed()))).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T10:00:00-05:00" },
+    });
+    // At 9:30 on its own instead, it would lose its own time: refused.
+    fakeGoogle(allDay, [nov23At("09:30")]);
+    expect(await refusalOf(madeTimed())).toMatchObject({
+      data: { reason: "dropsChangedOccurrences" },
+    });
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.
