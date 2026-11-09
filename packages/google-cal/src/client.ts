@@ -22,7 +22,7 @@ import {
   splitAddedDays,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
-import { isRuleDay, samePlaceInPeriod } from "./rule-days";
+import { canReadRule, isRuleDay, samePlaceInPeriod } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -64,11 +64,9 @@ import {
   meetsSeveralTimesADay,
   momentOf,
   type RecurrenceValue,
+  SUB_DAILY,
   startInstant,
 } from "./until";
-
-/** A rule that steps by hours, minutes or seconds, read on its own. */
-const SUB_DAILY_RULE = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 
 /** A rule part that ends it: COUNT or UNTIL. */
 const END_PART = /^(?:COUNT|UNTIL)=/;
@@ -116,9 +114,6 @@ function naming(
     : { originalStarts, reason };
 }
 
-/** A day to read a rule's parts on: any day will do. */
-const ANY_DAY = Temporal.PlainDate.from("2026-01-01");
-
 /**
  * `refusal` marked `unsure` when a rule it was read against can't be read
  * here (an exclusion rule, or a day rule with parts not read): what it
@@ -131,9 +126,7 @@ function unsureWhere(
   const unread = recurrence.some(
     (line) =>
       line.startsWith("EXRULE") ||
-      (line.startsWith("RRULE:") &&
-        !SUB_DAILY_RULE.test(line) &&
-        isRuleDay(line, ANY_DAY, ANY_DAY) === null)
+      (line.startsWith("RRULE:") && !SUB_DAILY.test(line) && !canReadRule(line))
   );
   return unread ? { ...refusal, unsure: true } : refusal;
 }
@@ -350,8 +343,8 @@ function timesOnOwnDay(
 /**
  * Whether the series' new times give `occurrence`, changed on its own,
  * all it changed: only its times, to those of the new series' meeting on
- * its day (its date, made all day). Google cancels it when the series' start moves, and that
- * meeting takes its place.
+ * its day (its date, made all day). Google cancels it when the series'
+ * start moves, and that meeting takes its place.
  */
 function newTimesKeep(params: {
   /** The fields the edit changed, which the new series' meeting takes. */
@@ -610,6 +603,8 @@ function endedRepeat(params: {
       lost.push(originalStart);
       continue;
     }
+    // All its own changes, its times too even where the save sets times:
+    // own times the save would override are lost (below).
     const { end, start, ...own } = changesOwnTo(occurrence, master, {}, zone);
     const fields = Object.fromEntries(
       Object.entries(own).filter(([field]) => !(field in params.changes))
@@ -2019,9 +2014,14 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, start } = params;
       const zone = seriesZoneOf(master);
-      // Added days before the split stay with the old part.
+      // Added days before the split stay with the old part. A rule sent
+      // alone keeps the series' skips, as an Entire series save does.
+      const sent =
+        params.edited && repeats(params.edited)
+          ? withSeriesSkips(params.edited, master)
+          : params.edited;
       const fromSplit = splitAddedDays(
-        params.edited ?? master.recurrence ?? [],
+        sent ?? master.recurrence ?? [],
         originalStart,
         zone,
         "from"

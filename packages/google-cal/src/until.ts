@@ -16,8 +16,11 @@ const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
 
 /** How far a COUNT rule's meetings are walked: fifty years of days. */
 const MAX_COUNT_DAYS = 366 * 50;
-/** A rule that repeats within a day: its times don't follow the start's. */
-const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
+/**
+ * A rule that steps by hours, minutes or seconds: it repeats within a day,
+ * so its times don't follow the start's.
+ */
+export const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ = /FREQ=([A-Z]+)/;
 const INTERVAL = /INTERVAL=(\d+)/;
 const TIME_PART = /BY(?:HOUR|MINUTE|SECOND)=/;
