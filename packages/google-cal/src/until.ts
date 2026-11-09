@@ -1499,9 +1499,11 @@ export function moveSkippedDays(params: {
     if (Temporal.PlainDate.compare(day, from) < 0) {
       return null;
     }
-    // Only a skip of the old pattern's meeting that the new one lacks moves.
+    // Only a skip of the old pattern's meeting that the new one lacks moves:
+    // one past the old rule's end (COUNT or UNTIL) skipped nothing.
     if (
       isRuleDay(oldRule, from, day) !== true ||
+      endedBefore(oldRule, from, day, seriesZone) ||
       isRuleDay(newRule, to, day) !== false
     ) {
       return null;

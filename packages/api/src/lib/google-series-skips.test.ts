@@ -2089,6 +2089,21 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
       toTime: params.timed === false ? null : nine,
     });
 
+  test("leaves a skip past the old rule's end", () => {
+    // Monthly on the 1st, three times from Jan 1; May 1, past the end, is
+    // skipped. Moved to the 31st, it would cancel the new third meeting.
+    const skips = "EXDATE;TZID=America/New_York:20260501T090000";
+    expect(
+      moved({
+        from: "2026-01-01",
+        newRule: "RRULE:FREQ=MONTHLY;BYMONTHDAY=31;COUNT=3",
+        oldRule: "RRULE:FREQ=MONTHLY;BYMONTHDAY=1;COUNT=3",
+        skips,
+        to: "2026-01-31",
+      })
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYMONTHDAY=31;COUNT=3", skips]);
+  });
+
   test("moves a skip with Mondays that became Tuesdays, at its own time", () => {
     // Mon Nov 23 skipped moves to Tue Nov 24; Nov 2, before the move, stays.
     expect(
