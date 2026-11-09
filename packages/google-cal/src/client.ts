@@ -371,6 +371,23 @@ function newTimesKeep(params: {
 }
 
 /**
+ * `edited` with its times in one form. A form keeps the other form's field
+ * beside the new one, so when both are sent the one the opened occurrence
+ * didn't have is the user's choice.
+ */
+function withOneForm(edited: CreateEvent, occurrence: Event): CreateEvent {
+  const pick = (time: Event["start"]): Event["start"] => {
+    if (!(time.date && time.dateTime)) {
+      return time;
+    }
+    return occurrence.start.date
+      ? { dateTime: time.dateTime, timeZone: time.timeZone }
+      : { date: time.date };
+  };
+  return { ...edited, end: pick(edited.end), start: pick(edited.start) };
+}
+
+/**
  * A time in one form: a date when it has one (a form that toggled to all
  * day can keep its old date-time), else its date-time.
  */
@@ -2116,7 +2133,19 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { master, times } = params;
       const zone = seriesZoneOf(master);
-      const rule = params.edited.recurrence ?? master.recurrence ?? [];
+      // A new rule keeps the series' skips: a client that rebuilds the rule
+      // may send it alone.
+      const rule = params.edited.recurrence
+        ? skipping(
+            params.edited.recurrence,
+            dateValues(master.recurrence ?? [], "EXDATE", zone).map((value) =>
+              value.instant
+                ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
+                : value.day.toString()
+            ),
+            zone
+          )
+        : (master.recurrence ?? []);
       const movesStart = !sameTime(times.start, master.start, zone);
       const movesSlots =
         movesStart ||
@@ -2155,11 +2184,12 @@ export function makeGoogleCalendarService(
 
   const updateEventAll = (
     calendarId: string,
-    edited: CreateEvent,
+    input: CreateEvent,
     currentEvent: Event,
     master: Event
   ) =>
     Effect.gen(function* () {
+      const edited = withOneForm(input, currentEvent);
       const zone = seriesZoneOf(master);
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
       const times = entireSeriesTimes(edited, currentEvent, master);
