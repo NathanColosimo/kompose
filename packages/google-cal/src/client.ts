@@ -1812,7 +1812,9 @@ function placeByDay(params: {
       splitStart,
       start,
     });
-  const placed = params.slots.flatMap((slot) => {
+  // Each skip's place, worked out once: then the skips written, and the
+  // account of COUNT places, in that order.
+  const skips = params.slots.map((slot) => {
     const at = carriedSlot({
       master,
       recurrence: unskipped,
@@ -1821,10 +1823,20 @@ function placeByDay(params: {
       start,
     });
     const formed = inFormOf(at ?? slot, start, newZone);
+    return { at, formed, ontoLive: landsOnLive(at, formed), slot };
+  });
+  const placed = skips.flatMap(({ at, formed, ontoLive }) => {
+    const ontoAdded =
+      at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
+    return formed && formed !== startSlot && !ontoAdded && !ontoLive
+      ? [formed]
+      : [];
+  });
+  for (const { at, formed, ontoLive, slot } of skips) {
     const moment = slotMoment(slot, zone);
     // A skipped position with no meeting of the new series after its start
-    // in its place (none there, or the start itself) frees none; a new rule
-    // not read here may meet there after all.
+    // in its place (none there, the start itself, or another's) frees none;
+    // a new rule not read here may meet there after all.
     const uncounted = Boolean(
       moment && params.fromList?.leftOut.includes(moment.epochMilliseconds)
     );
@@ -1836,7 +1848,6 @@ function placeByDay(params: {
         moment &&
         claimsTakenPlace(formed, moment.epochMilliseconds)
     );
-    const ontoLive = landsOnLive(at, formed);
     if (
       (formed === startSlot || at === null || shared || ontoLive) &&
       moment &&
@@ -1858,12 +1869,7 @@ function placeByDay(params: {
     } else if (formed && !uncounted) {
       ruleSkips.add(formed);
     }
-    const ontoAdded =
-      at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
-    return formed && formed !== startSlot && !ontoAdded && !ontoLive
-      ? [formed]
-      : [];
-  });
+  }
   return {
     placesLost: unknown ? null : placesLost,
     placed,
