@@ -137,7 +137,7 @@ describe("This and following", () => {
       },
       // One occurrence can't take a new repeat.
       message:
-        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
