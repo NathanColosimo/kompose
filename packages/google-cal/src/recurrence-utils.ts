@@ -11,7 +11,7 @@ import {
   untilMoment,
 } from "./until";
 
-const COUNT_REGEX = /;?COUNT=([^;]+)/;
+const COUNT_PART = /([:;])COUNT=([^;]+)/;
 const UNTIL_VALUE = /[:;]UNTIL=([^;]+)/;
 const FREQ_VALUE = /FREQ=([A-Z]+)/;
 const INTERVAL_VALUE = /INTERVAL=(\d+)/;
@@ -217,7 +217,7 @@ function subDailyEndsBefore(
  */
 function ruleEndsBefore(
   rule: string,
-  first: RecurrenceValue | null,
+  first: RecurrenceValue,
   split: Temporal.Instant,
   seriesZone: string
 ): boolean | null {
@@ -226,12 +226,9 @@ function ruleEndsBefore(
     const end = untilMoment(until, seriesZone);
     return end ? Temporal.Instant.compare(end, split) < 0 : null;
   }
-  const count = Number(COUNT_REGEX.exec(rule)?.[1]);
-  if (!Number.isFinite(count)) {
+  const count = ruleCount(rule);
+  if (count === null) {
     return false;
-  }
-  if (!first) {
-    return null;
   }
   const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
   if (step) {
@@ -266,6 +263,12 @@ function ruleEndsBefore(
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/** A rule line's COUNT; null for a line that isn't a rule or has none. */
+function ruleCount(line: string): number | null {
+  const count = isRule(line) ? Number(COUNT_PART.exec(line)?.[2]) : Number.NaN;
+  return Number.isFinite(count) ? count : null;
+}
 
 // Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {

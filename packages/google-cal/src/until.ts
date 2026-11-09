@@ -1,7 +1,6 @@
 /**
  * A series' UNTIL and EXDATE/RDATE lines, kept in the form Google requires:
- * dates for an all-day series, date-times for a timed one. Shared by the
- * server and both apps.
+ * dates for an all-day series, date-times for a timed one.
  */
 import { Temporal } from "temporal-polyfill";
 import { isRuleDay } from "./rule-days";
@@ -28,13 +27,13 @@ const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
 
 /**
  * A rule's time of day as a key, "9:0:0". A part it leaves out is the
- * start's (`base`), or "*" when that isn't known.
+ * start's (`base`).
  */
-function ruleTime(line: string, base: Temporal.PlainTime | null): string {
+function ruleTime(line: string, base: Temporal.PlainTime): string {
   const parts = clockParts(line);
-  const fallback = base ? [base.hour, base.minute, base.second] : [];
+  const fallback = [base.hour, base.minute, base.second];
   return ["BYHOUR", "BYMINUTE", "BYSECOND"]
-    .map((name, index) => parts.get(name) ?? fallback[index] ?? "*")
+    .map((name, index) => parts.get(name) ?? fallback[index])
     .join(":");
 }
 
@@ -63,29 +62,18 @@ export function ruleClock(
 
 /**
  * Whether a series meets more than once a day: a sub-daily rule, or rules
- * at different times. With the start's time `base`, the start counts as a
- * meeting and fills the parts a rule leaves out; without it, rules written
- * differently count as different. Such a series' times are its own: they
+ * at different times. The start, at `base`, counts as a meeting, and its
+ * time fills the parts a rule leaves out. Such a series' times are its own: they
  * don't follow the start.
  */
 export function meetsSeveralTimesADay(
   recurrence: string[],
-  base: Temporal.PlainTime | null = null
+  base: Temporal.PlainTime
 ): boolean {
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const times = new Set(rules.map((line) => ruleTime(line, base)));
-  if (base) {
-    times.add(ruleTime("", base));
-  }
+  times.add(ruleTime("", base));
   return rules.some((line) => SUB_DAILY.test(line)) || times.size > 1;
-}
-
-/** The day an UNTIL (or any date / date-time value) falls on in `timeZone`. */
-export function untilRuleToDay(
-  until: string,
-  timeZone: string
-): Temporal.PlainDate | null {
-  return readRecurrenceValue(until, timeZone, timeZone)?.day ?? null;
 }
 
 /**
@@ -276,7 +264,7 @@ function inZone(instant: Temporal.Instant, zone: string): RecurrenceValue {
 }
 
 /** An EXDATE/RDATE line: its name, the zone its values are in, and them. */
-export function parseDateList(
+function parseDateList(
   line: string,
   seriesZone: string
 ): { name: string; values: string[]; zone: string } | null {
@@ -312,33 +300,20 @@ export function dateValues(
 
 /**
  * The time of day a rule meets, parts it leaves out from the series'
- * time `base`; null when it can't be told (a sub-daily rule, or a part
- * left out with no `base`).
+ * time `base`; null for a sub-daily rule.
  */
 export function ruleTimeOf(
   rule: string,
-  base: Temporal.PlainTime | null
+  base: Temporal.PlainTime
 ): Temporal.PlainTime | null {
-  if (SUB_DAILY.test(rule)) {
-    return null;
-  }
-  if (base) {
-    return ruleClock(rule, base);
-  }
-  const parts = clockParts(rule);
-  const hour = parts.get("BYHOUR");
-  const minute = parts.get("BYMINUTE");
-  const second = parts.get("BYSECOND");
-  return hour === undefined || minute === undefined || second === undefined
-    ? null
-    : Temporal.PlainTime.from({ hour, minute, second });
+  return SUB_DAILY.test(rule) ? null : ruleClock(rule, base);
 }
 
 /**
  * Whether `time` exists on `day` in `timeZone` (DST can skip it). RFC 5545
  * (3.3.10): a time that doesn't exist that day isn't a meeting and isn't
- * counted. Used where Google can't be asked; where it can (a split's
- * COUNT), its own list of meetings decides.
+ * counted. Used where Google can't be asked; where it can, its own list of
+ * meetings decides.
  */
 function existsOn(
   day: Temporal.PlainDate,
@@ -359,7 +334,7 @@ function existsOn(
  * when its days can't be read or don't all fit in the walk.
  */
 export function countedRuleMeetings(params: {
-  base: Temporal.PlainTime | null;
+  base: Temporal.PlainTime;
   count: number;
   from: Temporal.PlainDate;
   rule: string;
@@ -369,15 +344,13 @@ export function countedRuleMeetings(params: {
   const { base, count, from, rule, time, timeZone } = params;
   const at = (day: Temporal.PlainDate, clock: Temporal.PlainTime) =>
     day.toZonedDateTime({ plainTime: clock, timeZone }).epochMilliseconds;
-  const first = base ? at(from, base) : null;
+  const first = at(from, base);
   // The first start is a meeting of a rule at its time, rule day or not
   // (RFC 5545 counts DTSTART; Google does too). A rule at another time
   // (15:00 beside a 9:00 start) doesn't meet then.
-  const atStart = base !== null && Temporal.PlainTime.compare(time, base) === 0;
+  const atStart = Temporal.PlainTime.compare(time, base) === 0;
   const meetings = new Set<number>(
-    first !== null && base && atStart && existsOn(from, base, timeZone)
-      ? [first]
-      : []
+    atStart && existsOn(from, base, timeZone) ? [first] : []
   );
   if (meetings.size === count) {
     return meetings;
@@ -391,7 +364,7 @@ export function countedRuleMeetings(params: {
     // A time the clocks skip that day (spring forward) isn't a meeting.
     const moments =
       onRuleDay && existsOn(day, time, timeZone)
-        ? [at(day, time)].filter((ms) => !(first && ms < first))
+        ? [at(day, time)].filter((ms) => ms >= first)
         : [];
     for (const moment of moments) {
       meetings.add(moment);

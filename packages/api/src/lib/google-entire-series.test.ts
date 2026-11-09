@@ -70,6 +70,42 @@ describe("Entire series", () => {
     });
   });
 
+  test("a first meeting moved off its rule's days keeps the series' date", async () => {
+    // Mon Nov 9 moved to Tue Nov 10 at 10:00, the series' own Monday rule
+    // sent back: a Tuesday start would add a meeting no rule makes, so the
+    // series keeps Nov 9 and takes the new time.
+    const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
+    const google = fakeGoogle(weekly);
+    const exit = await run(
+      edit("all", first, {
+        end: { dateTime: "2026-11-10T10:30:00-05:00", timeZone: zone },
+        recurrence: weekly.recurrence,
+        start: { dateTime: "2026-11-10T10:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: weekly.recurrence,
+      start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("a daily series' first meeting moves to its new day", async () => {
+    const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+    const google = fakeGoogle(daily);
+    const exit = await run(
+      edit("all", occurrenceOf(daily, "2026-11-09T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
   test("an edit to a later occurrence keeps the series' first date", async () => {
     // Nov 16 moved to 10:00: the series moves to 10:00 from Nov 9.
     const google = fakeGoogle(weekly);
@@ -891,5 +927,61 @@ describe("newRepeat", () => {
         saved: ["RRULE:FREQ=MONTHLY;BYDAY=2SU"],
       })
     ).toBe(true);
+  });
+});
+
+describe("an Entire series save that changes only the end", () => {
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+
+  test("through an occurrence moved on its own, keeps the series' start", async () => {
+    // Nov 16 was moved to 11:00 on its own; its end goes to 11:45.
+    const moved = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-16T11:30:00-05:00",
+      start: "2026-11-16T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [moved]);
+    expect(
+      Exit.isSuccess(
+        await run(edit("all", moved, { end: at("2026-11-16T11:45:00-05:00") }))
+      )
+    ).toBe(true);
+    const [series, opened] = google.writes();
+    expect(series?.body).toMatchObject({
+      end: at("2026-11-09T09:45:00-05:00"),
+      start: { dateTime: "2026-11-09T09:00:00-05:00" },
+    });
+    // Nov 16 keeps its own move, with the new length.
+    expect(opened?.body).toMatchObject({
+      end: { dateTime: "2026-11-16T11:45:00-05:00" },
+      start: { dateTime: "2026-11-16T11:00:00-05:00" },
+    });
+  });
+
+  test("in a series that meets several times a day, saves the new length", async () => {
+    // A rule at 9:00 and one at 15:00; Dec 2's 15:00 now ends at 15:45.
+    const twice: Event = {
+      ...weekly,
+      end: at("2026-12-01T09:30:00-05:00"),
+      recurrence: [
+        "RRULE:FREQ=DAILY;BYHOUR=9;COUNT=3",
+        "RRULE:FREQ=DAILY;BYHOUR=15;COUNT=3",
+      ],
+      start: at("2026-12-01T09:00:00-05:00"),
+    };
+    const google = fakeGoogle(twice);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(twice, "2026-12-02T15:00:00-05:00"), {
+            end: at("2026-12-02T15:45:00-05:00"),
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      end: at("2026-12-01T09:45:00-05:00"),
+      recurrence: twice.recurrence,
+      start: at("2026-12-01T09:00:00-05:00"),
+    });
   });
 });
