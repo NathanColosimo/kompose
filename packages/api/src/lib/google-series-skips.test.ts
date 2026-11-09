@@ -1297,6 +1297,37 @@ describe("This and following to a new time the same day", () => {
   });
 });
 
+describe("This and following with no COUNT, under a rule not read here", () => {
+  test("keeps a later deleted meeting deleted without counting", async () => {
+    // Yearly on day 313 (a rule not read here) from Nov 9 2026, 2029
+    // deleted on its own; from 2027, a new end.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=YEARLY;BYYEARDAY=313"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2029-11-09T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2027-11-09T09:00:00-05:00"), {
+            recurrence: [
+              "RRULE:FREQ=YEARLY;BYYEARDAY=313;UNTIL=20301231T235959Z",
+            ],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "EXDATE:20291109T140000Z"
+    );
+  });
+});
+
 describe("an Entire series rule change alone", () => {
   test("adds no skip for a rule meeting deleted on its own", async () => {
     // Nov 23 deleted on its own; Mondays become Mondays and Wednesdays.

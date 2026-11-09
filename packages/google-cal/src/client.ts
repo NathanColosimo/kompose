@@ -1710,6 +1710,8 @@ function onOwnDays(params: {
  * leaves out (`countWithinSkips`). Null when that can't be told.
  */
 function lowerCount(params: {
+  /** Whether the new part keeps the series' COUNT; else nothing changes. */
+  keeps: boolean;
   master: Event;
   places: number;
   rule: string[];
@@ -1719,6 +1721,9 @@ function lowerCount(params: {
   start: Event["start"];
 }): string[] | null {
   const { master, splitAt, start } = params;
+  if (!params.keeps) {
+    return params.rule;
+  }
   const lowered = changeCount(params.rule, -params.places);
   const written = ruleForStart(lowered, master, start, splitAt);
   const within = countWithinSkips({
@@ -2805,6 +2810,7 @@ export function makeGoogleCalendarService(
         ontoStart === null
           ? null
           : lowerCount({
+              keeps,
               master,
               places: ontoStart,
               rule: final,
