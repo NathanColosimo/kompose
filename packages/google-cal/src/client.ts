@@ -1328,8 +1328,9 @@ function placeSkips(params: {
     return first !== moment;
   };
   let unknown = false;
-  // The places of the rule meetings' skips that hold a COUNT place.
-  const ruleSkips: string[] = [];
+  // The places of the rule meetings' skips that hold a COUNT place, each
+  // once however many skips it has.
+  const ruleSkips = new Set<string>();
   // With no place found, a new rule not read here may meet there after all.
   const placeUnknown = (at: string | null, formed: string | null) =>
     at === null &&
@@ -1374,7 +1375,7 @@ function placeSkips(params: {
       }
     } else if (ruleMeeting && formed && !uncounted && !keepsSlots) {
       // Kept where it was, it falls within the COUNT as before.
-      ruleSkips.push(formed);
+      ruleSkips.add(formed);
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
@@ -1383,7 +1384,9 @@ function placeSkips(params: {
   if (!params.keeps) {
     return { ontoStart: 0, placed, ruleSkips: [] };
   }
-  return unknown ? null : { ontoStart: ontoStart.size, placed, ruleSkips };
+  return unknown
+    ? null
+    : { ontoStart: ontoStart.size, placed, ruleSkips: [...ruleSkips] };
 }
 
 /**
