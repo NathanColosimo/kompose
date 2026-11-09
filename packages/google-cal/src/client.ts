@@ -1032,6 +1032,28 @@ function inFormOf(
 }
 
 /**
+ * A split's new `recurrence`, or one event (`[]`) when the series' own end
+ * falls before `start` (its last meeting, moved later: that meeting is all
+ * the new part has). Null when an end the save sets does: refused.
+ */
+function withinEnd(params: {
+  edited: string[] | undefined;
+  master: Event;
+  recurrence: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] | null {
+  const { master, recurrence, zone } = params;
+  if (!endsBeforeStart(recurrence, momentOf(params.start, zone), zone)) {
+    return recurrence;
+  }
+  const ownRule =
+    params.edited === undefined ||
+    JSON.stringify(params.edited) === JSON.stringify(master.recurrence ?? []);
+  return ownRule ? [] : null;
+}
+
+/**
  * The occurrences a "This and following" new series carries, and where:
  * the opened one at its start with its own changes (its times only if
  * the edit left them), and later changed ones at their new places.
@@ -1942,11 +1964,16 @@ export function makeGoogleCalendarService(
         [...placed, ...moved],
         zone
       );
-      const ends = repeatZone(master, start);
-      if (endsBeforeStart(recurrence, momentOf(start, ends), ends)) {
-        return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
-      }
-      return recurrence;
+      const kept = withinEnd({
+        edited: params.edited,
+        master,
+        recurrence,
+        start,
+        zone: newZone,
+      });
+      return (
+        kept ?? (yield* Effect.fail(refused({ reason: "endsBeforeStart" })))
+      );
     });
 
   /**

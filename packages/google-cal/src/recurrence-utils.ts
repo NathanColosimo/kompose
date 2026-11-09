@@ -356,7 +356,7 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 }
 
 /** Why a series can't be split at an occurrence ("This and following"). */
-export type SplitBlock = Extract<
+type SplitBlock = Extract<
   SeriesRefusal["reason"],
   "addedOccurrence" | "severalRules"
 >;
@@ -773,7 +773,9 @@ export function carryCountFromList(
   const before = startAtRuleTime
     ? positionsIn((value) => fromStartToSplit(value, params))
     : null;
-  if (before !== null) {
+  // Used up before the split, it disagrees with Google's own count of
+  // the start: the side from the split on decides.
+  if (before !== null && before < count) {
     return changeCount(recurrence, -before);
   }
   const left = positionsIn(
@@ -810,10 +812,10 @@ function positionsBefore(params: {
   if (count === null) {
     return null;
   }
-  const seriesClock = seriesStart.instant
-    ?.toZonedDateTimeISO(seriesZone)
-    .toPlainTime();
-  if (seriesClock && seriesStart.instant && split.instant) {
+  if (seriesStart.instant && split.instant) {
+    const seriesClock = seriesStart.instant
+      .toZonedDateTimeISO(seriesZone)
+      .toPlainTime();
     const clock = ruleClock(rule, seriesClock);
     if (!clock.equals(seriesClock)) {
       return null;
