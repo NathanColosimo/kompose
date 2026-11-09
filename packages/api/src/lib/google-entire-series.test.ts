@@ -342,7 +342,12 @@ describe("what Google keeps as an occurrence's own", () => {
           recurrence: ["RRULE:FREQ=DAILY", "EXRULE:FREQ=WEEKLY;BYDAY=MO"],
         })
       )
-    ).toMatchObject({ data: { reason: "dropsChangedOccurrences" } });
+    ).toMatchObject({
+      // It can't tell, and says so.
+      data: { reason: "dropsChangedOccurrences", unsure: true },
+      message:
+        "This may undo what was changed or deleted on single occurrences (Nov 30): this series repeats in a way, made in another app, that can't be fully read here, so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
+    });
     expect(google.writes()).toEqual([]);
   });
 });

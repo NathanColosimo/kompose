@@ -293,6 +293,73 @@ describe("This and following", () => {
     });
   });
 
+  describe("from a form toggled to or from all day, sending both forms", () => {
+    test("made timed, the new series takes the time", async () => {
+      // Mondays all day; from Nov 16 set to 9:00 (the form keeps the date).
+      const allDay: Event = {
+        ...weekly,
+        end: { date: "2026-11-10" },
+        start: { date: "2026-11-09" },
+      };
+      const opened: Event = {
+        ...allDay,
+        end: { date: "2026-11-17" },
+        id: "series_20261116",
+        originalStartTime: { date: "2026-11-16" },
+        recurrence: undefined,
+        recurringEventId: "series",
+        start: { date: "2026-11-16" },
+      };
+      const google = fakeGoogle(allDay, [opened]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("following", opened, {
+              end: {
+                date: "2026-11-17",
+                dateTime: "2026-11-16T09:30:00-05:00",
+                timeZone: zone,
+              },
+              start: {
+                date: "2026-11-16",
+                dateTime: "2026-11-16T09:00:00-05:00",
+                timeZone: zone,
+              },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.start).toEqual({
+        dateTime: "2026-11-16T09:00:00-05:00",
+        timeZone: zone,
+      });
+    });
+
+    test("made all day, a renamed one is carried to its day", async () => {
+      // Nov 30 renamed on its own; from Nov 16 made all day (the form keeps
+      // the date-time).
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+          summary: "Own",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("following", nov16, {
+              end: { ...nov16.end, date: "2026-11-17" },
+              start: { ...nov16.start, date: "2026-11-16" },
+            })
+          )
+        )
+      ).toBe(true);
+      const [created, carried] = google.writes();
+      expect(created?.body?.start).toEqual({ date: "2026-11-16" });
+      expect(carried?.body).toMatchObject({ summary: "Own" });
+    });
+  });
+
   test("a move to a day the rule doesn't meet skips the moved meeting's old slot", async () => {
     // From Mon Nov 16, moved to Sun Nov 15 with the Monday rule kept: the
     // new series meets at its Sunday start, so its Monday Nov 16 meeting

@@ -3,6 +3,7 @@
  * fields an edit changed, an occurrence's own changes (Google keeps them as
  * exceptions tied to its original slot), and why a write is refused.
  */
+import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
@@ -56,17 +57,25 @@ export const NAMING_REFUSALS = [
 ] as const;
 
 /** Why a series write is refused (see `PLAIN_REFUSALS`, `NAMING_REFUSALS`). */
-export type SeriesRefusal =
-  | { readonly reason: (typeof PLAIN_REFUSALS)[number] }
-  | {
-      readonly reason: (typeof NAMING_REFUSALS)[number];
-      readonly originalStarts: readonly string[];
-      /** Only a series takes it: a new repeat, or a calendar move. */
-      readonly seriesOnly?: true;
-    };
+export const SeriesRefusalSchema = Schema.Union([
+  Schema.Struct({ reason: Schema.Literals(PLAIN_REFUSALS) }),
+  Schema.Struct({
+    originalStarts: Schema.Array(Schema.String),
+    reason: Schema.Literals(NAMING_REFUSALS),
+    /** Only a series takes it: a new repeat, or a calendar move. */
+    seriesOnly: Schema.optional(Schema.Literal(true)),
+    /**
+     * A rule it read can't be read here (made in another app): the save
+     * may not cost the occurrences it names, but that can't be told.
+     */
+    unsure: Schema.optional(Schema.Literal(true)),
+  }),
+]);
+
+export type SeriesRefusal = typeof SeriesRefusalSchema.Type;
 
 /** A refusal that names the occurrences it's for. */
-type NamingRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
+export type NamingRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
 
 /**
  * "Mar 31": an original start's day, as the refusal names it, with its
@@ -128,7 +137,9 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "severalTimesADay":
       return "This series' meetings keep times of their own, so its time can't be changed for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
-      return `This would undo what was changed or deleted on single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal)}`;
+      return refusal.unsure
+        ? `This may undo what was changed or deleted on single occurrences (${namedDays(refusal.originalStarts)}): this series repeats in a way, made in another app, that can't be fully read here, so it wasn't saved. ${elsewhere(refusal)}`
+        : `This would undo what was changed or deleted on single occurrences (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal)}`;
     case "resizesChangedOccurrences":
       return `This would also change the length of single occurrences given a length of their own (${namedDays(refusal.originalStarts)}), so it wasn't saved. ${elsewhere(refusal)}`;
     default:

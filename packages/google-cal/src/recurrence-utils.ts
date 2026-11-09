@@ -723,9 +723,10 @@ function fromStartToSplit(
  * walked (`carryCountExactly`). COUNT counts rule positions, skipped ones
  * included; Google lists the rule's meetings, cancelled ones too, and the
  * added (RDATE) ones, but not every skip. So the positions used before the
- * split are the meetings listed there. When those can't be told (an added
- * day there can't be told from a rule day, a skip there Google doesn't
- * list on a day the rule may meet may or may not be a position, or a start
+ * split are the meetings listed there and the rule's skips it doesn't
+ * list. When those can't be told (an added day there can't be told from a
+ * rule day, a skip there Google doesn't list where the rule may meet may
+ * or may not be a position, or a start
  * at a time its rule doesn't meet may or may not count), the positions
  * left are counted from the split on instead, the same way; null when
  * neither side can be told.
@@ -761,24 +762,37 @@ export function carryCountFromList(
   const offRule = (skip: RecurrenceValue) =>
     !skip.day.equals(start.day) &&
     isRuleDay(rule, start.day, skip.day) === false;
-  // The positions in a stretch of the series: what Google lists there, or
-  // null when an added day or an unlisted skip that may be a position
-  // falls in it.
-  const positionsIn = (inStretch: (value: RecurrenceValue) => boolean) => {
-    const there = listed.filter(inStretch);
-    const unclear =
-      added.filter(inStretch).length > 0 ||
-      skipped
-        .filter(inStretch)
-        .some(
-          (skip) =>
-            !(offRule(skip) || there.some((value) => sameValue(value, skip)))
-        );
-    return unclear ? null : there.length;
-  };
   const startClock = start.instant
     ?.toZonedDateTimeISO(seriesZone)
     .toPlainTime();
+  // A skip at one of the rule's meetings, as it reads here: on its day, at
+  // its time (the first pass of a repeated hour), is a position.
+  const onRule = (skip: RecurrenceValue) => {
+    const at = skip.instant;
+    const clock = at?.toZonedDateTimeISO(seriesZone).toPlainTime();
+    return (
+      isRuleDay(rule, start.day, skip.day) === true &&
+      (!(at && clock && startClock) ||
+        (ruleClock(rule, startClock).equals(clock) &&
+          atOwnWallTime(at, seriesZone)))
+    );
+  };
+  // The positions in a stretch of the series: what Google lists there and
+  // the rule's skips it doesn't, or null when an added day or an unlisted
+  // skip that may be a position falls in it.
+  const positionsIn = (inStretch: (value: RecurrenceValue) => boolean) => {
+    const there = listed.filter(inStretch);
+    const unlisted = skipped
+      .filter(inStretch)
+      .filter(
+        (skip) =>
+          !(offRule(skip) || there.some((value) => sameValue(value, skip)))
+      );
+    const unclear =
+      added.filter(inStretch).length > 0 ||
+      unlisted.some((skip) => !onRule(skip));
+    return unclear ? null : there.length + unlisted.length;
+  };
   const startAtRuleTime =
     !startClock || ruleClock(rule, startClock).equals(startClock);
   const before = startAtRuleTime
