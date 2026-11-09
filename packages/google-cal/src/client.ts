@@ -2272,14 +2272,20 @@ export function makeGoogleCalendarService(
       let unanswered = false;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
+          // Sent once: a retry's answer would hide that an earlier try,
+          // unanswered, may still go through.
           try: () =>
-            client.calendars.events.update(master.id, {
-              ...cutPayload,
-              calendarId,
-              ...(cutConferenceDataVersion
-                ? { conferenceDataVersion: cutConferenceDataVersion }
-                : {}),
-            }),
+            client.calendars.events.update(
+              master.id,
+              {
+                ...cutPayload,
+                calendarId,
+                ...(cutConferenceDataVersion
+                  ? { conferenceDataVersion: cutConferenceDataVersion }
+                  : {}),
+              },
+              { maxRetries: 0 }
+            ),
           catch: (cause) => {
             logGoogleEventUpdateFailure({
               operation: "update",
