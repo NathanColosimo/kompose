@@ -216,6 +216,8 @@ export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;
 export const CreateEventInputSchema = EventSchema.omit({
   id: true,
   htmlLink: true,
+  // Google gives each new event its own; one sent would claim another's.
+  iCalUID: true,
   organizer: true,
 });
 

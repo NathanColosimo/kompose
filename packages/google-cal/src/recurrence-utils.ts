@@ -687,6 +687,9 @@ function ruleEndsBefore(
   }
   const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
   const time = clock ? ruleTimeOf(rule, clock) : null;
+  // Walked only up to the split's day: a rule with meetings left by then
+  // hasn't ended, however long its COUNT runs on.
+  const through = split.toZonedDateTimeISO(seriesZone).toPlainDate();
   // Counted meeting by meeting: a time the clocks skip isn't a meeting
   // (RFC 5545; see until.ts `existsOn`).
   if (clock && time) {
@@ -695,14 +698,21 @@ function ruleEndsBefore(
       count,
       from: first.day,
       rule,
+      through,
       time,
       timeZone: seriesZone,
     });
-    return meetings ? Math.max(...meetings) < split.epochMilliseconds : null;
+    if (!meetings) {
+      return null;
+    }
+    return (
+      meetings.size === count && Math.max(...meetings) < split.epochMilliseconds
+    );
   }
-  const last = countedRuleDays({ count, rule, start: first.day })?.at(-1);
-  if (!last) {
-    return null;
+  const days = countedRuleDays({ count, rule, start: first.day, through });
+  const last = days?.length === count ? days.at(-1) : null;
+  if (!(days && last)) {
+    return days ? false : null;
   }
   // Timed rules were counted meeting by meeting above: this one is all day.
   const lastAt = last.toZonedDateTime({ timeZone: seriesZone }).toInstant();
