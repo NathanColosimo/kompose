@@ -1275,6 +1275,47 @@ describe("a COUNT through a move that lands two deleted meetings on one place", 
   });
 });
 
+describe("a COUNT whose end a placed skip would fall past", () => {
+  test("ends sooner until every skip falls within it", async () => {
+    // All day, monthly five times from Jan 28, Apr 28 and May 28 deleted on
+    // their own; from Mar 28 moved to Apr 1. Apr 28's place is the new
+    // start, and May 28's (Jun 1) falls past the end once that one goes:
+    // only the moved meeting is left.
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-01-29" },
+      recurrence: ["RRULE:FREQ=MONTHLY;COUNT=5"],
+      start: { date: "2026-01-28" },
+    };
+    const onDay = (day: string): Event => ({
+      ...series,
+      end: { date: Temporal.PlainDate.from(day).add({ days: 1 }).toString() },
+      id: `series_${day.replace(/-/g, "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+    });
+    const google = fakeGoogle(series, [
+      { ...onDay("2026-04-28"), status: "cancelled" },
+      { ...onDay("2026-05-28"), status: "cancelled" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", onDay("2026-03-28"), {
+            end: { date: "2026-04-02" },
+            start: { date: "2026-04-01" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "RRULE:FREQ=MONTHLY;COUNT=1"
+    );
+  });
+});
+
 describe("a COUNT sent with a new repeat", () => {
   test("is the new part's own, so a later changed meeting keeps its place", async () => {
     // Mondays and Wednesdays ten times from Nov 9, Mon Dec 7 renamed; from

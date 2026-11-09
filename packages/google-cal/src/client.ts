@@ -1269,7 +1269,7 @@ function placeSkips(params: {
   rule: string[];
   skips: string[];
   start: Event["start"];
-}): { ontoStart: number; placed: string[] } | null {
+}): { ontoStart: number; placed: string[]; ruleSkips: string[] } | null {
   const { cancelled, master, originalStart, rule, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
@@ -1328,6 +1328,36 @@ function placeSkips(params: {
     return first !== moment;
   };
   let unknown = false;
+  // The places of the rule meetings' skips that hold a COUNT place.
+  const ruleSkips: string[] = [];
+  // With no place found, a new rule not read here may meet there after all.
+  const placeUnknown = (at: string | null, formed: string | null) =>
+    at === null &&
+    formed !== null &&
+    seriesMeetsAt({
+      recurrence: unskipped,
+      seriesZone: newZone,
+      slot: formed,
+      start,
+    }) === null;
+  // A skipped position with no meeting of the new series after its start
+  // in its place (none there, the start itself, or another's) frees none.
+  const noPlaceFor = (skip: {
+    added: boolean;
+    at: string | null;
+    formed: string | null;
+    moment: Temporal.Instant | null;
+  }) =>
+    skip.formed === startSlot ||
+    (skip.at === null && !skip.added) ||
+    Boolean(
+      skip.at &&
+        skip.moment &&
+        sharesPlace(skip.formed, skip.moment.epochMilliseconds)
+    );
+  // Left out of a COUNT read from Google's list: it holds no place.
+  const leftOutAt = (moment: Temporal.Instant | null) =>
+    Boolean(moment && params.leftOut.includes(moment.epochMilliseconds));
   const placed = [...cancelled, ...params.skips].flatMap((slot) => {
     const added = addsSlot(master.recurrence ?? [], slot, zone);
     const at = placeOf(slot, added);
@@ -1335,41 +1365,60 @@ function placeSkips(params: {
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
-    // A skipped position with no meeting of the new series after its
-    // start in its place (none there, or the start itself) frees none.
-    const noPlace =
-      formed === startSlot ||
-      (at === null && !added) ||
-      Boolean(at && moment && sharesPlace(formed, moment.epochMilliseconds));
-    // A new rule not read here may meet there after all.
-    const placeUnknown =
-      at === null &&
-      !added &&
-      formed !== null &&
-      seriesMeetsAt({
-        recurrence: unskipped,
-        seriesZone: newZone,
-        slot: formed,
-        start,
-      }) === null;
-    // Left out of a COUNT read from Google's list: it holds no place.
-    const uncounted = Boolean(
-      moment && params.leftOut.includes(moment.epochMilliseconds)
-    );
+    const noPlace = noPlaceFor({ added, at, formed, moment });
+    const uncounted = leftOutAt(moment);
     if (noPlace && moment && !uncounted) {
-      unknown ||= ruleMeeting === null || placeUnknown;
+      unknown ||= ruleMeeting === null || (!added && placeUnknown(at, formed));
       if (ruleMeeting) {
         ontoStart.add(moment.epochMilliseconds);
       }
+    } else if (ruleMeeting && formed && !uncounted && !keepsSlots) {
+      // Kept where it was, it falls within the COUNT as before.
+      ruleSkips.push(formed);
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(rule, formed, zone);
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
   if (!params.keeps) {
-    return { ontoStart: 0, placed };
+    return { ontoStart: 0, placed, ruleSkips: [] };
   }
-  return unknown ? null : { ontoStart: ontoStart.size, placed };
+  return unknown ? null : { ontoStart: ontoStart.size, placed, ruleSkips };
+}
+
+/**
+ * A kept COUNT (in `recurrence`, the new series' rule) lowered for each
+ * rule meeting's skip (`ruleSkips`, by place) its end leaves out: that
+ * skip frees no place, so the end comes one meeting sooner, again until
+ * every skip left falls within it. Null when whether one does can't be
+ * told.
+ */
+function countWithinSkips(params: {
+  recurrence: string[];
+  ruleSkips: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] | null {
+  const { recurrence, ruleSkips, start, zone } = params;
+  let trimmed = recurrence;
+  for (let round = 0; round <= ruleSkips.length; round += 1) {
+    const rules = trimmed.filter((line) => line.startsWith("RRULE:"));
+    const meets = ruleSkips.map((slot) =>
+      seriesMeetsAt({ recurrence: rules, seriesZone: zone, slot, start })
+    );
+    if (meets.includes(null)) {
+      return null;
+    }
+    const next = changeCount(
+      recurrence,
+      -meets.filter((meeting) => meeting === false).length
+    );
+    if (countOf(next) === countOf(trimmed)) {
+      return trimmed;
+    }
+    trimmed = next;
+  }
+  return trimmed;
 }
 
 /**
@@ -2251,11 +2300,19 @@ export function makeGoogleCalendarService(
         skips: ownSkips,
         start,
       });
-      if (!skips) {
+      const withinSkips =
+        skips &&
+        countWithinSkips({
+          recurrence: changeCount(rule, -skips.ontoStart),
+          ruleSkips: skips.ruleSkips,
+          start,
+          zone: newZone,
+        });
+      if (!(skips && withinSkips)) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const recurrence = skipping(
-        changeCount(rule, -skips.ontoStart),
+        withinSkips,
         [...skips.placed, ...moved],
         zone
       );
