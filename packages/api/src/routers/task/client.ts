@@ -940,7 +940,9 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
 /**
  * Ends the series' pattern before `boundary` (when `task` isn't its first):
  * the master keeps its days up to there, and stops claiming the later ones,
- * deleted or replaced by a pattern change or "Repeat: None".
+ * deleted or replaced by a pattern change or "Repeat: None". When the split
+ * reaches the master (or it's gone or undated), the series' undated
+ * occurrences stand alone.
  */
 const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   userId: string,
@@ -1187,7 +1189,8 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   userId: string;
 }) {
   const { input, recurrenceChanged, task, userId } = params;
-  // Without a start date there is no "following"; edit this occurrence alone.
+  // Without a start date there is no "following": edit this occurrence
+  // alone, unless its repeat changes (see repatternUndated).
   if (!isDatedSeriesTask(task)) {
     if (recurrenceChanged) {
       return yield* repatternUndated(userId, task, input, params.newPattern);
