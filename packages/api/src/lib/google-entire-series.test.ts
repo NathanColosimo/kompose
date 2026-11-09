@@ -165,6 +165,16 @@ describe("Entire series", () => {
         })
       )
     ).toMatchObject({ data: { reason: "severalTimesADay" } });
+    // Moved to the start's 9:00, the series' start stays where it is, but
+    // the meeting's time still changes.
+    expect(
+      await refusalOf(
+        edit("all", afternoon, {
+          end: { dateTime: "2026-12-02T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-12-02T09:00:00-05:00", timeZone: zone },
+        })
+      )
+    ).toMatchObject({ data: { reason: "severalTimesADay" } });
     expect(google.writes()).toEqual([]);
     // A rename through it is fine.
     expect(
