@@ -340,6 +340,26 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     ]);
   });
 
+  test("rejects a new pattern ending before its start, before any write", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: { freq: "DAILY", interval: 1, until: "2026-11-05" } },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "error: The repeat ends before the task starts.",
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-10 Review todo in 2026-11-09",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
+  });
+
   test("keeps an occurrence moved onto a kept task's date, with its edits", async () => {
     // Nov 16 done alone; Nov 9 renamed and moved onto it, Mondays x3.
     expect(
