@@ -1496,6 +1496,33 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toEqual([]);
   });
 
+  test("a COUNT running past fifty years still tells an early occurrence is kept", async () => {
+    // Yearly from Nov 9 2026, eighty times; Nov 9 2027 renamed on its own.
+    // Made seventy-nine from the first meeting, 2027 still meets.
+    const yearly: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=YEARLY;COUNT=80"],
+    };
+    const google = fakeGoogle(yearly, [
+      {
+        ...occurrenceOf(yearly, "2027-11-09T09:00:00-05:00"),
+        summary: "Planning (2027)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(yearly, "2026-11-09T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=YEARLY;COUNT=79"],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=79",
+    ]);
+  });
+
   test("a new time an occurrence was already moved to on its own saves", async () => {
     // Nov 23 moved to 10:00 on its own; the series moves to 10:00. Google
     // cancels Nov 23's exception, and the series' 10:00 meeting is the same.
