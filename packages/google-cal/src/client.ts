@@ -59,6 +59,7 @@ import {
 } from "./series-times";
 import {
   clockOf,
+  clockTurn,
   DATE_ONLY,
   dateValues,
   dayOfStart,
@@ -184,11 +185,9 @@ function shortShift(
 
 /**
  * A skipped meeting's place once the series' time moves, the first the
- * saved series `meets` at: the time of day's change (on the start's own
- * day as it is; moved to another day too, within twelve hours, across
- * midnight: 9:00 to the next day's 8:00 is an hour earlier, 23:00 to
- * 00:30 an hour and a half later), then the clock's whole `shift` (a move
- * of less than a day); else on its own day at the new time.
+ * saved series `meets` at: the clock's turn (`clockTurn`), then its whole
+ * `shift` (a move of less than a day); else on its own day at the new
+ * time. `matchRecurrenceToStart` moves an UNTIL's last day the same way.
  */
 function placeAtNewTime(params: {
   change: { from: Temporal.PlainTime; to: Temporal.PlainTime };
@@ -201,12 +200,7 @@ function placeAtNewTime(params: {
 }): string {
   const { change, moment, shift, zone } = params;
   const local = moment.toZonedDateTimeISO(zone).toPlainDateTime();
-  const minutes = change.from.until(change.to).total("minutes");
-  // On the start's own day, the change as it is; moved to another day too,
-  // its nearest way round the clock.
-  const turn = params.sameDay
-    ? minutes
-    : ((((minutes + 720) % 1440) + 1440) % 1440) - 720;
+  const turn = clockTurn(change.from, change.to, params.sameDay);
   const at = (time: Temporal.PlainDateTime) =>
     googleDateTime(time.toZonedDateTime(zone));
   const tried = [

@@ -1230,6 +1230,60 @@ describe("skips through a move a day on and an hour earlier", () => {
   });
 });
 
+describe("an UNTIL through a move a day on and an hour earlier", () => {
+  test("ends on its own day, as its skips stay on theirs", async () => {
+    // Daily 9:00 from Nov 9 until Nov 30, Nov 20 skipped; the first meeting
+    // moves to Nov 10 8:00. The last meeting is Nov 30 at 8:00, not a new
+    // Dec 1.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=DAILY;UNTIL=20261130T140000Z",
+        "EXDATE:20261120T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-10T08:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;UNTIL=20261201T045959Z",
+      "EXDATE:20261120T130000Z",
+    ]);
+  });
+
+  test("moves to the next day a weekly rule moved with it meets", async () => {
+    // Mondays 9:00 until Nov 30; the first meeting moves to Tue Nov 10 8:00
+    // and the rule to Tuesdays: the last meeting is Tue Dec 1.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261130T140000Z"],
+    };
+    const google = fakeGoogle(series, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", series, {
+            end: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261130T140000Z"],
+            start: { dateTime: "2026-11-10T08:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261202T045959Z",
+    ]);
+  });
+});
+
 describe("a deleted meeting's skip through a short move onto another weekday", () => {
   test("stays on its own day where the saved rule meets", async () => {
     // Mondays and Wednesdays 9:00 from Nov 9, Wed Nov 18 deleted; the first

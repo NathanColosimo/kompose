@@ -978,11 +978,8 @@ function matchUntil(
   params: {
     allDay: boolean;
     base: Temporal.PlainTime | null;
-    /**
-     * Days the last meeting moves with a new time of less than a day
-     * (23:00 to the next day's 00:30 is one).
-     */
-    dayShift: number;
+    /** The last meeting's day once it's at the new time (`retimed`). */
+    moveDay: (line: string, day: Temporal.PlainDate) => Temporal.PlainDate;
     retimed: boolean;
     timeZone: string;
   }
@@ -1011,7 +1008,7 @@ function matchUntil(
     Temporal.Instant.compare(meeting, value.instant) > 0
       ? value.day.subtract({ days: 1 })
       : value.day;
-  const lastDay = params.retimed ? day.add({ days: params.dayShift }) : day;
+  const lastDay = params.retimed ? params.moveDay(line, day) : day;
   return line.replace(
     UNTIL_PART,
     `${match[1]}UNTIL=${untilRuleForDay(lastDay, allDay, timeZone)}`
@@ -1019,17 +1016,32 @@ function matchUntil(
 }
 
 /**
+ * How far, in minutes, a once-a-day series' meetings turn round the clock
+ * when its time of day changes `from` one `to` another: on the start's own
+ * day (`sameDay`), the change as it is; moved to another day too, its
+ * nearest way round the clock (9:00 to the next day's 8:00 is an hour
+ * earlier, 23:00 to the next day's 00:30 an hour and a half later).
+ */
+export function clockTurn(
+  from: Temporal.PlainTime,
+  to: Temporal.PlainTime,
+  sameDay: boolean
+): number {
+  const minutes = from.until(to).total("minutes");
+  return sameDay ? minutes : ((((minutes + 720) % 1440) + 1440) % 1440) - 720;
+}
+
+/**
  * The days a start moved by the clock, when the move is less than a day
- * (23:00 to the next day's 00:30 is one): each meeting moves as many.
- * Zero for a longer move, which keeps each meeting on its own day.
+ * (23:00 to the next day's 00:30 is one). Null for a longer move.
  */
 function shortDayShift(
   from: StartTime | undefined,
   to: StartTime,
   timeZone: string
-): number {
+): number | null {
   if (!(from?.dateTime && to.dateTime)) {
-    return 0;
+    return null;
   }
   const wall = (time: StartTime) => {
     const moment = startInstant(time, timeZone);
@@ -1038,9 +1050,45 @@ function shortDayShift(
   const was = wall(from);
   const now = wall(to);
   if (!(was && now) || Math.abs(was.until(now).total("hours")) >= 24) {
-    return 0;
+    return null;
   }
   return was.toPlainDate().until(now.toPlainDate()).days;
+}
+
+/**
+ * A once-a-day meeting's day once the series moves from `seriesStart` to
+ * `start`, as a skip of it is placed (`lineUpRule`): the first a rule
+ * (counted from `rulesFrom`) meets on of its clock's turn's (`clockTurn`)
+ * and the start's whole move's (under a day); else its own.
+ */
+function meetingDayMover(params: {
+  rulesFrom: Temporal.PlainDate | null;
+  seriesStart: StartTime | undefined;
+  start: StartTime;
+  timeZone: string;
+}): (rule: string, day: Temporal.PlainDate) => Temporal.PlainDate {
+  const { rulesFrom, seriesStart, start, timeZone } = params;
+  if (!(seriesStart?.dateTime && start.dateTime)) {
+    return (_rule, day) => day;
+  }
+  const from = wallClock(seriesStart, timeZone);
+  const to = wallClock(start, timeZone);
+  const fromDay = dayOfStart(seriesStart, timeZone);
+  const toDay = dayOfStart(start, timeZone);
+  const sameDay = Boolean(fromDay && toDay && fromDay.equals(toDay));
+  const turnDays = Math.floor(
+    (from.hour * 60 + from.minute + clockTurn(from, to, sameDay)) / 1440
+  );
+  const dayMove = shortDayShift(seriesStart, start, timeZone);
+  const moves = dayMove === null ? [turnDays] : [turnDays, dayMove];
+  return (rule, day) => {
+    const meets = moves.find(
+      (move) =>
+        !rulesFrom ||
+        isRuleDay(rule, rulesFrom, day.add({ days: move })) !== false
+    );
+    return day.add({ days: meets ?? 0 });
+  };
 }
 
 /** "20261101T063000Z": a moment as a recurrence value, in UTC. */
@@ -1208,6 +1256,12 @@ export function matchRecurrenceToStart(
           );
         }
       : null;
+  const moveMeetingDay = meetingDayMover({
+    rulesFrom: days?.rulesFrom ?? startDay,
+    seriesStart,
+    start,
+    timeZone,
+  });
   let changed = false;
   const untilOf = (line: string) => UNTIL_PART.exec(line)?.[2];
   const ownUntils = days?.before && new Set(days.before.map(untilOf));
@@ -1220,7 +1274,7 @@ export function matchRecurrenceToStart(
           matchUntil(line, {
             allDay,
             base: newUntil(line) ? newTime : base,
-            dayShift: shortDayShift(seriesStart, start, timeZone),
+            moveDay: moveMeetingDay,
             retimed: Boolean(
               !newUntil(line) &&
                 base &&
