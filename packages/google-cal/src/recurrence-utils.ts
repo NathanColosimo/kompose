@@ -712,12 +712,11 @@ function fromStartToSplit(
  * included; Google lists the rule's meetings, cancelled ones too, and the
  * added (RDATE) ones, but not every skip. So the positions used before the
  * split are the meetings listed there and the rule's skips it doesn't
- * list. When those can't be told (an added day there can't be told from a
- * rule day, a skip there Google doesn't list where the rule may meet may
- * or may not be a position, or a start
- * at a time its rule doesn't meet may or may not count), the positions
- * left are counted from the split on instead, the same way; null when
- * neither side can be told.
+ * list. When those can't be told (an added day there can't be told from
+ * a rule day, a skip there Google doesn't list where the rule may meet may
+ * or may not be a position, or a start at a time its rule doesn't meet may
+ * or may not count), the positions left are counted from the split on
+ * instead, the same way; null when neither side can be told.
  */
 export function carryCountFromList(
   recurrence: string[],
@@ -765,16 +764,16 @@ export function carryCountFromList(
     },
     null
   );
-  // A skip at one of the rule's meetings, as it reads here: on its day, at
-  // its time (the first pass of a repeated hour), and before a meeting
-  // Google lists, so within its COUNT, is a position.
+  // A skip after it changes no meeting, counted or not: it's left out.
+  const afterLast = (skip: RecurrenceValue) =>
+    lastMeeting === null ||
+    Temporal.Instant.compare(valueMoment(skip, seriesZone), lastMeeting) > 0;
+  // A skip at one of the rule's meetings, as it reads here (on its day, at
+  // its time, the first pass of a repeated hour), is a position.
   const onRule = (skip: RecurrenceValue) => {
     const at = skip.instant;
     const clock = at?.toZonedDateTimeISO(seriesZone).toPlainTime();
     return (
-      lastMeeting !== null &&
-      Temporal.Instant.compare(valueMoment(skip, seriesZone), lastMeeting) <
-        0 &&
       isRuleDay(rule, start.day, skip.day) === true &&
       (!(at && clock && startClock) ||
         (ruleClock(rule, startClock).equals(clock) &&
@@ -790,7 +789,11 @@ export function carryCountFromList(
       .filter(inStretch)
       .filter(
         (skip) =>
-          !(offRule(skip) || there.some((value) => sameValue(value, skip)))
+          !(
+            offRule(skip) ||
+            afterLast(skip) ||
+            there.some((value) => sameValue(value, skip))
+          )
       );
     const unclear =
       added.filter(inStretch).length > 0 ||

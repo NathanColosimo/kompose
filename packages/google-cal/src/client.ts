@@ -1134,16 +1134,20 @@ function keepsCount(master: Event, rule: string[]): boolean {
 }
 
 /**
- * Where a split's deleted (`cancelled`) and skipped (`skips`) meetings,
- * by original start, stay skipped: where the new series (`rule`) meets in
- * their place, as a changed one is put back (read without skips: a place
- * already skipped is still its place, and in the new start's form: made
- * all day or timed, it's placed by day); an added one keeps its slot.
- * None lands on the new series' start, the meeting the user just saved:
- * a kept COUNT (`keeps`) loses the place of each rule meeting that would
- * (`ontoStart`; a deleted one that isn't an added day is one, as Google
- * lists only its meetings, as is a skip Google lists, `listed`). Null
- * when that COUNT's can't be told.
+ * Where a split's deleted (`cancelled`) and skipped (`skips`) meetings, by
+ * original start, stay skipped in the new series (`rule`).
+ *
+ * - A rule meeting's skip goes where the new series meets in its place,
+ *   as a changed one is put back. Its place is read without skips (one
+ *   already skipped is still its place), in the new start's form (made
+ *   all day or timed, by day). An added meeting's keeps its slot.
+ * - None lands on the new start, the meeting the user just saved.
+ * - A kept COUNT (`keeps`) loses one place for each rule meeting that
+ *   would have (`ontoStart`). A deleted one that isn't an added day is a
+ *   rule meeting, as Google lists only a series' meetings; so is a skip on
+ *   Google's list (`listed`).
+ *
+ * Null when the kept COUNT's change can't be told.
  */
 function placeSkips(params: {
   cancelled: string[];
