@@ -2,7 +2,7 @@ import { Context, Effect, Exit, Layer, Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
-import { NotFoundError } from "./api-client/core/error";
+import { APIConnectionError, NotFoundError } from "./api-client/core/error";
 import {
   addsSlot,
   deleteFromListed,
@@ -671,7 +671,7 @@ function endedRepeat(params: {
     }
     // All its own changes, its times too even where the save sets times:
     // own times the save would override are lost (below).
-    const { end, start, ...own } = changesOwnTo(occurrence, master, {}, zone);
+    const { end, start, ...own } = changesOwnTo(occurrence, master, zone);
     const fields = Object.fromEntries(
       Object.entries(own).filter(([field]) => !(field in params.changes))
     );
@@ -850,7 +850,7 @@ function seriesChangeRefusal(params: {
           movedDay ||
           !replaced ||
           Object.keys(
-            changesOwnTo(occurrence, master, params.changes, zone)
+            changesOwnTo(occurrence, master, zone, params.changes)
           ).some((field) => field !== "start" && field !== "end")
         );
       }
@@ -964,7 +964,7 @@ function sortExceptions(
     }
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
-    } else if (Object.keys(changesOwnTo(event, master, {}, zone)).length > 0) {
+    } else if (Object.keys(changesOwnTo(event, master, zone)).length > 0) {
       // One moved and moved back has nothing to keep.
       changed.push({ occurrence: event, originalStart });
     }
@@ -1003,8 +1003,9 @@ interface CarriedOccurrence {
 function changesOwnTo(
   occurrence: Event,
   master: Event,
-  edited: Partial<CreateEvent>,
-  zone: string
+  zone: string,
+  /** Fields the edit sets for its whole series, left out. */
+  edited: Partial<CreateEvent> = {}
 ): Partial<CreateEvent> {
   const originalStart = originalStartOf(occurrence, zone);
   if (!originalStart) {
@@ -1227,7 +1228,7 @@ function followingOccurrences(params: {
 }) {
   const { changes, master, originalStart, start } = params;
   const zone = seriesZoneOf(master);
-  const own = changesOwnTo(params.opened, master, changes, zone);
+  const own = changesOwnTo(params.opened, master, zone, changes);
   const { end: _end, start: _start, ...ownFields } = own;
   // A new end alone keeps the opened one's own start, now with that end.
   const keptStart = sameTime(params.edited.start, params.opened.start, zone);
@@ -1248,8 +1249,8 @@ function followingOccurrences(params: {
       const exceptionOwn = changesOwnTo(
         exception.occurrence,
         master,
-        changes,
-        zone
+        zone,
+        changes
       );
       return {
         at: carriedAt({
@@ -2266,6 +2267,9 @@ export function makeGoogleCalendarService(
         recurrence: cutRecurrence,
       });
       const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
+      // A cut Google never answered (a timeout, a dropped connection) may
+      // still go through after it's read back.
+      let unanswered = false;
       const cut = yield* Effect.exit(
         Effect.tryPromise({
           try: () =>
@@ -2285,13 +2289,14 @@ export function makeGoogleCalendarService(
               event: cutPayload,
               cause,
             });
+            unanswered = cause instanceof APIConnectionError;
             return new GoogleApiError({ cause });
           },
         })
       );
       if (Exit.isFailure(cut)) {
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
-        if (outcome === "unchanged") {
+        if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;
         }
         if (outcome !== "cut") {
@@ -2453,7 +2458,7 @@ export function makeGoogleCalendarService(
   }) => {
     const { changes, edited, master, occurrence } = params;
     const zone = seriesZoneOf(master);
-    const own = changesOwnTo(occurrence, master, {}, zone);
+    const own = changesOwnTo(occurrence, master, zone);
     const times = timesOnOwnDay(occurrence, edited, master);
     const retimed = !keepsTimes(times, occurrence, zone);
     const overridden = Object.keys(changes).some((field) => field in own);
@@ -2886,12 +2891,12 @@ export function makeGoogleCalendarService(
         occurrences: [
           {
             at: originalStart,
-            changes: changesOwnTo(instance, master, {}, zone),
+            changes: changesOwnTo(instance, master, zone),
             originalStart,
           },
           ...exceptions.changed.map((exception) => ({
             at: exception.originalStart,
-            changes: changesOwnTo(exception.occurrence, master, {}, zone),
+            changes: changesOwnTo(exception.occurrence, master, zone),
             originalStart: exception.originalStart,
           })),
         ],
