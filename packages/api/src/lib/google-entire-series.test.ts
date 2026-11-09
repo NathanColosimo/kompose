@@ -97,6 +97,66 @@ describe("Entire series", () => {
     expect(google.writes()[0]?.body).not.toHaveProperty("colorId");
   });
 
+  test("a new time and title an occurrence already has the title of saves", async () => {
+    // Nov 23 renamed "Review" on its own, not moved; from Nov 16 the series
+    // is renamed "Review" and moved to 10:00: Nov 23's new meeting is just
+    // as it was, at the new time.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        summary: "Review",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+            summary: "Review",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({ summary: "Review" });
+  });
+
+  test("made timed at an evening hour, a deleted first meeting stays deleted", async () => {
+    // Daily all day from Nov 9, Nov 9 deleted on its own; from Nov 11 made
+    // 23:00 New York, the next day in UTC.
+    const allDay: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { date: "2026-11-09" },
+    };
+    const occurrence = (day: string): Event => ({
+      ...allDay,
+      end: { date: Temporal.PlainDate.from(day).add({ days: 1 }).toString() },
+      id: `series_${day.replaceAll("-", "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+    });
+    const google = fakeGoogle(allDay, [
+      { ...occurrence("2026-11-09"), status: "cancelled" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrence("2026-11-11"), {
+            end: { dateTime: "2026-11-11T23:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-11T23:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "EXDATE:20261110T040000Z"
+    );
+  });
+
   test("an edit to the first occurrence moves the series' date", async () => {
     // Its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
     const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");

@@ -5,6 +5,7 @@ import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
   APIConnectionError,
   ConflictError,
+  InternalServerError,
   NotFoundError,
 } from "./api-client/core/error";
 import {
@@ -488,7 +489,9 @@ function givesNewRepeat(params: {
   start: Event["start"];
 }): boolean {
   const zone = seriesZoneOf(params.master);
-  const day = dayOfStart(params.start, zone);
+  // The new start's day where the series will repeat (an all-day series
+  // made timed, in the new start's zone).
+  const day = dayOfStart(params.start, repeatZone(params.master, params.start));
   const from = dayOfStart(params.from, zone);
   return newRepeat({
     moved: day && from && !from.equals(day) ? { from, to: day } : null,
@@ -512,8 +515,8 @@ function refused(refusal: SeriesRefusal): GoogleApiError {
 
 /**
  * Refuses "This and following" where a new series can't start: at an
- * added meeting, or in a series with several rules (the apps don't offer
- * it there either). Null when the split is fine.
+ * added meeting, or in a series with several rules. Null when the split
+ * is fine.
  */
 function splitBlockedError(
   master: Event,
@@ -682,7 +685,7 @@ function entireSeriesTimes(params: {
   const rules = (edited.recurrence ?? master.recurrence ?? []).filter((line) =>
     line.startsWith("RRULE:")
   );
-  const day = dayOfStart(start, zone);
+  const day = dayOfStart(start, repeatZone(master, start));
   const rulesMeet =
     !day ||
     rules.length === 0 ||
@@ -754,6 +757,13 @@ function newTimesKeep(params: {
     return false;
   }
   const zone = repeatZone(master, times.start);
+  // Times of its own only if it was moved off its slot (or given its own
+  // length); one at its slot follows the series to the new time.
+  const ownTimes =
+    "start" in changesOwnTo(occurrence, master, seriesZoneOf(master));
+  const own = Object.keys(
+    ownChanges(occurrence, master, seriesSlotAt(times, slot), zone)
+  ).filter((field) => ownTimes || !(field === "start" || field === "end"));
   return (
     seriesMeetsAt({
       recurrence,
@@ -761,9 +771,7 @@ function newTimesKeep(params: {
       slot,
       start: times.start,
     }) === true &&
-    Object.keys(
-      ownChanges(occurrence, master, seriesSlotAt(times, slot), zone)
-    ).every(
+    own.every(
       // A value the edit gives the whole series (a cleared one too) is the
       // new meeting's too.
       (field) => {
@@ -951,7 +959,7 @@ function deletedLost(params: {
   const sent = new Set(
     dateValues(params.saved ?? own, "EXDATE", zone).map(skipKey)
   );
-  const day = dayOfStart(times.start, zone);
+  const day = dayOfStart(times.start, repeatZone(master, times.start));
   const movesDay = !day?.equals(dayOfStart(master.start, zone) ?? day);
   const ruleSkips = dateValues(movesDay ? own : [], "EXDATE", zone)
     .filter((value) => sent.has(skipKey(value)))
@@ -1066,11 +1074,12 @@ function withoutOwnSkipAt(
   saved: string[] | undefined
 ): string[] {
   const zone = seriesZoneOf(master);
-  const day = dayOfStart(start, zone);
+  const repeatsIn = repeatZone(master, start);
+  const day = dayOfStart(start, repeatsIn);
   if (!day || day.equals(dayOfStart(master.start, zone) ?? day)) {
     return rule;
   }
-  const at = momentOf(start, repeatZone(master, start));
+  const at = momentOf(start, repeatsIn);
   const onStart = (value: RecurrenceValue) =>
     value.instant
       ? Boolean(at && Temporal.Instant.compare(value.instant, at) === 0)
@@ -1184,7 +1193,7 @@ function seriesChangeRefusal(params: {
         // unless it's the first meeting and the series moves to its day.
         const ownDay = dayOfStart(occurrence.start, zone);
         const first = opensSeries(occurrence, master);
-        const newDay = dayOfStart(times.start, zone);
+        const newDay = dayOfStart(times.start, repeatZone(master, times.start));
         // A first meeting whose day the series takes, or is given, keeps it.
         const firstDayKept =
           first &&
@@ -3217,12 +3226,14 @@ export function makeGoogleCalendarService(
         })
       );
       if (Exit.isFailure(cut)) {
-        // A cut Google never answered (a timeout, a dropped connection) may
-        // still go through after it's read back.
+        // A cut Google never answered (a timeout, a dropped connection), or
+        // answered with a server error, may still go through after it's
+        // read back.
         const failure = Cause.findErrorOption(cut.cause);
         const unanswered =
           Option.isSome(failure) &&
-          failure.value.cause instanceof APIConnectionError;
+          (failure.value.cause instanceof APIConnectionError ||
+            failure.value.cause instanceof InternalServerError);
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
         if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;
