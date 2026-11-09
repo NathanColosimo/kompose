@@ -921,7 +921,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         (yield* changesSeriesRecurrence(userId, task, sent));
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
-      const { recurrence: _unchangedPattern, ...withoutPattern } = sent;
+      const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
         task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
       const hasDbUpdates = Object.keys(dbInput).length > 0;
