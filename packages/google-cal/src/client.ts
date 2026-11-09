@@ -1150,6 +1150,27 @@ function keepsCount(master: Event, rule: string[]): boolean {
 }
 
 /**
+ * Whether two recurrences repeat by the same rules, their ends (COUNT,
+ * UNTIL) and skips aside.
+ */
+function sameRepeat(a: string[], b: string[]): boolean {
+  const rules = (recurrence: string[]) =>
+    recurrence
+      .filter((line) => line.startsWith("RRULE:"))
+      .map((line) =>
+        line
+          .slice("RRULE:".length)
+          .split(";")
+          .filter((part) => !END_PART.test(part))
+          .sort()
+          .join(";")
+      )
+      .sort()
+      .join("\n");
+  return rules(a) === rules(b);
+}
+
+/**
  * Where a split's deleted (`cancelled`) and skipped (`skips`) meetings, by
  * original start, stay skipped in the new series (`rule`).
  *
@@ -1182,6 +1203,27 @@ function placeSkips(params: {
   const unskipped = rule.filter((line) => !line.startsWith("EXDATE"));
   const startSlot = slotOf(start, newZone);
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
+  // Kept where it was, with the series' own rule: every meeting keeps its
+  // slot, and each skip stays on its own.
+  const keepsSlots =
+    startSlot === originalStart &&
+    sameRepeat(master.recurrence ?? [], unskipped);
+  // A rule meeting's place in the new series; null for an added one.
+  const placeOf = (slot: string, added: boolean) => {
+    if (added) {
+      return null;
+    }
+    if (keepsSlots) {
+      return slot;
+    }
+    return carriedSlot({
+      master,
+      recurrence: unskipped,
+      slot: inFormOf(slot, start, newZone) ?? slot,
+      splitStart,
+      start,
+    });
+  };
   // Whether a skip whose rule can't be read is one of its meetings.
   const listedMeeting = (slot: string, added: boolean) => {
     // An added day's could be the rule's too.
@@ -1200,15 +1242,7 @@ function placeSkips(params: {
   let unknown = false;
   const placed = [...cancelled, ...params.skips].flatMap((slot) => {
     const added = addsSlot(master.recurrence ?? [], slot, zone);
-    const at = added
-      ? null
-      : carriedSlot({
-          master,
-          recurrence: unskipped,
-          slot: inFormOf(slot, start, newZone) ?? slot,
-          splitStart,
-          start,
-        });
+    const at = placeOf(slot, added);
     const formed = inFormOf(at ?? slot, start, newZone);
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
