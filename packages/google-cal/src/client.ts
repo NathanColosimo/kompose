@@ -1603,14 +1603,16 @@ function placeSkips(params: {
     formed: string | null;
     moment: Temporal.Instant | null;
     ruleMeeting: boolean | null;
-  }) =>
-    skip.formed !== startSlot &&
-    Boolean(
-      skip.ruleMeeting &&
-        skip.at &&
-        skip.moment &&
-        claimsTakenPlace(skip.formed, skip.moment.epochMilliseconds)
-    );
+  }) => {
+    // Only a rule meeting's skip with a place of its own claims it.
+    if (
+      skip.formed === startSlot ||
+      !(skip.ruleMeeting && skip.at && skip.moment)
+    ) {
+      return false;
+    }
+    return claimsTakenPlace(skip.formed, skip.moment.epochMilliseconds);
+  };
   // A place a meeting of the old series still lands at too (two rule days
   // folded into one) is that meeting's: a skip there would cancel it.
   const landsOnLive = (at: string | null, formed: string | null) =>
