@@ -723,9 +723,9 @@ function buildRecurringTaskRows(
 }
 
 /**
- * Whether a "this" update writes the task: a field changes, or the tags of
- * a series occurrence do (that makes it an exception, so a later pattern
- * change keeps it and its tags).
+ * Whether a "this" update writes the task: a field changes, or the edit
+ * sends a series occurrence's tags (that makes it an exception, so a later
+ * pattern change keeps it and its tags).
  */
 function editsThisTask(
   task: TaskSelect,
