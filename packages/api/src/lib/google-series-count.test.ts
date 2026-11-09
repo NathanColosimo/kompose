@@ -842,6 +842,39 @@ describe("a COUNT the user set, through a move to a day its rule doesn't meet", 
   });
 });
 
+describe("a COUNT through a move whose old slot is only an added day", () => {
+  test("isn't raised for the skip: an added day takes no COUNT place", async () => {
+    // Mondays four times from Nov 9 plus an added Nov 16 9:00; from Nov 16,
+    // moved to Sun Nov 15 on Tuesdays twice, the added day kept. The new
+    // rule doesn't meet Mondays, so Nov 16's skip is of the added day.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+        "RDATE:20261116T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2",
+              "RDATE:20261116T140000Z",
+            ],
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2"
+    );
+  });
+});
+
 describe("a COUNT the user changed", () => {
   test("is written as they set it", async () => {
     const five: Event = {

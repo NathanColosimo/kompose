@@ -1928,9 +1928,23 @@ export function makeGoogleCalendarService(
           ruleForStart(counted, master, start, originalStart) ?? counted,
         start,
       });
-      // The moved meeting's skip takes one of a COUNT's places, so the
-      // rest are placed against the COUNT it ends up with.
-      const final = changeCount(counted, moved.length);
+      // The new series' slots, in the zone it repeats in.
+      const newZone = repeatZone(master, start);
+      // The moved meeting's skip takes one of a COUNT's places when the
+      // rule meets there (an added day's takes none), so the rest are
+      // placed against the COUNT it ends up with.
+      const rulePlaces = moved.filter(
+        (place) =>
+          seriesMeetsAt({
+            recurrence: (
+              ruleForStart(counted, master, start, originalStart) ?? counted
+            ).filter((line) => line.startsWith("RRULE:")),
+            seriesZone: newZone,
+            slot: place,
+            start,
+          }) === true
+      );
+      const final = changeCount(counted, rulePlaces.length);
       // Moved to other days, or in a series that meets several times a day
       // (whose times don't follow its start), a skipped or deleted rule
       // meeting after the split stays skipped where the new series meets
@@ -1949,8 +1963,6 @@ export function makeGoogleCalendarService(
           master.recurrence ?? [],
           clockOf(master.start, zone)
         );
-      // The new series' slots, in the zone it repeats in.
-      const newZone = repeatZone(master, start);
       const startSlot = slotOf(start, newZone);
       const split = slotMoment(originalStart, zone);
       const had = new Set(
@@ -2547,9 +2559,10 @@ export function makeGoogleCalendarService(
         occurrences: followingOccurrences({
           changes,
           edited,
-          // A new part that doesn't repeat ends the series there, so later
-          // occurrences go with it, as a delete does.
-          exceptions: repeats(recurrence) ? exceptions.changed : [],
+          // "Repeat: None" ends the series there, so later occurrences go
+          // with it, as a delete does. Otherwise each is carried, or the
+          // save refused if the new part has no place for it.
+          exceptions: edited.recurrence?.length === 0 ? [] : exceptions.changed,
           keptTimes,
           master,
           opened: currentEvent,
