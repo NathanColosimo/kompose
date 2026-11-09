@@ -599,6 +599,8 @@ function endedRepeat(params: {
       lost.push(originalStart);
       continue;
     }
+    // All its own changes, its times too even where the save sets times:
+    // own times the save would override are lost (below).
     const { end, start, ...own } = changesOwnTo(occurrence, master, {}, zone);
     const fields = Object.fromEntries(
       Object.entries(own).filter(([field]) => !(field in params.changes))
@@ -1902,9 +1904,14 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { master, originalStart, start } = params;
       const zone = seriesZoneOf(master);
-      // Added days before the split stay with the old part.
+      // Added days before the split stay with the old part. A rule sent
+      // alone keeps the series' skips, as an Entire series save does.
+      const sent =
+        params.edited && repeats(params.edited)
+          ? withSeriesSkips(params.edited, master)
+          : params.edited;
       const fromSplit = splitAddedDays(
-        params.edited ?? master.recurrence ?? [],
+        sent ?? master.recurrence ?? [],
         originalStart,
         zone,
         "from"
