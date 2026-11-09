@@ -509,13 +509,36 @@ function followingTimes(
   };
 }
 
+/** `start` moved to `day`, at its own time; null when `day` isn't known. */
+function onDay(
+  start: Event["start"],
+  day: Temporal.PlainDate | null,
+  zone: string
+): Event["start"] | null {
+  if (!day) {
+    return null;
+  }
+  if (start.date) {
+    return { date: day.toString() };
+  }
+  const clock = clockOf(start, zone);
+  return clock
+    ? {
+        ...start,
+        dateTime: googleDateTime(
+          day.toZonedDateTime({ plainTime: clock, timeZone: zone })
+        ),
+      }
+    : null;
+}
+
 /**
  * Where a rule's occurrence of `master` at `slot` (an original start)
  * lands in a This and following new series from `splitStart`, starting at
- * `start` with `recurrence`: moved as the split moved (`placeInNewSeries`)
- * when the new series meets there, else where it was when the new series
- * meets there (a rule day that didn't move); null when it meets at
- * neither, or that can't be told.
+ * `start` with `recurrence`: on its own day with the split's change of time
+ * when the new series meets there (a rule day that didn't move), else as
+ * many days on as the split moved (`placeInNewSeries`) when it meets
+ * there; null when it meets at neither, or that can't be told.
  */
 function carriedSlot(params: {
   master: Event;
@@ -528,16 +551,28 @@ function carriedSlot(params: {
   const zone = seriesZoneOf(master);
   const meets = (at: string) =>
     seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
+  // On its own day first, with the split's change of time (a rule day that
+  // didn't move), then as many days on as the split moved.
+  const splitDay = dayOfStart(asStart(params.splitStart), zone);
+  const ownDayStart = onDay(start, splitDay, zone);
+  const ownDay =
+    ownDayStart &&
+    placeInNewSeries({
+      newStart: ownDayStart,
+      originalStart: slot,
+      splitStart: params.splitStart,
+      zone,
+    });
+  if (ownDay && meets(ownDay)) {
+    return ownDay;
+  }
   const moved = placeInNewSeries({
     newStart: start,
     originalStart: slot,
     splitStart: params.splitStart,
     zone,
   });
-  if (moved && meets(moved)) {
-    return moved;
-  }
-  return meets(slot) ? sameForm(slot, start) : null;
+  return moved && meets(moved) ? moved : null;
 }
 
 /**
@@ -583,19 +618,13 @@ function followingOccurrences(params: {
       // rule meeting moves with the series.
       at: addsSlot(master.recurrence ?? [], exception.originalStart, zone)
         ? sameForm(exception.originalStart, start)
-        : (carriedSlot({
+        : carriedSlot({
             master,
             recurrence: params.recurrence,
             slot: exception.originalStart,
             splitStart: originalStart,
             start,
-          }) ??
-          placeInNewSeries({
-            newStart: start,
-            originalStart: exception.originalStart,
-            splitStart: originalStart,
-            zone,
-          })),
+          }),
       changes: changesOwnTo(exception.occurrence, master, changes, zone),
       originalStart: exception.originalStart,
     })),

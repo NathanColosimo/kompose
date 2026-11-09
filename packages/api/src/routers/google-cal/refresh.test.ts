@@ -4,7 +4,11 @@ import { Effect, Exit, Option } from "effect";
 // An in-memory Redis behind the real cache and realtime code, so the test
 // checks what a write leaves cached and who hears about it.
 const store = new Map<string, string>();
-const published: { channel: string; message: unknown }[] = [];
+/** What the realtime code published: a channel and its sync event. */
+const published: {
+  channel: string;
+  message: { payload: { calendarId: string } };
+}[] = [];
 const fakeRedis = {
   del: (...keys: string[]) =>
     Promise.resolve(keys.filter((key) => store.delete(key)).length),
@@ -96,10 +100,7 @@ const cachedAfter = <A, E>(
         events.push(eventId);
       }
     }
-    const told = published.map(
-      ({ message }) =>
-        (message as { payload: { calendarId: string } }).payload.calendarId
-    );
+    const told = published.map(({ message }) => message.payload.calendarId);
     return { events, exit, lists, told };
   }).pipe(Effect.provide(GoogleCalendarCacheService.layer), Effect.runPromise);
 
