@@ -225,6 +225,11 @@ function matches(
   return rule.bySetPos.length === 0 || atSetPosition(rule, start, day);
 }
 
+/** Whether `rule`'s days can be read here: its parts are all ones read. */
+export function canReadRule(rule: string): boolean {
+  return readRule(rule) !== null;
+}
+
 /**
  * Whether `day` is one of `rule`'s days from the series' `start` day; null
  * when the rule has parts not read here. Ignores its time and its end.

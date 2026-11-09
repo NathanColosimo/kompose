@@ -9,7 +9,7 @@ import {
   skipping,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
-import { isRuleDay } from "./rule-days";
+import { canReadRule, isRuleDay } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -50,11 +50,9 @@ import {
   meetsSeveralTimesADay,
   momentOf,
   type RecurrenceValue,
+  SUB_DAILY,
   startInstant,
 } from "./until";
-
-/** A rule that steps by hours, minutes or seconds, read on its own. */
-const SUB_DAILY_RULE = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 
 /** A rule part that ends it: COUNT or UNTIL. */
 const END_PART = /^(?:COUNT|UNTIL)=/;
@@ -102,9 +100,6 @@ function naming(
     : { originalStarts, reason };
 }
 
-/** A day to read a rule's parts on: any day will do. */
-const ANY_DAY = Temporal.PlainDate.from("2026-01-01");
-
 /**
  * `refusal` marked `unsure` when a rule it was read against can't be read
  * here (an exclusion rule, or a day rule with parts not read): what it
@@ -117,9 +112,7 @@ function unsureWhere(
   const unread = recurrence.some(
     (line) =>
       line.startsWith("EXRULE") ||
-      (line.startsWith("RRULE:") &&
-        !SUB_DAILY_RULE.test(line) &&
-        isRuleDay(line, ANY_DAY, ANY_DAY) === null)
+      (line.startsWith("RRULE:") && !SUB_DAILY.test(line) && !canReadRule(line))
   );
   return unread ? { ...refusal, unsure: true } : refusal;
 }
@@ -318,8 +311,8 @@ function timesOnOwnDay(
 /**
  * Whether the series' new times give `occurrence`, changed on its own,
  * all it changed: only its times, to those of the new series' meeting on
- * its day (its date, made all day). Google cancels it when the series' start moves, and that
- * meeting takes its place.
+ * its day (its date, made all day). Google cancels it when the series'
+ * start moves, and that meeting takes its place.
  */
 function newTimesKeep(params: {
   /** The fields the edit changed, which the new series' meeting takes. */
@@ -835,11 +828,6 @@ function movesSeveralADay(
   );
 }
 
-/** A slot's moment (a date's start, in `zone`); null if it doesn't parse. */
-function slotMoment(slot: string, zone: string): Temporal.Instant | null {
-  return momentOf(asStart(slot), zone);
-}
-
 /**
  * `master`'s exceptions in Google's listing: the cancelled ones' original
  * starts, and the moved or edited ones.
@@ -853,8 +841,7 @@ function sortExceptions(events: SeriesListing[], master: Event) {
       event.recurringEventId === master.id && event.originalStartTime
         ? slotOf(event.originalStartTime, zone)
         : null;
-    const moment = originalStart && slotMoment(originalStart, zone);
-    if (!(originalStart && moment)) {
+    if (!originalStart) {
       continue;
     }
     if (event.status === "cancelled" || !("start" in event)) {
