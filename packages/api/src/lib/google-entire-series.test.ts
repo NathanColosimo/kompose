@@ -1875,6 +1875,30 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("a field Google lists at its default on one occurrence isn't a change", async () => {
+    // Nov 23 comes back with visibility and transparency at their
+    // defaults, which the series leaves out; the series moves to 10:00.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        guestsCanInviteOthers: true,
+        transparency: "opaque",
+        visibility: "default",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", nov16, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+
   test("a reminder set on one occurrence is a change of its own", async () => {
     // Nov 23 has only its own five-minute reminder; the series moves to
     // 10:00, which Google would cancel it for.
