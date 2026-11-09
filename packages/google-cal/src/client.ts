@@ -1373,9 +1373,10 @@ function placeSkips(params: {
   // Each rule meeting once, however many skips it has.
   const lostPlaces = new Set<number>();
   // Each place's first rule meeting, by moment: another one there shares
-  // its place, and frees none of its own.
+  // its place, and frees none of its own. Claiming records the first, so
+  // each skip claims its place once, in the order they're placed.
   const takenBy = new Map<string, number>();
-  const sharesPlace = (formed: string | null, moment: number) => {
+  const claimsTakenPlace = (formed: string | null, moment: number) => {
     if (!formed) {
       return false;
     }
@@ -1413,7 +1414,7 @@ function placeSkips(params: {
       skip.ruleMeeting &&
         skip.at &&
         skip.moment &&
-        sharesPlace(skip.formed, skip.moment.epochMilliseconds)
+        claimsTakenPlace(skip.formed, skip.moment.epochMilliseconds)
     );
   // Left out of a COUNT read from Google's list: it holds no place.
   const leftOutAt = (moment: Temporal.Instant | null) =>
@@ -2280,14 +2281,18 @@ export function makeGoogleCalendarService(
     cancelled: string[];
     edited: string[] | undefined;
     master: Event;
-    /** Whether `edited` gives the series a new repeat (`givesNewRepeat`). */
-    newRepeat: boolean;
     originalStart: string;
     start: Event["start"];
   }) =>
     Effect.gen(function* () {
       const { calendarId, master, originalStart, start } = params;
       const zone = seriesZoneOf(master);
+      const isNewRepeat = givesNewRepeat({
+        from: asStart(originalStart),
+        master,
+        saved: params.edited,
+        start,
+      });
       // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
         savedRule(params.edited, master, params.cancelled),
@@ -2304,7 +2309,7 @@ export function makeGoogleCalendarService(
       // nothing else.
       const keeps = keepsCount({
         master,
-        newRepeat: params.newRepeat,
+        newRepeat: isNewRepeat,
         rule: fromSplit,
       });
       const carried = yield* carriedCount({
@@ -2404,7 +2409,7 @@ export function makeGoogleCalendarService(
       // sets there is refused.
       // Its own rule however it's written (parts reordered, its day rebuilt
       // for a day move): not a new end.
-      const ownRule = !params.newRepeat;
+      const ownRule = !isNewRepeat;
       if (ownRule) {
         const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
         return repeats(added) ? added : [];
@@ -2977,7 +2982,6 @@ export function makeGoogleCalendarService(
         cancelled: exceptions.cancelled,
         edited: edited.recurrence,
         master,
-        newRepeat: isNewRepeat,
         originalStart,
         start: times.start,
       });
@@ -3298,7 +3302,6 @@ export function makeGoogleCalendarService(
         cancelled: exceptions.cancelled,
         edited: undefined,
         master,
-        newRepeat: false,
         originalStart,
         start: slot.start,
       });
