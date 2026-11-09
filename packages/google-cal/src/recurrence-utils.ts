@@ -264,15 +264,16 @@ export function skipping(
 }
 
 /**
- * The following part's rule with its COUNT less the `used` occurrences
- * before the split (a five-time series split at its third runs three).
+ * `recurrence` with its rule's COUNT changed `by` that many: less the
+ * occurrences before a split (a five-time series split at its third runs
+ * three), or more for skips added within it.
  */
-function withRemainingCount(recurrence: string[], used: number): string[] {
+export function changeCount(recurrence: string[], by: number): string[] {
   return recurrence.map((line) => {
     const count = ruleCount(line);
     return count === null
       ? line
-      : line.replace(COUNT_PART, `$1COUNT=${Math.max(1, count - used)}`);
+      : line.replace(COUNT_PART, `$1COUNT=${count + by}`);
   });
 }
 
@@ -762,14 +763,14 @@ export function carryCountFromList(
     ? positionsIn((value) => fromStartToSplit(value, params))
     : null;
   if (before !== null) {
-    return withRemainingCount(recurrence, before);
+    return changeCount(recurrence, -before);
   }
   const left = positionsIn(
     (value) => !beforeSplit(value, originalStart, seriesZone)
   );
   return left === null || left === 0
     ? null
-    : withRemainingCount(recurrence, count - left);
+    : changeCount(recurrence, left - count);
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
@@ -901,7 +902,7 @@ export function carryCountExactly(
     return null;
   }
   const before = positionsBefore({ rule, seriesStart, seriesZone, split });
-  return before === null ? null : withRemainingCount(recurrence, before);
+  return before === null ? null : changeCount(recurrence, -before);
 }
 
 /** The COUNT a series' rule ends after, if it has one. */

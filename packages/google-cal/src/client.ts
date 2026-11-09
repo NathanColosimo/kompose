@@ -6,6 +6,7 @@ import {
   addsSlot,
   carryCountExactly,
   carryCountFromList,
+  changeCount,
   countOf,
   deleteFromListed,
   endsBeforeStart,
@@ -556,12 +557,48 @@ function timesOnOwnDay(
 }
 
 /**
+ * Whether the series' new times give `occurrence`, changed on its own,
+ * all it changed: only its times, to those of the new series' meeting on
+ * its day. Google cancels it when the series' start moves, and that
+ * meeting takes its place.
+ */
+function newTimesKeep(params: {
+  master: Event;
+  occurrence: Event;
+  originalStart: string;
+  recurrence: string[];
+  times: { end: Event["end"]; start: Event["start"] };
+}): boolean {
+  const { master, occurrence, originalStart, recurrence, times } = params;
+  const zone = seriesZoneOf(master);
+  const day = dayOfStart(asStart(originalStart), zone);
+  const clock = clockOf(times.start, zone);
+  if (!(day && clock && master.start.dateTime)) {
+    return false;
+  }
+  const slot = googleDateTime(
+    day.toZonedDateTime({ plainTime: clock, timeZone: zone })
+  );
+  return (
+    seriesMeetsAt({
+      recurrence,
+      seriesZone: zone,
+      slot,
+      start: times.start,
+    }) === true &&
+    Object.keys(ownChanges(occurrence, master, seriesSlotAt(times, slot), zone))
+      .length === 0
+  );
+}
+
+/**
  * Why an Entire series write would cost the occurrences changed on their
  * own (`changed`) their changes; null if it wouldn't. Google ties each to
- * its original slot: it cancels all of them when the series' start moves,
- * and each whose slot the new rule drops. A length-only change keeps them
- * but gives each the new length (the opened one takes the edit's, and one
- * that already has it loses nothing, so neither is counted).
+ * its original slot: it cancels all of them when the series' start moves
+ * (one the new series meets at its own times loses nothing), and each
+ * whose slot the new rule drops. A length-only change keeps them but gives
+ * each the new length (the opened one takes the edit's, and one that
+ * already has it loses nothing, so neither is counted).
  */
 function seriesChangeRefusal(params: {
   changed: { occurrence: Event; originalStart: string }[];
@@ -584,17 +621,26 @@ function seriesChangeRefusal(params: {
   });
   const movesStart = !sameTime(times.start, master.start, zone);
   const lost = changed
-    .filter(
-      ({ originalStart }) =>
-        movesStart ||
-        (movesSlots &&
-          seriesMeetsAt({
-            recurrence,
-            seriesZone: repeatZone(master, times.start),
-            slot: originalStart,
-            start: times.start,
-          }) !== true)
-    )
+    .filter(({ occurrence, originalStart }) => {
+      if (movesStart) {
+        return !newTimesKeep({
+          master,
+          occurrence,
+          originalStart,
+          recurrence,
+          times,
+        });
+      }
+      return (
+        movesSlots &&
+        seriesMeetsAt({
+          recurrence,
+          seriesZone: repeatZone(master, times.start),
+          slot: originalStart,
+          start: times.start,
+        }) !== true
+      );
+    })
     .map(({ originalStart }) => originalStart);
   if (lost.length > 0) {
     return naming("dropsChangedOccurrences", lost, seriesOnly);
@@ -821,6 +867,37 @@ function carriedSlot(params: {
     zone,
   });
   return moved && meets(moved) ? moved : null;
+}
+
+/**
+ * The split's own slot, when the new series still meets there and starts
+ * on a day its rules don't meet (a Monday moved to Sunday, Mondays kept).
+ * Google always meets at a series' start, so that start is a meeting of
+ * its own, and the rule's meeting at the split, the one moved to it, would
+ * be there twice.
+ */
+function movedOffRule(params: {
+  originalStart: string;
+  recurrence: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] {
+  const { originalStart, recurrence, start, zone } = params;
+  const day = dayOfStart(start, zone);
+  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
+  const offRule =
+    day !== null &&
+    rules.length > 0 &&
+    rules.every((rule) => isRuleDay(rule, day, day) === false);
+  return offRule &&
+    seriesMeetsAt({
+      recurrence,
+      seriesZone: zone,
+      slot: originalStart,
+      start,
+    }) === true
+    ? [originalStart]
+    : [];
 }
 
 /**
@@ -1551,11 +1628,10 @@ export function makeGoogleCalendarService(
    * The rule a split's new part repeats with: `edited`, or the series'.
    * An unchanged COUNT carries on (a five-time series split at its third
    * runs three more, not five). Occurrences `cancelled` after the split
-   * stay skipped: on their own days, or, when the save moves the day, where
-   * the new series meets in their place, as changed ones are put back
-   * (`placeInNewSeries`); an added one keeps its slot. Refuses, before any
-   * write, if the COUNT can't be carried or if the rule ends before
-   * `start`.
+   * stay skipped where the new series meets in their place, as changed
+   * ones are put back (`carriedSlot`); an added one keeps its slot.
+   * Refuses, before any write, if the COUNT can't be carried or if the
+   * rule ends before `start`.
    */
   const newSeriesRecurrence = (params: {
     calendarId: string;
@@ -1574,31 +1650,37 @@ export function makeGoogleCalendarService(
         seriesZoneOf(master),
         "from"
       );
-      const counted = yield* carriedCount(
+      const counted = yield* carriedCount({
         calendarId,
         master,
-        fromSplit,
-        originalStart
-      );
+        originalStart,
+        rule: fromSplit,
+      });
       if (!counted) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const zone = seriesZoneOf(master);
+      // Moved to other days, or in a series that meets several times a day
+      // (whose times don't follow its start), a deleted rule meeting's skip
+      // goes where the new series meets in its place, as a changed one is
+      // put back (read against the rule as it's written for the new start,
+      // its skips aside: a place already skipped is still its place).
+      // Otherwise `lineUpRule` moves it to the new time on its own day. The
+      // new series' start is the meeting the user just saved, so no skip
+      // lands on it.
       const fromDay = dayOfStart(asStart(originalStart), zone);
       const toDay = dayOfStart(start, zone);
-      const movesDay = !(fromDay && toDay && fromDay.equals(toDay));
-      // Moved to other days, a deleted rule meeting's skip goes where the
-      // new series meets in its place (read against the rule as it's
-      // written for the new start, its skips aside: a place already skipped
-      // is still its place); one already at its new place isn't lined up
-      // again.
+      const byPlace =
+        !(fromDay && toDay && fromDay.equals(toDay)) ||
+        meetsSeveralTimesADay(
+          master.recurrence ?? [],
+          clockOf(master.start, zone)
+        );
       const writtenRule = (
         ruleForStart(counted, master, start, originalStart) ?? counted
       ).filter((line) => !line.startsWith("EXDATE"));
-      // The new series' start is the meeting the user just saved: no skip
-      // lands on it.
       const startSlot = slotOf(start, zone);
-      const placed = movesDay
+      const placed = byPlace
         ? params.cancelled
             .map((slot) =>
               addsSlot(master.recurrence ?? [], slot, zone)
@@ -1613,15 +1695,22 @@ export function makeGoogleCalendarService(
             )
             .filter((slot) => slot !== startSlot)
         : [];
+      const moved = movedOffRule({
+        originalStart,
+        recurrence: counted,
+        start,
+        zone,
+      });
+      // The moved meeting's skip takes one of a COUNT's places.
       const recurrence = skipping(
         lineUpRule({
-          cancelled: movesDay ? [] : params.cancelled,
+          cancelled: byPlace ? [] : params.cancelled,
           master,
-          rule: counted,
+          rule: changeCount(counted, moved.length),
           splitAt: originalStart,
           start,
         }),
-        placed,
+        [...placed, ...moved],
         zone
       );
       const ends = repeatZone(master, start);
@@ -1637,13 +1726,14 @@ export function makeGoogleCalendarService(
    * changed the COUNT: a changed COUNT is the new part's own number of
    * meetings. Null if what's left can't be known.
    */
-  const carriedCount = (
-    calendarId: string,
-    master: Event,
-    rule: string[],
-    originalStart: string
-  ) =>
+  const carriedCount = (params: {
+    calendarId: string;
+    master: Event;
+    originalStart: string;
+    rule: string[];
+  }) =>
     Effect.gen(function* () {
+      const { calendarId, master, originalStart, rule } = params;
       const count = countOf(master.recurrence);
       if (count === undefined || countOf(rule) !== count) {
         return rule;

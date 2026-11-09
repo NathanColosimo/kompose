@@ -19,13 +19,18 @@ import {
 
 // A COUNT carried on through a split: exactly the meetings left.
 
-/** A split's COUNT as the server carries it: walked, or from Google's list. */
-const carryCount = (
+/**
+ * A split's COUNT both ways the server can carry it: walked from the rule,
+ * and counted from Google's list of the series' meetings (`starts`). Null
+ * where that way can't tell.
+ */
+const carried = (
   recurrence: string[],
   params: Parameters<typeof carryCountFromList>[1]
-) =>
-  carryCountExactly(recurrence, params) ??
-  carryCountFromList(recurrence, params);
+) => ({
+  listed: carryCountFromList(recurrence, params),
+  walked: carryCountExactly(recurrence, params),
+});
 
 describe("a COUNT too long to walk", () => {
   test("a COUNT past fifty years is carried from Google's list, not a partial walk", async () => {
@@ -106,6 +111,22 @@ describe("a COUNT carried from Google's list", () => {
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;COUNT=97",
       "EXDATE:20271109T090000Z",
+    ]);
+  });
+
+  test("counts before the split without a skip from before the series began", async () => {
+    // The same 2027 skip, and a Dec 1, 2031 skip after the split that the
+    // list can't tell from a meeting: counted from the series' start to
+    // the split, where only 2028 is used.
+    const { google, rename } = yearly([
+      "EXDATE:20271109T090000Z",
+      "EXDATE:20311201T090000Z",
+    ]);
+    expect(Exit.isSuccess(await run(rename(2029)))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;COUNT=97",
+      "EXDATE:20271109T090000Z",
+      "EXDATE:20311201T090000Z",
     ]);
   });
 
@@ -211,7 +232,7 @@ describe("carrying a COUNT through a split", () => {
     // Daily COUNT=5 from Nov 1, Nov 2 skipped, split at Nov 3: Google lists
     // Nov 1, 3, 4, 5; two positions are used before the split, three left.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
           "RRULE:FREQ=DAILY;COUNT=5",
           "EXDATE;VALUE=DATE:20261102",
@@ -221,13 +242,16 @@ describe("carrying a COUNT through a split", () => {
         seriesZone: "America/New_York",
         starts: ["2026-11-01", "2026-11-03", "2026-11-04", "2026-11-05"],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("counts a skipped day Google also lists only once", () => {
     // The same series, with Google listing the skipped Nov 2 as cancelled.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
           "RRULE:FREQ=DAILY;COUNT=5",
           "EXDATE;VALUE=DATE:20261102",
@@ -243,14 +267,17 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-05",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("carries a COUNT on exactly with added days", () => {
     // Daily COUNT=5 from Nov 1 plus an RDATE on Nov 2 (a rule day too) and
     // Nov 20: walked, the rule's days are Nov 1–5, three from Nov 3.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261102,20261120",
@@ -267,7 +294,7 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-20",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({ listed: null, walked: ["RRULE:FREQ=DAILY;COUNT=3"] });
   });
 
   // Google's own date-times: New York's offset is negative.
@@ -276,26 +303,32 @@ describe("carrying a COUNT through a split", () => {
 
   test("counts timed occurrences written with a negative offset", () => {
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
         originalStart: nyDaily(3),
         seriesStart: nyDaily(1),
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5].map((day) => nyDaily(day)),
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("counts starts written with fractional seconds", () => {
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
         originalStart: "2026-11-03T14:00:00.000Z",
         seriesStart: "2026-11-01T14:00:00.000Z",
         seriesZone: "America/New_York",
         starts: [1, 2, 3, 4, 5].map((day) => `2026-11-0${day}T14:00:00.000Z`),
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("cuts a rule with a list of times where Google ends it", () => {
@@ -336,7 +369,7 @@ describe("carrying a COUNT through a split", () => {
     };
     expect(carryCountExactly([rule], params)).toBeNull();
     expect(
-      carryCount([rule], {
+      carried([rule], {
         ...params,
         starts: [
           "2026-11-09T09:00:00-05:00",
@@ -345,7 +378,7 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-12T08:00:00-05:00",
         ],
       })
-    ).toEqual([rule]);
+    ).toEqual({ listed: [rule], walked: null });
   });
 
   test("leaves a count to Google's list only when a counted day before the split skips its time", () => {
@@ -406,18 +439,21 @@ describe("carrying a COUNT through a split", () => {
       starts: ["2026-11-09", "2026-11-17", "2027-11-15", "2028-11-13"],
     };
     expect(
-      carryCount([rule], {
+      carried([rule], {
         ...params,
         masterRecurrence: [rule, "RDATE;VALUE=DATE:20261117"],
       })
-    ).toEqual(["RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2"],
+      walked: null,
+    });
     expect(
-      carryCount([rule], {
+      carried([rule], {
         ...params,
         masterRecurrence: [rule, "RDATE;VALUE=DATE:20261117,20281120"],
         starts: [...params.starts, "2028-11-20"],
       })
-    ).toBeNull();
+    ).toEqual({ listed: null, walked: null });
   });
 
   test("carries a COUNT it can't walk when its added days come after the split", () => {
@@ -425,21 +461,24 @@ describe("carrying a COUNT through a split", () => {
     // Google lists before the split are all the rule's.
     const rule = "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=3";
     expect(
-      carryCount([rule], {
+      carried([rule], {
         masterRecurrence: [rule, "RDATE;VALUE=DATE:20271120"],
         originalStart: "2027-11-15",
         seriesStart: "2026-11-09",
         seriesZone: "America/New_York",
         starts: ["2026-11-09", "2027-11-15", "2027-11-20", "2028-11-13"],
       })
-    ).toEqual(["RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2"],
+      walked: null,
+    });
   });
 
   test("keeps an added day that's also the rule's last day", () => {
     // Daily COUNT=5 Nov 1–5 with an RDATE on Nov 5 (a rule day too), split
     // at Nov 3 and moved to Nov 4: the new part runs Nov 4–6.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261105",
@@ -455,14 +494,17 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-05",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("tells an added day that's a rule day from an earlier extra one", () => {
     // Weekly Mon/Wed COUNT=4 (Nov 2, 4, 9, 11) plus an added Tue Nov 3 and
     // an added Nov 11 that's also a rule day, split at Nov 4: three left.
     expect(
-      carryCount(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4"], {
+      carried(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4"], {
         masterRecurrence: [
           "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=4",
           "RDATE;VALUE=DATE:20261103,20261111",
@@ -478,10 +520,13 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-11",
         ],
       })
-    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=3"]);
+    ).toEqual({
+      listed: null,
+      walked: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=3"],
+    });
     // A make-up day before the series and an added rule day.
     expect(
-      carryCount(["RRULE:FREQ=DAILY;COUNT=5"], {
+      carried(["RRULE:FREQ=DAILY;COUNT=5"], {
         masterRecurrence: [
           "RRULE:FREQ=DAILY;COUNT=5",
           "RDATE;VALUE=DATE:20261030,20261105",
@@ -498,28 +543,34 @@ describe("carrying a COUNT through a split", () => {
           "2026-11-05",
         ],
       })
-    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=DAILY;COUNT=3"],
+      walked: ["RRULE:FREQ=DAILY;COUNT=3"],
+    });
   });
 
   test("counts a first start that isn't a rule day as the first", () => {
     // Weekly on Mondays, first start Sun Nov 1 (made elsewhere): Google
     // meets Nov 1, 2, 9; split at Nov 9 leaves one.
     expect(
-      carryCount(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"], {
+      carried(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"], {
         masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3"],
         originalStart: "2026-11-09",
         seriesStart: "2026-11-01",
         seriesZone: "America/New_York",
         starts: ["2026-11-01", "2026-11-02", "2026-11-09"],
       })
-    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
+    ).toEqual({
+      listed: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"],
+      walked: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"],
+    });
   });
 
   test("carries a weekly COUNT exactly onto new days, with an added rule day", () => {
     // Mondays Nov 2, 9, 16 (COUNT=3) plus added Nov 3 and Nov 16, split at
     // Nov 9 and moved to Tuesdays: two left (Nov 10, 17).
     expect(
-      carryCount(["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=3"], {
+      carried(["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=3"], {
         masterRecurrence: [
           "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
           "RDATE;VALUE=DATE:20261103,20261116",
@@ -529,7 +580,7 @@ describe("carrying a COUNT through a split", () => {
         seriesZone: "America/New_York",
         starts: ["2026-11-02", "2026-11-03", "2026-11-09", "2026-11-16"],
       })
-    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2"]);
+    ).toEqual({ listed: null, walked: ["RRULE:FREQ=WEEKLY;BYDAY=TU;COUNT=2"] });
   });
 
   test("walks a first-Monday-of-the-month rule (BYDAY with BYMONTHDAY)", () => {
@@ -598,6 +649,34 @@ describe("a COUNT carried by a move to another calendar", () => {
     ).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+    ]);
+  });
+});
+
+describe("a COUNT through a move to a day its rule doesn't meet", () => {
+  test("runs the meetings left, the moved one's old slot skipped", async () => {
+    // Mondays four times from Nov 9; from Nov 16, moved to Sun Nov 15 with
+    // the Monday rule kept. The new series meets Sun 15, Nov 23 and Nov 30:
+    // Mon 16 is skipped, and takes one of the COUNT's places.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            recurrence: series.recurrence,
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "EXDATE:20261116T140000Z",
     ]);
   });
 });

@@ -9,12 +9,14 @@ import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
 /**
  * Why a series write is refused, before anything changes, with no
- * occurrences to name. `endsBeforeStart`, `deleteFromAddedOccurrence` and
- * `countUnknown` stay because no write through Google's API does what was
- * asked safely. `severalRules`, `addedOccurrence` and `severalTimesADay`
- * are refused for good: only a series made in another app has several
- * rules or added meetings (Kompose writes one rule and no RDATE), and
- * Kompose doesn't write those shapes.
+ * occurrences to name. `endsBeforeStart` and `deleteFromAddedOccurrence`
+ * stay because no write through Google's API does what was asked safely;
+ * `countUnknown` because the only one that keeps its meetings would end
+ * the series on a date, not after the set number of times the user chose.
+ * `severalRules`, `addedOccurrence` and `severalTimesADay` are refused for
+ * good: only a series made in another app has several rules or added
+ * meetings (Kompose writes one rule and no RDATE), and Kompose doesn't
+ * write those shapes.
  */
 export const PLAIN_REFUSALS = [
   // This and following in a series with several rules (or an exclusion
@@ -33,9 +35,9 @@ export const PLAIN_REFUSALS = [
   "deleteFromAddedOccurrence",
   // A kept COUNT whose meetings left can't be told: the rule can't be
   // walked, and Google's list can't tell a skip or an added day from one
-  // of the rule's own on either side of the split. (An UNTIL at the last
-  // meeting Google lists would end it right, but the series would no
-  // longer end after a set number of times, as the user set it.)
+  // of the rule's own on either side of the split. An UNTIL at the last
+  // meeting Google lists would keep the meetings, but the series would no
+  // longer end after a set number of times, as the user set it.
   "countUnknown",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
