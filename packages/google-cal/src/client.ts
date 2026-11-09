@@ -1229,13 +1229,12 @@ function keepsCount(params: {
  * Whether two recurrences repeat by the same rules, their ends (COUNT,
  * UNTIL) and skips aside.
  */
-function sameRepeat(a: string[], b: string[]): boolean {
+function sameRepeat(a: string[], b: string[], zone: string): boolean {
   const rules = (recurrence: string[]) =>
-    recurrence
-      .filter((line) => line.startsWith("RRULE:"))
-      .map((line) => withoutEnd(line).split(";").sort().join(";"))
-      .sort()
-      .join("\n");
+    recurrenceValues(
+      recurrence.filter((line) => line.startsWith("RRULE:")).map(withoutEnd),
+      zone
+    );
   return rules(a) === rules(b);
 }
 
@@ -1281,7 +1280,7 @@ function placeSkips(params: {
   // slot, and each skip stays on its own.
   const keepsSlots =
     startSlot === originalStart &&
-    sameRepeat(master.recurrence ?? [], unskipped);
+    sameRepeat(master.recurrence ?? [], unskipped, zone);
   // A rule meeting's place in the new series; null for an added one.
   const placeOf = (slot: string, added: boolean) => {
     if (added) {
