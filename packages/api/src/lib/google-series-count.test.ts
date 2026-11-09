@@ -668,6 +668,23 @@ describe("carrying a COUNT through a split", () => {
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9;COUNT=2"]);
   });
 
+  test("counts from the split on when Google's list finds the COUNT used up before it", () => {
+    // From Sun Nov 8, Mondays three times; Google lists Nov 8, 9, 16 and 23
+    // (it didn't count the Sunday start). Split at Nov 23: one left.
+    const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3";
+    expect(
+      carryCountFromList([rule], {
+        masterRecurrence: [rule],
+        originalStart: "2026-11-23T09:00:00-05:00",
+        seriesStart: "2026-11-08T09:00:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [8, 9, 16, 23].map(
+          (day) => `2026-11-${String(day).padStart(2, "0")}T09:00:00-05:00`
+        ),
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"]);
+  });
+
   test("leaves a COUNT the walk finds used up before the split to Google's list", () => {
     // Mondays three times from Nov 30 end Dec 14; a split at Jan 4 means
     // the walk and Google disagree.
@@ -795,6 +812,33 @@ describe("a COUNT through a move to a day its rule doesn't meet, with more", () 
       recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=1"],
       start: { dateTime: "2026-11-29T10:00:00-05:00" },
     });
+  });
+});
+
+describe("a COUNT the user set, through a move to a day its rule doesn't meet", () => {
+  test("takes one more place for the moved meeting's skip", async () => {
+    // Mondays four times from Nov 9; from Nov 16, set to twice and moved to
+    // Sun Nov 15, the Monday rule kept: Sun 15 and Mon 23, Mon 16 skipped.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2"],
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=3",
+      "EXDATE:20261116T140000Z",
+    ]);
   });
 });
 
