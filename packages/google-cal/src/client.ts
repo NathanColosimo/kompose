@@ -1620,7 +1620,7 @@ type CountFromList = Pick<
  * series (`rule`, written for its start) meets in their place, as a
  * changed one is put back, in the new start's form (made all day or
  * timed, by day). None lands on the new start, the meeting just saved,
- * or on an added meeting the new series keeps. `ontoStart` lists, by
+ * or on an added meeting the new series keeps. `placesLost` lists, by
  * moment, the rule meetings (`ruleMeetingOf`) that would land on the start,
  * have no meeting of the new series in their place, or share another's:
  * each frees no COUNT position. Null when one's can't be told.
@@ -1634,7 +1634,7 @@ function placeByDay(params: {
   rule: string[];
   slots: string[];
   start: Event["start"];
-}): { ontoStart: number[] | null; placed: string[]; ruleSkips: string[] } {
+}): { placesLost: number[] | null; placed: string[]; ruleSkips: string[] } {
   const { master, originalStart, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
@@ -1642,7 +1642,7 @@ function placeByDay(params: {
   // A place already skipped is still its place.
   const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
-  const ontoStart: number[] = [];
+  const placesLost: number[] = [];
   // Each place's first rule meeting, by moment: another one there shares
   // its place, and frees none of its own. Claiming records the first, so
   // each skip claims its place once, in the order they're placed.
@@ -1699,7 +1699,7 @@ function placeByDay(params: {
         }) === null;
       unknown ||= meeting === null || placeUnknown;
       if (meeting) {
-        ontoStart.push(moment.epochMilliseconds);
+        placesLost.push(moment.epochMilliseconds);
       }
     } else if (formed && !uncounted) {
       ruleSkips.add(formed);
@@ -1709,7 +1709,7 @@ function placeByDay(params: {
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
   return {
-    ontoStart: unknown ? null : ontoStart,
+    placesLost: unknown ? null : placesLost,
     placed,
     ruleSkips: [...ruleSkips],
   };
@@ -1874,12 +1874,14 @@ function addedOntoStart(params: {
 }
 
 /**
- * The COUNT places a split's new start takes from a kept COUNT (`keeps`):
- * one for each rule meeting skipped there (`byDay`, `added`: by moment,
- * once however many skips it has). None for a COUNT the user set; null
- * when one's can't be told.
+ * How many places a kept COUNT (`keeps`) loses to skips that free none:
+ * one for each rule meeting skipped on the new start, with no place in
+ * the new series, or sharing another's (`byDay`), or an added day on the
+ * new start that is a rule meeting too (`added`); by moment, once however
+ * many skips it has. None for a COUNT the user set; null when one's can't
+ * be told.
  */
-function placesOnStart(params: {
+function countPlacesLost(params: {
   added: number[] | null;
   byDay: number[] | null;
   keeps: boolean;
@@ -2756,7 +2758,7 @@ export function makeGoogleCalendarService(
       // The new part's COUNT, when it keeps the series': less the places
       // before the split (`carriedCount`), plus one for a moved meeting's
       // skip (`moved`), less one for each skip with no place of its own in
-      // the new series (`placesOnStart`) and each that falls past its end
+      // the new series (`countPlacesLost`) and each that falls past its end
       // (`lowerCount`). A COUNT the user set, or one with a new
       // repeat, is theirs, plus one for a moved meeting's skip and less
       // nothing else.
@@ -2871,8 +2873,8 @@ export function makeGoogleCalendarService(
             start,
           })
         : {
-            ontoStart: [],
             placed: [],
+            placesLost: [],
             // Kept on their days, skips go to the new time there.
             ruleSkips: onOwnDays({
               master,
@@ -2882,22 +2884,22 @@ export function makeGoogleCalendarService(
             }),
           };
       const placed = byDay.placed;
-      const ontoStart = placesOnStart({
+      const placesLost = countPlacesLost({
         added: addedOntoStart({
           cancelled: params.cancelled.filter(isAdded),
           master,
           start,
         }),
-        byDay: byDay.ontoStart,
+        byDay: byDay.placesLost,
         keeps,
       });
       const lowered =
-        ontoStart === null
+        placesLost === null
           ? null
           : lowerCount({
               keeps,
               master,
-              places: ontoStart,
+              places: placesLost,
               rule: final,
               ruleSkips: byDay.ruleSkips,
               splitAt: originalStart,
