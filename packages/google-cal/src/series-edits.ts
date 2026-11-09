@@ -9,8 +9,9 @@ import { lengthMs, startInstant } from "./until";
 
 /**
  * Why a series write is refused, before anything changes, with no
- * occurrences to name. `severalTimesADay` has a safe write, which a later
- * change adds.
+ * occurrences to name. `severalTimesADay` is refused for good: only a
+ * series made in another app has several rules (Kompose writes one), and
+ * Kompose doesn't write that shape.
  */
 export const PLAIN_REFUSALS = [
   // A new time for an entire series that meets several times a day: its
