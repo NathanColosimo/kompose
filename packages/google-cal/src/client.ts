@@ -5,6 +5,7 @@ import { GoogleCalendar as GoogleCalendarClient } from "./api-client";
 import {
   APIConnectionError,
   ConflictError,
+  InternalServerError,
   NotFoundError,
 } from "./api-client/core/error";
 import {
@@ -196,8 +197,8 @@ function refused(refusal: SeriesRefusal): GoogleApiError {
 
 /**
  * Refuses "This and following" where a new series can't start: at an
- * added meeting, or in a series with several rules (the apps don't offer
- * it there either). Null when the split is fine.
+ * added meeting, or in a series with several rules. Null when the split
+ * is fine.
  */
 function splitBlockedError(
   master: Event,
@@ -2393,12 +2394,14 @@ export function makeGoogleCalendarService(
         })
       );
       if (Exit.isFailure(cut)) {
-        // A cut Google never answered (a timeout, a dropped connection) may
-        // still go through after it's read back.
+        // A cut Google never answered (a timeout, a dropped connection), or
+        // answered with a server error, may still go through after it's
+        // read back.
         const failure = Cause.findErrorOption(cut.cause);
         const unanswered =
           Option.isSome(failure) &&
-          failure.value.cause instanceof APIConnectionError;
+          (failure.value.cause instanceof APIConnectionError ||
+            failure.value.cause instanceof InternalServerError);
         const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
         if (outcome === "unchanged" && !unanswered) {
           yield* discardNew;
