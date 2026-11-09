@@ -16,11 +16,6 @@ import {
   EventSchema,
   type RecurrenceScope,
 } from "./schema";
-import {
-  NAMING_REFUSALS,
-  PLAIN_REFUSALS,
-  refusalMessage,
-} from "./series-edits";
 
 interface GoogleWatchChannelInput {
   address: string;
@@ -297,42 +292,19 @@ export class GoogleCalendar extends Context.Service<
 
 // -- Errors --
 
-const SeriesRefusalSchema = Schema.Union([
-  Schema.Struct({ reason: Schema.Literals(PLAIN_REFUSALS) }),
-  Schema.Struct({
-    originalStarts: Schema.Array(Schema.String),
-    reason: Schema.Literals(NAMING_REFUSALS),
-    seriesOnly: Schema.optional(Schema.Literal(true)),
-  }),
-]);
-
 export class GoogleApiError extends Schema.TaggedError<GoogleApiError>()(
   "GoogleApiError",
   {
     cause: Schema.Unknown,
     message: Schema.optional(Schema.String),
-    /**
-     * A write Kompose won't make to a series, refused before anything
-     * changed: it won't work on a retry either.
-     */
-    refusal: Schema.optional(SeriesRefusalSchema),
   }
 ) {
-  /**
-   * What the API sends the client; `cause` stays on the server. A
-   * refusal's `data` says which, for the client to word.
-   */
+  /** What the API sends the client; `cause` stays on the server. */
   get publicError() {
-    return this.refusal
-      ? ({
-          code: "BAD_REQUEST",
-          data: this.refusal,
-          message: refusalMessage(this.refusal),
-        } as const)
-      : ({
-          code: "BAD_GATEWAY",
-          message: "Google Calendar request failed. Try again.",
-        } as const);
+    return {
+      code: "BAD_GATEWAY",
+      message: "Google Calendar request failed. Try again.",
+    } as const;
   }
 }
 

@@ -4,8 +4,7 @@
   "exports": {
     "./client": "./src/client.ts",
     "./recurrence-utils": "./src/recurrence-utils.ts",
-    "./schema": "./src/schema.ts",
-    "./series-edits": "./src/series-edits.ts"
+    "./schema": "./src/schema.ts"
   },
   "scripts": {
     "lint": "biome check .",
@@ -13,7 +12,6 @@
   },
   "dependencies": {
     "effect": "catalog:",
-    "temporal-polyfill": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
