@@ -251,6 +251,27 @@ describe("This and following", () => {
     });
   });
 
+  test("a move to a day and time the rule doesn't meet skips the moved meeting's place", async () => {
+    // The same, moved to Sun Nov 15 at 10:00: the new series meets Mondays
+    // at 10:00, so Mon Nov 16 at 10:00 is the one skipped.
+    const google = fakeGoogle(weekly);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { dateTime: "2026-11-15T10:30:00-05:00", timeZone: zone },
+            recurrence: weekly.recurrence,
+            start: { dateTime: "2026-11-15T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE:20261116T150000Z",
+    ]);
+  });
+
   test("a new time carries a deleted occurrence's skip to it", async () => {
     // Nov 30 was deleted on its own; from Nov 16 the series moves to 10:00.
     // A skip left at 9:00 would match nothing, and Nov 30 would come back.
