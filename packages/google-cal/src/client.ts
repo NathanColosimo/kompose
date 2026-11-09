@@ -1152,9 +1152,10 @@ function keepsCount(master: Event, rule: string[]): boolean {
  *   all day or timed, by day). An added meeting's keeps its slot.
  * - None lands on the new start, the meeting the user just saved.
  * - A kept COUNT (`keeps`) loses one place for each rule meeting that
- *   would have (`ontoStart`). A deleted one that isn't an added day is a
- *   rule meeting, as Google lists only a series' meetings; so is a skip on
- *   Google's list (`listed`).
+ *   would have, or that has no meeting of the new series in its place
+ *   (`ontoStart`): its position is gone with it. A deleted one that isn't
+ *   an added day is a rule meeting, as Google lists only a series'
+ *   meetings; so is a skip on Google's list (`listed`).
  *
  * Null when the kept COUNT's change can't be told.
  */
@@ -1205,8 +1206,22 @@ function placeSkips(params: {
     const moment = slotMoment(slot, zone);
     const ruleMeeting =
       ruleMeetingAt(slot, master) ?? listedMeeting(slot, added);
-    if (formed === startSlot && moment) {
-      unknown ||= ruleMeeting === null;
+    // A skipped position with no meeting of the new series after its
+    // start in its place (none there, or the start itself) frees none.
+    const noPlace = formed === startSlot || (at === null && !added);
+    // A new rule not read here may meet there after all.
+    const placeUnknown =
+      at === null &&
+      !added &&
+      formed !== null &&
+      seriesMeetsAt({
+        recurrence: unskipped,
+        seriesZone: newZone,
+        slot: formed,
+        start,
+      }) === null;
+    if (noPlace && moment) {
+      unknown ||= ruleMeeting === null || placeUnknown;
       if (ruleMeeting) {
         ontoStart.add(moment.epochMilliseconds);
       }
@@ -2091,9 +2106,6 @@ export function makeGoogleCalendarService(
       if (!skips) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
-      // A skipped meeting whose place is the new start (the meeting just
-      // saved there) holds no place of its own: a carried COUNT is one less
-      // for each.
       const recurrence = skipping(
         changeCount(rule, -skips.ontoStart),
         [...skips.placed, ...moved],

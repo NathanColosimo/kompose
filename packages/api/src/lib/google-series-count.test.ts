@@ -1074,6 +1074,40 @@ describe("a COUNT read from Google's list through a move onto a skip", () => {
   });
 });
 
+describe("a COUNT through a move past a deleted meeting", () => {
+  test.each([
+    ["Tue Nov 24", "2026-11-24"],
+    ["Wed Nov 25", "2026-11-25"],
+  ])("drops its place when moved to %s", async (_day, date) => {
+    // Mondays four times from Nov 9, Nov 23 deleted on its own: from Nov
+    // 16 two meetings are left. Moved past Nov 23, its place is gone, so
+    // the new series is the moved meeting and Nov 30.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: `${date}T09:30:00-05:00`, timeZone: zone },
+            start: { dateTime: `${date}T09:00:00-05:00`, timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2"
+    );
+  });
+});
+
 describe("a COUNT through a move onto a meeting skipped twice over", () => {
   test("drops its place once", async () => {
     // Nov 23 both skipped in the rule and deleted on its own; from Nov 16
