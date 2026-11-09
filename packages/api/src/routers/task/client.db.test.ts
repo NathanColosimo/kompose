@@ -281,7 +281,11 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           }
           return created.id;
         }),
-      update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
+      update: (
+        date: string | null,
+        input: TaskUpdateInput,
+        scope: UpdateScope
+      ) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
         ),
@@ -646,5 +650,73 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         })
       )
     ).toEqual(["inbox Review todo alone", "inbox Review todo alone"]);
+  });
+
+  test("makes an inbox master a series of its own, handing its role on", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-09", { startDate: null }, "this");
+          yield* u.update(
+            null,
+            { recurrence: daily(2), startDate: "2026-11-20" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 x2",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-20 Review todo MASTER DAILY/1 x2",
+      "2026-11-21 Review todo in 2026-11-20",
+    ]);
+  });
+
+  test("takes an inbox occurrence out of its series on Repeat: None", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.update(null, { recurrence: null }, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves an inbox occurrence alone when a series splits before its moved master", async () => {
+    // Daily x5; Nov 12 moved to the inbox; the Nov 9 master moved alone to
+    // Nov 20; Nov 10 takes Wednesdays x2 from there on.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-12", { startDate: null }, "this");
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.update(
+            "2026-11-10",
+            {
+              recurrence: {
+                byDay: ["WE"],
+                count: 2,
+                freq: "WEEKLY",
+                interval: 1,
+              },
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER WEEKLY/1 WE x2",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-20 Review todo exc in 2026-11-10",
+      "inbox Review todo alone",
+    ]);
   });
 });

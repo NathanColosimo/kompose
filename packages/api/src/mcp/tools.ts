@@ -76,7 +76,7 @@ export const mcpRouter = {
       openWorldHint: false,
     },
     description:
-      'Update a task. Only the fields given in "task" change; pass null to clear one. tagIds replaces all tags. Mark a task complete with status "done". Use scope "this" for a single task or occurrence; for a task with a seriesMasterId, "following" changes it and every later occurrence, except a status, which goes on the given occurrence alone. Changing recurrence (or setting it to null) needs scope "following". Returns every task that changed.',
+      'Update a task. Only the fields given in "task" change; pass null to clear one. tagIds replaces all tags. Mark a task complete with status "done". Use scope "this" for a single task or occurrence; for a task with a seriesMasterId, "following" changes it and every later occurrence, except a status, which goes on the given occurrence alone. Changing recurrence (or setting it to null) needs scope "following". An occurrence with no startDate has nothing after it, so it always changes alone. Returns every task that changed.',
     name: "update_task",
     title: "Update task",
   }),
