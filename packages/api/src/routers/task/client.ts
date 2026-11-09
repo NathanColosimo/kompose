@@ -862,8 +862,8 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
       task,
     });
   // The earlier part of the series stops before the edit, so its master no
-  // longer claims to repeat past it. First, while the master is still
-  // there: a split before it deletes it below, so first its earlier
+  // longer claims to repeat past it. This runs first, while the master is
+  // still there: a split before the master deletes it below, so its earlier
   // occurrences move to a series of their own and its undated ones become
   // standalone.
   const ended = yield* endSeriesBefore(userId, task, boundary);
