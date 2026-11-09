@@ -255,6 +255,48 @@ describe("This and following", () => {
     ]);
   });
 
+  describe("Mondays and Wednesdays made Wednesdays from Mon Nov 16", () => {
+    // Mon Nov 23 deleted on its own. Its place in the new series is Wed
+    // Nov 25, which the Wednesday meeting there still holds.
+    const monWed: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+    };
+    const toWednesdays = () =>
+      edit("following", nov16, {
+        end: { dateTime: "2026-11-18T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=WE"],
+        start: { dateTime: "2026-11-18T09:00:00-05:00", timeZone: zone },
+      });
+    const nov23 = {
+      ...occurrenceOf(monWed, "2026-11-23T09:00:00-05:00"),
+      status: "cancelled",
+    };
+
+    test("keeps Wed Nov 25", async () => {
+      const google = fakeGoogle(monWed, [nov23]);
+      expect(Exit.isSuccess(await run(toWednesdays()))).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=WE",
+      ]);
+    });
+
+    test("puts back Wed Nov 25's own rename", async () => {
+      const google = fakeGoogle(monWed, [
+        nov23,
+        {
+          ...occurrenceOf(monWed, "2026-11-25T09:00:00-05:00"),
+          summary: "Planning (Nov 25)",
+        },
+      ]);
+      expect(Exit.isSuccess(await run(toWednesdays()))).toBe(true);
+      const [created, carried] = google.writes();
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20261125T140000Z`
+      );
+    });
+  });
+
   describe("a monthly series moved to another weekday of its month", () => {
     // The third Monday from Oct 19, Dec 21's deleted or renamed on its own;
     // from Nov 16 it moves to the third Tuesday. December's meeting is
