@@ -1315,6 +1315,33 @@ describe("a COUNT whose end a placed skip would fall past", () => {
     );
   });
 
+  test("lowers it once for a meeting skipped twice over past the end", async () => {
+    // Monthly seven times from Jan 28, Apr 28 deleted, Jul 28 deleted and
+    // skipped in the rule too; from Mar 28 moved to Apr 1: Mar, May and Jun
+    // are left.
+    const seven: Event = {
+      ...series,
+      recurrence: ["RRULE:FREQ=MONTHLY;COUNT=7", "EXDATE;VALUE=DATE:20260728"],
+    };
+    const google = fakeGoogle(seven, [
+      { ...onDay("2026-04-28"), status: "cancelled" },
+      { ...onDay("2026-07-28"), status: "cancelled" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", onDay("2026-03-28"), {
+            end: { date: "2026-04-02" },
+            start: { date: "2026-04-01" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "RRULE:FREQ=MONTHLY;COUNT=3"
+    );
+  });
+
   test("counts a meeting skipped twice over once", async () => {
     // As above, May 28 also skipped in the rule.
     const skipped: Event = {
