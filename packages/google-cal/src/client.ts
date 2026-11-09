@@ -278,11 +278,12 @@ function withLength(
  * move is "This and following" only. Google repeats a series in its
  * start's zone, so times are read in it.
  */
-function entireSeriesTimes(
-  edited: CreateEvent,
-  occurrence: Event,
-  master: Event
-): { end: Event["end"]; start: Event["start"] } {
+function entireSeriesTimes(params: {
+  edited: CreateEvent;
+  master: Event;
+  occurrence: Event;
+}): { end: Event["end"]; start: Event["start"] } {
+  const { edited, master, occurrence } = params;
   const zone = seriesZoneOf(master);
   const kept = { end: master.end, start: master.start };
   if (keepsTimes(edited, occurrence, zone)) {
@@ -322,11 +323,12 @@ function entireSeriesTimes(
  * moment for moment (rebuilt from its clock, a time in an hour a clock
  * change repeats could move). Its own times if they don't parse.
  */
-function timesOnOwnDay(
-  occurrence: Event,
-  edited: CreateEvent,
-  master: Event
-): { end: Event["end"]; start: Event["start"] } {
+function timesOnOwnDay(params: {
+  edited: CreateEvent;
+  master: Event;
+  occurrence: Event;
+}): { end: Event["end"]; start: Event["start"] } {
+  const { edited, master, occurrence } = params;
   const zone = seriesZoneOf(master);
   if (sameTime(edited.start, occurrence.start, zone)) {
     return {
@@ -807,7 +809,9 @@ function seriesChangeRefusal(params: {
       );
     })
     .map(({ originalStart }) => originalStart);
-  if (movesStart) {
+  // A new repeat places its meetings anew, a deleted one's place too:
+  // only the series' own rule, moved, can bring one back.
+  if (movesStart && !seriesOnly) {
     lost.push(...deletedLost(params));
   }
   if (lost.length > 0) {
@@ -843,12 +847,13 @@ function seriesChangeRefusal(params: {
  * Such a time can't move without moving one time onto another, or off its
  * own.
  */
-function movesSeveralADay(
-  master: Event,
-  start: Event["start"],
-  edited: CreateEvent,
-  occurrence: Event
-): boolean {
+function movesSeveralADay(params: {
+  edited: CreateEvent;
+  master: Event;
+  occurrence: Event;
+  start: Event["start"];
+}): boolean {
+  const { edited, master, occurrence, start } = params;
   const zone = seriesZoneOf(master);
   const from = clockOf(master.start, zone);
   const was = clockOf(occurrence.start, zone);
@@ -1562,8 +1567,19 @@ export function makeGoogleCalendarService(
       const edited = withOneForm(input, currentEvent);
       const zone = seriesZoneOf(master);
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
-      const times = entireSeriesTimes(edited, currentEvent, master);
-      if (movesSeveralADay(master, times.start, edited, currentEvent)) {
+      const times = entireSeriesTimes({
+        edited,
+        master,
+        occurrence: currentEvent,
+      });
+      if (
+        movesSeveralADay({
+          edited,
+          master,
+          occurrence: currentEvent,
+          start: times.start,
+        })
+      ) {
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
       }
 
@@ -1643,7 +1659,7 @@ export function makeGoogleCalendarService(
     const { changes, edited, master, occurrence } = params;
     const zone = seriesZoneOf(master);
     const own = changesOwnTo(occurrence, master, zone);
-    const times = timesOnOwnDay(occurrence, edited, master);
+    const times = timesOnOwnDay({ edited, master, occurrence });
     const retimed = !keepsTimes(times, occurrence, zone);
     const overridden = Object.keys(changes).some((field) => field in own);
     // One that is just the series' own follows the series.
