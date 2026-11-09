@@ -775,9 +775,9 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
 });
 
 /**
- * Ends the series' pattern the day before `task` (when `task` isn't its
- * first): the master keeps its days up to there, and stops claiming the
- * ones from `task` on.
+ * Ends the series' pattern before `task` (when `task` isn't its first): the
+ * master keeps its days up to there, and stops claiming the ones from
+ * `task` on.
  */
 const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   userId: string,
@@ -819,7 +819,7 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
 /**
  * Occurrences of `master`'s series before `boundary` (the master was moved
  * later alone, then the series split at or before it) keep the original
- * pattern, ended the day before, under the earliest of them as their own
+ * pattern, ended at their last day, under the earliest of them as their own
  * master, so what happens to the master from there on doesn't reach them.
  */
 const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
@@ -827,6 +827,9 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
   master: Pick<TaskSelect, "id" | "recurrence">,
   boundary: string
 ) {
+  if (!master.recurrence) {
+    return [] as TaskSelect[];
+  }
   const db = yield* Database;
   const earlier = yield* db
     .select()
@@ -841,7 +844,7 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
     )
     .orderBy(asc(taskTable.startDate));
   const [heir] = earlier;
-  if (!(heir && master.recurrence)) {
+  if (!heir) {
     return [] as TaskSelect[];
   }
   return yield* makeMaster(userId, {
