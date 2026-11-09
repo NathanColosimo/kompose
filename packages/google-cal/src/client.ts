@@ -197,7 +197,6 @@ function asStart(slot: string): Event["start"] {
   return DATE_ONLY.test(slot) ? { date: slot } : { dateTime: slot };
 }
 
-/** A refusal, as the service fails with it. */
 /**
  * Whether a failed Google write may still have gone through: Google never
  * answered it (a timeout, a dropped connection), or answered with a server
@@ -225,6 +224,7 @@ const WRITE_RETRIES = {
     (error.cause instanceof APIError && error.cause.status === 408),
 };
 
+/** A refusal, as the service fails with it. */
 function refused(refusal: SeriesRefusal): GoogleApiError {
   return new GoogleApiError({
     cause: new Error(refusalMessage(refusal)),
@@ -1164,8 +1164,10 @@ function onDay(
  * Whether a meeting of the old series after the split, one not deleted or
  * skipped, lands at `place` in the new series (`carriedSlot`), where a
  * deleted one's skip would cancel it: two rule days folded into one
- * (Mondays and Wednesdays made Wednesdays). It's the meeting on `place`'s
- * day, or as many days back as the split moved.
+ * (Mondays and Wednesdays made Wednesdays), or an hourly meeting the
+ * split's move carries onto another's place. It's the meeting the split's
+ * change of time brings there on `place`'s own day, or the one its whole
+ * move brings there (by day, all day).
  */
 function liveMeetingLandsAt(params: {
   cancelled: string[];
@@ -1182,39 +1184,78 @@ function liveMeetingLandsAt(params: {
   const newZone = repeatZone(master, start);
   const opened = asStart(params.originalStart);
   const split = slotMoment(params.originalStart, oldZone);
-  const day = dayOfStart(asStart(place), newZone);
-  const from = dayOfStart(opened, oldZone);
-  const to = dayOfStart(start, newZone);
-  if (!(day && from && to && split)) {
+  if (!split) {
     return false;
   }
-  const days = [day, day.subtract({ days: from.until(to).days })];
-  return days.some((candidate) => {
-    const formed = onDay(opened, candidate, oldZone);
-    const slot = formed && slotOf(formed, oldZone);
-    const at = slot && slotMoment(slot, oldZone);
-    if (
-      !(slot && at) ||
-      Temporal.Instant.compare(at, split) <= 0 ||
-      params.cancelled.includes(slot) ||
-      seriesMeetsAt({
-        recurrence: master.recurrence ?? [],
-        seriesZone: oldZone,
-        slot,
-        start: master.start,
-      }) !== true
-    ) {
-      return false;
+  return liveCandidates({ opened, oldZone, newZone, place, start }).some(
+    (slot) => {
+      const at = slotMoment(slot, oldZone);
+      if (
+        !(slot && at) ||
+        Temporal.Instant.compare(at, split) <= 0 ||
+        params.cancelled.includes(slot) ||
+        seriesMeetsAt({
+          recurrence: master.recurrence ?? [],
+          seriesZone: oldZone,
+          slot,
+          start: master.start,
+        }) !== true
+      ) {
+        return false;
+      }
+      const lands = carriedSlot({
+        master,
+        recurrence: params.recurrence,
+        slot: inFormOf(slot, start, newZone) ?? slot,
+        splitStart: params.splitStart,
+        start,
+      });
+      return lands !== null && inFormOf(lands, start, newZone) === place;
     }
-    const lands = carriedSlot({
-      master,
-      recurrence: params.recurrence,
-      slot: inFormOf(slot, start, newZone) ?? slot,
-      splitStart: params.splitStart,
-      start,
-    });
-    return lands !== null && inFormOf(lands, start, newZone) === place;
-  });
+  );
+}
+
+/**
+ * The old series' slots a split could carry to `place`: the one its change
+ * of time brings there on `place`'s own day, and the one its whole move
+ * (from the opened occurrence, `opened`, to `start`) brings there. By day
+ * when either is all day.
+ */
+function liveCandidates(params: {
+  newZone: string;
+  oldZone: string;
+  opened: Event["start"];
+  place: string;
+  start: Event["start"];
+}): string[] {
+  const { newZone, oldZone, opened, place, start } = params;
+  const wall = (time: Event["start"], zone: string) =>
+    momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime() ?? null;
+  const at = DATE_ONLY.test(place) ? null : wall(asStart(place), newZone);
+  const from = opened.dateTime ? wall(opened, oldZone) : null;
+  const to = start.dateTime ? wall(start, newZone) : null;
+  if (at && from && to) {
+    const change = from.toPlainTime().until(to.toPlainTime());
+    return [
+      at.toPlainDate().toPlainDateTime(at.toPlainTime().subtract(change)),
+      at.subtract(from.until(to)),
+    ].map((time) =>
+      googleDateTime(time.toZonedDateTime(oldZone, { disambiguation: "later" }))
+    );
+  }
+  const day = dayOfStart(asStart(place), newZone);
+  const fromDay = dayOfStart(opened, oldZone);
+  const toDay = dayOfStart(start, newZone);
+  if (!(day && fromDay && toDay)) {
+    return [];
+  }
+  return [day, day.subtract({ days: fromDay.until(toDay).days })].flatMap(
+    (candidate) => {
+      const formed = onDay(opened, candidate, oldZone);
+      const slot = formed && slotOf(formed, oldZone);
+      return slot ? [slot] : [];
+    }
+  );
 }
 
 /**
