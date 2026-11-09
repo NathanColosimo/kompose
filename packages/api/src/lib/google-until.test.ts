@@ -331,7 +331,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T100000,20261116T150000");
+    ).toBe("EXDATE:20261116T150000Z,20261116T200000Z");
     // Moved onto a skipped Wednesday at 10:00: that skip is the start's
     // own slot now, so it goes; and a skip retimed onto another rule's
     // real meeting stays where it was.

@@ -1415,7 +1415,32 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
       })
     ).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=TU",
-      "EXDATE;TZID=America/New_York:20261124T090000,20261102T090000",
+      "EXDATE:20261124T140000Z,20261102T140000Z",
+    ]);
+  });
+
+  test("keeps a skip in the hour a clock change repeats on its moment", () => {
+    // Mondays from Oct 26 moved to Tuesdays; an added Nov 1 1:30 EST (the
+    // second 1:30 that night) was skipped and stays skipped as it was.
+    expect(
+      moveSkippedDays({
+        from: day("2026-10-26"),
+        fromTime: nine,
+        newRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        oldRule: "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=TU",
+          "RDATE:20261101T063000Z",
+          "EXDATE:20261101T063000Z,20261102T140000Z",
+        ],
+        seriesZone: zone,
+        to: day("2026-10-27"),
+        toTime: nine,
+      })
+    ).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "RDATE:20261101T063000Z",
+      "EXDATE:20261101T063000Z,20261103T140000Z",
     ]);
   });
 
@@ -1459,10 +1484,7 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
         skips: "EXDATE;TZID=America/New_York:20261208T090000",
         to: "2026-11-18",
       })
-    ).toEqual([
-      "RRULE:FREQ=MONTHLY;BYDAY=3WE",
-      "EXDATE;TZID=America/New_York:20261216T090000",
-    ]);
+    ).toEqual(["RRULE:FREQ=MONTHLY;BYDAY=3WE", "EXDATE:20261216T140000Z"]);
   });
 
   test("leaves a skip the new rule still meets on", () => {

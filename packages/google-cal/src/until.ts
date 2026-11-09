@@ -19,7 +19,6 @@ const INTERVAL_PART = /INTERVAL=(\d+)/;
 const COUNT_VALUE = /[:;]COUNT=(\d+)/;
 /** How far a COUNT rule's meetings are walked: fifty years of days. */
 const MAX_COUNT_DAYS = 366 * 50;
-const CLOCK_PART_NAME = /^BY(?:HOUR|MINUTE|SECOND)=/;
 /** A rule that repeats within a day: its times don't follow the start's. */
 const SUB_DAILY = /FREQ=(?:HOURLY|MINUTELY|SECONDLY)/;
 const FREQ_PART = /FREQ=([A-Z]+)/;
@@ -533,7 +532,7 @@ function matchDateList(
     timed.length === values.length
   ) {
     return list.name === "EXDATE" && severalADay && retime
-      ? retimedList(list.name, timed, seriesZone, retime, line)
+      ? retimedList(timed, seriesZone, retime, line)
       : line;
   }
   const time = wallClock(start, seriesZone);
@@ -869,11 +868,11 @@ function addedMoments(recurrence: string[], seriesZone: string): Set<number> {
 }
 
 /**
- * A several-times-a-day series' skipped times, each at its rule's new
- * time; `line` itself when none moves.
+ * A several-times-a-day series' skipped times (EXDATE), each at its rule's
+ * new time, in UTC (one that stays keeps its moment); `line` itself when
+ * none moves.
  */
 function retimedList(
-  name: string,
   values: { day: Temporal.PlainDate; instant: Temporal.Instant }[],
   seriesZone: string,
   retime: (
@@ -891,14 +890,20 @@ function retimedList(
       next[0] &&
       Temporal.PlainTime.compare(next[0], time) === 0
     );
-    return next.map((at) => `${compactDate(value.day)}T${compactTime(at)}`);
+    return next.map((at) =>
+      compactInstant(
+        Temporal.PlainTime.compare(at, time) === 0
+          ? value.instant
+          : value.day
+              .toZonedDateTime({ plainTime: at, timeZone: seriesZone })
+              .toInstant()
+      )
+    );
   });
   if (!moved) {
     return line;
   }
-  return written.length > 0
-    ? `${name};TZID=${seriesZone}:${[...new Set(written)].join(",")}`
-    : "";
+  return written.length > 0 ? `EXDATE:${[...new Set(written)].join(",")}` : "";
 }
 
 /**
@@ -918,7 +923,7 @@ function matchClock(
     return `RRULE:${line
       .slice("RRULE:".length)
       .split(";")
-      .filter((part) => !CLOCK_PART_NAME.test(part))
+      .filter((part) => !TIME_PART.test(part))
       .join(";")}`;
   }
   if (!start.dateTime || severalADay) {
@@ -981,6 +986,11 @@ function matchUntil(
     UNTIL_PART,
     `${match[1]}UNTIL=${untilRuleForDay(day, allDay, timeZone)}`
   );
+}
+
+/** "20261101T063000Z": a moment as a recurrence value, in UTC. */
+function compactInstant(instant: Temporal.Instant): string {
+  return `${instant.toString({ smallestUnit: "second" }).replace(/[-:]/g, "")}`;
 }
 
 /**
@@ -1503,17 +1513,34 @@ export function moveSkippedDays(params: {
     }
     changed = true;
     const timed = read.some((value) => value?.instant);
+    // Timed values are written in UTC: a moment kept exactly, even in the
+    // hour a clock change repeats.
     const values = read.flatMap((value, index) => {
       if (dropped[index]) {
         return [];
       }
-      const day = moved[index]?.day ?? value?.day;
-      if (!(value && day)) {
+      const target = moved[index];
+      if (!(value && (target?.day ?? value.day))) {
         return [list.values[index] ?? ""];
       }
-      const time = moved[index]?.time ?? wallTime(value);
+      if (!target) {
+        return [
+          value.instant
+            ? compactInstant(value.instant)
+            : compactDate(value.day),
+        ];
+      }
       return [
-        time ? `${compactDate(day)}T${compactTime(time)}` : compactDate(day),
+        target.time
+          ? compactInstant(
+              target.day
+                .toZonedDateTime({
+                  plainTime: target.time,
+                  timeZone: seriesZone,
+                })
+                .toInstant()
+            )
+          : compactDate(target.day),
       ];
     });
     if (values.length === 0) {
@@ -1521,7 +1548,7 @@ export function moveSkippedDays(params: {
     }
     return [
       timed
-        ? `${list.name};TZID=${seriesZone}:${[...new Set(values)].join(",")}`
+        ? `${list.name}:${[...new Set(values)].join(",")}`
         : `${list.name};VALUE=DATE:${[...new Set(values)].join(",")}`,
     ];
   });

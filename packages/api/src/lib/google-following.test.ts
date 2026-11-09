@@ -574,13 +574,13 @@ describe("This and following", () => {
   });
 
   test.each([
-    // Google's own "ends Nov 30"; moved to Tue Dec 1: one event.
-    ["20261201T045959Z", "2026-12-01T09:00:00-05:00", []],
-    // An end at the last meeting's start; moved to 10:00: one event too.
-    ["20261130T140000Z", "2026-11-30T10:00:00-05:00", []],
+    // Google's own "ends Nov 30"; moved to Tue Dec 1.
+    ["20261201T045959Z", "2026-12-01T09:00:00-05:00"],
+    // An end at the last meeting's start; moved to 10:00.
+    ["20261130T140000Z", "2026-11-30T10:00:00-05:00"],
   ])(
-    "the last meeting moved past the series' end (UNTIL=%s) is all the new part has",
-    async (until, to, recurrence) => {
+    "the last meeting moved past the series' end (UNTIL=%s) is one event",
+    async (until, to) => {
       const ending: Event = {
         ...weekly,
         recurrence: [`RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=${until}`],
@@ -605,7 +605,7 @@ describe("This and following", () => {
       ).toBe(true);
       const [created, cut] = google.writes();
       expect(created?.body).toMatchObject({
-        recurrence,
+        recurrence: [],
         start: { dateTime: to },
       });
       expect(cut?.body?.recurrence).toEqual([
