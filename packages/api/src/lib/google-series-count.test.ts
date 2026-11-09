@@ -6,6 +6,7 @@ import {
 } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
 import { Exit } from "effect";
+import { Temporal } from "temporal-polyfill";
 import {
   edit,
   fakeGoogle,
@@ -1230,6 +1231,75 @@ describe("a COUNT read from Google's list, counted before the split", () => {
     expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
       "COUNT=1"
     );
+  });
+});
+
+describe("a COUNT through a move that lands two deleted meetings on one place", () => {
+  test("drops a place for the second", async () => {
+    // All day, daily five times from Nov 9, Nov 11 and 13 deleted on their
+    // own; from Nov 10 moved two days on. Both land on Nov 13: two of the
+    // four places left were deleted, so the new series meets twice.
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RRULE:FREQ=DAILY;COUNT=5"],
+      start: { date: "2026-11-09" },
+    };
+    const onDay = (day: string): Event => ({
+      ...series,
+      end: { date: Temporal.PlainDate.from(day).add({ days: 1 }).toString() },
+      id: `series_${day.replace(/-/g, "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+    });
+    const google = fakeGoogle(series, [
+      { ...onDay("2026-11-11"), status: "cancelled" },
+      { ...onDay("2026-11-13"), status: "cancelled" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", onDay("2026-11-10"), {
+            end: { date: "2026-11-13" },
+            start: { date: "2026-11-12" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=3",
+      "EXDATE;VALUE=DATE:20261113",
+    ]);
+  });
+});
+
+describe("a COUNT sent with a new repeat", () => {
+  test("is the new part's own, so a later changed meeting keeps its place", async () => {
+    // Mondays and Wednesdays ten times from Nov 9, Mon Dec 7 renamed; from
+    // Nov 23, Fridays added with the COUNT as it was: ten from Nov 23.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10"],
+    };
+    const google = fakeGoogle(series, [
+      { ...occurrenceOf(series, "2026-12-07T09:00:00-05:00"), summary: "Own" },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-23T09:00:00-05:00"), {
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10"],
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, putBack] = google.writes();
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;COUNT=10",
+    ]);
+    expect(putBack?.body).toMatchObject({ summary: "Own" });
   });
 });
 
