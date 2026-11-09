@@ -713,9 +713,10 @@ function fromStartToSplit(
  * added (RDATE) ones, but not every skip. So the positions used before the
  * split are the meetings listed there. When those can't be told (an added
  * day there can't be told from a rule day, a skip there Google doesn't
- * list may or may not be a position, or a start at a time its rule doesn't
- * meet may or may not count), the positions left are counted from the
- * split on instead, the same way; null when neither side can be told.
+ * list on a day the rule may meet may or may not be a position, or a start
+ * at a time its rule doesn't meet may or may not count), the positions
+ * left are counted from the split on instead, the same way; null when
+ * neither side can be told.
  */
 export function carryCountFromList(
   recurrence: string[],
@@ -743,15 +744,24 @@ export function carryCountFromList(
   );
   const added = dateValues(masterRecurrence, "RDATE", seriesZone);
   const skipped = dateValues(masterRecurrence, "EXDATE", seriesZone);
+  // A skip on a day the rule doesn't meet (and not the series' first,
+  // which counts whatever the rule says) is no position.
+  const offRule = (skip: RecurrenceValue) =>
+    !skip.day.equals(start.day) &&
+    isRuleDay(rule, start.day, skip.day) === false;
   // The positions in a stretch of the series: what Google lists there, or
-  // null when an added day or an unlisted skip falls in it.
+  // null when an added day or an unlisted skip that may be a position
+  // falls in it.
   const positionsIn = (inStretch: (value: RecurrenceValue) => boolean) => {
     const there = listed.filter(inStretch);
     const unclear =
       added.filter(inStretch).length > 0 ||
       skipped
         .filter(inStretch)
-        .some((skip) => !there.some((value) => sameValue(value, skip)));
+        .some(
+          (skip) =>
+            !(offRule(skip) || there.some((value) => sameValue(value, skip)))
+        );
     return unclear ? null : there.length;
   };
   const startClock = start.instant
