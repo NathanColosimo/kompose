@@ -374,7 +374,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261118T093000,20261118T153000");
+    ).toBe("EXDATE:20261118T143000Z,20261118T203000Z");
     // Two rules met at the skipped Monday 9:00: the one at the start's
     // time moves to 10:00, the one fixed at 9:00 stays; both stay skipped.
     expect(
@@ -389,7 +389,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T100000,20261116T090000");
+    ).toBe("EXDATE:20261116T150000Z,20261116T140000Z");
     // Fixed rules really meet at 9:00 and 10:00: the moving rule's skip
     // can't land on the 10:00 meeting, so it stays at 9:00.
     expect(
@@ -404,7 +404,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T090000");
+    ).toBe("EXDATE:20261116T140000Z");
     // A rule at 9:00 and one at 15:00, the start moved to 9:30: the
     // minutes follow it.
     expect(
@@ -418,7 +418,7 @@ describe("skipped occurrences on the series' days", () => {
         "America/New_York",
         { dateTime: "2026-11-09T09:00:00-05:00" }
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261110T093000,20261110T153000");
+    ).toBe("EXDATE:20261110T143000Z,20261110T203000Z");
   });
 
   test("leaves a skipped added meeting's time alone", () => {
