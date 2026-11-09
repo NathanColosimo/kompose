@@ -966,12 +966,7 @@ function placeSkips(params: {
         });
     const formed = inFormOf(at ?? slot, start, newZone);
     const moment = slotMoment(slot, zone);
-    if (
-      formed === startSlot &&
-      at !== null &&
-      moment &&
-      ruleMeetingAt(slot, master)
-    ) {
+    if (formed === startSlot && moment && ruleMeetingAt(slot, master)) {
       ontoStart.add(moment.epochMilliseconds);
     }
     const ontoAdded =

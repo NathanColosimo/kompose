@@ -937,6 +937,37 @@ describe("a COUNT through a move onto a meeting skipped twice over", () => {
     ]);
   });
 
+  test("drops it once when the meeting is also an added day", async () => {
+    // Nov 23 is a rule meeting and an added day, deleted on its own; from
+    // Nov 16 moved to Nov 23: Nov 23 and Nov 30 are left.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+        "RDATE:20261123T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-23T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-23T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=2"
+    );
+  });
+
   test("doesn't count a skip where nothing met", async () => {
     // A stale skip on Tue Nov 17; from Nov 16 moved there: Nov 17, 23, 30.
     const series: Event = {
