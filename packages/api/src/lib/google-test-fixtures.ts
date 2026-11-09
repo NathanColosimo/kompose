@@ -73,14 +73,30 @@ export const weekly: Event = {
 };
 
 /**
- * `master`'s occurrence originally at `original` (an ISO date-time), as
- * Google lists it, moved to `moved` when given.
+ * `master`'s occurrence originally at `original` (an ISO date-time, or a
+ * date for an all-day series), as Google lists it, moved to `moved` when
+ * given.
  */
 export const occurrenceOf = (
   master: Event,
   original: string,
   moved?: { end: string; start: string }
 ): Event => {
+  if (!original.includes("T")) {
+    const day = Temporal.PlainDate.from(original);
+    const days = Temporal.PlainDate.from(master.start.date ?? original).until(
+      master.end.date ?? day.add({ days: 1 }).toString()
+    ).days;
+    return {
+      ...master,
+      end: { date: day.add({ days }).toString() },
+      id: `${master.id}_${original.replaceAll("-", "")}`,
+      originalStartTime: { date: original },
+      recurrence: undefined,
+      recurringEventId: master.id,
+      start: { date: original },
+    };
+  }
   const length = Temporal.Instant.from(master.start.dateTime ?? "").until(
     Temporal.Instant.from(master.end.dateTime ?? "")
   );
