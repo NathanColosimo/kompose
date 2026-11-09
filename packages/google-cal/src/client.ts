@@ -2768,7 +2768,8 @@ export function makeGoogleCalendarService(
           Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
         );
       };
-      const ownSkip = (value: RecurrenceValue) =>
+      // Those `placeByDay` places; `lineUpRule` gets the rule without them.
+      const placedByDay = (value: RecurrenceValue) =>
         byPlace && ownAfterSplit(value);
       const ownSkipsAfterSplit = dateValues(final, "EXDATE", zone)
         .filter(ownAfterSplit)
@@ -2843,7 +2844,7 @@ export function makeGoogleCalendarService(
             lowered,
             "EXDATE",
             zone,
-            (value) => !ownSkip(value)
+            (value) => !placedByDay(value)
           ),
           splitAt: originalStart,
           start,
