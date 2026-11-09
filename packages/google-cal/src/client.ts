@@ -914,14 +914,14 @@ function sortExceptions(events: SeriesListing[], master: Event) {
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
     } else if (
-      // One moved and moved back has nothing to keep.
-      Object.keys(changesOwnTo(event, master, zone)).length > 0 &&
       seriesMeetsAt({
         recurrence: master.recurrence ?? [],
         seriesZone: zone,
         slot: originalStart,
         start: master.start,
-      }) !== false
+      }) !== false &&
+      // One moved and moved back has nothing to keep.
+      Object.keys(changesOwnTo(event, master, zone)).length > 0
     ) {
       changed.push({ occurrence: event, originalStart });
     }
@@ -953,7 +953,12 @@ function changesOwnTo(
   zone: string
 ): Partial<CreateEvent> {
   const originalStart = originalStartOf(occurrence, zone);
-  if (!originalStart) {
+  // A slot in the other form (a date in a timed series) isn't one of the
+  // series' meetings: Google detached it, so nothing of it is at stake.
+  if (
+    !originalStart ||
+    DATE_ONLY.test(originalStart) !== Boolean(master.start.date)
+  ) {
     return {};
   }
   return ownChanges(
