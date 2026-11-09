@@ -19,7 +19,6 @@ import {
   isNull,
   lt,
   ne,
-  or,
 } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
@@ -302,9 +301,8 @@ const dbSelectExceptionsBySeriesFrom = (
       );
   });
 
-/** A series' exceptions from `fromDate` on (but `editedId`) become standalone. */
+/** A series' exceptions from `fromDate` on become standalone. */
 const dbDetachExceptionsFrom = (params: {
-  editedId: string;
   fromDate: string;
   seriesMasterId: string;
   userId: string;
@@ -319,16 +317,14 @@ const dbDetachExceptionsFrom = (params: {
           eq(taskTable.userId, params.userId),
           eq(taskTable.seriesMasterId, params.seriesMasterId),
           eq(taskTable.isException, true),
-          gte(taskTable.startDate, params.fromDate),
-          ne(taskTable.id, params.editedId)
+          gte(taskTable.startDate, params.fromDate)
         )
       )
       .returning();
   });
 
-/** Move a series' exceptions from `fromDate` on (and `editedId`) to another series. */
+/** Move a series' exceptions from `fromDate` on to another series. */
 const dbMoveExceptionsToSeries = (params: {
-  editedId: string;
   fromDate: string;
   fromSeriesMasterId: string;
   toSeriesMasterId: string;
@@ -344,10 +340,7 @@ const dbMoveExceptionsToSeries = (params: {
           eq(taskTable.userId, params.userId),
           eq(taskTable.seriesMasterId, params.fromSeriesMasterId),
           eq(taskTable.isException, true),
-          or(
-            gte(taskTable.startDate, params.fromDate),
-            eq(taskTable.id, params.editedId)
-          )
+          gte(taskTable.startDate, params.fromDate)
         )
       )
       .returning();
@@ -916,7 +909,6 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     // standalone tasks rather than members of a series that no longer
     // repeats there.
     const detached = yield* dbDetachExceptionsFrom({
-      editedId: task.id,
       fromDate: boundary,
       seriesMasterId: task.seriesMasterId,
       userId,
@@ -941,7 +933,6 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // Kept occurrences from the boundary on join the new series as
   // exceptions, so they show and follow its pattern rather than the old one.
   const moved = yield* dbMoveExceptionsToSeries({
-    editedId: task.id,
     fromDate: boundary,
     fromSeriesMasterId: task.seriesMasterId,
     toSeriesMasterId: seriesMasterId,
@@ -1333,7 +1324,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         (yield* changesSeriesRecurrence(userId, task, sent));
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
-      const { recurrence: _unchangedPattern, ...withoutPattern } = sent;
+      const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
         task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
       const hasDbUpdates = Object.keys(dbInput).length > 0;
@@ -1347,7 +1338,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           })
         );
       }
-      const recurrenceChanged = changesPattern && scope === "following";
       // Checked before anything is deleted.
       const newPattern = dbInput.recurrence
         ? yield* checkPattern(
@@ -1359,7 +1349,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.
       const carriedTagIds =
-        normalizedTagIds === undefined && recurrenceChanged
+        normalizedTagIds === undefined && changesPattern
           ? ((yield* dbSelectByIdsWithTags(userId, [taskId]))[0]?.tags.map(
               (tag) => tag.id
             ) ?? [])
@@ -1376,7 +1366,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
             hasDbUpdates,
             newPattern,
             normalizedTagIds,
-            recurrenceChanged,
+            recurrenceChanged: changesPattern,
             scope,
             task,
             userId,

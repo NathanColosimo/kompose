@@ -11,7 +11,7 @@ describe("getTaskUpdateScopeDecision", () => {
     previousRecurrence: null,
     previousTagIds: [],
   };
-  test("asks this-or-following for a dated occurrence", () => {
+  test("asks this-or-following for other edits", () => {
     expect(getTaskUpdateScopeDecision(base)).toEqual({
       action: "prompt",
       defaultScope: "this",
