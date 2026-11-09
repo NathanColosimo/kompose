@@ -281,11 +281,7 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           }
           return created.id;
         }),
-      update: (
-        date: string | null,
-        input: TaskUpdateInput,
-        scope: UpdateScope
-      ) =>
+      update: (date: string, input: TaskUpdateInput, scope: UpdateScope) =>
         Effect.flatMap(find(date), (task) =>
           service.updateTask(userId, task.id, input, scope)
         ),
