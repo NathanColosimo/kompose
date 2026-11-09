@@ -534,6 +534,12 @@ function matchDateList(
       : line;
   }
   const time = wallClock(start, seriesZone);
+  const addedOn = (day: Temporal.PlainDate) =>
+    [...added]
+      .map((ms) => Temporal.Instant.fromEpochMilliseconds(ms))
+      .filter((at) =>
+        at.toZonedDateTimeISO(seriesZone).toPlainDate().equals(day)
+      );
   // A skipped added meeting keeps its time. If a rule's (or the start's)
   // meeting was there too, it's also skipped at the new time, where that
   // meeting moves. A skip never moves onto an added meeting: it would
@@ -543,6 +549,10 @@ function matchDateList(
       .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
       .toInstant();
     const kept = value.instant;
+    // A date skipped the whole day: its added meetings too.
+    if (list.name === "EXDATE" && !kept) {
+      return [moment, ...addedOn(value.day)];
+    }
     // A skip where no rule nor the start met skips nothing: it stays as it
     // is, so it can't land on a meeting. (One a client lined up for the new
     // start can't be told from one that was stale, so it stays too; the

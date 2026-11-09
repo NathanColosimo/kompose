@@ -973,6 +973,35 @@ describe("a This and following move onto a deleted added meeting", () => {
   });
 });
 
+describe("a whole day skipped in a timed series", () => {
+  test("stays skipped for its added meetings too", async () => {
+    // Mondays 9:00 plus an added Nov 30 15:00, Nov 30 skipped as a date;
+    // renamed from Nov 16, neither Nov 30 meeting comes back.
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RDATE;TZID=America/New_York:20261130T150000",
+        "EXDATE;VALUE=DATE:20261130",
+      ],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+    for (const skip of ["20261130T140000Z", "20261130T200000Z"]) {
+      expect(written).toContain(skip);
+    }
+  });
+});
+
 describe("an Entire series rule change alone", () => {
   test("adds no skip for a rule meeting deleted on its own", async () => {
     // Nov 23 deleted on its own; Mondays become Mondays and Wednesdays.
