@@ -97,6 +97,18 @@ export const EventSchema = z.object({
   outOfOfficeProperties: googleEventOpaqueObjectSchema.optional(),
   workingLocationProperties: googleEventOpaqueObjectSchema.optional(),
 
+  // Kept so a write (a full replace) doesn't reset them, and so an
+  // occurrence that sets its own is seen as changed.
+  anyoneCanAddSelf: z.boolean().optional(),
+  attachments: z.array(googleEventOpaqueObjectSchema).optional(),
+  guestsCanInviteOthers: z.boolean().optional(),
+  guestsCanModify: z.boolean().optional(),
+  guestsCanSeeOtherGuests: z.boolean().optional(),
+  reminders: googleEventOpaqueObjectSchema.optional(),
+  source: googleEventOpaqueObjectSchema.optional(),
+  transparency: z.string().optional(),
+  visibility: z.string().optional(),
+
   conferenceData: z
     .object({
       entryPoints: z
