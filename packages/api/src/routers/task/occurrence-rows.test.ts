@@ -69,7 +69,7 @@ const rows = (
     input,
     keepEdited,
     keptDates: new Set(keptDates),
-    seriesMasterId: "new-master",
+    seriesMasterId: keepEdited ? nov9.id : "new-master",
     task: nov9,
     userId: "user",
   }).map(
@@ -112,7 +112,7 @@ describe("regeneratedOccurrenceRows", () => {
     const rowsKept = regenerate({
       input: { recurrence: tuesdays },
       keepEdited: true,
-      keptDates: new Set(["2026-11-09"]),
+      keptDates: new Set(),
       seriesMasterId: "nov9",
       task: nov9,
       userId: "user",
@@ -123,7 +123,7 @@ describe("regeneratedOccurrenceRows", () => {
 
   test("starts every new occurrence open, even from a done one", () => {
     // Nov 9 (a Monday, kept) is the first of the four; three are new.
-    expect(rows({ recurrence: tuesdays }, true, ["2026-11-09"])).toEqual([
+    expect(rows({ recurrence: tuesdays }, true)).toEqual([
       "2026-11-10 todo",
       "2026-11-17 todo",
       "2026-11-24 todo",
@@ -131,9 +131,9 @@ describe("regeneratedOccurrenceRows", () => {
   });
 
   test("leaves out kept dates instead of doubling them", () => {
-    expect(rows({ recurrence: monTue }, true, ["2026-11-09"])).toEqual([
+    // Nov 9 kept as the master, Nov 16 done alone.
+    expect(rows({ recurrence: monTue }, true, ["2026-11-16"])).toEqual([
       "2026-11-10 todo",
-      "2026-11-16 todo",
       "2026-11-17 todo",
     ]);
   });
@@ -155,8 +155,8 @@ describe("regeneratedOccurrenceRows", () => {
         startDate: "2026-11-10",
       },
       keepEdited: true,
-      keptDates: new Set(["2026-11-10"]),
-      seriesMasterId: "new-master",
+      keptDates: new Set(),
+      seriesMasterId: "nov9",
       task: nov9,
       userId: "user",
     });
@@ -171,8 +171,8 @@ describe("regeneratedOccurrenceRows", () => {
     const [first] = regenerate({
       input: { dueDate: null, recurrence: tuesdays, startTime: null },
       keepEdited: true,
-      keptDates: new Set(["2026-11-09"]),
-      seriesMasterId: "new-master",
+      keptDates: new Set(),
+      seriesMasterId: "nov9",
       task: { ...nov9, dueDate: "2026-11-11" },
       userId: "user",
     });
@@ -207,9 +207,7 @@ describe("regeneratedOccurrenceRows", () => {
     ).toEqual(["2026-11-12 done R", "2026-11-13 todo", "2026-11-14 todo"]);
     // Moved to Nov 23 and kept there (Mark done): the series follows it.
     expect(
-      rows({ recurrence: tuesdays, startDate: "2026-11-23" }, true, [
-        "2026-11-23",
-      ])
+      rows({ recurrence: tuesdays, startDate: "2026-11-23" }, true)
     ).toEqual(["2026-11-24 todo", "2026-12-01 todo", "2026-12-08 todo"]);
   });
 });

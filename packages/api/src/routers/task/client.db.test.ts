@@ -255,7 +255,7 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       create: (
         startDate: string,
         recurrence: TaskRecurrence,
-        extra: { dueDate?: string } = {}
+        extra: { dueDate?: string; tagIds?: string[] } = {}
       ) =>
         service.createTask(userId, {
           recurrence,
@@ -268,6 +268,19 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
+      /** A new tag of the user's, by name; returns its id. */
+      tag: (name: string) =>
+        Effect.gen(function* () {
+          const db = yield* modules.db.Database;
+          const [created] = yield* db
+            .insert(modules.tag.tagTable)
+            .values({ icon: "tag", id: crypto.randomUUID(), name, userId })
+            .returning({ id: modules.tag.tagTable.id });
+          if (!created) {
+            return yield* Effect.die(new Error(`Tag ${name} not created`));
+          }
+          return created.id;
+        }),
       update: (
         date: string | null,
         input: TaskUpdateInput,
@@ -416,6 +429,50 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-10 Review todo in 2026-11-09",
       "2026-11-11 Review todo alone",
       "2026-11-13 Renamed todo alone",
+    ]);
+  });
+
+  test("sets a following save's status on the edited occurrence alone", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update(
+            "2026-11-10",
+            { status: "done", title: "Renamed" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-10 Renamed done exc in 2026-11-09",
+      "2026-11-11 Renamed todo in 2026-11-09",
+    ]);
+  });
+
+  test("gives a pattern change's tags to its new rows, not to kept occurrences", async () => {
+    // Nov 11 retagged alone, then Nov 10 given Daily x3 tagged Errand.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          const home = yield* u.tag("Home");
+          const work = yield* u.tag("Work");
+          const errand = yield* u.tag("Errand");
+          yield* u.create("2026-11-09", daily(4), { tagIds: [home] });
+          yield* u.update("2026-11-11", { tagIds: [work] }, "this");
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: daily(3), tagIds: [errand] },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 until 2026-11-09 #Home",
+      "2026-11-10 Review todo MASTER DAILY/1 x3 #Errand",
+      "2026-11-11 Review todo exc in 2026-11-10 #Work",
+      "2026-11-12 Review todo in 2026-11-10 #Errand",
     ]);
   });
 

@@ -162,28 +162,34 @@ export function keepsEditedOccurrence(params: {
  * The new occurrences for a "this and following" pattern change, from where
  * the edited occurrence now starts: its new date when the edit moves it
  * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
- * one. Dates in `keptDates` (exceptions, including the kept edited
- * occurrence) are left out. When the edited occurrence is kept, it is the
- * master (`seriesMasterId` is its id) and carries the pattern. Otherwise
+ * one. Dates other kept tasks hold are left out. When the edited
+ * occurrence is kept, it holds the first date, as the master
+ * (`seriesMasterId` is its id) carrying the pattern. Otherwise
  * the first row, on its date, replaces it: the new master, with the
  * pattern and its status. Other new occurrences start open.
  */
 export function regeneratedOccurrenceRows(params: {
   input: TaskUpdateInput;
   keepEdited: boolean;
+  /** The dates other kept tasks (exceptions) hold from the split on. */
   keptDates: ReadonlySet<string>;
   /** The new pattern, from the edited occurrence's start after the edit. */
   pattern: CheckedPattern;
+  /** The new master's id: the edited occurrence's when it's kept. */
   seriesMasterId: string;
   task: TaskSelect;
   userId: string;
 }): TaskInsertRow[] {
   const { input, pattern, task } = params;
   const seriesStartDate = Temporal.PlainDate.from(pattern.startDate);
+  const skipped = new Set(params.keptDates);
+  if (params.keepEdited) {
+    skipped.add(pattern.startDate);
+  }
   const occurrenceDates = generateOccurrences(
     pattern.recurrence,
     seriesStartDate
-  ).filter((date) => !params.keptDates.has(date.toString()));
+  ).filter((date) => !skipped.has(date.toString()));
   return buildOccurrenceRowsFromTask({
     input,
     occurrenceDates,

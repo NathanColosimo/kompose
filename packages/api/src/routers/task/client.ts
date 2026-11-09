@@ -900,15 +900,11 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
-  // A kept edited occurrence holds the new series' first date.
-  const keptDates = keepEdited
-    ? new Set([...otherKeptDates, pattern.startDate])
-    : otherKeptDates;
   const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
     input,
     keepEdited,
-    keptDates,
+    keptDates: otherKeptDates,
     pattern,
     seriesMasterId,
     task,
