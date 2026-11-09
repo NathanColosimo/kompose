@@ -1461,6 +1461,41 @@ describe("Entire series start and length changes, as Google applies them", () =>
     expect(google.writes()).toHaveLength(1);
   });
 
+  test("a first meeting's day move is refused while an all-day occurrence has its own length", async () => {
+    // Daily all day from Nov 9; Nov 12 runs through Nov 14 on its own. The
+    // first meeting moves to Nov 8: Google would give Nov 12 back one day.
+    const allDay: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { date: "2026-11-09" },
+    };
+    const occurrence = (day: string, end: string): Event => ({
+      ...allDay,
+      end: { date: end },
+      id: `series_${day.replaceAll("-", "")}`,
+      originalStartTime: { date: day },
+      recurrence: undefined,
+      recurringEventId: "series",
+      start: { date: day },
+    });
+    const google = fakeGoogle(allDay, [occurrence("2026-11-12", "2026-11-15")]);
+    expect(
+      await refusalOf(
+        edit("all", occurrence("2026-11-09", "2026-11-10"), {
+          end: { date: "2026-11-09" },
+          start: { date: "2026-11-08" },
+        })
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-12"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
   test("a new time an occurrence was already moved to on its own saves", async () => {
     // Nov 23 moved to 10:00 on its own; the series moves to 10:00. Google
     // cancels Nov 23's exception, and the series' 10:00 meeting is the same.

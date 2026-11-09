@@ -255,6 +255,30 @@ describe("This and following", () => {
     ]);
   });
 
+  test("an hourly series moved a day on keeps a live meeting carried onto a deleted one's place", async () => {
+    // Hourly from Nov 9 9:00, Nov 10 11:00 deleted; from Nov 9 10:00 moved
+    // to Nov 10 10:00. Nov 9 11:00 is carried to Nov 10 11:00: no skip
+    // there.
+    const hourly: Event = { ...weekly, recurrence: ["RRULE:FREQ=HOURLY"] };
+    const google = fakeGoogle(hourly, [
+      {
+        ...occurrenceOf(hourly, "2026-11-10T11:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(hourly, "2026-11-09T10:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-10T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual(["RRULE:FREQ=HOURLY"]);
+  });
+
   describe("Mondays and Wednesdays made Wednesdays from Mon Nov 16", () => {
     // Mon Nov 23 deleted on its own. Its place in the new series is Wed
     // Nov 25, which the Wednesday meeting there still holds.
