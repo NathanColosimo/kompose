@@ -353,8 +353,9 @@ function newTimesKeep(params: {
 /**
  * Where the occurrences deleted on their own (`cancelled`, original
  * starts) are once a series that meets once a day starts at `start`: a
- * rule's meeting on its own day at the new time; an added (RDATE) one, or
- * one under the same time of day, where it was.
+ * rule's meeting on its own day at the new time (its date, made all day;
+ * that day at the new time, made timed); an added (RDATE) one, or one
+ * under the same time of day, where it was.
  */
 function deletedSlots(params: {
   cancelled: string[];
@@ -363,8 +364,8 @@ function deletedSlots(params: {
 }): string[] {
   const { cancelled, master, start } = params;
   const zone = seriesZoneOf(master);
-  const change = timeOfDayChange(master, start);
-  if (!change) {
+  const keepsForm = Boolean(master.start.date) === Boolean(start.date);
+  if (keepsForm && !timeOfDayChange(master, start)) {
     return cancelled;
   }
   const rules = (master.recurrence ?? []).filter((line) =>
@@ -379,11 +380,15 @@ function deletedSlots(params: {
         slot,
         start: master.start,
       }) === true;
-    return day && ruleMet
+    const clock = clockOf(start, zone);
+    if (!(day && (ruleMet || !keepsForm))) {
+      return slot;
+    }
+    return clock
       ? googleDateTime(
-          day.toZonedDateTime({ plainTime: change.to, timeZone: zone })
+          day.toZonedDateTime({ plainTime: clock, timeZone: zone })
         )
-      : slot;
+      : day.toString();
   });
 }
 
@@ -398,6 +403,8 @@ function deletedSlots(params: {
  */
 function seriesChangeRefusal(params: {
   changed: { occurrence: Event; originalStart: string }[];
+  /** The fields the edit changed. */
+  changes: Partial<CreateEvent>;
   master: Event;
   /** Whether the start or the rule changes (else only the length). */
   movesSlots: boolean;
@@ -418,6 +425,12 @@ function seriesChangeRefusal(params: {
   const movesStart = !sameTime(times.start, master.start, zone);
   const lost = changed
     .filter(({ occurrence, originalStart }) => {
+      if (movesStart && occurrence.id === opened.id) {
+        // The edit replaces its times, and the fields it changes.
+        return Object.keys(
+          changesOwnTo(occurrence, master, params.changes, zone)
+        ).some((field) => field !== "start" && field !== "end");
+      }
       if (movesStart) {
         return !newTimesKeep({
           master,
@@ -641,8 +654,6 @@ function carriedSlot(params: {
   const zone = seriesZoneOf(master);
   const meets = (at: string) =>
     seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true;
-  // On its own day first, with the split's change of time (a rule day that
-  // didn't move), then as many days on as the split moved.
   const splitDay = dayOfStart(asStart(params.splitStart), zone);
   const ownDayStart = onDay(start, splitDay, zone);
   const ownDay =
@@ -1516,23 +1527,28 @@ export function makeGoogleCalendarService(
       );
       // A deleted or skipped rule meeting stays skipped where the new
       // series meets in its place, as a changed one is put back (read
-      // without skips: a place already skipped is still its place); an
-      // added one keeps its slot. The new series' start is the meeting the
-      // user just saved, so no skip lands on it.
+      // without skips: a place already skipped is still its place, and in
+      // the new start's form: made all day or timed, it's placed by day);
+      // an added one keeps its slot. No skip lands on the new series'
+      // start, the meeting the user just saved, or on an added meeting it
+      // keeps.
       const unskipped = final.filter((line) => !line.startsWith("EXDATE"));
       const startSlot = slotOf(start, zone);
+      const splitStart = inFormOf(originalStart, start, zone) ?? originalStart;
       const placed = [...params.cancelled, ...ownSkips].flatMap((slot) => {
         const at = isAdded(slot)
-          ? slot
-          : (carriedSlot({
+          ? null
+          : carriedSlot({
               master,
               recurrence: unskipped,
-              slot,
-              splitStart: originalStart,
+              slot: inFormOf(slot, start, zone) ?? slot,
+              splitStart,
               start,
-            }) ?? slot);
-        const formed = inFormOf(at, start, zone);
-        return formed && formed !== startSlot ? [formed] : [];
+            });
+        const formed = inFormOf(at ?? slot, start, zone);
+        const ontoAdded =
+          at !== null && formed !== null && addsSlot(final, formed, zone);
+        return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
       });
       const recurrence = skipping(rule, [...placed, ...moved], zone);
       const ends = repeatZone(master, start);
@@ -1790,6 +1806,60 @@ export function makeGoogleCalendarService(
     return { changes, event: { ...sanitizeEventPayload(master), ...changes } };
   };
 
+  /**
+   * The rule an Entire series save writes, once what it would cost the
+   * occurrences changed or deleted on their own is checked: a deleted one
+   * stays deleted as a skip where its meeting now is (`deletedSlots`), as
+   * Google brings it back when the start moves; one changed whose changes
+   * Google would undo is refused before writing (`seriesChangeRefusal`).
+   */
+  const keptOccurrences = (params: {
+    calendarId: string;
+    changes: Partial<CreateEvent>;
+    edited: CreateEvent;
+    master: Event;
+    opened: Event;
+    times: { end: Event["end"]; start: Event["start"] };
+  }) =>
+    Effect.gen(function* () {
+      const { master, times } = params;
+      const zone = seriesZoneOf(master);
+      const rule = params.edited.recurrence ?? master.recurrence ?? [];
+      const movesStart = !sameTime(times.start, master.start, zone);
+      const movesSlots =
+        movesStart ||
+        JSON.stringify(rule) !== JSON.stringify(master.recurrence ?? []);
+      if (!(movesSlots || !sameLength(times, master, zone))) {
+        return rule;
+      }
+      const { cancelled, changed } = yield* exceptionsOf(
+        params.calendarId,
+        master,
+        null
+      );
+      const recurrence = movesStart
+        ? skipping(
+            rule,
+            deletedSlots({ cancelled, master, start: times.start }),
+            zone
+          )
+        : rule;
+      const refusal = seriesChangeRefusal({
+        changed,
+        changes: params.changes,
+        master,
+        movesSlots,
+        opened: params.opened,
+        recurrence,
+        saved: params.edited.recurrence,
+        times,
+      });
+      if (refusal) {
+        return yield* Effect.fail(refused(refusal));
+      }
+      return recurrence;
+    });
+
   const updateEventAll = (
     calendarId: string,
     edited: CreateEvent,
@@ -1806,42 +1876,15 @@ export function makeGoogleCalendarService(
 
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
-      let recurrence = edited.recurrence ?? master.recurrence ?? [];
-      const movesSlots =
-        !sameTime(times.start, master.start, zone) ||
-        JSON.stringify(recurrence) !== JSON.stringify(master.recurrence ?? []);
-      const resizes = !sameLength(times, master, zone);
-      if (movesSlots || resizes) {
-        const { cancelled, changed } = yield* exceptionsOf(
-          calendarId,
-          master,
-          null
-        );
-        const keepsForm =
-          Boolean(master.start.date) === Boolean(times.start.date);
-        if (keepsForm && !sameTime(times.start, master.start, zone)) {
-          // Google brings back an occurrence deleted on its own when the
-          // series' start moves, so it stays deleted as a skip where its
-          // meeting now is (`deletedSlots`).
-          recurrence = skipping(
-            recurrence,
-            deletedSlots({ cancelled, master, start: times.start }),
-            zone
-          );
-        }
-        const refusal = seriesChangeRefusal({
-          changed,
-          master,
-          movesSlots,
-          opened: currentEvent,
-          recurrence,
-          saved: edited.recurrence,
-          times,
-        });
-        if (refusal) {
-          return yield* Effect.fail(refused(refusal));
-        }
-      }
+      const recurrence = yield* keptOccurrences({
+        calendarId,
+        changes,
+        edited,
+        master,
+        opened: currentEvent,
+        times,
+      });
+      const movesStart = !sameTime(times.start, master.start, zone);
 
       const payload: CreateEvent = {
         ...event,
@@ -1876,13 +1919,17 @@ export function makeGoogleCalendarService(
       });
 
       const updated = yield* parseEventResponse(response);
-      yield* applyToOpened({
-        calendarId,
-        changes,
-        edited,
-        master,
-        occurrence: currentEvent,
-      });
+      // A new start cancels the opened occurrence's own times with the
+      // rest of its exception; there's nothing of its own left to write.
+      if (!movesStart) {
+        yield* applyToOpened({
+          calendarId,
+          changes,
+          edited,
+          master,
+          occurrence: currentEvent,
+        });
+      }
       return updated;
     });
 
@@ -2348,7 +2395,7 @@ export function makeGoogleCalendarService(
       if (!Array.isArray(carried)) {
         return yield* Effect.fail(refused(carried));
       }
-      const created = yield* splitSeries({
+      return yield* splitSeries({
         calendarId,
         carried,
         destinationCalendarId,
@@ -2356,8 +2403,6 @@ export function makeGoogleCalendarService(
         newSeries: sanitizeEventPayload({ ...master, ...slot, recurrence }),
         originalStart,
       });
-
-      return created;
     }
   );
 
