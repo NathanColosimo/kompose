@@ -1,6 +1,7 @@
 import { Temporal } from "temporal-polyfill";
 import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
+import type { SeriesRefusal } from "./series-edits";
 import {
   countedRuleMeetings,
   DATE_ONLY,
@@ -13,7 +14,7 @@ import {
   untilMoment,
 } from "./until";
 
-const COUNT_REGEX = /;?COUNT=([^;]+)/;
+const COUNT_PART = /([:;])COUNT=([^;]+)/;
 const UNTIL_VALUE = /[:;]UNTIL=([^;]+)/;
 const FREQ_VALUE = /FREQ=([A-Z]+)/;
 const INTERVAL_VALUE = /INTERVAL=(\d+)/;
@@ -172,13 +173,27 @@ export function followingDelete(params: {
   if (
     recurrence
       .filter(isRule)
-      .every((rule) => COUNT_REGEX.test(rule) || UNTIL_VALUE.test(rule))
+      .every((rule) => ruleCount(rule) !== null || UNTIL_VALUE.test(rule))
   ) {
     return "list";
   }
   return addsSlot(recurrence, params.originalStart, params.seriesZone)
     ? "refuse"
     : "cut";
+}
+
+/**
+ * Whether a new series' rule ends (UNTIL) before `first`, its first
+ * meeting: Google would keep only that meeting.
+ */
+export function endsBeforeStart(
+  recurrence: string[],
+  first: Temporal.Instant | null,
+  seriesZone: string
+): boolean {
+  const until = recurrence.find(isRule)?.match(UNTIL_VALUE)?.[1];
+  const last = until ? untilMoment(until, seriesZone) : null;
+  return Boolean(last && first && Temporal.Instant.compare(last, first) < 0);
 }
 
 /** Whether `recurrence` repeats at all: a rule, or an added day. */
@@ -189,7 +204,7 @@ export function repeats(recurrence: string[] | undefined): boolean {
 }
 
 /** A skip's key: its moment, or its date for an all-day one. */
-export function skipKey(value: RecurrenceValue): string {
+function skipKey(value: RecurrenceValue): string {
   return value.instant
     ? String(value.instant.epochMilliseconds)
     : value.day.toString();
@@ -298,7 +313,10 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 }
 
 /** Why a series can't be split at an occurrence ("This and following"). */
-export type SplitBlock = "addedOccurrence" | "severalRules";
+export type SplitBlock = Extract<
+  SeriesRefusal["reason"],
+  "addedOccurrence" | "severalRules"
+>;
 
 /**
  * Whether deleting from `originalStart` on could lengthen a rule: one whose
@@ -562,8 +580,8 @@ function ruleEndsBefore(
     const end = untilMoment(until, seriesZone);
     return end ? Temporal.Instant.compare(end, split) < 0 : null;
   }
-  const count = Number(COUNT_REGEX.exec(rule)?.[1]);
-  if (!Number.isFinite(count)) {
+  const count = ruleCount(rule);
+  if (count === null) {
     return false;
   }
   if (!first) {
@@ -602,6 +620,12 @@ function ruleEndsBefore(
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/** A rule line's COUNT; null for a line that isn't a rule or has none. */
+function ruleCount(line: string): number | null {
+  const count = isRule(line) ? Number(COUNT_PART.exec(line)?.[2]) : Number.NaN;
+  return Number.isFinite(count) ? count : null;
+}
 
 // Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {

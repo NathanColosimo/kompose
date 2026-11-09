@@ -961,7 +961,7 @@ describe("a series This and following can't keep", () => {
     expect(google.writes()).toEqual([]);
   });
 
-  test("one with two counted rules is refused before counting", async () => {
+  test("one with two counted rules is refused before anything else is read", async () => {
     // 9:00 and 15:00 daily, five each: one new series can't carry both.
     const series: Event = {
       ...weekly,
