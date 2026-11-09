@@ -164,7 +164,7 @@ export function splitAddedDays(
 }
 
 /** Whether the series adds days of its own (RDATE). */
-function hasAddedDays(recurrence: string[]): boolean {
+export function hasAddedDays(recurrence: string[]): boolean {
   return recurrence.some((line) => line.startsWith("RDATE"));
 }
 

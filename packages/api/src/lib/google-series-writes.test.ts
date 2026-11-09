@@ -318,9 +318,11 @@ describe("This and following", () => {
       data: {
         originalStarts: ["2026-11-23T09:00:00-05:00"],
         reason: "dropsChangedOccurrences",
+        seriesOnly: true,
       },
+      // One occurrence can't take a new repeat.
       message:
-        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -479,6 +481,33 @@ describe("a split that fails part way leaves the old series whole", () => {
     });
     expect(deleted?.method).toBe("DELETE");
     expect(deleted?.url.pathname).toContain("/calendars/work/");
+  });
+});
+
+describe("a move to another calendar from an occurrence", () => {
+  test("offers no single occurrence when it's refused", async () => {
+    // A rule by days of the year (Mondays Nov 9 to Dec 7) isn't read, so
+    // a renamed Nov 30 can't be told to have a place in the moved series.
+    // One occurrence can't move to another calendar on its own.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=YEARLY;BYYEARDAY=313,320,327,334,341"],
+    };
+    const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
+    const google = fakeGoogle(series, [
+      opened,
+      { ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"), summary: "Mine" },
+    ]);
+    expect(
+      await refusalOf(
+        service().moveEvent("primary", opened.id, "work", "following")
+      )
+    ).toMatchObject({
+      data: { reason: "dropsChangedOccurrences", seriesOnly: true },
+      message:
+        "This would undo changes made to single occurrences (Nov 30), so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
+    });
+    expect(google.writes()).toEqual([]);
   });
 });
 
@@ -648,6 +677,7 @@ describe("Entire series", () => {
       data: {
         originalStarts: ["2026-12-07T09:00:00-05:00"],
         reason: "dropsChangedOccurrences",
+        seriesOnly: true,
       },
     });
     expect(google.writes()).toEqual([]);
@@ -1190,6 +1220,8 @@ describe("This and following, where the new series sits", () => {
     expect(refusal).toMatchObject({
       data: { reason: "dropsChangedOccurrences" },
     });
+    // Its rule follows the new day: one occurrence can take that.
+    expect(refusal).not.toHaveProperty("data.seriesOnly");
     expect(
       [
         ...(refusal as { data: { originalStarts: string[] } }).data
@@ -2277,11 +2309,15 @@ describe("Entire series start and length changes, as Google applies them", () =>
           start: { dateTime: "2026-11-09T10:00:00-05:00", timeZone: zone },
         })
       )
-    ).toMatchObject({
+    ).toEqual({
+      code: "BAD_REQUEST",
       data: {
         originalStarts: ["2026-11-23T09:00:00-05:00"],
         reason: "dropsChangedOccurrences",
       },
+      // A new time one occurrence can take.
+      message:
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -2307,6 +2343,65 @@ describe("Entire series start and length changes, as Google applies them", () =>
       },
       message:
         "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a new day offers this occurrence, a new repeat with it doesn't", async () => {
+    // The series moved from Mondays to Tuesdays, its rule rebuilt for the
+    // new day; then every other Tuesday as well.
+    const google = fakeGoogle(weekly, [renamed("2026-11-23T09:00:00-05:00")]);
+    const toTuesdays = (rule: string) =>
+      refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+          recurrence: [rule],
+          start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+        })
+      );
+    expect(await toTuesdays("RRULE:FREQ=WEEKLY;BYDAY=TU")).toEqual({
+      code: "BAD_REQUEST",
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+      message:
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+    });
+    expect(
+      await toTuesdays("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU")
+    ).toMatchObject({
+      data: { seriesOnly: true },
+      message:
+        "This would undo changes made to single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("a new length with a new repeat doesn't offer this occurrence", async () => {
+    // Nov 23 runs to 10:00 on its own; the series' 30 minutes become 45,
+    // and it meets on Thursdays too (Nov 23 still a meeting).
+    const longer = occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+      end: "2026-11-23T10:00:00-05:00",
+      start: "2026-11-23T09:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [longer]);
+    expect(
+      await refusalOf(
+        edit("all", weekly, {
+          end: { dateTime: "2026-11-09T09:45:00-05:00", timeZone: zone },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
+        })
+      )
+    ).toEqual({
+      code: "BAD_REQUEST",
+      data: {
+        originalStarts: ["2026-11-23T09:00:00-05:00"],
+        reason: "resizesChangedOccurrences",
+        seriesOnly: true,
+      },
+      message:
+        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
     });
     expect(google.writes()).toEqual([]);
   });

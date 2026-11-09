@@ -1,6 +1,10 @@
 /// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
-import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
+import {
+  seriesSlotAt,
+  seriesTimesForEdit,
+  slotOf,
+} from "@kompose/google-cal/series-times";
 
 const zone = "America/New_York";
 
@@ -123,5 +127,40 @@ describe("seriesTimesForEdit", () => {
       dateTime: "2026-10-06T19:00:00-04:00",
       timeZone: zone,
     });
+  });
+});
+
+describe("a series' slots", () => {
+  test("a start written without an offset is read in its zone", () => {
+    expect(
+      slotOf({ dateTime: "2026-11-16T09:00:00", timeZone: zone }, zone)
+    ).toBe("2026-11-16T09:00:00-05:00");
+    expect(slotOf({ date: "2026-11-16" }, zone)).toBe("2026-11-16");
+    expect(slotOf({}, zone)).toBeNull();
+  });
+
+  test("the series at an occurrence's slot keeps its length and zone", () => {
+    expect(
+      seriesSlotAt(
+        {
+          end: { dateTime: "2026-11-09T09:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-09T09:00:00-05:00", timeZone: zone },
+        },
+        "2026-11-16T14:00:00Z"
+      )
+    ).toEqual({
+      end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+      start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+    });
+    // All day: as many days, from the slot's date.
+    expect(
+      seriesSlotAt(
+        {
+          end: { date: "2026-11-11" },
+          start: { date: "2026-11-09" },
+        },
+        "2026-11-16"
+      )
+    ).toEqual({ end: { date: "2026-11-18" }, start: { date: "2026-11-16" } });
   });
 });
