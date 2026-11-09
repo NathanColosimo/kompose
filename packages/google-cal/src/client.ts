@@ -1872,8 +1872,6 @@ function followingOccurrences(params: {
   changes: Partial<CreateEvent>;
   edited: CreateEvent;
   exceptions: { occurrence: Event; originalStart: string }[];
-  /** Whether the edit left the opened occurrence's times. */
-  keptTimes: boolean;
   master: Event;
   opened: Event;
   originalStart: string;
@@ -1889,7 +1887,7 @@ function followingOccurrences(params: {
   // A new end alone keeps the opened one's own start, now with that end.
   const keptStart = sameTime(params.edited.start, params.opened.start, zone);
   let openedChanges: Partial<CreateEvent> = ownFields;
-  if (params.keptTimes) {
+  if (keepsTimes(params.edited, params.opened, zone)) {
     openedChanges = own;
   } else if (keptStart && own.start) {
     openedChanges = { ...own, end: params.edited.end };
@@ -3379,7 +3377,6 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(blocked);
       }
       const { changes, event } = asSeriesEdit(edited, currentEvent, master);
-      const keptTimes = keepsTimes(edited, currentEvent, zone);
       const times = followingTimes(edited, currentEvent, master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
@@ -3403,11 +3400,10 @@ export function makeGoogleCalendarService(
         occurrences: followingOccurrences({
           changes,
           edited,
-          // "Repeat: None" ends the series there, so later occurrences go
-          // with it, as a delete does. Otherwise each is carried, or the
-          // save refused if the new part has no place for it.
-          exceptions: edited.recurrence?.length === 0 ? [] : exceptions.changed,
-          keptTimes,
+          // Each is carried, or the save refused if the new part has no
+          // place for it ("Repeat: None" has none: one changed later would
+          // be lost, as an end set before it would lose it).
+          exceptions: exceptions.changed,
           master,
           opened: currentEvent,
           originalStart,
