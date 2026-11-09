@@ -527,21 +527,36 @@ function deletedSlots(params: {
 }
 
 /**
- * The rule meetings deleted on their own whose place after a new start
- * (where `deletedSlots` skips them) isn't one of the saved series': after
- * a first meeting's day move under a rule whose days follow its start
- * (monthly on the start's date, say), the meeting now in its place would
- * come back.
+ * The rule meetings deleted on their own, or skipped in the rule (EXDATE)
+ * by a skip the save sends as it was, whose place after a new start (where
+ * `deletedSlots` skips them) isn't one of the saved series': after a first
+ * meeting's day move under a rule whose days follow its start (monthly on
+ * the start's date, say), the meeting now in its place would come back. A
+ * skip the client moved or dropped was placed by it.
  */
 function deletedLost(params: {
   cancelled: string[];
   master: Event;
   recurrence: string[];
+  /** The rules the save sends; left out, the series' own. */
+  saved: string[] | undefined;
   times: { end: Event["end"]; start: Event["start"] };
 }): string[] {
   const { master, recurrence, times } = params;
+  const zone = seriesZoneOf(master);
+  const own = master.recurrence ?? [];
+  const sent = new Set(
+    dateValues(params.saved ?? own, "EXDATE", zone).map(skipKey)
+  );
+  const ruleSkips = dateValues(own, "EXDATE", zone)
+    .filter((value) => sent.has(skipKey(value)))
+    .map((value) =>
+      value.instant
+        ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
+        : value.day.toString()
+    );
   const first = momentOf(times.start, repeatZone(master, times.start));
-  return params.cancelled.filter((slot) => {
+  return [...new Set([...params.cancelled, ...ruleSkips])].filter((slot) => {
     const ruleMet = ruleMeetingAt(slot, master);
     const place =
       ruleMet === false ? null : placeOnNewStart(slot, master, times.start);
