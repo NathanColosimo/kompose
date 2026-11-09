@@ -229,6 +229,48 @@ describe("This and following", () => {
     ]);
   });
 
+  test("a move of one of two weekdays keeps the other day's deleted and changed occurrences there", async () => {
+    // Mondays and Wednesdays; Wed Nov 25 deleted and Wed Dec 2 renamed on
+    // their own. From Nov 16 the Mondays move to Tuesdays: Wednesdays stay,
+    // so do their skip and rename.
+    const twoDays: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"],
+    };
+    const google = fakeGoogle(twoDays, [
+      {
+        ...occurrenceOf(twoDays, "2026-11-25T09:00:00-05:00"),
+        status: "cancelled",
+      },
+      {
+        ...occurrenceOf(twoDays, "2026-12-02T09:00:00-05:00"),
+        summary: "Planning (renamed)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(
+            "following",
+            occurrenceOf(twoDays, "2026-11-16T09:00:00-05:00"),
+            {
+              end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,WE"],
+              start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+            }
+          )
+        )
+      )
+    ).toBe(true);
+    const [created, renamed] = google.writes();
+    expect(created?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU,WE",
+      "EXDATE:20261125T140000Z",
+    ]);
+    expect(renamed?.url.pathname).toEndWith("_20261202T140000Z");
+    expect(renamed?.body?.summary).toBe("Planning (renamed)");
+  });
+
   test("from the first occurrence, edits the series itself", async () => {
     const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
     const google = fakeGoogle(weekly);

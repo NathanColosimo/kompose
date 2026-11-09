@@ -653,12 +653,8 @@ function ruleEndsBefore(
   if (!last) {
     return null;
   }
-  const lastAt = last
-    .toZonedDateTime({
-      plainTime: time ?? clock ?? undefined,
-      timeZone: seriesZone,
-    })
-    .toInstant();
+  // Timed rules were counted meeting by meeting above: this one is all day.
+  const lastAt = last.toZonedDateTime({ timeZone: seriesZone }).toInstant();
   return Temporal.Instant.compare(lastAt, split) < 0;
 }
 
