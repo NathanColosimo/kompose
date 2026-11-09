@@ -1707,12 +1707,6 @@ function writeOptions(
   };
 }
 
-function getConferenceDataVersion(event: {
-  conferenceData?: unknown;
-}): number | undefined {
-  return event.conferenceData ? 1 : undefined;
-}
-
 function summarizeEventForDebug(event: CreateEvent) {
   return {
     summary: event.summary,
@@ -2150,7 +2144,7 @@ export function makeGoogleCalendarService(
       "eventType",
       event.eventType ?? "default"
     );
-    const conferenceDataVersion = getConferenceDataVersion(event);
+    const conferenceDataVersion = writeOptions(event, {}).conferenceDataVersion;
     const response = yield* Effect.tryPromise({
       try: () =>
         client.calendars.events.create(calendarId, {
@@ -2469,20 +2463,14 @@ export function makeGoogleCalendarService(
       };
       // Google changes or removes a meeting link only at version 1; one
       // the occurrence dropped on its own is a change too.
-      const conferenceDataVersion =
-        "conferenceData" in carried.changes
-          ? 1
-          : getConferenceDataVersion(payload);
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(occurrence.id, {
             ...payload,
             calendarId,
-            ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
-            // Google writes attachments only when asked to.
-            ...("attachments" in carried.changes
-              ? { supportsAttachments: true }
-              : {}),
+            // A meeting link the occurrence dropped on its own, and its
+            // attachments, are its changes too.
+            ...writeOptions(payload, carried.changes),
           }),
         catch: (cause) => {
           logGoogleEventUpdateFailure({
@@ -2584,7 +2572,6 @@ export function makeGoogleCalendarService(
       const written = repeating
         ? newSeries
         : { ...newSeries, ...atStart?.changes, recurrence: [] };
-      const conferenceDataVersion = getConferenceDataVersion(written);
       const created = yield* Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
           try: () =>
@@ -2593,11 +2580,13 @@ export function makeGoogleCalendarService(
               {
                 ...written,
                 id: seriesId,
-                ...(conferenceDataVersion ? { conferenceDataVersion } : {}),
-                // Google writes attachments only when asked to.
-                ...(written.attachments?.length
-                  ? { supportsAttachments: true }
-                  : {}),
+                // Its attachments, when it has any, are written on purpose.
+                ...writeOptions(
+                  written,
+                  written.attachments?.length
+                    ? { attachments: written.attachments }
+                    : {}
+                ),
               },
               // Retried below: a 409 there means a try whose answer was
               // lost made it, which is read back, not tried again.
@@ -2644,7 +2633,6 @@ export function makeGoogleCalendarService(
         ...master,
         recurrence: cutRecurrence,
       });
-      const cutConferenceDataVersion = getConferenceDataVersion(cutPayload);
       // A cut is tried again (it writes the same whole event each time, so
       // an answer to a later try is true). One that may still go through is
       // remembered: if every try fails, the old series is left as it reads
@@ -2658,9 +2646,7 @@ export function makeGoogleCalendarService(
               {
                 ...cutPayload,
                 calendarId,
-                ...(cutConferenceDataVersion
-                  ? { conferenceDataVersion: cutConferenceDataVersion }
-                  : {}),
+                ...writeOptions(cutPayload, {}),
               },
               { maxRetries: 0 }
             ),
