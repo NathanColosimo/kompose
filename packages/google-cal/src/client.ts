@@ -871,11 +871,11 @@ function carriedSlot(params: {
 }
 
 /**
- * Where the new series meets in place of the split's own meeting, when it
- * starts on a day its rules don't meet (a Monday moved to Sunday, Mondays
- * kept). Google always meets at a series' start, so that start is a
- * meeting of its own, and the rule's meeting in the moved one's place
- * would be there too.
+ * The rule's meeting on the split's own day at the new time, when the new
+ * series meets there and starts on a day its rules don't meet (a Monday
+ * moved to Sunday, Mondays kept). Google always meets at a series' start,
+ * so that start is a meeting of its own, and the moved meeting would be
+ * there twice.
  */
 function movedOffRule(params: {
   master: Event;
@@ -884,7 +884,8 @@ function movedOffRule(params: {
   start: Event["start"];
 }): string[] {
   const { master, originalStart, recurrence, start } = params;
-  const day = dayOfStart(start, seriesZoneOf(master));
+  const zone = seriesZoneOf(master);
+  const day = dayOfStart(start, zone);
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   if (
     !(day && rules.length > 0) ||
@@ -892,14 +893,30 @@ function movedOffRule(params: {
   ) {
     return [];
   }
-  const place = carriedSlot({
-    master,
-    recurrence,
-    slot: originalStart,
-    splitStart: originalStart,
-    start,
-  });
-  return place ? [place] : [];
+  const ownDay = onDay(start, dayOfStart(asStart(originalStart), zone), zone);
+  const place = ownDay && slotOf(ownDay, zone);
+  return place &&
+    place !== slotOf(start, zone) &&
+    seriesMeetsAt({ recurrence, seriesZone: zone, slot: place, start }) === true
+    ? [place]
+    : [];
+}
+
+/**
+ * `slot` in `start`'s form: its day for an all-day series, that day at
+ * `start`'s time for a timed one.
+ */
+function inFormOf(
+  slot: string,
+  start: Event["start"],
+  zone: string
+): string | null {
+  if (DATE_ONLY.test(slot) === Boolean(start.date)) {
+    return slot;
+  }
+  const day = dayOfStart(asStart(slot), zone);
+  const formed = onDay(start, day, zone);
+  return formed && slotOf(formed, zone);
 }
 
 /**
@@ -1662,6 +1679,16 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
       const zone = seriesZoneOf(master);
+      const moved = movedOffRule({
+        master,
+        originalStart,
+        recurrence:
+          ruleForStart(counted, master, start, originalStart) ?? counted,
+        start,
+      });
+      // The moved meeting's skip takes one of a COUNT's places, so the
+      // rest are placed against the COUNT it ends up with.
+      const final = changeCount(counted, moved.length);
       // Moved to other days, or in a series that meets several times a day
       // (whose times don't follow its start), a skipped or deleted rule
       // meeting after the split stays skipped where the new series meets
@@ -1681,7 +1708,7 @@ export function makeGoogleCalendarService(
           clockOf(master.start, zone)
         );
       const writtenRule = (
-        ruleForStart(counted, master, start, originalStart) ?? counted
+        ruleForStart(final, master, start, originalStart) ?? final
       ).filter((line) => !line.startsWith("EXDATE"));
       const startSlot = slotOf(start, zone);
       const split = slotMoment(originalStart, zone);
@@ -1706,10 +1733,9 @@ export function makeGoogleCalendarService(
           Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
         );
       };
-      const ownSkips = dateValues(counted, "EXDATE", zone)
+      const ownSkips = dateValues(final, "EXDATE", zone)
         .filter(ownSkip)
         .map(asSlot);
-      // One the new series meets at neither place skips nothing there.
       const placed = byPlace
         ? [
             ...params.cancelled.filter((slot) => !isAdded(slot)),
@@ -1722,17 +1748,11 @@ export function makeGoogleCalendarService(
                 slot,
                 splitStart: originalStart,
                 start,
-              }) ?? sameForm(slot, start);
-            return at && at !== startSlot ? [at] : [];
+              }) ?? slot;
+            const formed = inFormOf(at, start, zone);
+            return formed && formed !== startSlot ? [formed] : [];
           })
         : [];
-      const moved = movedOffRule({
-        master,
-        originalStart,
-        recurrence: writtenRule,
-        start,
-      });
-      // The moved meeting's skip takes one of a COUNT's places.
       const recurrence = skipping(
         lineUpRule({
           cancelled: byPlace
@@ -1740,7 +1760,7 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            changeCount(counted, moved.length),
+            final,
             "EXDATE",
             zone,
             (value) => !ownSkip(value)
@@ -1851,14 +1871,39 @@ export function makeGoogleCalendarService(
     });
 
   /**
+   * What a cut whose request failed did, read back from Google: `cut` (it
+   * went through), `unchanged`, or `unknown` (unreadable, or changed some
+   * other way meanwhile, so which meetings it has isn't known).
+   */
+  const cutOutcome = (
+    calendarId: string,
+    master: Event,
+    cutRecurrence: string[]
+  ) =>
+    Effect.gen(function* () {
+      const current = yield* Effect.exit(getEvent(calendarId, master.id));
+      if (Exit.isFailure(current)) {
+        return "unknown" as const;
+      }
+      const now = JSON.stringify(current.value.recurrence);
+      if (now === JSON.stringify(master.recurrence)) {
+        return "unchanged" as const;
+      }
+      return now === JSON.stringify(cutRecurrence)
+        ? ("cut" as const)
+        : ("unknown" as const);
+    });
+
+  /**
    * Splits `master` at `originalStart` into `newSeries` (in
    * `destinationCalendarId`), all or nothing. The new series is created
    * first, under an id chosen here, with `carried` put back on it; then
    * the old one is cut to end before the split (Google drops its later
    * occurrences). A failure before the cut deletes the new series. After
-   * a failed cut the old series is read back: rule changed, the split
-   * stands; unchanged, the new one is deleted and the call fails; unread,
-   * both stay (a meeting shown twice beats one lost) and the call fails.
+   * a failed cut the old series is read back: cut, the split stands;
+   * unchanged, the new one is deleted and the call fails; unread or
+   * changed some other way, both stay (a meeting shown twice beats one
+   * lost) and the call fails.
    */
   const splitSeries = (params: {
     calendarId: string;
@@ -1956,15 +2001,11 @@ export function makeGoogleCalendarService(
         })
       );
       if (Exit.isFailure(cut)) {
-        const current = yield* Effect.exit(getEvent(calendarId, master.id));
-        if (Exit.isFailure(current)) {
-          return yield* Effect.failCause(cut.cause);
-        }
-        if (
-          JSON.stringify(current.value.recurrence) ===
-          JSON.stringify(master.recurrence)
-        ) {
+        const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
+        if (outcome === "unchanged") {
           yield* discardNew;
+        }
+        if (outcome !== "cut") {
           return yield* Effect.failCause(cut.cause);
         }
       }
