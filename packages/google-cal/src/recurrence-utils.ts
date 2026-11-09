@@ -3,6 +3,7 @@ import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
 import type { SeriesRefusal } from "./series-edits";
 import {
+  atOwnWallTime,
   countedRuleMeetings,
   DATE_ONLY,
   dateValues,
@@ -515,7 +516,8 @@ function ruleHasSlot(
   if (
     firstClock &&
     slotClock &&
-    Temporal.PlainTime.compare(ruleClock(rule, firstClock), slotClock) !== 0
+    (Temporal.PlainTime.compare(ruleClock(rule, firstClock), slotClock) !== 0 ||
+      !(slot.instant && atOwnWallTime(slot.instant, seriesZone)))
   ) {
     return false;
   }

@@ -427,3 +427,20 @@ export function countedRuleMeetings(params: {
   }
   return null;
 }
+
+/**
+ * Whether `instant` is the moment its wall-clock time in `timeZone` names:
+ * not the second pass of an hour a clock change repeats, where a rule
+ * doesn't meet (RFC 5545 reads a repeated time as its first).
+ */
+export function atOwnWallTime(
+  instant: Temporal.Instant,
+  timeZone: string
+): boolean {
+  const named = instant
+    .toZonedDateTimeISO(timeZone)
+    .toPlainDateTime()
+    .toZonedDateTime(timeZone)
+    .toInstant();
+  return Temporal.Instant.compare(named, instant) === 0;
+}
