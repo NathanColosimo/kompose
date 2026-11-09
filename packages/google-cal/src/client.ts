@@ -1598,15 +1598,15 @@ function inFormOf(
   return formed && slotOf(formed, zone);
 }
 
-/** What Google's list of a series' meetings told a kept COUNT. */
-interface CountFromList {
-  /** Skips it knows hold a place, by moment. */
-  heldPlaces: number[];
-  /** Skips the COUNT left out (`carryCountFromList`), by moment. */
-  leftOut: number[];
-  /** The meetings' original starts. */
-  listed: string[];
-}
+/**
+ * What Google's list of a series' meetings told a kept COUNT: the skips
+ * that hold a place and those it left out (`carryCountFromList`), and the
+ * meetings' original starts (`listed`).
+ */
+type CountFromList = Pick<
+  NonNullable<ReturnType<typeof carryCountFromList>>,
+  "heldPlaces" | "leftOut"
+> & { listed: string[] };
 
 /**
  * Where a split's skipped or deleted rule meetings (`slots`) stay skipped
@@ -2718,6 +2718,8 @@ export function makeGoogleCalendarService(
    * added one keeps its slot.
    * Refuses, before any write, if the COUNT can't be carried or if the
    * rule ends before `start`.
+   * With whether `edited` gives the series a new repeat (`newRepeat`,
+   * `givesNewRepeat`), which one occurrence can't take.
    */
   const newSeriesRecurrence = (params: {
     calendarId: string;
@@ -2929,9 +2931,11 @@ export function makeGoogleCalendarService(
         start,
         zone: newZone,
       });
-      return (
-        kept ?? (yield* Effect.fail(refused({ reason: "endsBeforeStart" })))
-      );
+      return {
+        newRepeat: isNewRepeat,
+        recurrence:
+          kept ?? (yield* Effect.fail(refused({ reason: "endsBeforeStart" }))),
+      };
     });
 
   /**
@@ -3488,20 +3492,16 @@ export function makeGoogleCalendarService(
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
-      const isNewRepeat = givesNewRepeat({
-        from: asStart(originalStart),
-        master,
-        saved: edited.recurrence,
-        start: times.start,
-      });
-      const recurrence = yield* newSeriesRecurrence({
-        calendarId,
-        cancelled: exceptions.cancelled,
-        edited: edited.recurrence,
-        master,
-        originalStart,
-        start: times.start,
-      });
+      const { newRepeat: isNewRepeat, recurrence } = yield* newSeriesRecurrence(
+        {
+          calendarId,
+          cancelled: exceptions.cancelled,
+          edited: edited.recurrence,
+          master,
+          originalStart,
+          start: times.start,
+        }
+      );
       const carried = placeCarried({
         occurrences: followingOccurrences({
           changes,
@@ -3817,7 +3817,7 @@ export function makeGoogleCalendarService(
       // their changes there.
       const slot = seriesSlotAt(master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
-      const recurrence = yield* newSeriesRecurrence({
+      const { recurrence } = yield* newSeriesRecurrence({
         calendarId,
         cancelled: exceptions.cancelled,
         edited: undefined,
