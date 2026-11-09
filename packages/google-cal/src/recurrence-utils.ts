@@ -66,7 +66,7 @@ function asValue(start: string, seriesZone: string): RecurrenceValue | null {
 }
 
 /** Whether `recurrence` repeats at all: a rule, or an added day. */
-export function repeats(recurrence: string[] | undefined): boolean {
+function repeats(recurrence: string[] | undefined): boolean {
   return (recurrence ?? []).some(
     (line) => line.startsWith("RRULE:") || line.startsWith("RDATE")
   );

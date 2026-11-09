@@ -648,6 +648,73 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
+  test("a new time set from an occurrence moved on its own saves", async () => {
+    // Nov 16 moved to 11:00 on its own; from it, the series moves to 10:00.
+    // Its own time is the one the edit replaces: the series is written
+    // once, and Nov 16 meets at 10:00 with it.
+    const moved = occurrenceOf(weekly, "2026-11-16T09:00:00-05:00", {
+      end: "2026-11-16T11:30:00-05:00",
+      start: "2026-11-16T11:00:00-05:00",
+    });
+    const google = fakeGoogle(weekly, [moved]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", moved, {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-09T10:00:00-05:00" },
+    });
+    // Renamed on its own too, the new time would cost it its title.
+    fakeGoogle(weekly, [{ ...moved, summary: "Planning (moved)" }]);
+    expect(
+      await refusalOf(
+        edit(
+          "all",
+          { ...moved, summary: "Planning (moved)" },
+          {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          }
+        )
+      )
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-16T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+      },
+    });
+  });
+
+  test("made all day, a deleted occurrence stays deleted on its date", async () => {
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", weekly, {
+            end: { date: "2026-11-10" },
+            start: { date: "2026-11-09" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE;VALUE=DATE:20261123",
+    ]);
+  });
+
   test("a new time keeps a deleted occurrence deleted at it", async () => {
     // Nov 23 deleted on its own; the series moves to 10:00.
     const google = fakeGoogle(weekly, [
