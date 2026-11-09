@@ -2802,26 +2802,29 @@ export function makeGoogleCalendarService(
         originalStart,
         seriesZone: zone,
       });
-      if (how === "cut") {
-        return truncateRecurrenceForFollowing(
-          recurrence,
-          originalStart,
-          zone,
-          seriesStart
-        );
+      switch (how) {
+        case "cut":
+          return truncateRecurrenceForFollowing(
+            recurrence,
+            originalStart,
+            zone,
+            seriesStart
+          );
+        case "refuse":
+          return yield* Effect.fail(
+            refused({ reason: "deleteFromAddedOccurrence" })
+          );
+        case "list":
+          return deleteFromListed({
+            listed: yield* listOccurrenceStarts(calendarId, master),
+            originalStart,
+            recurrence,
+            seriesStart,
+            seriesZone: zone,
+          });
+        default:
+          return how satisfies never;
       }
-      if (how === "refuse") {
-        return yield* Effect.fail(
-          refused({ reason: "deleteFromAddedOccurrence" })
-        );
-      }
-      return deleteFromListed({
-        listed: yield* listOccurrenceStarts(calendarId, master),
-        originalStart,
-        recurrence,
-        seriesStart,
-        seriesZone: zone,
-      });
     });
 
   const deleteEventFollowing = (calendarId: string, eventId: string) =>
