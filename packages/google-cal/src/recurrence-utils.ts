@@ -82,6 +82,39 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 }
 
 /**
+ * Whether a plain hourly (minutely, secondly) rule, stepping from `first`,
+ * meets at `slot`. Null with BY parts, or across a clock change (see
+ * `subDailyEndsBefore`).
+ */
+function subDailyHasSlot(
+  rule: string,
+  step: "hours" | "minutes" | "seconds",
+  first: RecurrenceValue,
+  slot: RecurrenceValue,
+  seriesZone: string
+): boolean | null {
+  if (!(first.instant && slot.instant) || BY_PART.test(rule)) {
+    return null;
+  }
+  const change = first.instant
+    .toZonedDateTimeISO(seriesZone)
+    .getTimeZoneTransition("next");
+  if (
+    change &&
+    Temporal.Instant.compare(change.toInstant(), slot.instant) <= 0
+  ) {
+    return null;
+  }
+  const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
+  const steps = first.instant.until(slot.instant).total({ unit: step });
+  if (steps < 0 || !Number.isInteger(steps / interval)) {
+    return false;
+  }
+  const ended = ruleEndsBefore(rule, first, slot.instant, seriesZone);
+  return ended === null ? null : !ended;
+}
+
+/**
  * Whether `rule`, repeating from `first`, meets at `slot`: on its day,
  * before its end, at its time. Google meets a rule once a day, at its one
  * BYHOUR / BYMINUTE or the start's time, and ignores a list there. Null
@@ -93,9 +126,9 @@ function ruleHasSlot(
   slot: RecurrenceValue,
   seriesZone: string
 ): boolean | null {
-  // A rule within the day meets at many times, not the one read here.
-  if (SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""]) {
-    return null;
+  const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
+  if (step) {
+    return subDailyHasSlot(rule, step, first, slot, seriesZone);
   }
   const clock = (value: RecurrenceValue) =>
     value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();

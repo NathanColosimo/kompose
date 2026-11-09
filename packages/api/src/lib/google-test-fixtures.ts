@@ -11,8 +11,6 @@ import { Effect } from "effect";
 import { Temporal } from "temporal-polyfill";
 
 export const zone = "America/New_York";
-/** An event id Google takes: base32hex (0-9, a-v). */
-export const BASE32HEX_ID = /^[0-9a-v]{32}$/;
 
 export interface Request {
   body: Record<string, unknown> | null;
