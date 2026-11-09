@@ -740,14 +740,29 @@ describe("This and following", () => {
     expect(google.writes()).toEqual([]);
   });
 
-  test("Repeat: None from an occurrence ends the series there, later changes too", async () => {
-    // Nov 30 renamed on its own; from Nov 16, the repeat is ended.
+  test("Repeat: None from an occurrence is refused while a later one has changes", async () => {
+    // Nov 30 renamed on its own; from Nov 16, the repeat is ended: Nov 30
+    // would go, its rename with it, as an end set before it would.
     const google = fakeGoogle(weekly, [
       {
         ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
         summary: "Planning (renamed)",
       },
     ]);
+    expect(
+      await refusalOf(edit("following", nov16, { recurrence: [] }))
+    ).toMatchObject({
+      data: {
+        originalStarts: ["2026-11-30T09:00:00-05:00"],
+        reason: "dropsChangedOccurrences",
+        seriesOnly: true,
+      },
+    });
+    expect(google.writes()).toEqual([]);
+  });
+
+  test("Repeat: None from an occurrence ends the series there", async () => {
+    const google = fakeGoogle(weekly);
     expect(
       Exit.isSuccess(await run(edit("following", nov16, { recurrence: [] })))
     ).toBe(true);
