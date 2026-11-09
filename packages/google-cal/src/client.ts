@@ -407,6 +407,18 @@ function withSeriesSkips(rule: string[], master: Event): string[] {
 }
 
 /**
+ * The rules a save writes: the series' own when it sends none, and a rule
+ * sent alone with the series' skips, which a client rebuilding the rule
+ * may leave out ("Repeat: None" stays none).
+ */
+function savedRule(saved: string[] | undefined, master: Event): string[] {
+  if (!saved) {
+    return master.recurrence ?? [];
+  }
+  return repeats(saved) ? withSeriesSkips(saved, master) : saved;
+}
+
+/**
  * `edited` with its times in one form. A form keeps the other form's field
  * beside the new one, so when both are sent the one the opened occurrence
  * didn't have is the user's choice.
@@ -1904,14 +1916,9 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { master, originalStart, start } = params;
       const zone = seriesZoneOf(master);
-      // Added days before the split stay with the old part. A rule sent
-      // alone keeps the series' skips, as an Entire series save does.
-      const sent =
-        params.edited && repeats(params.edited)
-          ? withSeriesSkips(params.edited, master)
-          : params.edited;
+      // Added days before the split stay with the old part.
       const fromSplit = splitAddedDays(
-        sent ?? master.recurrence ?? [],
+        savedRule(params.edited, master),
         originalStart,
         zone,
         "from"
