@@ -70,6 +70,33 @@ describe("Entire series", () => {
     expect(written?.body).not.toHaveProperty("colorId");
   });
 
+  test("a new time that clears a color an occurrence already cleared keeps it", async () => {
+    // Color 7; Nov 23 moved to 10:00 and its color cleared on its own. From
+    // Nov 16, the series moves to 10:00 and clears its color: Nov 23's new
+    // meeting is just as it was.
+    const colored: Event = { ...weekly, colorId: "7" };
+    const nov23 = {
+      ...occurrenceOf(colored, "2026-11-23T09:00:00-05:00", {
+        end: "2026-11-23T10:30:00-05:00",
+        start: "2026-11-23T10:00:00-05:00",
+      }),
+      colorId: undefined,
+    };
+    const google = fakeGoogle(colored, [nov23]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(colored, "2026-11-16T09:00:00-05:00"), {
+            colorId: undefined,
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body).not.toHaveProperty("colorId");
+  });
+
   test("an edit to the first occurrence moves the series' date", async () => {
     // Its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
     const first = occurrenceOf(weekly, "2026-11-09T09:00:00-05:00");
