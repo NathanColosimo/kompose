@@ -33,6 +33,40 @@ const carried = (
   walked: carryCountExactly(recurrence, params),
 });
 
+describe("a deleted meeting both added and the rule's", () => {
+  test("doesn't cost a later meeting its place", async () => {
+    // Mondays 9:00, six times from Nov 9; Nov 30 also added, and deleted
+    // on its own. From Nov 16 moved to 10:00: Nov 16, 23, 30, Dec 7 and 14
+    // are left, so COUNT is 5 (Dec 14 isn't dropped).
+    const series: Event = {
+      ...weekly,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6",
+        "RDATE:20261130T140000Z",
+      ],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-30T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5"
+    );
+  });
+});
+
 describe("a COUNT too long to walk", () => {
   test("a COUNT past fifty years is carried from Google's list, not a partial walk", async () => {
     // Yearly a hundred times from 1950: split in 2026, 24 are left.

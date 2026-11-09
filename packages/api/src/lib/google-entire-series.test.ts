@@ -451,7 +451,7 @@ describe("what Google keeps as an occurrence's own", () => {
       // It can't tell, and says so.
       data: { reason: "dropsChangedOccurrences", unsure: true },
       message:
-        "This may undo what was changed or deleted on single occurrences (Nov 30): this series repeats in a way, made in another app, that can't be fully read here, so it wasn't saved. Save it with This and following from an occurrence after Nov 30.",
+        "This may undo what was changed or deleted on single occurrences (Nov 30): this series repeats in a way, made in another app, that can't be fully read here, so it wasn't saved. Save it with This and following from an occurrence after Nov 30, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -1895,7 +1895,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
       },
       // A new time one occurrence can take.
       message:
-        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -1920,7 +1920,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
         reason: "resizesChangedOccurrences",
       },
       message:
-        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -2087,14 +2087,14 @@ describe("Entire series start and length changes, as Google applies them", () =>
         reason: "dropsChangedOccurrences",
       },
       message:
-        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it for this occurrence only, or with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(
       await toTuesdays("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU")
     ).toMatchObject({
       data: { seriesOnly: true },
       message:
-        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+        "This would undo what was changed or deleted on single occurrences (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
@@ -2122,7 +2122,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
         seriesOnly: true,
       },
       message:
-        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23.",
+        "This would also change the length of single occurrences given a length of their own (Nov 23), so it wasn't saved. Save it with This and following from an occurrence after Nov 23, if there is one.",
     });
     expect(google.writes()).toEqual([]);
   });
