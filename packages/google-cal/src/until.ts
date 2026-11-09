@@ -63,8 +63,8 @@ export function ruleClock(
 /**
  * Whether a series meets more than once a day: a sub-daily rule, or rules
  * at different times. The start, at `base`, counts as a meeting, and its
- * time fills the parts a rule leaves out. Such a series' times are its own: they
- * don't follow the start.
+ * time fills the parts a rule leaves out. Such a series' times are its
+ * own: they don't follow the start.
  */
 export function meetsSeveralTimesADay(
   recurrence: string[],
