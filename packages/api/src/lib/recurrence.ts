@@ -51,7 +51,7 @@ function canonicalRecurrence(
     return "null";
   }
   const fields: Record<string, unknown> = { ...recurrence };
-  if ("byDay" in recurrence && recurrence.byDay) {
+  if ("byDay" in recurrence) {
     fields.byDay = [...recurrence.byDay].sort();
   }
   // A key set to undefined is a key left out, as it is once sent as JSON.
