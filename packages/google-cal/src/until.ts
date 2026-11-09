@@ -1,7 +1,6 @@
 /**
  * A series' UNTIL and EXDATE/RDATE lines, kept in the form Google requires:
- * dates for an all-day series, date-times for a timed one. Shared by the
- * server and both apps.
+ * dates for an all-day series, date-times for a timed one.
  */
 import { Temporal } from "temporal-polyfill";
 import { countedRuleDays, isRuleDay } from "./rule-days";
@@ -133,7 +132,7 @@ function withRuleClock(
  */
 export function meetsSeveralTimesADay(
   recurrence: string[],
-  base: Temporal.PlainTime | null = null
+  base: Temporal.PlainTime | null
 ): boolean {
   const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
   const times = new Set(rules.map((line) => ruleTime(line, base)));
@@ -372,7 +371,7 @@ function inZone(instant: Temporal.Instant, zone: string): RecurrenceValue {
 }
 
 /** An EXDATE/RDATE line: its name, the zone its values are in, and them. */
-export function parseDateList(
+function parseDateList(
   line: string,
   seriesZone: string
 ): { name: string; values: string[]; zone: string } | null {
@@ -517,6 +516,11 @@ function matchDateList(
       .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
       .toInstant();
     const kept = value.instant;
+    // A skip where no rule nor the start met skips nothing: it stays as it
+    // is, so it can't land on a meeting.
+    if (list.name === "EXDATE" && kept && ownSlot && !ownSlot(value)) {
+      return [kept];
+    }
     if (
       !(
         list.name === "EXDATE" &&
@@ -583,8 +587,8 @@ export function ruleTimeOf(
 /**
  * Whether `time` exists on `day` in `timeZone` (DST can skip it). RFC 5545
  * (3.3.10): a time that doesn't exist that day isn't a meeting and isn't
- * counted. Used where Google can't be asked; where it can (a split's
- * COUNT), its own list of meetings decides.
+ * counted. Used where Google can't be asked; where it can, its own list of
+ * meetings decides.
  */
 function existsOn(
   day: Temporal.PlainDate,
@@ -965,7 +969,7 @@ export function matchRecurrenceToStart(
   }
   const keepAsDate = start.date
     ? allDayDates({
-        // Rules count from the new start (followStart moved them and their
+        // Rules count from the new start (the caller moved them and their
         // skips there), unless the caller says they didn't move.
         anchor: days?.rulesFrom ?? Temporal.PlainDate.from(start.date),
         base: countBase,

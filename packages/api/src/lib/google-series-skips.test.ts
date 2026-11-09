@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { carryCountExactly } from "@kompose/google-cal/recurrence-utils";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
-import { matchRecurrenceToStart } from "@kompose/google-cal/until";
+import { dateValues, matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { Exit } from "effect";
 import { Temporal } from "temporal-polyfill";
 import {
@@ -897,5 +897,56 @@ describe("a COUNT made all day", () => {
         }
       )
     ).toEqual(["RRULE:FREQ=DAILY;COUNT=8"]);
+  });
+});
+
+describe("a skip where nothing meets", () => {
+  // Mondays at 9:00 from Nov 9, with a skip at 8:00 on Nov 23 that skips
+  // nothing: moved onto 9:00 (or a new time) it would cancel a meeting.
+  const stale: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=WEEKLY;BYDAY=MO",
+      "EXDATE;TZID=America/New_York:20261123T080000",
+    ],
+  };
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+
+  test.each([
+    ["Entire series", "all", {}],
+    [
+      "Entire series, moved to 10:00",
+      "all",
+      {
+        end: at("2026-11-16T10:30:00-05:00"),
+        start: at("2026-11-16T10:00:00-05:00"),
+      },
+    ],
+    ["This and following", "following", {}],
+  ] as const)("stays where it is through %s", async (_save, scope, times) => {
+    const google = fakeGoogle(stale);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit(scope, occurrenceOf(stale, "2026-11-16T09:00:00-05:00"), {
+            summary: "Planning (new)",
+            ...times,
+          })
+        )
+      )
+    ).toBe(true);
+    // Every write keeps it at Nov 23 8:00 New York, however it's written.
+    const skips = google
+      .writes()
+      .flatMap((write) =>
+        dateValues(
+          (write.body?.recurrence as string[] | undefined) ?? [],
+          "EXDATE",
+          zone
+        )
+      )
+      .map((value) => value.instant?.toString());
+    expect(skips.length).toBeGreaterThan(0);
+    expect(new Set(skips)).toEqual(new Set(["2026-11-23T13:00:00Z"]));
   });
 });

@@ -1,8 +1,7 @@
 /**
  * What a series write changes and keeps, worked out before writing: the
  * fields an edit changed, an occurrence's own changes (Google keeps them as
- * exceptions tied to its original slot), where it lands in a new series,
- * and why a write is refused.
+ * exceptions tied to its original slot), and why a write is refused.
  */
 import { Temporal } from "temporal-polyfill";
 import { type CreateEvent, type Event, EventSchema } from "./schema";
@@ -11,10 +10,9 @@ import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 /**
  * Why a series write is refused, before anything changes, with no
  * occurrences to name. `endsBeforeStart`, `deleteFromAddedOccurrence` and
- * `countUnknown` are kept because no write through Google's API does what
- * was asked safely. `severalRules`, `addedOccurrence` and
- * `severalTimesADay` are refused until a later change writes what a safe
- * write exists for.
+ * `countUnknown` stay because no write through Google's API does what was
+ * asked safely. `severalRules`, `addedOccurrence` and `severalTimesADay`
+ * have a safe write, which a later change adds.
  */
 export const PLAIN_REFUSALS = [
   // This and following in a series with several rules (or an exclusion
@@ -203,8 +201,9 @@ const DAY_PARTS = new Set([
 
 /**
  * Whether a save gives the series a new repeat: its rules (`saved`; none
- * sent means the series' own) differ from `own`. A save that moves the
- * series' day rebuilds its rules for it, so `DAY_PARTS` aren't compared.
+ * sent means the series' own) differ from `own`. A client that moves the
+ * series' day rebuilds its rules' day parts for it, so `DAY_PARTS` aren't
+ * compared.
  */
 export function newRepeat(params: {
   dayMoved: boolean;
