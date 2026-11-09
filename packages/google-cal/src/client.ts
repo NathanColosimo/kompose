@@ -1087,9 +1087,10 @@ function inFormOf(
 }
 
 /**
- * A split's new `recurrence`, or one event (`[]`) when the series' own end
- * falls before `start` (its last meeting, moved later: that meeting is all
- * the new part has). Null when an end the save sets does: refused.
+ * A split's new `recurrence`. When the series' own end falls before
+ * `start` (its last rule meeting, moved later), its rule is spent: the new
+ * part has that meeting and any added (RDATE) ones after it, one event if
+ * none. Null when an end the save sets does: refused.
  */
 function withinEnd(params: {
   edited: string[] | undefined;
@@ -1105,7 +1106,11 @@ function withinEnd(params: {
   const ownRule =
     params.edited === undefined ||
     JSON.stringify(params.edited) === JSON.stringify(master.recurrence ?? []);
-  return ownRule ? [] : null;
+  if (!ownRule) {
+    return null;
+  }
+  const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
+  return repeats(added) ? added : [];
 }
 
 /**
