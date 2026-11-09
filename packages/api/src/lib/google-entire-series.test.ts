@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { seriesMeetsAt } from "@kompose/google-cal/recurrence-utils";
 import { isRuleDay } from "@kompose/google-cal/rule-days";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
 import { newRepeat } from "@kompose/google-cal/series-edits";
@@ -2003,5 +2004,21 @@ describe("an Entire series save that changes only the end", () => {
       recurrence: twice.recurrence,
       start: at("2026-12-01T09:00:00-05:00"),
     });
+  });
+});
+
+describe("seriesMeetsAt", () => {
+  test("a rule meets at the first of an hour a clock change repeats", () => {
+    // Daily at 1:30 New York: on Nov 1 clocks go back at 2:00, so 1:30
+    // comes twice. The rule meets at the first (5:30 UTC) only.
+    const meetsAt = (slot: string) =>
+      seriesMeetsAt({
+        recurrence: ["RRULE:FREQ=DAILY"],
+        seriesZone: zone,
+        slot,
+        start: { dateTime: "2026-10-25T01:30:00-04:00" },
+      });
+    expect(meetsAt("2026-11-01T01:30:00-04:00")).toBe(true);
+    expect(meetsAt("2026-11-01T01:30:00-05:00")).toBe(false);
   });
 });
