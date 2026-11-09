@@ -893,6 +893,85 @@ describe("a COUNT through a move onto a deleted meeting", () => {
   });
 });
 
+describe("a COUNT read from Google's list through a move onto a deleted meeting", () => {
+  test("drops that meeting's place too", async () => {
+    // Monday of week 46 four times from 2026 (a rule not read here), 2028's
+    // deleted on its own; from 2027, moved to 2028's: 2028 (the moved one)
+    // and 2029 are left.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=4"],
+    };
+    const deleted = {
+      ...occurrenceOf(series, "2028-11-13T09:00:00-05:00"),
+      status: "cancelled",
+    };
+    const google = fakeGoogle(series, [deleted], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: [
+              occurrenceOf(series, "2026-11-09T09:00:00-05:00"),
+              occurrenceOf(series, "2027-11-15T09:00:00-05:00"),
+              deleted,
+              occurrenceOf(series, "2029-11-12T09:00:00-05:00"),
+            ],
+          }
+        : undefined
+    );
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2027-11-15T09:00:00-05:00"), {
+            end: { dateTime: "2028-11-13T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2028-11-13T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2",
+    ]);
+  });
+});
+
+describe("a COUNT read from Google's list through a move onto a skip", () => {
+  // As above, 2028 skipped in the rule instead.
+  const series: Event = {
+    ...weekly,
+    recurrence: [
+      "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=4",
+      "EXDATE:20281113T140000Z",
+    ],
+  };
+  const moveFrom2027 = () =>
+    edit("following", occurrenceOf(series, "2027-11-15T09:00:00-05:00"), {
+      end: { dateTime: "2028-11-13T09:30:00-05:00", timeZone: zone },
+      start: { dateTime: "2028-11-13T09:00:00-05:00", timeZone: zone },
+    });
+  const listing = (items: Event[]) =>
+    fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? { items }
+        : undefined
+    );
+  const meeting = (start: string) => occurrenceOf(series, start);
+
+  test("drops its place when Google lists it as a meeting", async () => {
+    const google = listing([
+      meeting("2026-11-09T09:00:00-05:00"),
+      meeting("2027-11-15T09:00:00-05:00"),
+      { ...meeting("2028-11-13T09:00:00-05:00"), status: "cancelled" },
+      meeting("2029-11-12T09:00:00-05:00"),
+    ]);
+    expect(Exit.isSuccess(await run(moveFrom2027()))).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2",
+    ]);
+  });
+});
+
 describe("a COUNT through a move onto a meeting skipped twice over", () => {
   test("drops its place once", async () => {
     // Nov 23 both skipped in the rule and deleted on its own; from Nov 16

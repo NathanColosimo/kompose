@@ -255,6 +255,44 @@ describe("This and following", () => {
     ]);
   });
 
+  describe("a monthly series moved to another weekday of its month", () => {
+    // The third Monday from Oct 19, Dec 21's deleted or renamed on its own;
+    // from Nov 16 it moves to the third Tuesday. December's meeting is
+    // now Tue Dec 15, not a day after Dec 21.
+    const monthly: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-19T09:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3MO"],
+      start: { dateTime: "2026-10-19T09:00:00-05:00", timeZone: zone },
+    };
+    const dec21 = occurrenceOf(monthly, "2026-12-21T09:00:00-05:00");
+    const toThirdTuesday = () =>
+      edit("following", occurrenceOf(monthly, "2026-11-16T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3TU"],
+        start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+      });
+
+    test("carries a deleted one's skip to that month's new meeting", async () => {
+      const google = fakeGoogle(monthly, [{ ...dec21, status: "cancelled" }]);
+      expect(Exit.isSuccess(await run(toThirdTuesday()))).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=MONTHLY;BYDAY=3TU",
+        "EXDATE:20261215T140000Z",
+      ]);
+    });
+
+    test("puts a renamed one back on that month's new meeting", async () => {
+      const google = fakeGoogle(monthly, [{ ...dec21, summary: "Party" }]);
+      expect(Exit.isSuccess(await run(toThirdTuesday()))).toBe(true);
+      const [created, carried] = google.writes();
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20261215T140000Z`
+      );
+      expect(carried?.body).toMatchObject({ summary: "Party" });
+    });
+  });
+
   test("a move to a day the rule doesn't meet skips the moved meeting's old slot", async () => {
     // From Mon Nov 16, moved to Sun Nov 15 with the Monday rule kept: the
     // new series meets at its Sunday start, so its Monday Nov 16 meeting

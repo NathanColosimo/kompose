@@ -22,7 +22,7 @@ import {
   splitAddedDays,
   truncateRecurrenceForFollowing,
 } from "./recurrence-utils";
-import { isRuleDay } from "./rule-days";
+import { isRuleDay, samePlaceInPeriod } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -1150,7 +1150,9 @@ function onDay(
  * `start` with `recurrence`: on its own day with the split's change of time
  * when the new series meets there (a rule day that didn't move), else as
  * many days on as the split moved (`placeInNewSeries`) when it meets
- * there; null when it meets at neither, or that can't be told.
+ * there, else, in a monthly or yearly series, at the meeting as many into
+ * its month or year (`samePlaceInPeriod`); null when it meets at none, or
+ * that can't be told.
  */
 function carriedSlot(params: {
   master: Event;
@@ -1184,7 +1186,36 @@ function carriedSlot(params: {
     splitStart: params.splitStart,
     zone,
   });
-  return moved && meets(moved) ? moved : null;
+  if (moved && meets(moved)) {
+    return moved;
+  }
+  const rulesOf = (lines: string[]) =>
+    lines.filter((line) => line.startsWith("RRULE:"));
+  const [oldRule, ...oldOthers] = rulesOf(master.recurrence ?? []);
+  const [newRule, ...newOthers] = rulesOf(recurrence);
+  const day = dayOfStart(asStart(slot), zone);
+  const oldStart = dayOfStart(master.start, seriesZoneOf(master));
+  const newStart = dayOfStart(start, zone);
+  if (
+    !(oldRule && newRule && day && oldStart && newStart && splitDay) ||
+    oldOthers.length + newOthers.length > 0
+  ) {
+    return null;
+  }
+  const inPeriod = onDay(
+    start,
+    samePlaceInPeriod({
+      day,
+      newRule,
+      newStart,
+      oldRule,
+      oldStart,
+      split: splitDay,
+    }),
+    zone
+  );
+  const place = inPeriod && slotOf(inPeriod, zone);
+  return place && meets(place) ? place : null;
 }
 
 /**
@@ -1246,16 +1277,19 @@ function inFormOf(
  * series (`rule`, written for its start) meets in their place, as a
  * changed one is put back, in the new start's form (made all day or
  * timed, by day). None lands on the new start, the meeting just saved
- * (`ontoStart`: the rule meetings that would, by moment), or on an added
- * meeting the new series keeps.
+ * (`ontoStart`: the rule meetings that would, by moment, `ruleMeetingOf`;
+ * null when one's can't be told), or on an added meeting the new series
+ * keeps.
  */
 function placeByDay(params: {
+  cancelled: string[];
+  listed: string[] | null;
   master: Event;
   originalStart: string;
   rule: string[];
   slots: string[];
   start: Event["start"];
-}): { ontoStart: number[]; placed: string[] } {
+}): { ontoStart: number[] | null; placed: string[] } {
   const { master, originalStart, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
@@ -1264,6 +1298,7 @@ function placeByDay(params: {
   const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
   const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
   const ontoStart: number[] = [];
+  let unknown = false;
   const placed = params.slots.flatMap((slot) => {
     const at = carriedSlot({
       master,
@@ -1274,14 +1309,46 @@ function placeByDay(params: {
     });
     const formed = inFormOf(at ?? slot, start, newZone);
     const moment = slotMoment(slot, zone);
-    if (formed === startSlot && moment && ruleMeetingAt(slot, master)) {
-      ontoStart.push(moment.epochMilliseconds);
+    if (formed === startSlot && moment) {
+      const meeting = ruleMeetingOf({ ...params, slot });
+      unknown ||= meeting === null;
+      if (meeting) {
+        ontoStart.push(moment.epochMilliseconds);
+      }
     }
     const ontoAdded =
       at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
     return formed && formed !== startSlot && !ontoAdded ? [formed] : [];
   });
-  return { ontoStart, placed };
+  return { ontoStart: unknown ? null : ontoStart, placed };
+}
+
+/**
+ * Whether a split's skip at `slot` is a meeting of the series' rule, which
+ * holds a COUNT place: as the rule reads, else (a rule not read here) a
+ * deleted one that isn't an added day is, as Google lists only a series'
+ * meetings, and so is one on Google's list of them (`listed`, when it was
+ * read). Null when that can't be told: an added day's could be the rule's
+ * too.
+ */
+function ruleMeetingOf(params: {
+  cancelled: string[];
+  listed: string[] | null;
+  master: Event;
+  slot: string;
+}): boolean | null {
+  const { master, slot } = params;
+  const read = ruleMeetingAt(slot, master);
+  if (read !== null) {
+    return read;
+  }
+  if (addsSlot(master.recurrence ?? [], slot, seriesZoneOf(master))) {
+    return null;
+  }
+  if (params.cancelled.includes(slot)) {
+    return true;
+  }
+  return params.listed ? params.listed.includes(slot) : null;
 }
 
 /**
@@ -1293,19 +1360,42 @@ function addedOntoStart(params: {
   cancelled: string[];
   master: Event;
   start: Event["start"];
-}): number[] {
+}): number[] | null {
   const { master, start } = params;
   const zone = seriesZoneOf(master);
   const newZone = repeatZone(master, start);
   const startSlot = slotOf(start, newZone);
-  return params.cancelled.flatMap((slot) => {
+  const onStart = params.cancelled.filter(
+    (slot) => inFormOf(slot, start, newZone) === startSlot
+  );
+  // A rule not read here can't tell an added day from its own meeting.
+  if (onStart.some((slot) => ruleMeetingAt(slot, master) === null)) {
+    return null;
+  }
+  return onStart.flatMap((slot) => {
     const moment = slotMoment(slot, zone);
-    return moment &&
-      inFormOf(slot, start, newZone) === startSlot &&
-      ruleMeetingAt(slot, master)
+    return moment && ruleMeetingAt(slot, master)
       ? [moment.epochMilliseconds]
       : [];
   });
+}
+
+/**
+ * The COUNT places a split's new start takes from a kept COUNT (`keeps`):
+ * one for each rule meeting skipped there (`byDay`, `added`: by moment,
+ * once however many skips it has). None for a COUNT the user set; null
+ * when one's can't be told.
+ */
+function placesOnStart(params: {
+  added: number[] | null;
+  byDay: number[] | null;
+  keeps: boolean;
+}): number | null {
+  const { added, byDay } = params;
+  if (!params.keeps) {
+    return 0;
+  }
+  return added && byDay ? new Set([...byDay, ...added]).size : null;
 }
 
 /**
@@ -2146,16 +2236,17 @@ export function makeGoogleCalendarService(
       // skip (`moved`), less one for each skip onto the new start
       // (`ontoStart`). A COUNT the user set is theirs, less nothing.
       const keeps = keepsCount(master, fromSplit);
-      const counted = yield* carriedCount({
+      const carried = yield* carriedCount({
         calendarId,
         keeps,
         master,
         originalStart,
         rule: fromSplit,
       });
-      if (!counted) {
+      if (!carried) {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
+      const { listed, rule: counted } = carried;
       const zone = seriesZoneOf(master);
       // The rule as written for the new start (a kept BYHOUR moves with
       // it), which places are read against.
@@ -2236,6 +2327,8 @@ export function makeGoogleCalendarService(
       // less for each rule meeting, however many skips it has.
       const byDay = byPlace
         ? placeByDay({
+            cancelled: params.cancelled,
+            listed,
             master,
             originalStart,
             rule: ruleForStart(final, master, start, originalStart),
@@ -2247,14 +2340,18 @@ export function makeGoogleCalendarService(
           })
         : { ontoStart: [], placed: [] };
       const placed = byDay.placed;
-      const ontoStart = new Set([
-        ...byDay.ontoStart,
-        ...addedOntoStart({
+      const ontoStart = placesOnStart({
+        added: addedOntoStart({
           cancelled: params.cancelled.filter(isAdded),
           master,
           start,
         }),
-      ]);
+        byDay: byDay.ontoStart,
+        keeps,
+      });
+      if (ontoStart === null) {
+        return yield* Effect.fail(refused({ reason: "countUnknown" }));
+      }
       const recurrence = skipping(
         lineUpRule({
           cancelled: byPlace
@@ -2262,7 +2359,7 @@ export function makeGoogleCalendarService(
             : params.cancelled,
           master,
           rule: keepingDateValues(
-            keeps ? changeCount(final, -ontoStart.size) : final,
+            changeCount(final, -ontoStart),
             "EXDATE",
             zone,
             (value) => !ownSkip(value)
@@ -2296,7 +2393,8 @@ export function makeGoogleCalendarService(
    * A split's new `rule` with a kept COUNT set to the occurrences left
    * after `originalStart`. Unchanged if there is none, or if the user
    * changed the COUNT: a changed COUNT is the new part's own number of
-   * meetings. Null if what's left can't be known.
+   * meetings. Null if what's left can't be known. With Google's list of
+   * the series' meetings (`listed`) when it was read for it.
    */
   const carriedCount = (params: {
     calendarId: string;
@@ -2309,7 +2407,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const { calendarId, master, originalStart, rule } = params;
       if (!params.keeps) {
-        return rule;
+        return { listed: null, rule };
       }
       const seriesStart = slotOf(master.start, seriesZoneOf(master));
       if (!seriesStart) {
@@ -2324,10 +2422,11 @@ export function makeGoogleCalendarService(
       // A rule that can be read is counted without asking Google.
       const exact = carryCountExactly(rule, counting);
       if (exact) {
-        return exact;
+        return { listed: null, rule: exact };
       }
       const starts = yield* listOccurrenceStarts(calendarId, master);
-      return carryCountFromList(rule, { ...counting, starts });
+      const fromList = carryCountFromList(rule, { ...counting, starts });
+      return fromList && { listed: starts, rule: fromList };
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */
