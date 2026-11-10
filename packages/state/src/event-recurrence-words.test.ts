@@ -29,6 +29,58 @@ describe("describeEventRecurrence", () => {
     expect(words("RRULE:FREQ=HOURLY")).toBe("Repeats");
   });
 
+  test("calls Monday to Friday weekdays", () => {
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR")).toBe(
+      "Repeats weekly on weekdays"
+    );
+    expect(words("RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=FR,MO,TH,TU,WE")).toBe(
+      "Repeats every 2 weeks on weekdays"
+    );
+    // One day short, or one over, lists its days.
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH")).toBe(
+      "Repeats weekly on Mon, Tue, Wed, Thu"
+    );
+    expect(words("RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA")).toBe(
+      "Repeats weekly on Mon, Tue, Wed, Thu, Fri, Sat"
+    );
+  });
+
+  test("says how the series ends, given its zone", () => {
+    const ending = (rule: string, timeZone?: string) =>
+      describeEventRecurrence({ rules: [rule], timeZone });
+    expect(ending("RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10", "UTC")).toBe(
+      "Repeats weekly on Mon, 10 times"
+    );
+    expect(ending("RRULE:FREQ=DAILY;COUNT=1", "UTC")).toBe(
+      "Repeats daily, 1 time"
+    );
+    // An all-day series' end is a date.
+    expect(ending("RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270210", "UTC")).toBe(
+      "Repeats weekly on Mon, until Feb 10, 2027"
+    );
+    // A timed one's is a moment: Feb 10's last second in New York, which
+    // is already Feb 11 in Tokyo.
+    const timed = "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20270211T045959Z";
+    expect(ending(timed, "America/New_York")).toBe(
+      "Repeats weekly on Mon, Wed, until Feb 10, 2027"
+    );
+    expect(ending(timed, "Asia/Tokyo")).toBe(
+      "Repeats weekly on Mon, Wed, until Feb 11, 2027"
+    );
+    // The end comes before the mark for what the words leave out.
+    expect(ending("RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;COUNT=5", "UTC")).toBe(
+      "Repeats daily, 5 times (custom)"
+    );
+    expect(ending("RRULE:FREQ=WEEKLY;BYDAY=MO", "UTC")).toBe(
+      "Repeats weekly on Mon"
+    );
+    // Without the zone the words stop at how it repeats, for a short label.
+    expect(ending(timed)).toBe("Repeats weekly on Mon, Wed");
+    expect(ending("RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10")).toBe(
+      "Repeats weekly on Mon"
+    );
+  });
+
   test("names the start's day when the rule doesn't", () => {
     // Nov 7, 2026 is a Saturday.
     expect(words("RRULE:FREQ=WEEKLY", "2026-11-07")).toBe(

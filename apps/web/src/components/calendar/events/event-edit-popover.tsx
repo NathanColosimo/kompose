@@ -346,12 +346,12 @@ function getSharedFieldsFromEventValues(
  */
 function CountField({
   label,
-  max = 999,
+  max,
   onValue,
   value,
 }: {
   label: string;
-  max?: number;
+  max: number;
   onValue: (value: number) => void;
   value: number;
 }) {
@@ -422,7 +422,7 @@ function RecurrenceEditor({
   };
 
   const summary = recurrenceRule
-    ? describeEventRecurrence({ rules: [recurrenceRule], start })
+    ? describeEventRecurrence({ rules: [recurrenceRule], start, timeZone })
     : null;
 
   return (
@@ -500,6 +500,8 @@ interface RepeatPartProps {
   start: Temporal.PlainDate;
 }
 
+const MON_TO_FRI = ["MO", "TU", "WE", "TH", "FR"];
+
 /** Which days a weekly or monthly series repeats on. */
 function RepeatDays({
   emit,
@@ -515,7 +517,7 @@ function RepeatDays({
       {pattern.freq === "WEEKLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {WEEKDAYS.map((day) => {
               const active = shownDays.includes(day.value);
               return (
@@ -542,6 +544,15 @@ function RepeatDays({
                 </Button>
               );
             })}
+            {/* Every weekday in one click, as Google Calendar offers. */}
+            <Button
+              className="ml-auto h-8 rounded-full px-2.5 text-xs"
+              onClick={() => emit({ ...pattern, byDay: MON_TO_FRI })}
+              type="button"
+              variant="outline"
+            >
+              Mon–Fri
+            </Button>
           </div>
         </div>
       )}
@@ -691,6 +702,7 @@ function RepeatEnds({
         <div className="flex items-center gap-2 text-xs">
           <CountField
             label="Occurrences"
+            max={MAX_OCCURRENCES}
             onValue={(count) =>
               emit({ ...pattern, end: { count, type: "count" } })
             }
@@ -704,6 +716,9 @@ function RepeatEnds({
     </div>
   );
 }
+
+/** Google Calendar's editor takes at most this many occurrences. */
+const MAX_OCCURRENCES = 730;
 
 const RECURRENCE_ENDS = [
   { label: "Never", value: "none" },
@@ -835,8 +850,6 @@ export function EventEditPopover({
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const setRecurringDelete = useSetAtom(recurringDeleteAtom);
   const moveEvent = useMoveGoogleEventMutation();
-  // The series' rule (an occurrence's lives on its master; shared with the
-  // form's query): a moved day follows it for the series.
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
     eventEditDialogInitialState
@@ -848,8 +861,8 @@ export function EventEditPopover({
     selectedScope,
   } = dialogState;
 
-  // The series stays loaded while its delete dialog asks, after the
-  // editor has closed.
+  // The series' rule (an occurrence's lives on its master; shared with the
+  // form's query): a moved day follows it for the series.
   const seriesMaster = useRecurringEventMaster({
     accountId,
     calendarId,
@@ -1931,23 +1944,6 @@ function EventAllDayAndRecurrenceRow({
   );
 }
 
-/** The notes field; left out of a read-only event when empty. */
-function EventDescriptionField({
-  onChange,
-  value,
-}: {
-  onChange: (value: string) => void;
-  value: string | undefined;
-}) {
-  return (
-    <Textarea
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Add details..."
-      value={value}
-    />
-  );
-}
-
 function EventLocationCombobox({
   location,
   suggestions,
@@ -2166,6 +2162,7 @@ function ReadOnlyEventDetails({
   reason,
   recurrence,
   repeatDay,
+  seriesTimeZone,
   start,
   summary,
 }: {
@@ -2183,6 +2180,8 @@ function ReadOnlyEventDetails({
   recurrence: string[];
   /** The day the repeat's implicit days count from (repeatCountingDay). */
   repeatDay: Temporal.PlainDate | null;
+  /** The series' zone, where its end day is counted. */
+  seriesTimeZone: string;
   start: Date;
   summary: string | undefined;
 }) {
@@ -2192,6 +2191,7 @@ function ReadOnlyEventDetails({
     recurringEventId: event?.recurringEventId,
     rules: recurrence,
     start: repeatDay ?? pickerDateToTemporal(start),
+    timeZone: seriesTimeZone,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -2956,6 +2956,7 @@ export function EventEditForm({
           seriesStart: masterQuery.data?.start,
           timeZone: seriesTimeZone,
         })}
+        seriesTimeZone={seriesTimeZone}
         start={start}
         summary={watchedValues.summary}
       />
@@ -2980,11 +2981,12 @@ export function EventEditForm({
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
-      <EventDescriptionField
-        onChange={(value) => {
+      <Textarea
+        onChange={(e) => {
           hasUserEditedRef.current = true;
-          setValue("description", value, { shouldDirty: true });
+          setValue("description", e.target.value, { shouldDirty: true });
         }}
+        placeholder="Add details..."
         value={watchedValues.description}
       />
       <Separator />
