@@ -35,6 +35,7 @@ import {
   sameLength,
   sameTime,
   seriesAttendees,
+  withAnswersOf,
 } from "./series-edits";
 import {
   seriesSlotAt,
@@ -467,6 +468,7 @@ function placeIn(slot: string, plan: SeriesPlan): string | null {
 function endedRepeat(params: {
   cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
+  first: Event | undefined;
   plan: SeriesPlan;
 }): { carried: Partial<CreateEvent>; lost: string[] } {
   const { changes, edited, master, opened, times } = params.plan;
@@ -514,6 +516,16 @@ function endedRepeat(params: {
     } else {
       lost.push(originalStart);
     }
+  }
+  // A guest's own answer to the first meeting (one who declined it alone)
+  // is that meeting's, which the event left keeps: Google drops it with
+  // the repeat.
+  const answered = withAnswersOf({
+    guests: carried.attendees ?? changes.attendees ?? master.attendees,
+    occurrence: params.first,
+  });
+  if (answered) {
+    carried = { ...carried, attendees: answered };
   }
   return { carried, lost };
 }
@@ -828,6 +840,8 @@ function ruleSkipsKept(plan: SeriesPlan): SeriesException[] {
 function afterSave(params: {
   cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
+  /** The first meeting's own occurrence, if it has one (its guests' answers). */
+  first: Event | undefined;
   plan: SeriesPlan;
 }): SeriesRefusal | { carried: Partial<CreateEvent>; recurrence: string[] } {
   const { cancelled, changed, plan } = params;
@@ -929,6 +943,8 @@ function sortExceptions(events: SeriesListing[], master: Event) {
   const zone = seriesZoneOf(master);
   const cancelled: string[] = [];
   const changed: { occurrence: Event; originalStart: string }[] = [];
+  const firstSlot = slotOf(master.start, zone);
+  let first: Event | undefined;
   for (const event of events) {
     const originalStart =
       event.recurringEventId === master.id && event.originalStartTime
@@ -939,7 +955,12 @@ function sortExceptions(events: SeriesListing[], master: Event) {
     }
     if (event.status === "cancelled" || !("start" in event)) {
       cancelled.push(originalStart);
-    } else if (
+      continue;
+    }
+    if (originalStart === firstSlot) {
+      first = event;
+    }
+    if (
       seriesMeetsAt({
         recurrence: master.recurrence ?? [],
         seriesZone: zone,
@@ -952,7 +973,7 @@ function sortExceptions(events: SeriesListing[], master: Event) {
       changed.push({ occurrence: event, originalStart });
     }
   }
-  return { cancelled, changed };
+  return { cancelled, changed, first };
 }
 
 /**
@@ -1615,8 +1636,11 @@ export function makeGoogleCalendarService(
       ) {
         return { carried: {}, recurrence: plan.recurrence };
       }
-      const { cancelled, changed } = yield* exceptionsOf(calendarId, master);
-      const kept = afterSave({ cancelled, changed, plan });
+      const { cancelled, changed, first } = yield* exceptionsOf(
+        calendarId,
+        master
+      );
+      const kept = afterSave({ cancelled, changed, first, plan });
       return "reason" in kept ? yield* Effect.fail(refused(kept)) : kept;
     });
 
