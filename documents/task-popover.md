@@ -6,7 +6,8 @@ and the task side of the calendar's create popover.
 ## Pieces
 
 These live in `apps/web/src/components/task-form/task-edit-popover.tsx`;
-`HeldFieldset` and `SaveFailure` are in `components/ui/held-fieldset.tsx`.
+`HeldFieldset`, `SaveFailure` and `SavingLabel` are in
+`components/ui/held-fieldset.tsx`.
 
 - **`TaskEditPopover`**: wraps a trigger (a sidebar row or a calendar block)
   and edits that task. It always has a task; creating goes through the create
