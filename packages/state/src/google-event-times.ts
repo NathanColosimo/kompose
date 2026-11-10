@@ -3,16 +3,6 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 /** A Google event's start or end, as it sends them. */
 export type EventTime = GoogleEvent["start"];
 
-/**
- * A start or end as Google writes it: a date (all day) or a date-time,
- * with the zone it's in.
- */
-export interface StartTime {
-  date?: string | null;
-  dateTime?: string | null;
-  timeZone?: string | null;
-}
-
 const NO_TIME: EventTime = {};
 
 /**
