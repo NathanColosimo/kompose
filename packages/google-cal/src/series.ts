@@ -5,6 +5,9 @@
 import { RRuleTemporal } from "rrule-temporal";
 import { Temporal } from "temporal-polyfill";
 
+/** A rule part that ends it: COUNT or UNTIL. */
+const END_PART = /^(?:COUNT|UNTIL)=/;
+
 const DAILY_OR_LONGER = /^FREQ=(?:DAILY|WEEKLY|MONTHLY|YEARLY)$/;
 const TIME_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
 
@@ -82,7 +85,13 @@ export function ruleDayCount(params: {
   rule: string;
   through: Temporal.PlainDate;
 }): number | null {
-  const rule = expand(params.rule, params.from, false);
+  // Its days alone: an UNTIL with a time can't end a rule read by date
+  // (RFC 5545 has it take DTSTART's form), so the end is left out.
+  const days = params.rule
+    .split(";")
+    .filter((part) => !END_PART.test(part))
+    .join(";");
+  const rule = expand(days, params.from, false);
   const utc = (day: Temporal.PlainDate) =>
     day.toZonedDateTime({ timeZone: "UTC" });
   return rule
