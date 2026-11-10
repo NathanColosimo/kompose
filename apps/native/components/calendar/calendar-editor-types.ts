@@ -5,6 +5,8 @@ import type { Temporal } from "temporal-polyfill";
 export type CalendarOption = CalendarIdentifier & {
   label: string;
   color?: string | null;
+  /** Google's access role: only owners and writers can change events. */
+  accessRole?: string | null;
 };
 
 interface EventDraftBase {
@@ -17,6 +19,11 @@ interface EventDraftBase {
   endTime: Temporal.PlainTime | null;
   location: string;
   recurrence: string[];
+  /**
+   * The user used the Repeat control. Only then is the repeat saved, since
+   * an occurrence's pattern may load after the editor opened.
+   */
+  recurrenceEdited?: boolean;
   startDate: Temporal.PlainDate;
   startTime: Temporal.PlainTime | null;
   summary: string;

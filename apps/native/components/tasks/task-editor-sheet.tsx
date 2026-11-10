@@ -43,6 +43,7 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
+import { HeldFields } from "@/components/ui/held-fields";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
@@ -854,12 +855,7 @@ export function TaskEditorSheet({
       {/* While a save runs, the fields are read-only, to touch and to
           VoiceOver alike: a change made then would be dropped when the
           editor closes. */}
-      <View
-        accessibilityElementsHidden={isSaving}
-        importantForAccessibility={isSaving ? "no-hide-descendants" : "auto"}
-        pointerEvents={isSaving ? "none" : "auto"}
-        style={isSaving ? { opacity: 0.6 } : undefined}
-      >
+      <HeldFields saving={isSaving}>
         <TaskScheduleChips
           draft={draft}
           isRecurrenceExpanded={isRecurrenceExpanded}
@@ -995,7 +991,7 @@ export function TaskEditorSheet({
             }))
           }
         />
-      </View>
+      </HeldFields>
       {overlay}
     </BottomSheet>
   );
