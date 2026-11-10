@@ -1511,9 +1511,9 @@ function followingOccurrences(params: {
  * Where a changed occurrence at `slot` goes in a split's new series: an
  * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
  * lands where its meeting does (`landingOf`). Null when it has no place
- * of its own: its own times in the other form than the new series', or a
- * place another old meeting, not deleted, lands on too (a move past later
- * meetings), which carrying it would overwrite.
+ * of its own: its own times in the other form than the new series', or,
+ * carried off its own day, a place another old meeting, not deleted,
+ * lands on too (a move past later meetings), which it would overwrite.
  */
 function carriedAt(params: {
   cancelled: string[];
@@ -1538,8 +1538,21 @@ function carriedAt(params: {
     return null;
   }
   const place = landingOf(slot, plan);
+  if (place === null) {
+    return null;
+  }
+  // On its own place (its day, or less than a day off), another meeting
+  // moved there too is the one that gives way; carried further, it
+  // would overwrite one.
+  const zone = repeatZone(master, start);
+  const from = slotMoment(slot, seriesZoneOf(master));
+  const to = slotMoment(place, zone);
+  const ownPlace =
+    from !== null &&
+    to !== null &&
+    Math.abs(from.until(to).total("hours")) < 24;
   const shared =
-    place !== null &&
+    !ownPlace &&
     liveMeetingLandsAt(place, {
       ...plan,
       cancelled: [...params.cancelled, slot],

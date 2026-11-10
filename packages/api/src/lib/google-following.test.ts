@@ -569,6 +569,33 @@ describe("This and following", () => {
       expect(google.writes()).toEqual([]);
     });
 
+    test("carries a renamed meeting the move leaves on its own day", async () => {
+      // Dec 7 renamed; from Nov 16 moved to Nov 30. Nov 23's meeting moves
+      // onto Dec 7, but Dec 7 keeps its own day: one meeting there either
+      // way, with its name.
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-12-07T09:00:00-05:00"),
+          summary: "Planning (Dec 7)",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("following", nov16, {
+              end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      const [created, carried] = google.writes();
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20261207T140000Z`
+      );
+      expect(carried?.body?.summary).toBe("Planning (Dec 7)");
+    });
+
     test("refuses a renamed monthly meeting whose place is a later one's", async () => {
       // The third Monday from Oct 19, Dec 21 renamed; from Nov 16 moved to
       // Jan 18: Dec 21's place, two months on, is Feb 15's own.
