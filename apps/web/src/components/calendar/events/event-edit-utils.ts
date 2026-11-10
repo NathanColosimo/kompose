@@ -2,13 +2,10 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { GOOGLE_EVENT_WEEKDAYS } from "@kompose/state/google-event-recurrence";
 import type { EventSaveChanges } from "@kompose/state/recurrence-scope-options";
 import { seriesEditFields } from "@kompose/state/series-edit";
 import { Temporal } from "temporal-polyfill";
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
-
-export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
 
 interface TemporalFormValues {
   allDay: boolean;
@@ -20,9 +17,6 @@ interface TemporalFormValues {
 
 interface TemporalPayload {
   endPayload: { date?: string; dateTime?: string; timeZone?: string };
-  isAllDay: boolean;
-  occurrenceStart: Date;
-  startDateTime: Date | null;
   startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
@@ -87,9 +81,6 @@ export function buildTemporalPayload(
 
   return {
     endPayload,
-    isAllDay: isAllDayEvent,
-    occurrenceStart: startDateTime ?? startDate,
-    startDateTime,
     startPayload,
   };
 }

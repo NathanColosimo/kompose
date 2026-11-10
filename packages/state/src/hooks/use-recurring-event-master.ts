@@ -69,7 +69,6 @@ export function useRecurringEventMaster(params: {
   // re-render on) every one of its fields.
   return {
     data: query.data,
-    isError: query.isError,
     ruleReady: seriesRuleReady(query),
     /**
      * An occurrence's series rule that can't be used now (loading, or its
