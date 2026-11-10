@@ -61,14 +61,14 @@ function stubbedServer(
   return { orpc, sent, whileSent };
 }
 
-const refused = () => Promise.reject(new Error("refused"));
+const failed = () => Promise.reject(new Error("failed"));
 
 // --- delete ---
 
 const removal = { ...calendar, eventId: "event", scope: "following" as const };
 
 /**
- * A delete the server refuses, after the realtime sync gives November
+ * A delete the server fails, after the realtime sync gives November
  * `refreshed`, and what the app and cache were left with.
  */
 async function failedDelete(
@@ -80,7 +80,7 @@ async function failedDelete(
   queryClient.setQueryData(november, [{ id: "event" }, { id: "other" }]);
   // October's list doesn't have it.
   queryClient.setQueryData(october, [{ id: "earlier" }]);
-  const server = stubbedServer(queryClient, "delete", refused, () =>
+  const server = stubbedServer(queryClient, "delete", failed, () =>
     queryClient.setQueryData(november, refreshed)
   );
   const observer = new MutationObserver(
@@ -110,7 +110,7 @@ test("a failed delete otherwise says what failed, in the dialog's words", async 
     failureMessage: "Couldn't delete it.",
   });
   expect(told.map((error) => error.message)).toEqual(["Couldn't delete it."]);
-  expect(told[0]?.cause).toEqual(new Error("refused"));
+  expect(told[0]?.cause).toEqual(new Error("failed"));
 });
 
 test("the event leaves the list at once, and comes back on failure", async () => {
@@ -192,7 +192,7 @@ const anotherEvent = (queryClient: QueryClient) =>
 test("an update sends its scope and event, not the editor's options", async () => {
   const planning = sanitizeEventPayload({ ...standup, summary: "Planning" });
   const { sent } = await update({
-    answer: refused,
+    answer: failed,
     variables: {
       failureMessage: "x",
       optimistic: false,
@@ -204,7 +204,7 @@ test("an update sends its scope and event, not the editor's options", async () =
     { ...calendar, event: planning, eventId: "event", scope: "all" },
   ]);
   // With no scope given, the save is for this occurrence.
-  const { sent: plain } = await update({ answer: refused });
+  const { sent: plain } = await update({ answer: failed });
   expect(plain).toEqual([
     { ...calendar, event: planning, eventId: "event", scope: "this" },
   ]);
@@ -212,13 +212,13 @@ test("an update sends its scope and event, not the editor's options", async () =
 
 test("a failed update says what failed, in the editor's words, unless quiet", async () => {
   const { told } = await update({
-    answer: refused,
+    answer: failed,
     variables: { failureMessage: "Couldn't save it." },
   });
   expect(told.map((error) => error.message)).toEqual(["Couldn't save it."]);
-  expect(told[0]?.cause).toEqual(new Error("refused"));
+  expect(told[0]?.cause).toEqual(new Error("failed"));
   const { told: quiet } = await update({
-    answer: refused,
+    answer: failed,
     variables: { quiet: true },
   });
   expect(quiet).toEqual([]);
@@ -229,7 +229,7 @@ test("a failed held update leaves the list as it's since been refreshed", async 
   const results = await Promise.all(
     (["all", "this"] as const).map((recurrenceScope) =>
       update({
-        answer: refused,
+        answer: failed,
         meanwhile: anotherEvent,
         variables: { optimistic: false, quiet: true, recurrenceScope },
       })
@@ -253,7 +253,7 @@ test("a held update of one occurrence shows the server's copy once it's in", asy
 
 test("a failed optimistic update puts back only that event", async () => {
   const { after, whileSent } = await update({
-    answer: refused,
+    answer: failed,
     meanwhile: anotherEvent,
   });
   expect(whileSent).toEqual([[{ ...standup, summary: "Planning" }]]);
@@ -265,7 +265,7 @@ test("a failed optimistic update puts each list's own copy back", async () => {
   // older copy than November's.
   const older = { ...standup, summary: "Old title" };
   const { after, octoberAfter } = await update({
-    answer: refused,
+    answer: failed,
     before: (queryClient) => queryClient.setQueryData(october, [older]),
   });
   expect(octoberAfter).toEqual([older]);
@@ -276,7 +276,7 @@ test("a failed optimistic update keeps a newer copy of the event", async () => {
   // Renamed on another device while the save was out: that copy stays.
   const renamed = { ...standup, summary: "Renamed elsewhere" };
   const { after } = await update({
-    answer: refused,
+    answer: failed,
     meanwhile: (queryClient) => queryClient.setQueryData(november, [renamed]),
   });
   expect(after).toEqual([renamed]);
@@ -330,7 +330,7 @@ async function create(params: {
 
 test("a create sends the event, not the editor's options", async () => {
   const { sent } = await create({
-    answer: refused,
+    answer: failed,
     held: { failureMessage: "x", quiet: true },
   });
   expect(sent).toEqual([lunch]);
@@ -338,20 +338,20 @@ test("a create sends the event, not the editor's options", async () => {
 
 test("a failed create says what failed, in the editor's words, unless quiet", async () => {
   const { told } = await create({
-    answer: refused,
+    answer: failed,
     held: { failureMessage: "Couldn't create it." },
   });
   expect(told.map((error) => error.message)).toEqual(["Couldn't create it."]);
-  expect(told[0]?.cause).toEqual(new Error("refused"));
+  expect(told[0]?.cause).toEqual(new Error("failed"));
   const { told: quiet } = await create({
-    answer: refused,
+    answer: failed,
     held: { quiet: true },
   });
   expect(quiet).toEqual([]);
 });
 
 test("a failed create takes back only the event it added", async () => {
-  const { after, whileSent } = await create({ answer: refused });
+  const { after, whileSent } = await create({ answer: failed });
   // The stand-in showed while the create was out.
   expect(whileSent).toEqual([
     [{ id: "other" }, expect.objectContaining({ summary: "Lunch" })],
@@ -370,13 +370,13 @@ test("a repeating create shows no stand-in: its meetings come with the refetch",
     ...lunch,
     event: { ...lunch.event, recurrence: ["RRULE:FREQ=WEEKLY"] },
   };
-  const { whileSent } = await create({ answer: refused, input: weekly });
+  const { whileSent } = await create({ answer: failed, input: weekly });
   expect(whileSent).toEqual([[{ id: "other" }]]);
 });
 
 // --- every write ---
 
-test("every write marks the calendar's events and series stale, saved or refused", async () => {
+test("every write marks the calendar's events and series stale, saved or failed", async () => {
   // A series kept fresh past a write would hand its old rule to the next.
   const seriesKey = [
     ...getGoogleEventMastersByCalendarQueryKey(calendar),
@@ -407,7 +407,7 @@ test("every write marks the calendar's events and series stale, saved or refused
         updateGoogleEventMutationOptions(queryClient, config(orpc))
       ).mutate({ ...calendar, event: standup, eventId: "event" }),
   };
-  const answers = [() => Promise.resolve(standup), refused];
+  const answers = [() => Promise.resolve(standup), failed];
   const routes: Route[] = ["create", "delete", "update"];
   const runs = routes.flatMap((route) =>
     answers.map(async (answer) => {

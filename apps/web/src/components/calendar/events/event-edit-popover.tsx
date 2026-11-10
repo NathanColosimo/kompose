@@ -1,16 +1,10 @@
 "use client";
 
 import type { CreateEventInput } from "@kompose/api/routers/google-cal/contract";
-import {
-  canWriteCalendar,
-  type Event as GoogleEvent,
-  type RecurrenceScope,
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import {
-  matchRecurrenceToStart,
-  untilRuleForDay,
-  untilRuleToDay,
-} from "@kompose/google-cal/until";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -21,23 +15,18 @@ import {
   describeEventRecurrence,
   monthlyDayOptions,
 } from "@kompose/state/event-recurrence-words";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
 import {
   buildGoogleEventRecurrenceRule,
-  dayInZone,
   type EventRecurrencePattern,
   type EventRecurrenceFrequency as Frequency,
-  followStart,
   getPrimaryRecurrenceRule,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  recurrenceEndDay,
+  recurrenceUntilValue,
   repeatChanged,
-  repeatCountingDay,
-  repeatEndsBeforeStart,
-  seriesCountingDays,
-  seriesTimeZone as seriesZoneOf,
   setPrimaryRecurrenceRule,
-  timeInZone,
-  timeZoneCity,
   untilDefaultDay,
   weekdayCodeOf,
   weekOrdered,
@@ -66,14 +55,8 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
-  refusalReason,
-  refuseSave,
-  type SaveRefusals,
   SCOPE_DIALOG_COPY,
-  seriesRefusalOf,
-  seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
-import { seriesRepeatForEdit } from "@kompose/state/series-edit";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -220,20 +203,12 @@ type ScopeFacts = ReturnType<typeof saveFacts>;
  * loads.
  */
 function saveChanges(
-  pendingSave: Pick<
-    PendingSave,
-    "calendarChanged" | "patternChanged" | "refused"
-  > | null,
+  pendingSave: Pick<PendingSave, "patternChanged"> | null,
   facts: ScopeFacts,
-  series: Pick<
-    EventSaveChanges,
-    "seriesRuleFailed" | "seriesRuleLoaded" | "splitBlocked"
-  >
+  series: Pick<EventSaveChanges, "seriesRuleFailed" | "seriesRuleLoaded">
 ): EventSaveChanges {
   return {
-    calendarChanged: Boolean(pendingSave?.calendarChanged),
     patternChanged: pendingSave?.patternChanged ?? false,
-    refused: pendingSave?.refused,
     ...facts,
     ...series,
   };
@@ -377,7 +352,10 @@ function CountField({
 
 const NON_DIGITS = /\D/g;
 
-const UNIT_WORDS: Record<Exclude<Frequency, "none">, [string, string]> = {
+const UNIT_WORDS: Record<
+  Exclude<Frequency, "none" | "custom">,
+  [string, string]
+> = {
   DAILY: ["day", "days"],
   MONTHLY: ["month", "months"],
   WEEKLY: ["week", "weeks"],
@@ -391,7 +369,6 @@ function RecurrenceEditor({
   onChange,
   start,
   timeZone,
-  zoneCity,
 }: {
   /** An all-day series ends on a date; a timed one after that day. */
   allDay: boolean;
@@ -406,8 +383,6 @@ function RecurrenceEditor({
   start: Temporal.PlainDate;
   /** The series' zone, where its end day is counted. */
   timeZone: string;
-  /** The series' zone's city when it isn't the app's ("Tokyo"). */
-  zoneCity: string | null;
 }) {
   const pattern = useMemo(
     () => parseGoogleEventRecurrenceRule(recurrenceRule),
@@ -432,10 +407,6 @@ function RecurrenceEditor({
         <Repeat className="mt-px size-3.5 shrink-0 text-muted-foreground" />
         <span className={summary ? "" : "text-muted-foreground"}>
           {summary ?? "Doesn't repeat"}
-          {/* Its days are the series' zone's, not the ones shown here. */}
-          {zoneCity ? (
-            <span className="text-muted-foreground"> · {zoneCity} time</span>
-          ) : null}
         </span>
       </div>
 
@@ -450,6 +421,11 @@ function RecurrenceEditor({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {pattern.freq === "custom" ? (
+              <SelectItem disabled value="custom">
+                Custom
+              </SelectItem>
+            ) : null}
             <SelectItem value="none">None</SelectItem>
             <SelectItem value="DAILY">Daily</SelectItem>
             <SelectItem value="WEEKLY">Weekly</SelectItem>
@@ -457,7 +433,7 @@ function RecurrenceEditor({
             <SelectItem value="YEARLY">Yearly</SelectItem>
           </SelectContent>
         </Select>
-        {pattern.freq === "none" ? null : (
+        {pattern.freq === "none" || pattern.freq === "custom" ? null : (
           <>
             <span className="text-muted-foreground">every</span>
             <CountField
@@ -480,7 +456,7 @@ function RecurrenceEditor({
         start={start}
       />
       {/* A series that doesn't repeat has no end to pick. */}
-      {pattern.freq === "none" ? null : (
+      {pattern.freq === "none" || pattern.freq === "custom" ? null : (
         <RepeatEnds
           allDay={allDay}
           emit={emit}
@@ -604,7 +580,7 @@ function RepeatEnds({
   const [untilOpen, setUntilOpen] = useState(false);
   const untilDay =
     pattern.end.type === "until"
-      ? untilRuleToDay(pattern.end.date, timeZone)
+      ? recurrenceEndDay(pattern.end.date, timeZone)
       : null;
   const untilDate = untilDay ? temporalToPickerDate(untilDay) : undefined;
   return (
@@ -630,7 +606,7 @@ function RepeatEnds({
                 emit({
                   ...pattern,
                   end: {
-                    date: untilRuleForDay(
+                    date: recurrenceUntilValue(
                       untilDefaultDay(endFrom, timeZone),
                       allDay,
                       timeZone
@@ -681,7 +657,7 @@ function RepeatEnds({
                   emit({
                     ...pattern,
                     end: {
-                      date: untilRuleForDay(
+                      date: recurrenceUntilValue(
                         pickerDateToTemporal(date),
                         allDay,
                         timeZone
@@ -730,10 +706,7 @@ const RECURRENCE_ENDS = [
 type PendingSave = Omit<
   Extract<CloseSaveRequest, { type: "save" }>,
   "isRecurring" | "type"
-> & {
-  /** The scopes the server refused for this save, and why (`refuseSave`). */
-  refused?: SaveRefusals | null;
-};
+>;
 
 interface EventEditDialogState {
   pendingSave: PendingSave | null;
@@ -792,17 +765,8 @@ function focusedElement(): HTMLElement | null {
     : null;
 }
 
-/**
- * What a held save says when it fails: that the edits saved but the move
- * didn't, the server's reason for refusing a series write (a retry won't
- * help), or `fallback`.
- */
 function heldFailure(error: unknown, fallback: string): string {
-  if (error instanceof SavedNotMovedError) {
-    return error.message;
-  }
-  const refusal = seriesRefusalOf(error);
-  return refusal ? refusalReason(refusal) : fallback;
+  return error instanceof SavedNotMovedError ? error.message : fallback;
 }
 
 /** The edits saved, but the move to another calendar that followed didn't. */
@@ -861,8 +825,7 @@ export function EventEditPopover({
     selectedScope,
   } = dialogState;
 
-  // The series' rule (an occurrence's lives on its master; shared with the
-  // form's query): a moved day follows it for the series.
+  // The form and scope dialog share the series query.
   const seriesMaster = useRecurringEventMaster({
     accountId,
     calendarId,
@@ -876,7 +839,6 @@ export function EventEditPopover({
   const seriesStatus = {
     seriesRuleFailed: seriesMaster.ruleFailed,
     seriesRuleLoaded,
-    splitBlocked: seriesSplitBlock(event, seriesMaster.data, timeZone),
   };
 
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
@@ -937,15 +899,11 @@ export function EventEditPopover({
       if (edits.hasDataEdits) {
         await updateEvent.mutateAsync({
           ...edits.variables,
-          // For the series, only what the user changed, and a rule that
-          // follows a moved day: an occurrence rescheduled or renamed on
-          // its own keeps that to itself.
+          // Leave unchanged occurrence details out of series updates.
           event: eventForScope({
             edited: edits.variables.event,
-            master: seriesMaster.data ?? undefined,
             occurrence: event,
             scope,
-            timeZone,
           }),
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
@@ -973,15 +931,7 @@ export function EventEditPopover({
           : move);
       }
     },
-    [
-      accountId,
-      calendarId,
-      event,
-      moveEvent,
-      seriesMaster.data,
-      timeZone,
-      updateEvent,
-    ]
+    [accountId, calendarId, event, moveEvent, updateEvent]
   );
 
   // The scope the save dialog shows and saves with, worked out each time
@@ -991,13 +941,12 @@ export function EventEditPopover({
       ? saveFacts({
           edited: pendingSave.variables.event,
           event,
-          master: seriesMaster.data ?? undefined,
           timeZone,
         })
       : { dateMoved: false };
   const saveScopeChanges = saveChanges(pendingSave, pendingFacts, seriesStatus);
   const saveDialog = {
-    // Says why each scope that's off is, led by any refusal.
+    // Explain the choices disabled by the edit or a pending series load.
     description: eventSaveDescription(saveScopeChanges),
     disabled: eventSaveDisabledScopes(saveScopeChanges),
   };
@@ -1010,22 +959,7 @@ export function EventEditPopover({
     if (!pendingSave) {
       return;
     }
-    const save = saveEdits(pendingSave, saveScope).catch((error: unknown) => {
-      // The server won't make this write (a meeting changed on its own
-      // would be undone, say): ask again, with that scope off and its
-      // reason leading the dialog.
-      const refusal = seriesRefusalOf(error);
-      if (refusal) {
-        dispatchDialog({
-          pendingSave: {
-            ...pendingSave,
-            refused: refuseSave(pendingSave.refused, saveScope, refusal),
-          },
-          type: "open-scope-dialog",
-        });
-      }
-      throw error;
-    });
+    const save = saveEdits(pendingSave, saveScope);
     // The save stays pending until the next one replaces it, so the
     // dialog's words don't change as it fades.
     holdForSave(save, SAVE_FAILURE_MESSAGE);
@@ -1286,8 +1220,6 @@ function buildCreatePayload(
     e: Date | null
   ) => { start: Date | null; end: Date | null },
   conferenceData: GoogleEvent["conferenceData"] | null | undefined,
-  /** The zone the editor shows days in. */
-  timeZone: string,
   calendarTimeZone?: string
 ): CloseSaveRequest {
   const trimmedTitle = values.summary.trim();
@@ -1312,15 +1244,7 @@ function buildCreatePayload(
         description: values.description?.trim() || undefined,
         end: temporalPayload.endPayload,
         location: values.location?.trim() || undefined,
-        // An all-day series ends on a date, a timed one on a date-time.
-        recurrence:
-          values.recurrence?.length > 0
-            ? matchRecurrenceToStart(
-                values.recurrence,
-                temporalPayload.startPayload,
-                timeZone
-              )
-            : undefined,
+        recurrence: values.recurrence?.length ? values.recurrence : undefined,
         start: temporalPayload.startPayload,
         summary: trimmedTitle,
       },
@@ -1376,8 +1300,6 @@ function buildEditPayload(
     event: GoogleEvent | undefined;
     hasEdits: boolean;
     masterRecurrence: string[] | null | undefined;
-    /** The series' own start, when the event is one of its occurrences. */
-    masterStart?: GoogleEvent["start"];
     /** The user used the Repeat control. */
     recurrenceEdited: boolean;
     /** The zone the editor shows days in. */
@@ -1388,11 +1310,6 @@ function buildEditPayload(
   if (!(ctx.hasEdits || calendarChanged)) {
     return { type: "none" };
   }
-  // A series is written in its own zone (Google repeats it there): the
-  // series' once loaded, as the server reads it.
-  const seriesZone = (fallback: string) =>
-    ctx.event ? seriesZoneOf(ctx.event, ctx.masterStart, fallback) : fallback;
-
   const temporalPayload = buildTemporalPayload(
     values,
     ctx.clampToStartIfNeeded,
@@ -1402,7 +1319,7 @@ function buildEditPayload(
         ctx.event?.recurringEventId ||
         ctx.event?.recurrence?.length ||
         ctx.masterRecurrence?.length
-          ? seriesZone(ctx.calendarTimeZone ?? ctx.timeZone)
+          ? (ctx.calendarTimeZone ?? ctx.timeZone)
           : undefined,
     }
   );
@@ -1428,21 +1345,7 @@ function buildEditPayload(
       end: withEditedTime(ctx.event?.end, temporalPayload.endPayload),
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      // An all-day series ends on a date, a timed one on a date-time.
-      recurrence: patternChanged
-        ? matchRecurrenceToStart(
-            values.recurrence ?? [],
-            temporalPayload.startPayload,
-            seriesZone(ctx.timeZone),
-            // The series' slot before the edit: which rules share its time.
-            ctx.event?.originalStartTime ?? ctx.event?.start,
-            seriesCountingDays(
-              ctx.event,
-              ctx.masterStart,
-              seriesZone(ctx.timeZone)
-            )
-          )
-        : undefined,
+      recurrence: patternChanged ? values.recurrence : undefined,
       start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
       summary: values.summary.trim(),
     },
@@ -1622,26 +1525,13 @@ function repeatRuleLabel(
     : null;
 }
 
-/**
- * The Repeat button's words: the rule, then the zone a series in another
- * one repeats in ("Mon, Wed · Tokyo"). The zone gives way first when the
- * button is narrow; the title and label keep both whole.
- */
-function RepeatChipText({ city, rule }: { city: string | null; rule: string }) {
-  // Weekly on given days shows just the days beside the repeat icon.
+function RepeatChipText({ rule }: { rule: string }) {
   return (
-    <>
-      <span className="min-w-0 truncate">
-        {rule
-          .replace(WEEKLY_ON, "")
-          .replace(FIRST_LETTER, (c) => c.toUpperCase())}
-      </span>
-      {city ? (
-        <span className="min-w-0 shrink-[4] truncate text-muted-foreground">
-          · {city}
-        </span>
-      ) : null}
-    </>
+    <span className="min-w-0 truncate">
+      {rule
+        .replace(WEEKLY_ON, "")
+        .replace(FIRST_LETTER, (c) => c.toUpperCase())}
+    </span>
   );
 }
 
@@ -1680,7 +1570,6 @@ function RepeatRetryButton({
 /** The repeat chip, which opens the repeat editor. */
 function RepeatControl({
   allDay,
-  city,
   disabled,
   loading,
   onRecurrenceChange,
@@ -1688,11 +1577,9 @@ function RepeatControl({
   ruleLabel,
   seriesStart,
   seriesTimeZone,
-  showsZone,
   endFrom,
 }: {
   allDay: boolean;
-  city: string | null;
   disabled: boolean;
   /** The event's own day, for an end date's default and minimum. */
   endFrom: Temporal.PlainDate | null;
@@ -1706,11 +1593,10 @@ function RepeatControl({
   ruleLabel: string | null | undefined;
   seriesStart: Temporal.PlainDate | null;
   seriesTimeZone: string;
-  showsZone: boolean;
 }) {
   const waiting = loading && !ruleLabel;
   const ruleText = waiting ? "Loading repeat…" : ruleLabel;
-  const repeatLabel = ruleLabel && city ? `${ruleLabel} · ${city}` : ruleText;
+  const repeatLabel = ruleText;
   // While the series' rule isn't usable (it's being fetched again), an
   // open editor closes and its changes are dropped: one then would keep
   // the old rule.
@@ -1738,7 +1624,7 @@ function RepeatControl({
           variant={repeatLabel ? "secondary" : "outline"}
         >
           <Repeat className="size-4 shrink-0" />
-          {ruleLabel ? <RepeatChipText city={city} rule={ruleLabel} /> : null}
+          {ruleLabel ? <RepeatChipText rule={ruleLabel} /> : null}
           {waiting ? <span className="truncate">{ruleText}</span> : null}
         </Button>
       </PopoverTrigger>
@@ -1760,7 +1646,6 @@ function RepeatControl({
           recurrenceRule={recurrenceRule}
           start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
           timeZone={seriesTimeZone}
-          zoneCity={showsZone ? timeZoneCity(seriesTimeZone) : null}
         />
       </PopoverContent>
     </Popover>
@@ -1794,7 +1679,6 @@ function EventAllDayAndRecurrenceRow({
   recurrenceRule,
   seriesStart,
   seriesTimeZone,
-  showsZone,
   endFrom,
   onRecurrenceChange,
   calendarOptions,
@@ -1818,8 +1702,6 @@ function EventAllDayAndRecurrenceRow({
   seriesStart: Temporal.PlainDate | null;
   /** The series' zone (the app's for a new one), where its days count. */
   seriesTimeZone: string;
-  /** The series' zone isn't the app's: the editor says its days are there. */
-  showsZone: boolean;
   /** The event's own day in the series' zone, for an end date's minimum. */
   endFrom: Temporal.PlainDate | null;
   onRecurrenceChange: (rule: string | null) => void;
@@ -1832,8 +1714,6 @@ function EventAllDayAndRecurrenceRow({
   calendarValue: string;
   onCalendarChange: (value: string) => void;
 }) {
-  // Its days are the series' zone's: say so beside a date shown here.
-  const city = showsZone ? timeZoneCity(seriesTimeZone) : null;
   const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
   const waitShown = Boolean(recurrenceWaitReason) && !ruleLabel;
   const retryShown = !recurrenceWaitReason && recurrenceFailed;
@@ -1877,7 +1757,6 @@ function EventAllDayAndRecurrenceRow({
       {waitShown || (retryShown && !ruleLabel) ? null : (
         <RepeatControl
           allDay={allDay}
-          city={city}
           disabled={recurrenceLoading}
           endFrom={endFrom}
           loading={recurrenceLoading}
@@ -1886,7 +1765,6 @@ function EventAllDayAndRecurrenceRow({
           ruleLabel={ruleLabel}
           seriesStart={seriesStart}
           seriesTimeZone={seriesTimeZone}
-          showsZone={showsZone}
         />
       )}
       {/* Offline: why the repeat waits ("Offline", the full reason for
@@ -2029,47 +1907,6 @@ function EventLocationCombobox({
   );
 }
 
-/**
- * The repeat the editor shows, and the days it counts from, for what a
- * save would send (`seriesRepeatForEdit`): an occurrence moved from a
- * Wednesday to a Thursday shows "Weekly on Thu".
- */
-function shownRepeat(
-  values: ReturnType<typeof resolveWatchedDefaults>,
-  ctx: {
-    event: GoogleEvent | undefined;
-    master: GoogleEvent | undefined;
-    recurrenceEdited: boolean;
-    /** The series' zone, where its days count. */
-    seriesTimeZone: string;
-  }
-): ReturnType<typeof seriesRepeatForEdit> {
-  const times = buildTemporalPayload(
-    {
-      ...values,
-      endDate: values.endDate ?? null,
-      startDate: values.startDate ?? null,
-    },
-    (from, to) => ({ end: to, start: from })
-  );
-  const edited = times
-    ? {
-        end: withEditedTime(ctx.event?.end, times.endPayload),
-        start: withEditedTime(ctx.event?.start, times.startPayload),
-      }
-    : // No start yet: the event's own times, until there is one.
-      { end: ctx.event?.end ?? {}, start: ctx.event?.start ?? {} };
-  return seriesRepeatForEdit({
-    edited,
-    event: ctx.event,
-    recurrence: values.recurrence,
-    recurrenceEdited: ctx.recurrenceEdited,
-    seriesRecurrence: ctx.master?.recurrence,
-    seriesStart: ctx.master?.start,
-    timeZone: ctx.seriesTimeZone,
-  });
-}
-
 function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   return {
     allDay: watched.allDay ?? false,
@@ -2178,7 +2015,7 @@ function ReadOnlyEventDetails({
   reason: string | null | undefined;
   /** The series' RRULEs (the event's own, or its master's). */
   recurrence: string[];
-  /** The day the repeat's implicit days count from (repeatCountingDay). */
+  /** The displayed start day, used for implicit repeat days. */
   repeatDay: Temporal.PlainDate | null;
   /** The series' zone, where its end day is counted. */
   seriesTimeZone: string;
@@ -2322,38 +2159,10 @@ function endsBeforeStart(values: Partial<EventFormValues>): boolean {
   );
 }
 
-/** Why the form can't be saved: an end before the start, of it or its repeat. */
-function EndsBeforeStartNote({
-  repeatEndsOn,
-  values,
-}: {
-  /** The repeat's end day, when it's before the start. */
-  repeatEndsOn: Temporal.PlainDate | null;
-  values: Partial<EventFormValues>;
-}) {
-  if (endsBeforeStart(values)) {
-    return <p className="text-destructive text-xs">Ends before it starts.</p>;
-  }
-  // Named: the end is inside the Repeat popover, out of sight.
-  return repeatEndsOn ? (
-    <p className="text-destructive text-xs">
-      The repeat ends{" "}
-      {formatPlainDate(repeatEndsOn, {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      })}
-      , before this starts. Pick a later end.
-    </p>
+function EndsBeforeStartNote({ values }: { values: Partial<EventFormValues> }) {
+  return endsBeforeStart(values) ? (
+    <p className="text-destructive text-xs">Ends before it starts.</p>
   ) : null;
-}
-
-/** The form can't be saved as is: it, or its repeat, ends before it starts. */
-function saveBlocked(
-  values: Partial<EventFormValues>,
-  repeatEndsOn: Temporal.PlainDate | null
-): boolean {
-  return endsBeforeStart(values) || repeatEndsOn !== null;
 }
 
 function EventFormActionRow({
@@ -2481,11 +2290,8 @@ export function EventEditForm({
     enabled: open,
     event: event ?? (null as GoogleEvent | null),
   });
-  // An existing series' days count in its own zone (the series' own, once
-  // loaded, as the server reads it); a new one's here.
-  const seriesTimeZone = event
-    ? seriesZoneOf(event, masterQuery.data?.start, timeZone)
-    : timeZone;
+  // Use the event zone for displaying the repeat end date.
+  const seriesTimeZone = event?.start.timeZone ?? timeZone;
 
   const isAllDay = Boolean(event?.start?.date);
   // All-day dates go to the pickers as local dates. (new Date("2026-11-12")
@@ -2684,62 +2490,6 @@ export function EventEditForm({
     hasUserEditedRef.current = true;
     const before = getValues();
     applyMovedStart(before, setValue, next);
-    followRepeat(before);
-  };
-
-  /** The day a form start falls on in the series' zone. */
-  const seriesDayOf = (values: {
-    allDay: boolean;
-    startDate?: Date | null;
-    startTime: string;
-  }): Temporal.PlainDate | null =>
-    values.startDate
-      ? dayInZone(
-          pickerDateToTemporal(values.startDate),
-          values.allDay || !values.startTime
-            ? null
-            : Temporal.PlainTime.from(values.startTime),
-          timeZone,
-          seriesTimeZone
-        )
-      : null;
-
-  /** The start's wall time in the series' zone; null all day. */
-  const seriesTimeOf = (values: EventFormValues) =>
-    values.startDate && !values.allDay && values.startTime
-      ? timeInZone(
-          pickerDateToTemporal(values.startDate),
-          Temporal.PlainTime.from(values.startTime),
-          timeZone,
-          seriesTimeZone
-        )
-      : null;
-
-  /**
-   * A series' repeat follows its start ("2nd Tue" to "3rd Wed", an end the
-   * start passed moves on). Not for one occurrence: moving it is a
-   * reschedule, and its series stays as it is.
-   */
-  const followRepeat = (before: EventFormValues) => {
-    const values = getValues();
-    const from = seriesDayOf(before);
-    const to = seriesDayOf(values);
-    if (event?.recurringEventId || !(from && to)) {
-      return;
-    }
-    const recurrence = followStart({
-      allDay: values.allDay,
-      from,
-      recurrence: values.recurrence,
-      fromTime: seriesTimeOf(before),
-      timeZone: seriesTimeZone,
-      to,
-      toTime: seriesTimeOf(values),
-    });
-    if (recurrence !== values.recurrence) {
-      recurrenceEditedRef.current = true;
-      setValue("recurrence", recurrence, { shouldDirty: true });
-    }
   };
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
@@ -2818,28 +2568,11 @@ export function EventEditForm({
     }
   }, [canCreateMeeting, isCreateMode, onSave]);
 
-  // The repeat a save would send (the series' rule following a moved day),
-  // whether it's the user's own, and the days it counts from.
-  const shown = shownRepeat(watchedValues, {
-    event,
-    master: masterQuery.data ?? undefined,
-    recurrenceEdited: recurrenceEditedRef.current,
-    seriesTimeZone,
-  });
-  // Its end picked, then the start moved past it: say so, and don't save.
-  const repeatEndsOn = repeatEndsBeforeStart({
-    recurrence: watchedValues.recurrence,
-    // A new event's repeat is "changed" from none too.
-    sent: shown.changed,
-    startDay: shown.startDay ?? seriesDayOf(watchedValues),
-    timeZone: seriesTimeZone,
-  });
-
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
       // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
       // comes through here, so none can write an end before the start.
-      if (saveBlocked(values, repeatEndsOn)) {
+      if (endsBeforeStart(values)) {
         return { type: "invalid" };
       }
       const resolvedConference =
@@ -2849,7 +2582,6 @@ export function EventEditForm({
           values,
           clampToStartIfNeeded,
           resolvedConference,
-          timeZone,
           calendar?.calendar.timeZone
         );
       }
@@ -2862,7 +2594,6 @@ export function EventEditForm({
         event,
         hasEdits: hasUserEditedRef.current,
         masterRecurrence: masterQuery.data?.recurrence,
-        masterStart: masterQuery.data?.start,
         recurrenceEdited: recurrenceEditedRef.current,
         timeZone,
       });
@@ -2877,7 +2608,6 @@ export function EventEditForm({
       calendar?.calendar.timeZone,
       masterQuery.data,
       pendingConference,
-      repeatEndsOn,
     ]
   );
 
@@ -2925,9 +2655,12 @@ export function EventEditForm({
     [applySharedFields, getSharedFields]
   );
 
+  const formStartDay = watchedValues.startDate
+    ? pickerDateToTemporal(watchedValues.startDate)
+    : null;
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const recurrenceRule = getPrimaryRecurrenceRule(shown.recurrence);
+  const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
   // Any editable event can repeat, a one-off one included. While an
   // occurrence's pattern loads, the control waits: a change made before it
   // arrives would be compared against nothing.
@@ -2950,12 +2683,7 @@ export function EventEditForm({
         onClose={onCancel}
         reason={readOnlyReason}
         recurrence={recurrenceSource}
-        repeatDay={repeatCountingDay({
-          event,
-          formDay: seriesDayOf(watchedValues),
-          seriesStart: masterQuery.data?.start,
-          timeZone: seriesTimeZone,
-        })}
+        repeatDay={formStartDay}
         seriesTimeZone={seriesTimeZone}
         start={start}
         summary={watchedValues.summary}
@@ -2994,7 +2722,7 @@ export function EventEditForm({
         allDay={watchedValues.allDay}
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
-        endFrom={seriesDayOf(watchedValues)}
+        endFrom={formStartDay}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val
@@ -3012,7 +2740,7 @@ export function EventEditForm({
         onRecurrenceChange={(rule) => {
           hasUserEditedRef.current = true;
           recurrenceEditedRef.current = true;
-          // Keeps the series' deleted occurrences (EXDATE lines).
+          // Keep recurrence lines the repeat editor does not edit.
           setValue(
             "recurrence",
             setPrimaryRecurrenceRule(getValues("recurrence"), rule),
@@ -3030,9 +2758,8 @@ export function EventEditForm({
         recurrenceWaitReason={
           masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
         }
-        seriesStart={shown.countingDay}
+        seriesStart={formStartDay}
         seriesTimeZone={seriesTimeZone}
-        showsZone={seriesTimeZone !== timeZone}
       />
       <div className="grid grid-cols-2 gap-2">
         <Controller
@@ -3141,7 +2868,7 @@ export function EventEditForm({
           />
         </div>
       )}
-      <EndsBeforeStartNote repeatEndsOn={repeatEndsOn} values={watchedValues} />
+      <EndsBeforeStartNote values={watchedValues} />
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
@@ -3169,7 +2896,7 @@ export function EventEditForm({
           onCancel={onCancel}
           onDelete={onDelete}
           onSave={onSave}
-          saveDisabled={saveBlocked(watchedValues, repeatEndsOn)}
+          saveDisabled={endsBeforeStart(watchedValues)}
           saving={isSaving}
         />
       ) : null}

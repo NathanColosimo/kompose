@@ -26,7 +26,7 @@ describe("describeEventRecurrence", () => {
     );
     expect(words("RRULE:FREQ=DAILY;INTERVAL=2")).toBe("Repeats every 2 days");
     expect(words("RRULE:FREQ=YEARLY")).toBe("Repeats yearly");
-    expect(words("RRULE:FREQ=HOURLY")).toBe("Repeats");
+    expect(words("RRULE:FREQ=HOURLY")).toBe("Repeats (custom)");
   });
 
   test("calls Monday to Friday weekdays", () => {
@@ -64,26 +64,6 @@ describe("describeEventRecurrence", () => {
     expect(ending(timed, "America/New_York")).toBe(
       "Repeats weekly on Mon, Wed, until Feb 10, 2027"
     );
-  });
-
-  test("leaves out an end that names no day", () => {
-    const ending = (rule: string, timeZone: string) =>
-      describeEventRecurrence({ rules: [rule], timeZone });
-    // A This and following split ends the earlier part the second before
-    // its Dec 8 9:00 meeting: its last meeting is Dec 7, so "until Dec 8"
-    // would be a day late, and the words can't tell without its time.
-    expect(
-      ending("RRULE:FREQ=DAILY;UNTIL=20261208T135959Z", "America/New_York")
-    ).toBe("Repeats daily");
-    // Feb 10's last second in New York is early afternoon on Feb 11 in
-    // Tokyo: a morning series there still meets that day, an evening one
-    // doesn't.
-    expect(
-      ending(
-        "RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20270211T045959Z",
-        "Asia/Tokyo"
-      )
-    ).toBe("Repeats weekly on Mon, Wed");
   });
 
   test("puts the end before the mark for what the words leave out", () => {

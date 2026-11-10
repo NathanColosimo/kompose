@@ -66,7 +66,7 @@ function DeleteScopeDialog({
 }) {
   const { accountId, calendarId, event } = target;
   const { deleteEvent } = useGoogleEventMutations();
-  // Every scope is on at once: the server refuses no delete.
+  // Deletes offer all three scopes.
   const [scope, setScope] = useState(target.defaultScope);
   const { description, title } = SCOPE_DIALOG_COPY.deleteEvent;
 
@@ -85,12 +85,8 @@ function DeleteScopeDialog({
   return (
     <RecurrenceScopeDialog
       confirmLabel="Delete"
-      // The delete runs quiet, so a failure is said here.
-      description={
-        deleteEvent.isError
-          ? `${DELETE_FAILURE_MESSAGE} ${description}`
-          : description
-      }
+      description={description}
+      failureMessage={DELETE_FAILURE_MESSAGE}
       onConfirm={confirm}
       onOpenChange={onOpenChange}
       onValueChange={setScope}
