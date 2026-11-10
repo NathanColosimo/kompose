@@ -636,6 +636,81 @@ describe("This and following", () => {
       ]);
     });
 
+    test("refuses a renamed meeting whose place is a deleted one's own", async () => {
+      // Nov 23 renamed, Dec 7 deleted; from Nov 16 moved to Nov 30. Nov
+      // 23's place is Dec 7, which stays deleted on its own day: Nov 23 has
+      // no meeting to be carried to.
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+          summary: "Planning (Nov 23)",
+        },
+        {
+          ...occurrenceOf(weekly, "2026-12-07T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        await refusalOf(
+          edit("following", nov16, {
+            end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: ["2026-11-23T09:00:00-05:00"],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    describe("Mondays and Tuesdays made all-day Tuesdays", () => {
+      // From Nov 16, all day on Tuesdays from Nov 17. Mon Nov 23 lands on
+      // Tue Nov 24, a day off once read as dates, where Tuesday's own
+      // meeting is.
+      const monTue: Event = {
+        ...weekly,
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+      };
+      const toTuesdays = () =>
+        edit("following", occurrenceOf(monTue, "2026-11-16T09:00:00-05:00"), {
+          end: { date: "2026-11-18" },
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+          start: { date: "2026-11-17" },
+        });
+
+      test("keeps the Tuesday a deleted Monday lands on", async () => {
+        const google = fakeGoogle(monTue, [
+          {
+            ...occurrenceOf(monTue, "2026-11-23T09:00:00-05:00"),
+            status: "cancelled",
+          },
+        ]);
+        expect(Exit.isSuccess(await run(toTuesdays()))).toBe(true);
+        expect(google.writes()[0]?.body?.recurrence).toEqual([
+          "RRULE:FREQ=WEEKLY;BYDAY=TU",
+        ]);
+      });
+
+      test("refuses a renamed Monday rather than overwrite the Tuesday", async () => {
+        const google = fakeGoogle(monTue, [
+          {
+            ...occurrenceOf(monTue, "2026-11-23T09:00:00-05:00"),
+            summary: "Planning (Nov 23)",
+          },
+        ]);
+        expect(await refusalOf(toTuesdays())).toMatchObject({
+          data: {
+            originalStarts: ["2026-11-23T09:00:00-05:00"],
+            reason: "dropsChangedOccurrences",
+          },
+        });
+        expect(google.writes()).toEqual([]);
+      });
+    });
+
     test("carries a renamed meeting the move leaves on its own day", async () => {
       // Dec 7 renamed; from Nov 16 moved to Nov 30. Nov 23's meeting moves
       // onto Dec 7, but Dec 7 keeps its own day: one meeting there either
