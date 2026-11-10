@@ -70,7 +70,6 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   chosenScope,
   type EventSaveChanges,
-  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
@@ -749,48 +748,42 @@ function recurrenceToSend(
   return changed ? draft.recurrence : undefined;
 }
 
+/** What a delete dialog says after its delete failed, as on web. */
+const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
+
 /**
  * Delete confirmations for an event, over its editor: Cancel goes back to the
- * editor with its edits, and Delete holds "Deleting…" until it's done.
+ * editor with its edits, and Delete holds "Deleting…" until it's done. A
+ * failed delete keeps its dialog open, which says so.
  */
 function EventDeleteDialogs({
-  description,
   dialog,
-  followingOff,
+  failed,
   onCancel,
   onConfirm,
   onScopeChange,
   pending,
   scope,
 }: {
-  /** The recurring delete's line (`eventDeleteScopeState`). */
-  description: string;
   dialog: EventDialog;
-  /** Deleting This and following isn't available (`eventDeleteScopeState`). */
-  followingOff: boolean;
+  /** The last delete failed. */
+  failed: boolean;
   onCancel: () => void;
   onConfirm: (scope: RecurrenceScope) => void;
   onScopeChange: (scope: RecurrenceScope) => void;
   pending: boolean;
   scope: RecurrenceScope;
 }) {
-  // The scope asked for, or the nearest available while it's off (the
-  // series loading), worked out each time.
-  const shown = chosenScope(
-    scope,
-    scope,
-    followingOff ? { following: true } : {}
-  );
+  const failure = failed ? `${DELETE_FAILURE_MESSAGE} ` : "";
   return (
     <>
       <AlertDialog
         closeOnConfirm={false}
         confirmText="Delete"
-        description={description}
+        description={`${failure}${SCOPE_DIALOG_COPY.deleteEvent.description}`}
         isVisible={dialog === "delete"}
         onCancel={onCancel}
-        onClose={noop}
-        onConfirm={() => onConfirm(shown)}
+        onConfirm={() => onConfirm(scope)}
         pending={pending}
         pendingText="Deleting…"
         title={SCOPE_DIALOG_COPY.deleteEvent.title}
@@ -800,22 +793,17 @@ function EventDeleteDialogs({
             // The choice the delete took stays shown while it runs.
             disabled={pending}
             onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
-            options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
-              disabled: followingOff && option.value === "following",
-              label: option.label,
-              value: option.value,
-            }))}
-            value={shown}
+            options={RECURRENCE_SCOPE_OPTIONS}
+            value={scope}
           />
         </View>
       </AlertDialog>
       <AlertDialog
         closeOnConfirm={false}
         confirmText="Delete"
-        description="This action cannot be undone."
+        description={`${failure}This action cannot be undone.`}
         isVisible={dialog === "simple-delete"}
         onCancel={onCancel}
-        onClose={noop}
         onConfirm={() => onConfirm("this")}
         pending={pending}
         pendingText="Deleting…"
@@ -872,8 +860,6 @@ function EventSaveScopeDialog({
       description={description}
       isVisible={isVisible}
       onCancel={onCancel}
-      // Cancel and a backdrop tap already run onCancel.
-      onClose={noop}
       onConfirm={() => onConfirm(scope)}
       pending={pending}
       title={SCOPE_DIALOG_COPY.saveEvent.title}
@@ -893,21 +879,6 @@ function EventSaveScopeDialog({
       </View>
     </AlertDialog>
   );
-}
-
-/** The recurring delete's This and following: off until the series loads. */
-function deleteStateFor(
-  event: GoogleEvent | undefined,
-  master: { ruleFailed: boolean; ruleReady: boolean }
-) {
-  return eventDeleteScopeState({
-    seriesRuleFailed: master.ruleFailed,
-    seriesRuleLoaded: Boolean(event?.recurrence?.length || master.ruleReady),
-  });
-}
-
-function noop() {
-  // Intentionally empty: see EventSaveScopeDialog's onClose.
 }
 
 export default function CalendarTab() {
@@ -1160,10 +1131,6 @@ export default function CalendarTab() {
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
   const masterStart = recurringMasterEvent.data?.start;
-  const eventDeleteState = deleteStateFor(
-    editingEventDraft?.sourceEvent,
-    recurringMasterEvent
-  );
   const [eventSavePick, setEventSavePick] = useState<RecurrenceScope | null>(
     null
   );
@@ -1174,8 +1141,6 @@ export default function CalendarTab() {
   const [eventDialog, setEventDialog] = useState<EventDialog>(null);
   const [pendingEventSaveDraft, setPendingEventSaveDraft] =
     useState<EditEventDraft | null>(null);
-  const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
-    useState<EditEventDraft | null>(null);
 
   // What the server refused for the pending save (its scopes and
   // reasons), shown by the scope dialog until it closes.
@@ -1185,7 +1150,6 @@ export default function CalendarTab() {
     setEventDialog(null);
     setSaveRefusals(null);
     setPendingEventSaveDraft(null);
-    setPendingEventDeleteDraft(null);
     setEventDraft(draft);
   }, []);
 
@@ -1655,7 +1619,6 @@ export default function CalendarTab() {
       const occurrence = draft.sourceEvent;
       const edited = buildEventPayload(draft);
       const recurrence = recurrenceToSend(draft, masterRecurrence);
-      const seriesStart = recurringMasterEvent.data?.start;
       const dateMoved = occurrenceDayMoved({
         editedEnd: edited.end,
         editedStart: edited.start,
@@ -1670,7 +1633,7 @@ export default function CalendarTab() {
         repeatSkips: repeatSkipsOccurrence({
           occurrence,
           recurrence,
-          seriesStart,
+          seriesStart: masterStart,
           timeZone,
         }),
         retimed: !(
@@ -1695,6 +1658,7 @@ export default function CalendarTab() {
     [
       buildEventPayload,
       masterRecurrence,
+      masterStart,
       recurringMasterEvent.data,
       recurringMasterEvent.ruleFailed,
       recurringMasterEvent.ruleReady,
@@ -1817,8 +1781,8 @@ export default function CalendarTab() {
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
       // The dialog opens over the editor, which stays open: Cancel goes back
-      // to it with the edits, and a failed delete leaves it.
-      setPendingEventDeleteDraft(draft);
+      // to it with the edits. It starts without an earlier delete's failure.
+      deleteEvent.reset();
 
       if (recurring) {
         setEventDeleteScope(
@@ -1833,34 +1797,34 @@ export default function CalendarTab() {
 
       setEventDialog("simple-delete");
     },
-    [masterRecurrence]
+    [deleteEvent, masterRecurrence]
   );
 
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
   const confirmEventDelete = useCallback(
     async (scope: RecurrenceScope) => {
-      if (!pendingEventDeleteDraft) {
+      if (!editingEventDraft) {
         return;
       }
 
       setIsDeletingEvent(true);
       try {
         await deleteEvent.mutateAsync({
-          accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
-          calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
-          eventId: pendingEventDeleteDraft.eventId,
+          accountId: editingEventDraft.sourceCalendar.accountId,
+          calendarId: editingEventDraft.sourceCalendar.calendarId,
+          eventId: editingEventDraft.eventId,
+          // The dialog says a failure itself.
+          quiet: true,
           scope,
         });
         closeEventModal();
       } catch {
-        // The mutation reports the error; the editor stays.
-        setEventDialog(null);
-        setPendingEventDeleteDraft(null);
+        // The dialog stays open and says it failed (`deleteEvent.isError`).
       } finally {
         setIsDeletingEvent(false);
       }
     },
-    [closeEventModal, deleteEvent, pendingEventDeleteDraft]
+    [closeEventModal, deleteEvent, editingEventDraft]
   );
 
   const totalHeight = 24 * PIXELS_PER_HOUR;
@@ -1937,11 +1901,6 @@ export default function CalendarTab() {
     setEventDialog(null);
     setSaveRefusals(null);
     setPendingEventSaveDraft(null);
-  }
-
-  function dismissEventDeleteDialog() {
-    setEventDialog(null);
-    setPendingEventDeleteDraft(null);
   }
 
   return (
@@ -2403,7 +2362,7 @@ export default function CalendarTab() {
           masterFailed={recurringMasterEvent.ruleFailed}
           masterLoading={recurringMasterEvent.ruleUnavailable}
           masterRecurrence={masterRecurrence}
-          masterStart={recurringMasterEvent.data?.start}
+          masterStart={masterStart}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onRetryMaster={recurringMasterEvent.retry}
@@ -2420,10 +2379,9 @@ export default function CalendarTab() {
           overlay={
             <>
               <EventDeleteDialogs
-                description={eventDeleteState.description}
                 dialog={eventDialog}
-                followingOff={Boolean(eventDeleteState.disabled.following)}
-                onCancel={dismissEventDeleteDialog}
+                failed={deleteEvent.isError}
+                onCancel={() => setEventDialog(null)}
                 onConfirm={(scope) => {
                   confirmEventDelete(scope).catch(() => null);
                 }}
