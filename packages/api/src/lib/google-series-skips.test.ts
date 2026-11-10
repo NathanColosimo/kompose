@@ -2637,3 +2637,30 @@ describe("an Entire series move past midnight with a deleted meeting and a skip 
     expect(written).not.toContain("20261120T053000Z");
   });
 });
+
+describe("an Entire series move a day on to the evening", () => {
+  test("keeps the rule's own skip on its day", async () => {
+    // Daily 9:00 from Nov 9, Fri Nov 20 skipped in the rule; the first
+    // meeting moved to Tue Nov 10 at 22:00: thirteen hours on, so the skip
+    // is Nov 20 at 22:00, not Nov 19's meeting.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=DAILY", "EXDATE:20261120T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-09T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T22:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-10T22:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261121T030000Z",
+    ]);
+  });
+});
