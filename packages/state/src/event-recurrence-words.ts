@@ -20,15 +20,20 @@ function addImplicitDays(
   if (options.freq === "WEEKLY") {
     options.byDay ??= [weekdayCodeOf(start)];
   }
-  if (options.freq === "YEARLY") {
-    options.byMonth ??= [start.month];
-  }
-  if (
-    (options.freq === "MONTHLY" || options.freq === "YEARLY") &&
-    !options.byDay
-  ) {
+  if (options.freq === "MONTHLY" && !options.byDay) {
     options.byMonthDay ??= [start.day];
   }
+  if (
+    options.freq !== "YEARLY" ||
+    options.byDay ||
+    options.byYearDay ||
+    options.byWeekNo ||
+    options.byMonthDay
+  ) {
+    return;
+  }
+  options.byMonth ??= [start.month];
+  options.byMonthDay = [start.day];
 }
 
 /** Describes a rule without expanding occurrences or contacting Google. */
@@ -60,6 +65,9 @@ export function describeEventRecurrence(params: {
     });
     const options = parsed.options();
     addImplicitDays(options, start);
+    if (params.timeZone && options.until) {
+      options.until = options.until.withTimeZone(params.timeZone);
+    }
     if (!params.timeZone) {
       options.count = undefined;
       options.until = undefined;
