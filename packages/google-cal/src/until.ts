@@ -387,27 +387,6 @@ function movedClock(params: {
 }
 
 /**
- * How far a once-a-day series' meetings turn round the clock when its time
- * of day changes `from` one `to` another: on the start's own day
- * (`sameDay`), the change as it is; moved to another day too, its nearest
- * way round the clock (9:00 to the next day's 8:00 is an hour earlier,
- * 23:00 to the next day's 00:30 an hour and a half later).
- */
-function clockTurn(
-  from: Temporal.PlainTime,
-  to: Temporal.PlainTime,
-  sameDay: boolean
-): Temporal.Duration {
-  // In whole nanoseconds: a time with seconds (9:00:30) turns by a part of
-  // a minute, which a duration in minutes can't hold.
-  const change = from.until(to).total("nanoseconds");
-  const turn = sameDay
-    ? change
-    : ((((change + DAY_NS / 2) % DAY_NS) + DAY_NS) % DAY_NS) - DAY_NS / 2;
-  return Temporal.Duration.from({ nanoseconds: turn });
-}
-
-/**
  * The days a start moved by the clock, when the move is less than a day
  * (23:00 to the next day's 00:30 is one). Null for a longer move.
  */
@@ -448,12 +427,17 @@ function meetingDayMover(params: {
   const to = wallClock(start, timeZone);
   const fromDay = dayOfStart(seriesStart, timeZone);
   const toDay = dayOfStart(start, timeZone);
-  const sameDay = Boolean(fromDay && toDay && fromDay.equals(toDay));
-  const turnDays = Math.floor(
-    (Temporal.PlainTime.from("00:00").until(from).total("nanoseconds") +
-      clockTurn(from, to, sameDay).total("nanoseconds")) /
-      DAY_NS
-  );
+  const turnDays =
+    fromDay && toDay
+      ? Math.floor(
+          (Temporal.PlainTime.from("00:00").until(from).total("nanoseconds") +
+            clockTurn({
+              from: fromDay.toPlainDateTime(from),
+              to: toDay.toPlainDateTime(to),
+            }).total("nanoseconds")) /
+            DAY_NS
+        )
+      : 0;
   const dayMove = shortDayShift(seriesStart, start, timeZone);
   const moves = dayMove === null ? [turnDays] : [turnDays, dayMove];
   return (rule, day) => {
@@ -1316,4 +1300,38 @@ export function moveSkippedDays(params: {
     ];
   });
   return changed ? next : recurrence;
+}
+
+/**
+ * How far a once-a-day series' meetings move when its start moves `from`
+ * one wall-clock time `to` another: by the change in its time of day, or,
+ * when the start changes day and going round the clock that way is
+ * shorter, the other way round, toward the day it moved to. 9:00 to
+ * 23:00 the same day is fourteen hours on; 23:00 to the next day's 00:30
+ * an hour and a half on; 9:00 to the next day's 8:00 an hour back, and to
+ * its 22:00 thirteen hours on.
+ */
+export function clockTurn(params: {
+  from: Temporal.PlainDateTime;
+  to: Temporal.PlainDateTime;
+}): Temporal.Duration {
+  const { from, to } = params;
+  // In whole nanoseconds: a time with seconds (9:00:30) turns by a part of
+  // a minute, which a duration in minutes can't hold.
+  const change = from
+    .toPlainTime()
+    .until(to.toPlainTime())
+    .total("nanoseconds");
+  // Toward the day it moved to: one turn of the clock at most.
+  const toward = Math.sign(
+    Temporal.PlainDate.compare(to.toPlainDate(), from.toPlainDate())
+  );
+  const around = change + toward * DAY_NS;
+  const turn =
+    toward !== 0 &&
+    Math.sign(around) === toward &&
+    Math.abs(around) < Math.abs(change)
+      ? around
+      : change;
+  return Temporal.Duration.from({ nanoseconds: turn });
 }
