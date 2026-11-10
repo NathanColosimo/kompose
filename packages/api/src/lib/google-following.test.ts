@@ -487,6 +487,37 @@ describe("This and following", () => {
     ]);
   });
 
+  test("carries a meeting made all day on its own when the split makes the series all day", async () => {
+    // Nov 30 made all day and renamed on its own; from Nov 16 the series is
+    // made all day too: Nov 30 keeps its name on the new series' Nov 30.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        end: { date: "2026-12-01" },
+        start: { date: "2026-11-30" },
+        summary: "Planning (Nov 30)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { date: "2026-11-17" },
+            start: { date: "2026-11-16" },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261130`
+    );
+    expect(carried?.body).toMatchObject({
+      start: { date: "2026-11-30" },
+      summary: "Planning (Nov 30)",
+    });
+  });
+
   describe("a move past later meetings", () => {
     // A changed meeting the move passes lands where a later meeting does:
     // carrying it would overwrite that one, so the save is refused.
@@ -536,6 +567,33 @@ describe("This and following", () => {
         },
       });
       expect(google.writes()).toEqual([]);
+    });
+
+    test("carries a renamed meeting the move leaves on its own day", async () => {
+      // Dec 7 renamed; from Nov 16 moved to Nov 30. Nov 23's meeting moves
+      // onto Dec 7, but Dec 7 keeps its own day: one meeting there either
+      // way, with its name.
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-12-07T09:00:00-05:00"),
+          summary: "Planning (Dec 7)",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("following", nov16, {
+              end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      const [created, carried] = google.writes();
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20261207T140000Z`
+      );
+      expect(carried?.body?.summary).toBe("Planning (Dec 7)");
     });
 
     test("refuses a renamed monthly meeting whose place is a later one's", async () => {
