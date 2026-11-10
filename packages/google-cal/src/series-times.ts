@@ -4,9 +4,15 @@
  * its occurrences.
  */
 import { Temporal } from "temporal-polyfill";
-import { googleDateTime, OFFSET, startInstant } from "./until";
+import {
+  dayOfStart,
+  googleDateTime,
+  lengthMs,
+  OFFSET,
+  startInstant,
+} from "./until";
 
-export interface EventTime {
+interface EventTime {
   date?: string;
   dateTime?: string;
   timeZone?: string;
@@ -18,9 +24,8 @@ export function seriesZoneOf(master: { start: { timeZone?: string } }): string {
 }
 
 /**
- * A start as a series' slot: a date, or a date-time with the series'
- * offset (one Google wrote without an offset read in its own zone). Null
- * when it has neither.
+ * A start as a series' slot: its date, or its moment written with the
+ * series' offset. Null when it has neither.
  */
 export function slotOf(start: EventTime, zone: string): string | null {
   if (start.date) {
@@ -68,8 +73,7 @@ export function seriesSlotAt(
 /**
  * The zone to read and write times in: the series' (Google repeats a
  * series in its start's zone, so a Tokyo meeting edited from New York
- * stays on Tokyo's days), the edit's, or, when neither says, the fixed
- * offset the edit was written with.
+ * keeps Tokyo's days), else the edit's, else the edit's fixed offset.
  */
 function zoneOf(edited: EventTime, master: EventTime): string {
   const offset = edited.dateTime ? OFFSET.exec(edited.dateTime)?.[1] : null;
@@ -80,34 +84,11 @@ function zoneOf(edited: EventTime, master: EventTime): string {
   );
 }
 
-/** The local day `time` falls on, in `timeZone`. */
-function dayIn(time: EventTime, timeZone: string): Temporal.PlainDate | null {
-  if (time.date) {
-    return Temporal.PlainDate.from(time.date);
-  }
-  const instant = startInstant(time, timeZone);
-  return instant ? instant.toZonedDateTimeISO(timeZone).toPlainDate() : null;
-}
-
-function lengthMs(
-  start: EventTime,
-  end: EventTime,
-  timeZone: string
-): number | null {
-  const from = startInstant(start, timeZone);
-  const to = startInstant(end, timeZone);
-  return from && to ? to.epochMilliseconds - from.epochMilliseconds : null;
-}
-
 /**
- * The series keeps its own first day and takes the edit's form, times and
- * length: an occurrence made all day makes the series all day (and back),
- * and a timed edit's wall-clock time applies in the event's time zone, so a
- * series begun before a daylight-saving change keeps its 9:00 (pasting the
- * edit's UTC time onto that day would move it an hour). For an edit that
- * changed the occurrence's times (one that didn't leaves the series'
- * alone). Null only for times that don't parse; the series then keeps its
- * own.
+ * The series' times after an edit changed an occurrence's: its own first
+ * day, with the edit's form (timed or all day), wall-clock time and
+ * length, so a series begun before a DST change keeps its 9:00. Null when
+ * the times don't parse; the series then keeps its own.
  */
 export function seriesTimesForEdit(params: {
   editedEnd: EventTime;
@@ -117,7 +98,7 @@ export function seriesTimesForEdit(params: {
 }): { end: EventTime; start: EventTime } | null {
   const { editedEnd, editedStart, masterEnd, masterStart } = params;
   const timeZone = zoneOf(editedStart, masterStart);
-  const day = dayIn(masterStart, timeZone);
+  const day = dayOfStart(masterStart, timeZone);
   if (!day) {
     return null;
   }
@@ -132,8 +113,6 @@ export function seriesTimesForEdit(params: {
       start: { date: day.toString() },
     };
   }
-  // Read in its own zone, then projected onto the series' first day in
-  // the series' zone.
   const editedInstant = startInstant(editedStart, timeZone);
   if (!editedInstant) {
     return null;
