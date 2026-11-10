@@ -52,6 +52,11 @@ export function PluginConnectionsSettings() {
     return () => window.removeEventListener("focus", refresh);
   });
 
+  const connectPlugin = (plugin: PluginManifest) =>
+    connect.mutate(plugin, {
+      onError: (error) => toast.error(error.message),
+    });
+
   const disconnectAccount = (connection: PluginConnection, name: string) =>
     disconnect.mutate(connection.accountId, {
       onError: (error) => toast.error(error.message),
@@ -70,11 +75,7 @@ export function PluginConnectionsSettings() {
             </div>
             <Button
               disabled={connect.isPending || isFull}
-              onClick={() =>
-                connect.mutate(plugin, {
-                  onError: (error) => toast.error(error.message),
-                })
-              }
+              onClick={() => connectPlugin(plugin)}
             >
               {connectLabel(card, {
                 connecting:
@@ -106,12 +107,32 @@ export function PluginConnectionsSettings() {
                   <p className="truncate font-medium text-sm">
                     {connection.name || "Unknown user"}
                   </p>
-                  <p className="truncate text-muted-foreground text-xs">
-                    {connection.email || "Email unavailable"}
-                  </p>
+                  {connection.status === "needs-reauth" ? (
+                    <p className="truncate text-destructive text-xs">
+                      {plugin.name} stopped accepting this account. Reconnect to
+                      keep syncing.
+                    </p>
+                  ) : (
+                    <p className="truncate text-muted-foreground text-xs">
+                      {connection.email || "Email unavailable"}
+                    </p>
+                  )}
                 </div>
+                {connection.status === "needs-reauth" ? (
+                  <Button
+                    className="ml-auto"
+                    disabled={connect.isPending}
+                    onClick={() => connectPlugin(plugin)}
+                    size="sm"
+                    type="button"
+                  >
+                    Reconnect
+                  </Button>
+                ) : null}
                 <Button
-                  className="ml-auto"
+                  className={
+                    connection.status === "needs-reauth" ? "" : "ml-auto"
+                  }
                   disabled={disconnect.isPending}
                   onClick={() => disconnectAccount(connection, plugin.name)}
                   size="sm"
