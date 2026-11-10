@@ -449,7 +449,6 @@ function seriesDays(params: {
   const added = dateValues(lines, "RDATE", zone);
   return {
     added,
-    keyOf,
     on: (day: Temporal.PlainDate): DayMeeting[] => {
       const lo = day.toZonedDateTime({ timeZone: zone }).toInstant();
       const hi = day
@@ -488,7 +487,6 @@ function seriesDays(params: {
             day
           ) === true
       ),
-    dead: (key: string) => dead.has(key),
   };
 }
 
@@ -547,11 +545,11 @@ function dayLoses(params: {
 /**
  * Whether a save that gives a series made in another app (meetings added
  * outside its repeat, or a set hour in its rule) a new time of day, form
- * or repeat would lose a meeting (`otherAppRepeat`): on a day with a skip, a deleted
- * occurrence or an added meeting (from `from`, mapped by the start's move
- * in days), a meeting still on skipped after the save, a skipped or
- * deleted one back, a rule meeting with no place (the clocks skip its new
- * time that day).
+ * or repeat would lose a meeting (`otherAppRepeat`): on a day with a skip, a
+ * deleted occurrence or an added meeting (from `from`, mapped by the start's
+ * move in days), a meeting still on skipped after the save, a skipped or
+ * deleted one back, a rule meeting with no place (the clocks skip its new time
+ * that day).
  */
 function losesMeetings(params: {
   /** The occurrences deleted on their own, by original start. */
@@ -1242,7 +1240,7 @@ function ruleSkipsKept(plan: SeriesPlan): SeriesException[] {
 function afterSave(params: {
   cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
-  /** The first meeting's own occurrence, if it has one (its guests' answers). */
+  /** The first meeting's own occurrence, if any (its guests' answers). */
   first: Event | undefined;
   plan: SeriesPlan;
 }): SeriesRefusal | { carried: Partial<CreateEvent>; recurrence: string[] } {
