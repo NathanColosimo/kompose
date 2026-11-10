@@ -1,5 +1,6 @@
-import { formatDuration } from "@kompose/state/temporal-utils";
 "use client";
+
+import { formatDuration } from "@kompose/state/temporal-utils";
 
 import { Timer } from "lucide-react";
 import { useCallback, useState } from "react";
