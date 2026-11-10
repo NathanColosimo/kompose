@@ -205,6 +205,7 @@ function RecurrenceRow({
     describeEventRecurrence({
       rules: recurrence,
       start: editor.startDate,
+      timeZone: editor.timeZone,
     }) ??
     waitingLabel ??
     "Doesn't repeat";
@@ -877,6 +878,7 @@ function ReadOnlyEventView({
   reason,
   recurrence,
   repeatDay,
+  seriesTimeZone,
   timeZone,
 }: {
   calendarColor: string | null | undefined;
@@ -889,6 +891,8 @@ function ReadOnlyEventView({
   recurrence: string[];
   /** The day the repeat's implicit days count from (repeatCountingDay). */
   repeatDay: Temporal.PlainDate;
+  /** The series' zone, where its end day is counted. */
+  seriesTimeZone: string;
   /** The zone the app shows times in, which the draft's are in. */
   timeZone: string;
 }) {
@@ -900,6 +904,7 @@ function ReadOnlyEventView({
     recurringEventId: source?.recurringEventId,
     rules: recurrence,
     start: repeatDay,
+    timeZone: seriesTimeZone,
   });
   // Google keeps birthdays on the primary calendar; name what they are.
   const calendarName =
@@ -1748,6 +1753,7 @@ export function EventEditorSheet({
           reason={readOnlyReason}
           recurrence={shownRepeat.rules}
           repeatDay={repeatDay}
+          seriesTimeZone={seriesTimeZone}
           timeZone={appTimeZone}
         />
       </BottomSheet>
