@@ -67,7 +67,7 @@ Locked, Gmail, and birthday events, and those on a calendar the user can only vi
 - Empty-slot tap offers New event or New task, prefilled from the tapped slot.
 - Save keeps the sheet open with Saving… and read-only fields until the write finishes. Dismissal and a second submit wait. A failure keeps the draft and shows a message below the header; Save retries it.
 - Non-recurring edits save directly. A calendar change saves the edits and then moves the event. If that move fails after the edits save, the message says so.
-- Recurring edits open the scope dialog over the sheet. Cancel returns to the draft. The choices are Only this occurrence, This and following, and Entire series, for calendar moves too.
+- Recurring edits open the scope dialog over the sheet. Cancel returns to the draft. The choices are Only this occurrence, This and following, and Entire series. A new calendar applies to the entire series: Google moves a series to another calendar only as a whole.
 - The dialog waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series’ date.
 - Series saves send only changed details, with edited times directly. Unchanged occurrence titles, guests, and other details stay out of the series payload.
 - The repeat editor parses and builds its primary rule and keeps unsupported parts and other recurrence lines. Explicitly picked end dates are encoded for the event’s form. Start moves do not rewrite weekdays, month days, UNTIL, COUNT, or exception dates.

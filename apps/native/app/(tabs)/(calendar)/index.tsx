@@ -1564,6 +1564,8 @@ export default function CalendarTab() {
           : undefined);
       const dateMoved = draft.startDate.toString() !== originalDay;
       return {
+        calendarMoved:
+          draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
         dateMoved,
         patternChanged: recurrence !== undefined,
         seriesRuleFailed: recurringMasterEvent.ruleFailed,
