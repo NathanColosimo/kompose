@@ -1572,28 +1572,36 @@ function placeSkips(params: {
     start,
   };
   const startSlot = slotOf(start, newZone);
-  // A split keeping the series' start and rule keeps every slot: each
-  // skip stays as written.
-  const repeat = (lines: string[]) =>
-    recurrenceValues(rulesOf(lines).map(withoutEnd), zone);
-  const keepsSlots =
-    sameTime(start, asStart(originalStart), newZone) &&
-    repeat(master.recurrence ?? []) === repeat(fromSplit);
-  const landing = (slot: string) => {
-    if (isAdded(slot)) {
-      return null;
-    }
-    return keepsSlots ? slot : landingOf(slot, plan);
-  };
+  const unskipped = (master.recurrence ?? []).filter(
+    (line) => !line.startsWith("EXDATE")
+  );
   const skips = [...params.cancelled, ...ownSkips].map((slot) => {
-    const at = landing(slot);
+    const added = isAdded(slot);
+    // One where nothing met has no meeting to follow: it stays where it
+    // is, unless the new series meets there, where it would cancel one.
+    const stale = !(
+      added ||
+      seriesMeetsAt({
+        recurrence: unskipped,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) === true
+    );
+    const at = added || stale ? null : landingOf(slot, plan);
     const formed = inFormOf(at ?? slot, start, newZone);
     const ontoLive =
-      !keepsSlots &&
-      at !== null &&
       formed !== null &&
-      liveMeetingLandsAt(formed, { ...plan, cancelled: params.cancelled });
-    return { added: isAdded(slot), at, formed, ontoLive, slot };
+      ((at !== null &&
+        liveMeetingLandsAt(formed, { ...plan, cancelled: params.cancelled })) ||
+        (stale &&
+          seriesMeetsAt({
+            recurrence: plan.recurrence,
+            seriesZone: newZone,
+            slot: formed,
+            start,
+          }) === true));
+    return { added, at, formed, ontoLive, slot };
   });
   const placed = skips.flatMap(({ at, formed, ontoLive }) => {
     const ontoAdded =

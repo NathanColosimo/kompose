@@ -945,8 +945,10 @@ describe("a week-number COUNT through a move onto a skip", () => {
     ]);
   });
 
-  test("keeps a stale skip past the end, which holds no place", async () => {
-    // A 2030 skip, after the rule's last meeting (2029), changes nothing.
+  test("drops a stale skip past the end, which holds no place", async () => {
+    // A 2030 skip, after the rule's last meeting (2029), where the new
+    // series' rule meets before its COUNT is cut: it goes, and the count
+    // is unchanged.
     const google = fakeGoogle({
       ...series,
       recurrence: [...(series.recurrence ?? []), "EXDATE:20301111T140000Z"],
@@ -954,7 +956,6 @@ describe("a week-number COUNT through a move onto a skip", () => {
     expect(Exit.isSuccess(await run(moveFrom2027()))).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=YEARLY;BYWEEKNO=46;BYDAY=MO;COUNT=2",
-      "EXDATE:20301111T140000Z",
     ]);
   });
 });
