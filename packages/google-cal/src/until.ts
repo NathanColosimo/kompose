@@ -465,14 +465,24 @@ function meetingDayMover(params: {
  * meeting (at the rule's time, from `base`, the start's before the edit)
  * starts after it, as a split's cut, the second before its meeting, does.
  * A once-a-day series moved to a new time of day (`retimed`) ends at that
- * day's end too, so its last meeting stays and none is added.
+ * day's end too. When its last meeting (`lastMeetingDay`: the end date
+ * needn't be a meeting's day) moves to another day, it ends on that day,
+ * so its last meeting stays and none is added.
  */
 function matchUntil(
   line: string,
   params: {
     allDay: boolean;
     base: Temporal.PlainTime | null;
-    /** The last meeting's day once it's at the new time (`retimed`). */
+    /**
+     * The last day the rule met on before the edit, through `day`; null
+     * when it can't be read or met on none.
+     */
+    lastMeetingDay: (
+      line: string,
+      day: Temporal.PlainDate
+    ) => Temporal.PlainDate | null;
+    /** A meeting's day once it's at the new time (`retimed`). */
     moveDay: (
       line: string,
       day: Temporal.PlainDate
@@ -504,7 +514,9 @@ function matchUntil(
     Temporal.Instant.compare(meeting, value.instant) > 0
       ? value.day.subtract({ days: 1 })
       : value.day;
-  const lastDay = (params.retimed && params.moveDay(line, day)) || day;
+  const last = params.retimed ? params.lastMeetingDay(line, day) : null;
+  const moved = last && params.moveDay(line, last);
+  const lastDay = last && moved && !moved.equals(last) ? moved : day;
   return line.replace(
     UNTIL_PART,
     `${match[1]}UNTIL=${untilRuleForDay(lastDay, allDay, timeZone)}`
@@ -1028,11 +1040,31 @@ export function matchRecurrenceToStart(
   const newUntil = (line: string) =>
     Boolean(ownUntils && newTime && !ownUntils.has(untilOf(line)));
   const added = addedMoments(recurrence, timeZone);
+  // Read from the rule the series had with this end, when the save changed
+  // its days (Mondays made Tuesdays keep Monday's last meeting).
+  const lastMeetingDay = (line: string, day: Temporal.PlainDate) => {
+    const own =
+      before.find(
+        (rule) => rule.startsWith("RRULE:") && untilOf(rule) === untilOf(line)
+      ) ?? line;
+    const last =
+      first &&
+      readRule({ first, rule: own })
+        ?.meetingsBetween(
+          first.toInstant(),
+          day.add({ days: 1 }).toZonedDateTime(timeZone).toInstant()
+        )
+        .at(-1);
+    return last instanceof Temporal.Instant
+      ? last.toZonedDateTimeISO(timeZone).toPlainDate()
+      : null;
+  };
   const matchRule = (line: string) =>
     matchClock(
       matchUntil(line, {
         allDay,
         base: newUntil(line) ? newTime : base,
+        lastMeetingDay,
         moveDay: moveMeetingDay,
         retimed: Boolean(
           !newUntil(line) &&
