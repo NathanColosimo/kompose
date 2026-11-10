@@ -52,6 +52,8 @@ Uses `Effect.Service` with `accessors: true`. Each method is wrapped in `Effect.
 | `updateTask` | Update a task — supports `"this"` and `"following"` scopes for recurring tasks |
 | `deleteTask` | Delete a task — supports `"this"` and `"following"` scopes for recurring tasks |
 
+Task completion is per occurrence: a `following` update applies other edits to the series but applies `status` only to the selected occurrence or its regenerated replacement. New later occurrences start as `todo`.
+
 ### Errors (`Schema.TaggedError`)
 
 | Error | Meaning |

@@ -475,3 +475,41 @@ test("a write made offline fails at once instead of waiting for the connection",
     onlineManager.setOnline(true);
   }
 });
+
+test("a create after toggling All day encodes the end for the final start form", async () => {
+  const rule = "RRULE:FREQ=DAILY;UNTIL=20261120";
+  const { sent } = await create({
+    answer: failed,
+    input: {
+      ...lunch,
+      event: {
+        ...lunch.event,
+        recurrence: [rule],
+        start: {
+          dateTime: "2026-11-10T09:00:00-05:00",
+          timeZone: "America/New_York",
+        },
+      },
+    },
+  });
+  expect(sent).toMatchObject([
+    { event: { recurrence: ["RRULE:FREQ=DAILY;UNTIL=20261121T045959Z"] } },
+  ]);
+});
+
+test("an update made all day keeps its end day and other recurrence lines", async () => {
+  const skipped = "EXDATE;VALUE=DATE:20261115";
+  const { sent } = await update({
+    answer: failed,
+    variables: {
+      event: {
+        ...standup,
+        recurrence: ["RRULE:FREQ=DAILY;UNTIL=20261121T045959Z", skipped],
+        start: { date: "2026-11-10", timeZone: "America/New_York" },
+      },
+    },
+  });
+  expect(sent).toMatchObject([
+    { event: { recurrence: ["RRULE:FREQ=DAILY;UNTIL=20261120", skipped] } },
+  ]);
+});
