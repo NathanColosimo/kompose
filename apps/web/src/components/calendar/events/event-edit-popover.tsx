@@ -119,11 +119,6 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
-import {
-  HeldFieldset,
-  SaveFailure,
-  SavingLabel,
-} from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -706,26 +701,8 @@ function eventEditDialogReducer(
   }
 }
 
-/** The element with focus, if it's one focus can return to. */
-function focusedElement(): HTMLElement | null {
-  return document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-}
-
-function heldFailure(error: unknown, fallback: string): string {
-  return error instanceof SavedNotMovedError ? error.message : fallback;
-}
-
-/** The edits saved, but the move to another calendar that followed didn't. */
-class SavedNotMovedError extends Error {
-  constructor(cause: unknown) {
-    super(
-      "Saved your changes, but couldn't move the event to the other calendar. Save to try again.",
-      { cause }
-    );
-  }
-}
+const SAVED_NOT_MOVED_MESSAGE =
+  "Saved your changes, but couldn't move the event to the other calendar. Save to try again.";
 
 /** See documents/event-popover.md for save, recurrence scope, and calendar move behavior. */
 export function EventEditPopover({
@@ -799,30 +776,15 @@ export function EventEditPopover({
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const narrowWindow = useIsMobile();
-  /** The editor's focused field when the scope dialog opened. */
-  const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
-  /** Why the last save failed, shown beside Save until the next one. */
-  const [saveFailure, setSaveFailure] = useState<string | null>(null);
-  // A failure belongs to the save it came from: reopening starts clean.
-  useEffect(() => {
-    if (!open) {
-      setSaveFailure(null);
-    }
-  }, [open]);
   const holdForSave = useCallback(
-    (save: Promise<unknown>, failureMessage: string) => {
+    (save: Promise<unknown>) => {
       savingRef.current = true;
-      // The fields remount read-only (HeldFieldset), which would drop focus
-      // to the page, where the calendar's keys could navigate away from the
-      // save; the editor itself holds it instead.
-      contentRef.current?.focus();
-      setSaveFailure(null);
       startSaving(async () => {
         try {
           await save;
           setOpen(false);
-        } catch (error) {
-          setSaveFailure(heldFailure(error, failureMessage));
+        } catch {
+          // The mutation reports the failure; keep the editor and its draft.
         } finally {
           savingRef.current = false;
         }
@@ -851,28 +813,20 @@ export function EventEditPopover({
           }),
           failureMessage: SAVE_FAILURE_MESSAGE,
           optimistic: false,
-          // The editor says what failed, beside Save.
-          quiet: true,
           recurrenceScope: scope,
         });
       }
       if (edits.calendarChanged && event) {
-        const move = moveEvent.mutateAsync({
+        await moveEvent.mutateAsync({
           accountId,
           calendarId,
           destinationCalendarId: edits.calendarChanged.destinationCalendarId,
           eventId: event.id,
-          failureMessage: SAVE_FAILURE_MESSAGE,
-          // The editor says what failed, beside Save.
-          quiet: true,
+          failureMessage: edits.hasDataEdits
+            ? SAVED_NOT_MOVED_MESSAGE
+            : SAVE_FAILURE_MESSAGE,
           scope,
         });
-        // The edits are in by now: a failed move mustn't say they aren't.
-        await (edits.hasDataEdits
-          ? move.catch((cause: unknown) => {
-              throw new SavedNotMovedError(cause);
-            })
-          : move);
       }
     },
     [accountId, calendarId, event, moveEvent, updateEvent]
@@ -911,7 +865,7 @@ export function EventEditPopover({
     const save = saveEdits(pendingSave, saveScope);
     // The save stays pending until the next one replaces it, so the
     // dialog's words don't change as it fades.
-    holdForSave(save, SAVE_FAILURE_MESSAGE);
+    holdForSave(save);
   }, [holdForSave, pendingSave, saveEdits, saveScope]);
 
   const handleDelete = useCallback(() => {
@@ -973,9 +927,7 @@ export function EventEditPopover({
         createEvent.mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-          quiet: true,
-        }),
-        EVENT_CREATE_FAILURE_MESSAGE
+        })
       );
       return;
     }
@@ -984,8 +936,6 @@ export function EventEditPopover({
       // A recurring event asks for the scope over the editor, which stays
       // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
-        // Where the user was (the title, Save), for a Cancel to return to.
-        focusBeforeScopeRef.current = focusedElement();
         // The preferred scope is kept as is: the dialog shows the nearest
         // one available, and returns to it once it's on.
         dispatchDialog({
@@ -1001,7 +951,7 @@ export function EventEditPopover({
         return;
       }
 
-      holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
+      holdForSave(saveEdits(request, "this"));
     }
   }, [createEvent, holdForSave, saveEdits, setOpen]);
 
@@ -1079,7 +1029,6 @@ export function EventEditPopover({
             open={open}
             readOnly={readOnly}
             readOnlyReason={readOnlyReason}
-            saveFailure={saveFailure}
             start={start}
           />
         </PopoverContent>
@@ -1090,31 +1039,6 @@ export function EventEditPopover({
         // Says why each scope that's off is.
         description={saveDialog.description}
         disabledScopes={saveDialog.disabled}
-        // The dialog has no trigger to return focus to, and a save remounts
-        // the field it came from, so focus would fall to the page, where the
-        // calendar's keys could navigate away from the editor. On Cancel it
-        // goes back where the user was; during a save (or after it failed),
-        // to the editor; once the editor has closed, it stays where that
-        // put it (the event).
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-          const content = contentRef.current;
-          // Already in the editor: a fast failure's message took it as the
-          // dialog faded, and keeps it.
-          if (!(open && content) || content.contains(document.activeElement)) {
-            return;
-          }
-          const before = focusBeforeScopeRef.current;
-          if (
-            !savingRef.current &&
-            before?.isConnected &&
-            content.contains(before)
-          ) {
-            before.focus();
-          } else {
-            content.focus();
-          }
-        }}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -2134,7 +2058,7 @@ function EventFormActionRow({
             size="sm"
             type="button"
           >
-            <SavingLabel saving={saving}>Save</SavingLabel>
+            {saving ? "Saving…" : "Save"}
           </Button>
         </div>
       </div>
@@ -2151,7 +2075,6 @@ export function EventEditForm({
   mode,
   closeSaveRequestRef,
   isSaving = false,
-  saveFailure = null,
   onSave,
   onCancel,
   onDelete,
@@ -2171,8 +2094,6 @@ export function EventEditForm({
   closeSaveRequestRef: React.Ref<() => CloseSaveRequest>;
   /** A save is running: the fields are read-only and Save says "Saving…". */
   isSaving?: boolean;
-  /** Why the last save failed, shown beside Save. */
-  saveFailure?: string | null;
   /** Trigger the save flow (builds close-save request and processes it). */
   onSave: () => void;
   /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
@@ -2626,7 +2547,7 @@ export function EventEditForm({
   }
 
   return (
-    <HeldFieldset className="min-w-0 space-y-3" saving={isSaving}>
+    <fieldset className="min-w-0 space-y-3" disabled={isSaving}>
       {headerContent ? <div>{headerContent}</div> : null}
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
@@ -2823,7 +2744,6 @@ export function EventEditForm({
         onValueChange={handleLocationValueChange}
         suggestions={locationSuggestions}
       />
-      <SaveFailure message={saveFailure} />
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}
@@ -2834,6 +2754,6 @@ export function EventEditForm({
           saving={isSaving}
         />
       ) : null}
-    </HeldFieldset>
+    </fieldset>
   );
 }

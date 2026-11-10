@@ -47,8 +47,7 @@ export function createAppQueryClient({
           }
           return;
         }
-        // A query that shows its own failure (meta.quietError) gets no toast.
-        if (suppressToasts || query.meta?.quietError) {
+        if (suppressToasts) {
           return;
         }
 

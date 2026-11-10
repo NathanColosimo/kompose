@@ -81,11 +81,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { DurationPicker } from "@/components/ui/duration-picker";
-import {
-  HeldFieldset,
-  SaveFailure,
-  SavingLabel,
-} from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -252,7 +247,7 @@ export function TaskEditPopover({
   const setTrigger = useCallback((element: HTMLElement | null) => {
     triggerRef.current = element;
   }, []);
-  const hold = useHeldSave({ editorRef: contentRef, onClose: handleCancel });
+  const hold = useHeldSave({ onClose: handleCancel });
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
       // Focus moves into the editor, so Tab reaches its fields, but not to
@@ -316,6 +311,7 @@ export function TaskEditPopover({
         side={isNarrow ? "bottom" : side}
       >
         <TaskEditForm
+          editorRef={contentRef}
           hold={hold}
           key={task.id}
           onClose={handleCancel}
@@ -381,7 +377,7 @@ function TaskEditorCloseActions({
         size="sm"
         type="button"
       >
-        <SavingLabel saving={saving === "save"}>Save</SavingLabel>
+        {saving === "save" ? "Saving…" : "Save"}
       </Button>
     </div>
   );
@@ -392,22 +388,11 @@ function TaskEditorCloseActions({
  * it closes when the save succeeds and keeps the draft if not. Owned by the
  * popover, whose Escape and outside clicks are ignored while it saves.
  */
-export function useHeldSave({
-  editorRef,
-  onClose,
-}: {
-  /** The popover content: it keeps focus while the editor holds. */
-  editorRef: RefObject<HTMLDivElement | null>;
-  onClose: () => void;
-}) {
+export function useHeldSave({ onClose }: { onClose: () => void }) {
   const [isPending, startTransition] = useTransition();
   const [kind, setKind] = useState<"done" | "save">("save");
   const holdOpen = useCallback(
     (nextKind: "done" | "save", save: Promise<boolean>) => {
-      // The fields remount read-only (HeldFieldset), which would drop focus
-      // to the page, where the calendar's keys could navigate away from the
-      // save; the editor itself holds it instead.
-      editorRef.current?.focus();
       setKind(nextKind);
       startTransition(async () => {
         if (await save) {
@@ -415,9 +400,9 @@ export function useHeldSave({
         }
       });
     },
-    [editorRef, onClose]
+    [onClose]
   );
-  return { editorRef, holdOpen, saving: isPending ? kind : null };
+  return { holdOpen, saving: isPending ? kind : null };
 }
 
 type HeldSave = ReturnType<typeof useHeldSave>;
@@ -444,20 +429,25 @@ function TaskDoneButton({
       type="button"
       variant="outline"
     >
-      <SavingLabel saving={isSaving}>
-        {isDone ? (
-          <Undo2 className="size-3.5" />
-        ) : (
-          <Check className="size-3.5" />
-        )}
-        {isDone ? "Mark not done" : "Mark done"}
-      </SavingLabel>
+      {isSaving ? (
+        "Saving…"
+      ) : (
+        <>
+          {isDone ? (
+            <Undo2 className="size-3.5" />
+          ) : (
+            <Check className="size-3.5" />
+          )}
+          {isDone ? "Mark not done" : "Mark done"}
+        </>
+      )}
     </Button>
   );
 }
 
 /** Edits a task: Save, Mark done and Delete, with the scope question for a series. */
 function TaskEditForm({
+  editorRef,
   task,
   onClose,
   hold,
@@ -467,6 +457,7 @@ function TaskEditForm({
   onClose: () => void;
   /** The popover's held save (see useHeldSave). */
   hold: HeldSave;
+  editorRef: RefObject<HTMLDivElement | null>;
   open: boolean;
 }) {
   const { updateTask, deleteTask, tasksQuery } = useTasks();
@@ -476,20 +467,11 @@ function TaskEditForm({
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
   const pendingStatusRef = useRef<"done" | "todo" | null>(null);
-  /** The editor's focused field when the scope dialog opened. */
-  const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
   const askScope = useCallback((defaultScope: UpdateScope) => {
-    // Where the user was (the title, Save), for a Cancel to return to.
-    focusBeforeScopeRef.current =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
     setTagScope(defaultScope);
     setShowTagScopeDialog(true);
   }, []);
   const { holdOpen, saving } = hold;
-  /** Why the last held save failed, shown above the buttons until the next. */
-  const [failure, setFailure] = useState<string | null>(null);
   const isSavingStatus = saving !== null;
   const isRecurring = task.seriesMasterId !== null;
   // Shared with iOS, so both compare edits against the same pattern.
@@ -555,7 +537,7 @@ function TaskEditForm({
 
   /**
    * Saves the edits, plus `extra` fields, while the editor holds open.
-   * Resolves to whether it saved; a failure shows above the buttons, and
+   * Resolves to whether it saved; a failure shows an error toast, and
    * the cache waits for the server (no optimistic update) so it can't roll
    * back over the draft.
    */
@@ -566,7 +548,6 @@ function TaskEditForm({
       failureMessage: string,
       extra: Partial<TaskUpdateDecoded> = {}
     ): Promise<boolean> => {
-      setFailure(null);
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -577,8 +558,7 @@ function TaskEditForm({
           failureMessage,
           id: task.id,
           optimistic: false,
-          // The editor says what failed, above the buttons.
-          quiet: true,
+
           scope,
           task: {
             description: values.description ?? "",
@@ -595,10 +575,7 @@ function TaskEditForm({
         })
         .then(
           () => true,
-          () => {
-            setFailure(failureMessage);
-            return false;
-          }
+          () => false
         );
     },
     [task, updateTask]
@@ -736,10 +713,9 @@ function TaskEditForm({
       {/* While a save runs, the fields are read-only too: a change typed
           then would be dropped when the editor closes. (A block, not
           display: contents, so the form's spacing still reaches the fields.) */}
-      <HeldFieldset className="min-w-0 space-y-3" saving={isSavingStatus}>
+      <fieldset className="min-w-0 space-y-3" disabled={isSavingStatus}>
         <TaskFields form={form} />
 
-        <SaveFailure message={failure} />
         <Separator />
         {/* Wraps rather than clipping Save if the labels grow (larger text). */}
         <div className="flex flex-wrap items-center gap-2">
@@ -777,7 +753,7 @@ function TaskEditForm({
                 }
                 e.preventDefault();
                 deleteFromKeyRef.current = false;
-                hold.editorRef.current?.focus();
+                editorRef.current?.focus();
               }}
             >
               <AlertDialogHeader>
@@ -829,26 +805,6 @@ function TaskEditForm({
         <RecurrenceScopeDialog
           confirmLabel="Apply"
           description={SCOPE_DIALOG_COPY.saveTask.description}
-          // The dialog has no trigger to return focus to, so it would fall
-          // to the page, where the calendar's keys could navigate away. On
-          // Cancel it goes back where the user was. Apply starts a held
-          // save, which remounts the fields and this dialog with them
-          // (HeldFieldset), so that field is gone and focus goes to the
-          // editor. Once the editor has closed, it stays where that put it.
-          onCloseAutoFocus={(e) => {
-            e.preventDefault();
-            const editor = hold.editorRef.current;
-            // A save that already failed focused its message; keep it there.
-            if (editor?.contains(document.activeElement)) {
-              return;
-            }
-            const before = focusBeforeScopeRef.current;
-            if (before?.isConnected && editor?.contains(before)) {
-              before.focus();
-              return;
-            }
-            editor?.focus();
-          }}
           onConfirm={() => {
             const pendingUpdate = pendingUpdateRef.current;
             if (!pendingUpdate) {
@@ -879,7 +835,7 @@ function TaskEditForm({
           title={SCOPE_DIALOG_COPY.saveTask.title}
           value={tagScope}
         />
-      </HeldFieldset>
+      </fieldset>
     </form>
   );
 }
@@ -920,8 +876,6 @@ export function TaskCreateForm({
         .mutateAsync({
           ...payload,
           failureMessage: TASK_CREATE_FAILURE_MESSAGE,
-          // The create popover shows a failure beside its own Save.
-          quiet: true,
         })
         .then(
           () => true,
@@ -980,9 +934,9 @@ export function TaskCreateForm({
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
       {/* Remounts read-only while the create runs, closing an open picker
           (its options are portaled outside the popover's fieldset). */}
-      <HeldFieldset className="min-w-0 space-y-3" saving={saving}>
+      <fieldset className="min-w-0 space-y-3" disabled={saving}>
         <TaskFields form={form} />
-      </HeldFieldset>
+      </fieldset>
     </form>
   );
 }

@@ -77,7 +77,7 @@ function DeleteScopeDialog({
       calendarId,
       eventId: event.id,
       failureMessage: DELETE_FAILURE_MESSAGE,
-      quiet: true,
+
       scope,
     });
   };
@@ -86,7 +86,6 @@ function DeleteScopeDialog({
     <RecurrenceScopeDialog
       confirmLabel="Delete"
       description={description}
-      failureMessage={DELETE_FAILURE_MESSAGE}
       onConfirm={confirm}
       onOpenChange={onOpenChange}
       onValueChange={setScope}
