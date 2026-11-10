@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { toast } from "sonner";
-import { useMountEffect } from "@/hooks/use-mount-effect";
 import {
   authClient,
   extractAuthErrorMessage,
@@ -45,7 +45,7 @@ export function SocialAccountButtons() {
 
   // Back from the provider, the browser can restore this page as it was left,
   // held; release the buttons.
-  useMountEffect(() => {
+  useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
         reset();
@@ -53,7 +53,7 @@ export function SocialAccountButtons() {
     };
     window.addEventListener("pageshow", onPageShow);
     return () => window.removeEventListener("pageshow", onPageShow);
-  });
+  }, [reset]);
 
   const lastUsed = PROVIDERS.find(({ id }) => id === lastUsedMethod);
 

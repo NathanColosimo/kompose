@@ -15,10 +15,7 @@ search field, so the page's shortcuts (such as **c**) don't take the keys.
 
 ## Search Tasks Behavior
 
-- Searches open tasks (`status !== "done"`) that are listed on their own
-  (`isListedAlone` in `packages/state/src/task-search-routing.ts`): tasks
-  that don't repeat, and occurrences of a series moved to the inbox alone. A
-  series' dated occurrences show on the calendar instead.
+- Searches open tasks (`status !== "done"`) that do not belong to a series. Recurring tasks show on the calendar instead.
 - Each result shows where it opens: the calendar (with its date), Today (or
   Tomorrow, Yesterday, a date), or Inbox.
 - Selecting a task:

@@ -20,10 +20,7 @@ export function plainDateToDate(plainDate: Temporal.PlainDate): Date {
 
 /** "Nov 8": the short date the task rows and the editor's chips show. */
 export function formatShortDate(date: Temporal.PlainDate): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(plainDateToDate(date));
+  return date.toLocaleString(undefined, { day: "numeric", month: "short" });
 }
 
 function plural(count: number, unit: string): string {

@@ -1,6 +1,5 @@
 "use client";
 
-import { sameRecurrence } from "@kompose/api/lib/recurrence";
 import type {
   ClientTaskInsertDecoded,
   DeleteScope,
@@ -31,8 +30,6 @@ import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   markStatusFailureMessage,
-  repeatBlocksSave,
-  repeatNote,
   resolveTaskRecurrenceForEditor,
 } from "@kompose/state/task-recurrence";
 import { useAtom, useAtomValue } from "jotai";
@@ -391,19 +388,6 @@ function TaskEditorCloseActions({
 }
 
 /**
- * A series occurrence moved to the inbox (no date): nothing follows it,
- * and a repeat change takes it out of its series.
- */
-function isUndatedMember(task: TaskSelectDecoded): boolean {
-  return Boolean(task.seriesMasterId && !task.startDate);
-}
-
-/** A dated series occurrence, which "this and following" can start from. */
-function hasFollowing(task: TaskSelectDecoded): boolean {
-  return Boolean(task.seriesMasterId && task.startDate);
-}
-
-/**
  * Holds an editor open on a save, for Mark done ("done") or Save ("save"):
  * it closes when the save succeeds and keeps the draft if not. Owned by the
  * popover, whose Escape and outside clicks are ignored while it saves.
@@ -437,27 +421,6 @@ export function useHeldSave({
 }
 
 type HeldSave = ReturnType<typeof useHeldSave>;
-
-/** What the repeat will do, or why it can't save (repeatNote). */
-function RepeatNote({
-  note,
-}: {
-  note: { blocking: boolean; text: string } | null;
-}) {
-  if (!note) {
-    return null;
-  }
-  return (
-    <p
-      className={cn(
-        "text-xs",
-        note.blocking ? "text-destructive" : "text-muted-foreground"
-      )}
-    >
-      {note.text}
-    </p>
-  );
-}
 
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
@@ -512,7 +475,7 @@ function TaskEditForm({
   const [tagScope, setTagScope] = useState<UpdateScope>("this");
   const pendingUpdateRef = useRef<TaskFormValues | null>(null);
   /** Mark done waiting on the scope dialog for the edits saved with it. */
-  const pendingStatusRef = useRef<TaskSelectDecoded["status"] | null>(null);
+  const pendingStatusRef = useRef<"done" | "todo" | null>(null);
   /** The editor's focused field when the scope dialog opened. */
   const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
   const askScope = useCallback((defaultScope: UpdateScope) => {
@@ -588,12 +551,7 @@ function TaskEditForm({
 
   const startDate = useWatch({ control, name: "startDate" });
   const recurrence = useWatch({ control, name: "recurrence" });
-  // The note under Repeat says why; Save and Mark done wait for a fix.
-  const repeatBlocked = repeatBlocksSave({
-    next: recurrence,
-    previous: resolvedRecurrence,
-    startDate,
-  });
+  const repeatBlocked = Boolean(recurrence && !startDate);
 
   /**
    * Saves the edits, plus `extra` fields, while the editor holds open.
@@ -627,11 +585,7 @@ function TaskEditForm({
             dueDate: values.dueDate,
             durationMinutes: normalizedDuration,
             links: values.links,
-            // Sent only when it changed: an explicit null ends the repeat,
-            // so an untouched occurrence must not send one.
-            recurrence: sameRecurrence(resolvedRecurrence, values.recurrence)
-              ? undefined
-              : values.recurrence,
+            recurrence: values.recurrence,
             startDate: values.startDate,
             startTime: values.startTime,
             tagIds: values.tagIds,
@@ -647,7 +601,7 @@ function TaskEditForm({
           }
         );
     },
-    [resolvedRecurrence, task, updateTask]
+    [task, updateTask]
   );
 
   /**
@@ -659,7 +613,7 @@ function TaskEditForm({
     (
       values: TaskFormValues,
       scope: UpdateScope,
-      status: TaskSelectDecoded["status"]
+      status: "done" | "todo"
     ): Promise<boolean> =>
       commitUpdate(values, scope, markStatusFailureMessage(status), {
         status,
@@ -689,9 +643,8 @@ function TaskEditForm({
             title: task.title,
           },
         }),
-        // Moving it to the inbox (no date) changes it alone.
-        hasFollowing: hasFollowing(task) && values.startDate !== null,
         isRecurring,
+        isSeriesMaster: task.seriesMasterId === task.id,
         nextRecurrence: values.recurrence,
         nextTagIds: values.tagIds,
         previousRecurrence: resolvedRecurrence,
@@ -703,14 +656,7 @@ function TaskEditForm({
   /** Saves, through the scope question for a series; the editor holds open meanwhile. */
   const submit = useCallback(
     (values: TaskFormValues) => {
-      // The note under Repeat says why ("The repeat ends Nov 10, before...").
-      if (
-        repeatBlocksSave({
-          next: values.recurrence,
-          previous: resolvedRecurrence,
-          startDate: values.startDate,
-        })
-      ) {
+      if (values.recurrence && !values.startDate) {
         return;
       }
       const decision = scopeDecisionFor(values);
@@ -725,7 +671,7 @@ function TaskEditForm({
         commitUpdate(values, decision.scope, SAVE_FAILURE_MESSAGE)
       );
     },
-    [askScope, commitUpdate, holdOpen, resolvedRecurrence, scopeDecisionFor]
+    [askScope, commitUpdate, holdOpen, scopeDecisionFor]
   );
 
   // Mark done saves unsaved edits with it, so they're never dropped: in one
@@ -791,12 +737,7 @@ function TaskEditForm({
           then would be dropped when the editor closes. (A block, not
           display: contents, so the form's spacing still reaches the fields.) */}
       <HeldFieldset className="min-w-0 space-y-3" saving={isSavingStatus}>
-        <TaskFields
-          form={form}
-          isRecurring={isRecurring}
-          previousRecurrence={resolvedRecurrence}
-          undatedMember={isUndatedMember(task)}
-        />
+        <TaskFields form={form} />
 
         <SaveFailure message={failure} />
         <Separator />
@@ -842,18 +783,16 @@ function TaskEditForm({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete task?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  {hasFollowing(task)
+                  {isRecurring
                     ? SCOPE_DIALOG_COPY.deleteTask.description
                     : SCOPE_DIALOG_COPY.deleteTaskAlone.description}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter
-                className={
-                  hasFollowing(task) ? "flex-col gap-2 sm:flex-col" : ""
-                }
+                className={isRecurring ? "flex-col gap-2 sm:flex-col" : ""}
               >
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                {hasFollowing(task) ? (
+                {isRecurring ? (
                   <>
                     <AlertDialogAction onClick={() => confirmDelete("this")}>
                       Only this occurrence
@@ -967,18 +906,10 @@ export function TaskCreateForm({
     defaultValues: buildTaskCreateValues(initialValues),
   });
   const { getValues, handleSubmit, setValue } = form;
-  const previousRecurrence = initialValues.recurrence ?? null;
 
   const submit = useCallback(
     (values: TaskFormValues): boolean | Promise<boolean> => {
-      // The note under Repeat says why ("The repeat ends Nov 10, before...").
-      if (
-        repeatBlocksSave({
-          next: values.recurrence,
-          previous: previousRecurrence,
-          startDate: values.startDate,
-        })
-      ) {
+      if (values.recurrence && !values.startDate) {
         return false;
       }
       const payload = buildTaskCreatePayload(values);
@@ -997,7 +928,7 @@ export function TaskCreateForm({
           () => false
         );
     },
-    [createTask, previousRecurrence]
+    [createTask]
   );
 
   useImperativeHandle(submitRef, () => () => submit(getValues()), [
@@ -1050,12 +981,7 @@ export function TaskCreateForm({
       {/* Remounts read-only while the create runs, closing an open picker
           (its options are portaled outside the popover's fieldset). */}
       <HeldFieldset className="min-w-0 space-y-3" saving={saving}>
-        <TaskFields
-          form={form}
-          isRecurring={false}
-          previousRecurrence={previousRecurrence}
-          undatedMember={false}
-        />
+        <TaskFields form={form} />
       </HeldFieldset>
     </form>
   );
@@ -1064,24 +990,15 @@ export function TaskCreateForm({
 /** The task's fields, shared by the editor and the create popover. */
 function TaskFields({
   form: { control, getValues, setValue },
-  isRecurring,
-  previousRecurrence,
-  undatedMember,
 }: {
   form: UseFormReturn<TaskFormValues>;
-  /** Whether the task is in a series, for the note under Repeat. */
-  isRecurring: boolean;
-  /** The repeat the task had when the form opened. */
-  previousRecurrence: TaskRecurrence | null;
-  /** A series occurrence with no date (see isUndatedMember). */
-  undatedMember: boolean;
 }) {
   const { parseLink } = useTasks();
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
-  const links = useWatch({ control, name: "links" }) as LinkMeta[];
+  const links = useWatch({ control, name: "links" });
   const recurrence = useWatch({ control, name: "recurrence" });
 
   return (
@@ -1133,9 +1050,28 @@ function TaskFields({
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
                   mode="single"
-                  onSelect={(date) =>
-                    field.onChange(date ? pickerDateToTemporal(date) : null)
-                  }
+                  onSelect={(date) => {
+                    const start = date ? pickerDateToTemporal(date) : null;
+                    field.onChange(start);
+                    if (!start) {
+                      setValue("startTime", null, { shouldDirty: true });
+                    }
+                    const repeat = getValues("recurrence");
+                    if (
+                      start &&
+                      repeat?.until &&
+                      Temporal.PlainDate.compare(
+                        start,
+                        Temporal.PlainDate.from(repeat.until)
+                      ) > 0
+                    ) {
+                      setValue(
+                        "recurrence",
+                        { ...repeat, until: start.toString() },
+                        { shouldDirty: true }
+                      );
+                    }
+                  }}
                   selected={
                     field.value ? temporalToPickerDate(field.value) : undefined
                   }
@@ -1266,15 +1202,11 @@ function TaskFields({
           )}
         />
       </div>
-      <RepeatNote
-        note={repeatNote({
-          isRecurring,
-          next: recurrence,
-          previous: previousRecurrence,
-          startDate,
-          undatedMember,
-        })}
-      />
+      {recurrence && !startDate ? (
+        <p className="text-destructive text-xs">
+          Pick a start date to repeat this task.
+        </p>
+      ) : null}
 
       <Separator />
 
@@ -1289,8 +1221,7 @@ function TaskFields({
             provider: "unknown",
             url,
           };
-          const currentLinks =
-            (getValues("links") as unknown as LinkMeta[]) ?? [];
+          const currentLinks = getValues("links") ?? [];
           const isFirstLink = currentLinks.length === 0;
           setValue("links", dedupeLinks([...currentLinks, placeholder]), {
             shouldDirty: true,
@@ -1298,8 +1229,7 @@ function TaskFields({
 
           parseLink.mutate(url, {
             onSuccess: (meta) => {
-              const latest =
-                (getValues("links") as unknown as LinkMeta[]) ?? [];
+              const latest = getValues("links") ?? [];
               setValue(
                 "links",
                 dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),

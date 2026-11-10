@@ -17,7 +17,6 @@ import {
   getTaskRecurrenceDisplayText,
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
-  repeatNote,
   TASK_RECURRENCE_DAYS,
   type TaskRecurrenceDayCode,
   type TaskRecurrenceEditorState,
@@ -49,7 +48,6 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
-import type { TaskSeries } from "@/hooks/use-task-editor-flow";
 import {
   formatShortDate,
   localeTimeFormat,
@@ -86,8 +84,6 @@ interface TaskEditorSheetProps {
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
   /** Dialogs that open over the editor (iOS presents them from its modal). */
   overlay?: React.ReactNode;
-  /** The series of the task being edited, so a repeat change can say what it does. */
-  series: TaskSeries | null;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
 }
@@ -569,24 +565,6 @@ function durationOptionsFor(current: number) {
   }));
 }
 
-/** What the repeat will do, or why it can't save (repeatNote). */
-function RepeatNote({
-  note,
-}: {
-  note: { blocking: boolean; text: string } | null;
-}) {
-  if (!note) {
-    return null;
-  }
-  return (
-    <Text
-      className={`mb-2.5 text-xs ${note.blocking ? "text-destructive" : "text-muted-foreground"}`}
-    >
-      {note.text}
-    </Text>
-  );
-}
-
 const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
 const CHIP_SLOT_STYLE = { flexGrow: 1, maxWidth: "100%" } as const;
 
@@ -766,7 +744,6 @@ export function TaskEditorSheet({
   onSave,
   onDelete,
   onToggleDone,
-  series,
   timeZone,
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
@@ -904,15 +881,11 @@ export function TaskEditorSheet({
             updateRecurrence={updateRecurrence}
           />
         ) : null}
-        <RepeatNote
-          note={repeatNote({
-            isRecurring: series !== null,
-            next: draft.recurrence,
-            previous: series?.recurrence ?? null,
-            startDate: draft.startDate,
-            undatedMember: series?.undated ?? false,
-          })}
-        />
+        {draft.recurrence && !draft.startDate ? (
+          <Text className="mb-2.5 text-destructive text-xs">
+            Pick a start date to repeat this task.
+          </Text>
+        ) : null}
 
         <View className="mb-2.5 flex-row items-center gap-2">
           <Checkbox

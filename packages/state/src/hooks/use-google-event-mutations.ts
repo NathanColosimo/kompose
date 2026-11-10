@@ -188,16 +188,6 @@ export function createGoogleEventMutationOptions(
   };
 }
 
-/** The scope an update saves with: one occurrence unless it says. */
-function scopeOf(variables: UpdateGoogleEventVariables) {
-  return variables.recurrenceScope ?? "this";
-}
-
-/** Whether an update changes the cached event before the server answers. */
-function updatesAtOnce(variables: UpdateGoogleEventVariables): boolean {
-  return scopeOf(variables) === "this" && variables.optimistic !== false;
-}
-
 /**
  * An update: for one occurrence, unless the editor holds the save
  * (`optimistic: false`), the event changes in the cached lists at once,
@@ -216,13 +206,16 @@ export function updateGoogleEventMutationOptions(
         calendarId: variables.calendarId,
         eventId: variables.eventId,
         event: sanitizeEventPayload(variables.event),
-        scope: scopeOf(variables),
+        scope: variables.recurrenceScope ?? "this",
       }),
     onMutate: async (variables: UpdateGoogleEventVariables) => {
       // Only one occurrence, saved without holding, changes the cache
       // first; anything else has nothing to put back on failure (putting a
       // snapshot back would undo what a refetch brought meanwhile).
-      if (!updatesAtOnce(variables)) {
+      if (
+        variables.optimistic === false ||
+        (variables.recurrenceScope ?? "this") !== "this"
+      ) {
         return { previous: [] };
       }
       const queryKey = getGoogleEventsByCalendarQueryKey(variables);
@@ -260,7 +253,10 @@ export function updateGoogleEventMutationOptions(
     onSuccess: (saved: Event, variables: UpdateGoogleEventVariables) => {
       // A held save shows the server's copy as soon as it's in; other
       // scopes change more events, so the refetch below brings them.
-      if (variables.optimistic !== false || scopeOf(variables) !== "this") {
+      if (
+        variables.optimistic !== false ||
+        (variables.recurrenceScope ?? "this") !== "this"
+      ) {
         return;
       }
       editCachedEvents(queryClient, variables, (events) =>
