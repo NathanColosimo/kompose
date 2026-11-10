@@ -1380,12 +1380,17 @@ function liveMeetingLandsAt(
   if (!(day && split && splitDay && newDay && first)) {
     return false;
   }
-  // Each meeting lands at most as many days off as the split moved.
-  const reach = Math.abs(splitDay.until(newDay).days) + 2;
+  // Each meeting lands about as many days off as the split moved (a few
+  // more across months of other lengths), or in its month or year.
+  const reach = Math.abs(splitDay.until(newDay).days) + 4;
+  const earlier = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
+    Temporal.PlainDate.compare(a, b) < 0 ? a : b;
+  const later = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
+    Temporal.PlainDate.compare(a, b) < 0 ? b : a;
   return rulesOf(master.recurrence ?? []).some((rule) => {
     const period = periodOf(rule, day);
-    const from = period?.[0] ?? day.subtract({ days: reach });
-    const to = period?.[1] ?? day.add({ days: reach });
+    const from = earlier(period?.[0] ?? day, day.subtract({ days: reach }));
+    const to = later(period?.[1] ?? day, day.add({ days: reach }));
     const meetings =
       ruleMeetings({
         first,
@@ -1647,7 +1652,7 @@ function placesOfSkips(params: {
   const zone = seriesZoneOf(master);
   const lost = new Set<number>();
   const ruleSkips = new Set<string>();
-  // Each place's first rule position, by moment: another there shares it.
+  // The first skip placed at each place holds it; another there shares it.
   const takenBy = new Map<string, number>();
   for (const { added, at, formed, ontoLive, slot } of params.skips) {
     const moment = slotMoment(slot, zone)?.epochMilliseconds;
@@ -1709,6 +1714,8 @@ function countWithinSkips(params: {
  * the edit left them), and later changed ones at their new places.
  */
 function followingOccurrences(params: {
+  /** The occurrences deleted on their own after the split. */
+  cancelled: string[];
   /** The fields the edit changed, which the new series carries. */
   changes: Partial<CreateEvent>;
   edited: CreateEvent;
@@ -1743,7 +1750,12 @@ function followingOccurrences(params: {
         changes
       );
       return {
-        at: carriedAt(exception.originalStart, exceptionOwn, plan),
+        at: carriedAt({
+          cancelled: params.cancelled,
+          own: exceptionOwn,
+          plan,
+          slot: exception.originalStart,
+        }),
         changes: exceptionOwn,
         originalStart: exception.originalStart,
       };
@@ -1754,14 +1766,18 @@ function followingOccurrences(params: {
 /**
  * Where a changed occurrence at `slot` goes in a split's new series: an
  * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
- * lands where its meeting does (`landingOf`). Its own times have no place
- * in a series of the other form: null.
+ * lands where its meeting does (`landingOf`). Null when it has no place
+ * of its own: its own times in a series of the other form, or a place
+ * another old meeting, not deleted, lands on too (a move past later
+ * meetings), which carrying it would overwrite.
  */
-function carriedAt(
-  slot: string,
-  own: Partial<CreateEvent>,
-  plan: SplitPlan
-): string | null {
+function carriedAt(params: {
+  cancelled: string[];
+  own: Partial<CreateEvent>;
+  plan: SplitPlan;
+  slot: string;
+}): string | null {
+  const { own, plan, slot } = params;
   const { master, start } = plan;
   if (addsSlot(master.recurrence ?? [], slot, seriesZoneOf(master))) {
     return sameForm(slot, start);
@@ -1769,7 +1785,14 @@ function carriedAt(
   if (!sameForm(slot, start) && (own.start || own.end)) {
     return null;
   }
-  return landingOf(slot, plan);
+  const place = landingOf(slot, plan);
+  const shared =
+    place !== null &&
+    liveMeetingLandsAt(place, {
+      ...plan,
+      cancelled: [...params.cancelled, slot],
+    });
+  return shared ? null : place;
 }
 
 /**
@@ -3094,6 +3117,7 @@ export function makeGoogleCalendarService(
         // Each is carried, or the save refused if the new part has no
         // place for it ("Repeat: None" has none).
         occurrences: followingOccurrences({
+          cancelled: exceptions.cancelled,
           changes,
           edited,
           exceptions: exceptions.changed,

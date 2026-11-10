@@ -1103,6 +1103,39 @@ describe("a monthly COUNT split into the next month", () => {
     ]);
   });
 
+  test("ends sooner when skips fall past the end", async () => {
+    // All day, monthly five times from Jan 31 (Jan, Mar, May, Jul, Aug
+    // 31), May 31, Jul 31 and Aug 31 deleted on their own; from Mar 31
+    // moved to Apr 1: only the moved meeting is left.
+    const on31st: Event = {
+      ...series,
+      end: { date: "2026-02-01" },
+      start: { date: "2026-01-31" },
+    };
+    const deleted = (day: string): Event => ({
+      ...onDay(day),
+      status: "cancelled",
+    });
+    const google = fakeGoogle(on31st, [
+      deleted("2026-05-31"),
+      deleted("2026-07-31"),
+      deleted("2026-08-31"),
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", onDay("2026-03-31"), {
+            end: { date: "2026-04-02" },
+            start: { date: "2026-04-01" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "RRULE:FREQ=MONTHLY;COUNT=1"
+    );
+  });
+
   test("skips a meeting deleted and skipped in the rule once", async () => {
     // Monthly seven times from Jan 28, Apr 28 deleted, Jul 28 deleted and
     // skipped in the rule too; from Mar 28 moved to Apr 1: Mar, May and Jun
