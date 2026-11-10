@@ -1167,27 +1167,19 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   task: TaskSelect;
   userId: string;
 }) {
-  const { input, recurrenceChanged, task, userId } = params;
-  // Without a start date there is no "following": edit this occurrence
-  // alone, unless its repeat changes (see repatternUndated).
-  if (!isDatedSeriesTask(task)) {
-    if (recurrenceChanged) {
-      return yield* repatternUndated(userId, task, input, params.newPattern);
-    }
-    return allRetagged(
-      yield* dbUpdate(userId, task.id, { ...input, isException: true })
-    );
+  const { input, newPattern, task, userId } = params;
+  // A pattern change replaces the later occurrences (inside updateTask's
+  // transaction, like everything below).
+  if (params.recurrenceChanged) {
+    return isDatedSeriesTask(task)
+      ? yield* regenerateOccurrences(userId, task, input, newPattern)
+      : yield* repatternUndated(userId, task, input, newPattern);
   }
 
-  // If recurrence pattern is changing, regenerate future occurrences (inside
-  // updateTask's transaction, like everything below).
-  if (recurrenceChanged) {
-    return yield* regenerateOccurrences(userId, task, input, params.newPattern);
-  }
-
-  // Moving it to the inbox takes this occurrence alone: an undated task has
-  // no place in the pattern, and the later ones keep their dates.
-  if (input.startDate === null) {
+  // An occurrence in the inbox, or moved there by this edit, has no
+  // "following": an undated task has no place in the pattern, and the later
+  // ones keep their dates. Edit it alone.
+  if (!isDatedSeriesTask(task) || input.startDate === null) {
     return allRetagged(
       yield* dbUpdate(userId, task.id, { ...input, isException: true })
     );
