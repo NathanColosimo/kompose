@@ -296,46 +296,27 @@ const dbSelectExceptionsBySeriesFrom = (
       );
   });
 
-/** A series' exceptions from `fromDate` on become standalone. */
-const dbDetachExceptionsFrom = (params: {
-  fromDate: string;
-  seriesMasterId: string;
-  userId: string;
-}) =>
+/**
+ * Write series fields onto a series' exceptions from `fromDate` on: they
+ * join another series, or become standalone.
+ */
+const dbUpdateExceptionsBySeriesFrom = (
+  userId: string,
+  seriesMasterId: string,
+  fromDate: string,
+  series: typeof STANDALONE | { seriesMasterId: string }
+) =>
   Effect.gen(function* () {
     const db = yield* Database;
     return yield* db
       .update(taskTable)
-      .set(STANDALONE)
+      .set(series)
       .where(
         and(
-          eq(taskTable.userId, params.userId),
-          eq(taskTable.seriesMasterId, params.seriesMasterId),
-          eq(taskTable.isException, true),
-          gte(taskTable.startDate, params.fromDate)
-        )
-      )
-      .returning();
-  });
-
-/** Move a series' exceptions from `fromDate` on to another series. */
-const dbMoveExceptionsToSeries = (params: {
-  fromDate: string;
-  fromSeriesMasterId: string;
-  toSeriesMasterId: string;
-  userId: string;
-}) =>
-  Effect.gen(function* () {
-    const db = yield* Database;
-    return yield* db
-      .update(taskTable)
-      .set({ seriesMasterId: params.toSeriesMasterId })
-      .where(
-        and(
-          eq(taskTable.userId, params.userId),
-          eq(taskTable.seriesMasterId, params.fromSeriesMasterId),
-          eq(taskTable.isException, true),
-          gte(taskTable.startDate, params.fromDate)
+          eq(taskTable.seriesMasterId, seriesMasterId),
+          eq(taskTable.userId, userId),
+          gte(taskTable.startDate, fromDate),
+          eq(taskTable.isException, true)
         )
       )
       .returning();
@@ -831,15 +812,12 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
 ) {
   const input = withMovedDueDate(task, edit);
   const { recurrence: _sentRecurrence, ...occurrenceFields } = input;
-  // The series splits where the edit starts: the earlier of the edited
-  // occurrence's original and new dates, so a move earlier doesn't leave
-  // old occurrences under the new ones.
+  // A move earlier splits at the new date, so no old occurrences are left
+  // under the new ones.
   const boundary =
     input.startDate && input.startDate < task.startDate
       ? input.startDate
       : task.startDate;
-  // The dates other exceptions from the boundary on hold: they stay, and
-  // the new pattern leaves their dates out.
   const otherKeptDates = new Set(
     pattern
       ? (yield* dbSelectExceptionsBySeriesFrom(
@@ -899,11 +877,12 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     // Exceptions after the boundary (moved, renamed, or done alone) become
     // standalone tasks rather than members of a series that no longer
     // repeats there.
-    const detached = yield* dbDetachExceptionsFrom({
-      fromDate: boundary,
-      seriesMasterId: task.seriesMasterId,
+    const detached = yield* dbUpdateExceptionsBySeriesFrom(
       userId,
-    });
+      task.seriesMasterId,
+      boundary,
+      STANDALONE
+    );
     return {
       retagIds: ids(updatedAnchor),
       rows: [...updatedAnchor, ...endedMaster, ...detached],
@@ -923,12 +902,12 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   const inserted = taskRows.length > 0 ? yield* dbInsert(taskRows) : [];
   // Kept occurrences from the boundary on join the new series as
   // exceptions, so they show and follow its pattern rather than the old one.
-  const moved = yield* dbMoveExceptionsToSeries({
-    fromDate: boundary,
-    fromSeriesMasterId: task.seriesMasterId,
-    toSeriesMasterId: seriesMasterId,
+  const moved = yield* dbUpdateExceptionsBySeriesFrom(
     userId,
-  });
+    task.seriesMasterId,
+    boundary,
+    { seriesMasterId }
+  );
   // Every changed row goes back (updateTask reads them fresh by id), but
   // only the edited occurrence and the new rows take the edit's tags: the
   // other kept exceptions keep their own.
