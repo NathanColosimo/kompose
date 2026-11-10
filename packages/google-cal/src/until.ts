@@ -411,14 +411,15 @@ function shortDayShift(
  * A once-a-day meeting's day once the series moves from `seriesStart` to
  * `start`: the first a rule (counted from `rulesFrom`) meets on of its
  * clock's turn's (`clockTurn`) and the start's whole move's (under a
- * day); else its own.
+ * day); its own when it doesn't move; null when it moves onto no rule
+ * day, where it has no place.
  */
 function meetingDayMover(params: {
   rulesFrom: Temporal.PlainDate | null;
   seriesStart: StartTime | undefined;
   start: StartTime;
   timeZone: string;
-}): (rule: string, day: Temporal.PlainDate) => Temporal.PlainDate {
+}): (rule: string, day: Temporal.PlainDate) => Temporal.PlainDate | null {
   const { rulesFrom, seriesStart, start, timeZone } = params;
   if (!(seriesStart?.dateTime && start.dateTime)) {
     return (_rule, day) => day;
@@ -446,7 +447,12 @@ function meetingDayMover(params: {
         !rulesFrom ||
         isRuleDay(rule, rulesFrom, day.add({ days: move })) !== false
     );
-    return day.add({ days: meets ?? 0 });
+    if (meets !== undefined) {
+      return day.add({ days: meets });
+    }
+    // Moved, and onto no day the rule meets: the meeting has no place (its
+    // own day may hold the day before's, moved there).
+    return moves.every((move) => move === 0) ? day : null;
   };
 }
 
@@ -464,7 +470,10 @@ function matchUntil(
     allDay: boolean;
     base: Temporal.PlainTime | null;
     /** The last meeting's day once it's at the new time (`retimed`). */
-    moveDay: (line: string, day: Temporal.PlainDate) => Temporal.PlainDate;
+    moveDay: (
+      line: string,
+      day: Temporal.PlainDate
+    ) => Temporal.PlainDate | null;
     retimed: boolean;
     timeZone: string;
   }
@@ -492,7 +501,7 @@ function matchUntil(
     Temporal.Instant.compare(meeting, value.instant) > 0
       ? value.day.subtract({ days: 1 })
       : value.day;
-  const lastDay = params.retimed ? params.moveDay(line, day) : day;
+  const lastDay = (params.retimed && params.moveDay(line, day)) || day;
   return line.replace(
     UNTIL_PART,
     `${match[1]}UNTIL=${untilRuleForDay(lastDay, allDay, timeZone)}`
@@ -676,7 +685,8 @@ interface DateListMatch {
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
   /** A once-a-day meeting's day at the new time (`meetingDayMover`). */
-  moveDay: (day: Temporal.PlainDate) => Temporal.PlainDate;
+  /** Its meeting's new day; null when the meeting has none (moved off its rule's days). */
+  moveDay: (day: Temporal.PlainDate) => Temporal.PlainDate | null;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
   ownSlot: ((value: RecurrenceValue) => boolean) | null;
   seriesZone: string;
@@ -740,7 +750,13 @@ function matchDateList(
   // cancel it.
   const moments = values.flatMap((value) => {
     const kept = value.instant;
-    const moment = (kept ? how.moveDay(value.day) : value.day)
+    const day = kept ? how.moveDay(value.day) : value.day;
+    // Its meeting moved off the rule's days: there's none to skip, so it
+    // stays as it is, where nothing meets.
+    if (!day) {
+      return kept ? [kept] : [];
+    }
+    const moment = day
       .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
       .toInstant();
     // A date skipped the whole day: its added meetings too.
