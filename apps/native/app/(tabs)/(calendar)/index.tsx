@@ -1537,17 +1537,19 @@ export default function CalendarTab() {
           ? null
           : draft.calendar.calendarId;
       const formPayload = buildEventPayload(draft);
-      // For the series, only what the user changed: a rescheduled
-      // occurrence's own title or time doesn't spread to it.
+      // For the series, only what the user changed (a field left alone is
+      // left out): a rescheduled occurrence's own title doesn't spread to
+      // it, and a field changed elsewhere since the editor opened isn't
+      // written back from this copy.
       const eventPayload =
         scope === "this"
           ? formPayload
           : {
-              ...formPayload,
               ...seriesEditFields({
                 edited: formPayload,
                 occurrence: draft.sourceEvent,
               }),
+              recurrence: formPayload.recurrence,
             };
       // A moved date carries the series' rule along, for the series.
       const recurrence =
