@@ -5,18 +5,21 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { isRuleDay, WEEKDAY_CODES } from "./rule-days";
+import { ruleDayCount } from "./series";
+
+/** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
 /**
  * Why a series write is refused, before anything changes, with no
- * occurrences to name. `endsBeforeStart` and `deleteFromAddedOccurrence`
- * stay because no write through Google's API does what was asked safely.
- * `severalRules`, `addedOccurrence` and `severalTimesADay` are refused for
- * good: only a series made in another app has several rules or added
- * meetings (Kompose writes one rule and no RDATE), and Kompose doesn't
- * write those shapes.
+ * occurrences to name. `endsBeforeStart` stays because no write through
+ * Google's API does what was asked. `severalRules`, `addedOccurrence` and
+ * `severalTimesADay` are refused for good: only a series made in another
+ * app has several rules or added meetings (Kompose writes one rule and no
+ * RDATE), and Kompose doesn't write those shapes.
  */
 const PLAIN_REFUSALS = [
   // This and following in a series with several rules (or an exclusion
@@ -28,11 +31,6 @@ const PLAIN_REFUSALS = [
   "addedOccurrence",
   // The save's own repeat ends before the new series' first meeting.
   "endsBeforeStart",
-  // Deleting This and following from an added meeting, where one rule's
-  // end can't be worked out and another rule never ends: Google's list of
-  // the series' meetings never ends either, so which are that rule's
-  // can't be told.
-  "deleteFromAddedOccurrence",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
   "severalTimesADay",
@@ -58,8 +56,9 @@ export const SeriesRefusalSchema = Schema.Union([
     /** Only a series takes it: a new repeat, or a calendar move. */
     seriesOnly: Schema.optional(Schema.Literal(true)),
     /**
-     * A rule it read can't be read here (made in another app): the save
-     * may not cost the occurrences it names, but that can't be told.
+     * The series has an exclusion rule (EXRULE, made in another app), which
+     * isn't read here: the save may not cost the occurrences it names, but
+     * that can't be told.
      */
     unsure: Schema.optional(Schema.Literal(true)),
   }),
@@ -122,8 +121,6 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This and following isn't available for a series with more than one rule: a new series has one start, and Google would count every rule's days from it, moving their meetings.";
     case "addedOccurrence":
       return "This and following isn't available for an occurrence added to the series on its own: a new series starting here would repeat its rule from this day and time, moving its meetings.";
-    case "deleteFromAddedOccurrence":
-      return "Deleting this and following isn't available from this added occurrence: one of the series' rules never ends, and where another ends can't be worked out. Delete occurrences one at a time instead, or this and following from a regular occurrence of the series.";
     case "endsBeforeStart":
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "severalTimesADay":
@@ -330,8 +327,8 @@ export function canonicalRule(line: string): string {
  * Whether `saved` is `own` rebuilt for a series moved from the day `from`
  * to `to`: a weekly rule meets on its other weekdays still, the moved one
  * swapped for the new day's (or kept); any other picks as many days in
- * the two years from its start. One whose days can't be read is taken as
- * rebuilt.
+ * the two years from its start. One the rule library can't read is taken
+ * as rebuilt.
  */
 function rebuiltForDay(
   own: string,
@@ -353,21 +350,12 @@ function rebuiltForDay(
       after === [...weekdays(own, from)].sort().join(",")
     );
   }
-  const daysIn = (rule: string, start: Temporal.PlainDate) => {
-    let days = 0;
-    for (
-      let day = start;
-      Temporal.PlainDate.compare(day, start.add({ years: 2 })) < 0;
-      day = day.add({ days: 1 })
-    ) {
-      const meets = isRuleDay(rule, start, day);
-      if (meets === null) {
-        return null;
-      }
-      days += meets ? 1 : 0;
-    }
-    return days;
-  };
+  const daysIn = (rule: string, start: Temporal.PlainDate) =>
+    ruleDayCount({
+      from: start,
+      rule,
+      through: start.add({ years: 2 }).subtract({ days: 1 }),
+    });
   const before = daysIn(own, from);
   const after = daysIn(saved, to);
   // Two years from another day can hold one day more or less.
@@ -480,8 +468,8 @@ export function ownChanges(
 /**
  * Where an old occurrence lands when the series' first meeting moved from
  * `splitStart` to `newStart`: as many days on, its time of day moved as
- * much as the first meeting's (one within the day keeps its place among
- * them). Null when the series changes between timed and all day.
+ * much as the first meeting's. Null when the series changes between timed
+ * and all day.
  */
 export function placeInNewSeries(params: {
   newStart: Pick<Event["start"], "date" | "dateTime" | "timeZone">;

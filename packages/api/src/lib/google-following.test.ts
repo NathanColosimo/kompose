@@ -357,30 +357,32 @@ describe("This and following", () => {
     ]);
   });
 
-  test("a refusal under a rule not read here says it may keep the changes", async () => {
-    // Weeks 46 to 49 on Mondays, a rule not read here; Nov 30 renamed. From
-    // Nov 16 moved to 10:00: whether the new series meets Nov 30 can't be
-    // told, so the refusal is marked unsure.
+  test("a week-number rule carries a renamed meeting to its new time", async () => {
+    // Weeks 46 to 49 on Mondays (a rule only other apps write); Nov 30
+    // renamed. From Nov 16 moved to 10:00: the new series meets Nov 30 at
+    // 10:00, so its rename is put back there.
     const byWeek: Event = {
       ...weekly,
       recurrence: ["RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48,49;BYDAY=MO"],
     };
-    fakeGoogle(byWeek, [
+    const google = fakeGoogle(byWeek, [
       {
         ...occurrenceOf(byWeek, "2026-11-30T09:00:00-05:00"),
         summary: "Planning (Nov 30)",
       },
     ]);
-    expect(
-      await refusalOf(
-        edit("following", occurrenceOf(byWeek, "2026-11-16T09:00:00-05:00"), {
-          end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
-          start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
-        })
-      )
-    ).toMatchObject({
-      data: { reason: "dropsChangedOccurrences", unsure: true },
-    });
+    const exit = await run(
+      edit("following", occurrenceOf(byWeek, "2026-11-16T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    const [created, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261130T150000Z`
+    );
+    expect(carried?.body).toMatchObject({ summary: "Planning (Nov 30)" });
   });
 
   describe("first and third Mondays made second and third Tuesdays", () => {
@@ -2438,12 +2440,12 @@ describe("a series This and following can't keep", () => {
 describe("cutting the old series", () => {
   test("ends an all-day series the day before, as a date", () => {
     expect(
-      truncateRecurrenceForFollowing(
-        ["EXDATE;VALUE=DATE:20261103", "RRULE:FREQ=DAILY;COUNT=10"],
-        "2026-11-10",
-        zone,
-        "2026-11-01"
-      )
+      truncateRecurrenceForFollowing({
+        originalStart: "2026-11-10",
+        recurrence: ["EXDATE;VALUE=DATE:20261103", "RRULE:FREQ=DAILY;COUNT=10"],
+        seriesStart: { date: "2026-11-01" },
+        seriesZone: zone,
+      })
     ).toEqual([
       "EXDATE;VALUE=DATE:20261103",
       "RRULE:FREQ=DAILY;UNTIL=20261109",
@@ -2452,23 +2454,23 @@ describe("cutting the old series", () => {
 
   test("ends a timed series the second before, in UTC", () => {
     expect(
-      truncateRecurrenceForFollowing(
-        ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20270101T000000Z"],
-        "2026-11-10T09:00:00-05:00",
-        zone,
-        "2026-11-03T09:00:00-05:00"
-      )
+      truncateRecurrenceForFollowing({
+        originalStart: "2026-11-10T09:00:00-05:00",
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20270101T000000Z"],
+        seriesStart: { dateTime: "2026-11-03T09:00:00-05:00" },
+        seriesZone: zone,
+      })
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261110T135959Z"]);
   });
 
   test("cuts a rule written COUNT-first without an empty part", () => {
     expect(
-      truncateRecurrenceForFollowing(
-        ["RRULE:COUNT=5;FREQ=DAILY"],
-        "2026-11-10T09:00:00-05:00",
-        zone,
-        "2026-11-08T09:00:00-05:00"
-      )
+      truncateRecurrenceForFollowing({
+        originalStart: "2026-11-10T09:00:00-05:00",
+        recurrence: ["RRULE:COUNT=5;FREQ=DAILY"],
+        seriesStart: { dateTime: "2026-11-08T09:00:00-05:00" },
+        seriesZone: zone,
+      })
     ).toEqual(["RRULE:FREQ=DAILY;UNTIL=20261110T135959Z"]);
   });
 
@@ -2491,12 +2493,12 @@ describe("cutting the old series", () => {
     const rule = ["RRULE:FREQ=WEEKLY", "RDATE;VALUE=DATE:20261101,20261109"];
     // The old part ends before Nov 3: Nov 9 isn't its any more.
     expect(
-      truncateRecurrenceForFollowing(
-        rule,
-        "2026-11-03",
-        "America/New_York",
-        "2026-11-01"
-      )
+      truncateRecurrenceForFollowing({
+        originalStart: "2026-11-03",
+        recurrence: rule,
+        seriesStart: { date: "2026-11-01" },
+        seriesZone: "America/New_York",
+      })
     ).toEqual([
       "RRULE:FREQ=WEEKLY;UNTIL=20261102",
       "RDATE;VALUE=DATE:20261101",
