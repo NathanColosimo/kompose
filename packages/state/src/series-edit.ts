@@ -61,6 +61,19 @@ export function seriesEditFields(params: {
 }
 
 /**
+ * The saved event's series pattern: its own rules (the series itself), or
+ * its master's (an occurrence carries none), once loaded. Not the
+ * draft's, which may add a repeat to a one-off event that isn't a series
+ * yet. What a form's repeat is compared with to tell whether it changed.
+ */
+export function savedSeriesRecurrence(
+  event: Pick<GoogleEvent, "recurrence">,
+  masterRecurrence: string[] | null | undefined
+): string[] {
+  return event.recurrence?.length ? event.recurrence : (masterRecurrence ?? []);
+}
+
+/**
  * The repeat an editor shows, and its days count from, for what a save
  * would send. An occurrence moved to another day in this edit takes the
  * series' rule along (`seriesRecurrenceForSave`: "weekly on Mon" becomes
@@ -118,9 +131,7 @@ export function seriesRepeatForEdit(params: {
   const changed = repeatChanged({
     edited: params.recurrenceEdited,
     recurrence: params.recurrence,
-    source: event?.recurrence?.length
-      ? event.recurrence
-      : (params.seriesRecurrence ?? []),
+    source: savedSeriesRecurrence(event ?? {}, params.seriesRecurrence),
   });
   const moved = Boolean(
     occurrence &&

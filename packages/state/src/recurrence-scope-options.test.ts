@@ -1,18 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import { refusalMessage } from "@kompose/google-cal/series-edits";
 import { ORPCError } from "@orpc/client";
-import { Temporal } from "temporal-polyfill";
 import {
   chosenScope,
   type EventSaveChanges,
   eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
+  eventSaveScopeState,
+  opensSeries,
   RECURRENCE_SCOPE_OPTIONS,
   refusalReason,
   refuseSave,
   SCOPE_DIALOG_COPY,
-  seriesCutUnsure,
   seriesMeetsSeveralTimesADay,
   seriesRefusalOf,
   seriesSplitBlock,
@@ -24,6 +24,10 @@ const none: EventSaveChanges = {
   patternChanged: false,
   seriesRuleLoaded: true,
 };
+
+/** Why This and following is off for a split block, in the server's words. */
+const addedWhy = SCOPE_DIALOG_COPY.splitBlocked.addedOccurrence;
+const severalWhy = SCOPE_DIALOG_COPY.splitBlocked.severalRules;
 
 const off = (changes: Partial<EventSaveChanges>) =>
   Object.keys(eventSaveDisabledScopes({ ...none, ...changes })).sort();
@@ -60,50 +64,60 @@ function combinations<T extends Record<string, readonly unknown[]>>(
   ) as { [K in keyof T]: T[K][number] }[];
 }
 
-test("says why whenever a scope is off", () => {
-  const plain = SCOPE_DIALOG_COPY.saveEvent.description;
-  const flags = [false, true] as const;
-  const all = combinations({
-    calendarChanged: flags,
-    dateMoved: flags,
-    opensSeries: flags,
-    entireSeriesCost: [
-      null,
-      ...(["lostSlot", "newStart", "ownLength"] as const).map((reason) => ({
-        day: Temporal.PlainDate.from("2026-12-07"),
-        reason,
-      })),
-    ],
-    patternChanged: flags,
-    repeatSkips: [null, "day", "end"],
-    retimed: flags,
-    seriesRuleFailed: flags,
-    seriesRuleLoaded: flags,
-    severalRules: flags,
-    movesSeveralADay: [undefined, false, true],
-    splitBlocked: [null, "addedOccurrence", "severalRules"],
-    refused: [
-      null,
-      refuseSave(null, "all", {
-        originalStarts: ["2026-12-07T09:00:00-05:00"],
-        reason: "dropsChangedOccurrences",
-      }),
-      refuseSave(null, "following", { reason: "countUnknown" }),
-    ],
-  } as const);
-  for (const changes of all) {
-    const disabled = eventSaveDisabledScopes(changes);
-    const line = eventSaveDescription(changes);
-    expect(line === plain).toBe(Object.keys(disabled).length === 0);
-    // The plain prompt only ends a line, and never one with no scope left.
-    if (line.includes(plain)) {
-      expect(line.endsWith(plain)).toBe(true);
-      expect(Boolean(disabled.all && disabled.following && disabled.this)).toBe(
-        false
-      );
+/**
+ * Every combination of the save's own inputs, once with each of these
+ * refusals, as its own test (the whole matrix is too slow for one). A
+ * failed load is only one that hasn't loaded.
+ */
+const refusalCases = [
+  ["no refusal", null],
+  [
+    "Entire series refused",
+    refuseSave(null, "all", {
+      originalStarts: ["2026-12-07T09:00:00-05:00"],
+      reason: "dropsChangedOccurrences",
+    }),
+  ],
+  [
+    "This and following refused",
+    refuseSave(null, "following", { reason: "countUnknown" }),
+  ],
+] as const;
+for (const [refusedLabel, refused] of refusalCases) {
+  test(`says why whenever a scope is off (${refusedLabel})`, () => {
+    const plain = SCOPE_DIALOG_COPY.saveEvent.description;
+    const flags = [false, true] as const;
+    const all = combinations({
+      calendarChanged: flags,
+      dateMoved: flags,
+      opensSeries: flags,
+      patternChanged: flags,
+      repeatSkips: [null, "day", "end"],
+      retimed: flags,
+      series: [
+        { seriesRuleFailed: false, seriesRuleLoaded: true },
+        { seriesRuleFailed: false, seriesRuleLoaded: false },
+        { seriesRuleFailed: true, seriesRuleLoaded: false },
+      ],
+      severalRules: flags,
+      movesSeveralADay: [undefined, false, true],
+      splitBlocked: [null, "addedOccurrence", "severalRules"],
+    } as const);
+    for (const { series, ...rest } of all) {
+      const changes = { ...rest, ...series, refused };
+      const disabled = eventSaveDisabledScopes(changes);
+      const line = eventSaveDescription(changes);
+      expect(line === plain).toBe(Object.keys(disabled).length === 0);
+      // The plain prompt only ends a line, never one with no scope left.
+      if (line.includes(plain)) {
+        expect(line.endsWith(plain)).toBe(true);
+        expect(
+          Boolean(disabled.all && disabled.following && disabled.this)
+        ).toBe(false);
+      }
     }
-  }
-});
+  });
+}
 
 test("leaves no scope only for a save that needs two, or one waiting on the series", () => {
   const noneLeft = (changes: Partial<EventSaveChanges>) =>
@@ -121,18 +135,8 @@ test("leaves no scope only for a save that needs two, or one waiting on the seri
   expect(noneLeft({ patternChanged: true, seriesRuleLoaded: false })).toBe(
     true
   );
-  // A calendar move whose new repeat drops a moved meeting, or whose new
-  // time can't apply to a series of several rules.
-  expect(
-    noneLeft({
-      calendarChanged: true,
-      entireSeriesCost: {
-        day: Temporal.PlainDate.from("2026-12-07"),
-        reason: "lostSlot",
-      } as const,
-      patternChanged: true,
-    })
-  ).toBe(true);
+  // A calendar move whose new time can't apply to a series of several
+  // rules.
   expect(
     noneLeft({ calendarChanged: true, retimed: true, severalRules: true })
   ).toBe(true);
@@ -259,40 +263,25 @@ test("turns This and following off where a new series can't start", () => {
   // The scope dialog then offers the rest, and says why.
   const blocked = { ...none, splitBlocked: "addedOccurrence" as const };
   expect(off(blocked)).toEqual(["following"]);
-  expect(eventSaveDescription(blocked)).toBe(
-    "This and following isn't available for an occurrence added to the series on its own."
-  );
+  expect(eventSaveDescription(blocked)).toBe(addedWhy);
   expect(off({ ...blocked, dateMoved: true })).toEqual(["all", "following"]);
   // A moved day keeps its own sentence, with the reason after it.
   expect(eventSaveDescription({ ...blocked, dateMoved: true })).toBe(
-    "This occurrence is now on another day than its series, so your changes apply to it alone. This and following isn't available for an occurrence added to the series on its own."
+    `This occurrence is now on another day than its series, so your changes apply to it alone. ${addedWhy}`
   );
   // A new repeat can then only go to the entire series.
   expect(eventSaveDescription({ ...blocked, patternChanged: true })).toBe(
-    "This and following isn't available for an occurrence added to the series on its own. A new repeat applies to the entire series."
+    `${addedWhy} A new repeat applies to the entire series.`
   );
   // A new day and a new repeat at once: no scope fits, and it says so,
   // with the reason that applies.
   const stuck = { ...blocked, dateMoved: true, patternChanged: true };
   expect(off(stuck)).toEqual(["all", "following", "this"]);
   expect(eventSaveDescription(stuck)).toBe(
-    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for an occurrence added to the series on its own. Change the times and the repeat in two saves."
+    `This occurrence is now on another day than its series, and a new repeat can't apply to it alone. ${addedWhy} Change the times and the repeat in two saves.`
   );
   expect(eventSaveDescription({ ...stuck, splitBlocked: "severalRules" })).toBe(
-    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for a series with more than one rule. Change the times and the repeat in two saves."
-  );
-  // A meeting the repeat would undo, behind the new day: the new times
-  // go first, and the next save's dialog names the meeting.
-  expect(
-    eventSaveDescription({
-      ...stuck,
-      entireSeriesCost: {
-        day: Temporal.PlainDate.from("2026-12-07"),
-        reason: "lostSlot",
-      },
-    })
-  ).toBe(
-    "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This and following isn't available for an occurrence added to the series on its own. Save the new times on their own first."
+    `This occurrence is now on another day than its series, and a new repeat can't apply to it alone. ${severalWhy} Change the times and the repeat in two saves.`
   );
 });
 
@@ -318,56 +307,20 @@ test("keeps This and following off until the series loads", () => {
   );
 });
 
-test("turns deleting This and following off where the cut is unsure", () => {
-  const zone = "America/New_York";
-  const occurrence = {
-    originalStartTime: {
-      dateTime: "2026-11-10T09:00:00-05:00",
-      timeZone: zone,
-    },
-    recurringEventId: "series",
-    start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
-  };
-  const master = (rule: string) => ({
-    recurrence: [rule, "RDATE;TZID=America/New_York:20261110T090000"],
-    start: { dateTime: "2026-11-02T09:00:00-05:00", timeZone: zone },
-  });
-  // On the hour and half hour, ten times: where it ends can't be told.
-  expect(
-    seriesCutUnsure(
-      occurrence,
-      master("RRULE:FREQ=HOURLY;BYMINUTE=0,30;COUNT=10"),
-      zone
-    )
-  ).toBe(true);
-  // A daily rule's end is known: the delete can cut it there.
-  expect(
-    seriesCutUnsure(occurrence, master("RRULE:FREQ=DAILY;COUNT=3"), zone)
-  ).toBe(false);
-  // Before the series loads, nothing is turned off.
-  expect(seriesCutUnsure(occurrence, null, zone)).toBe(false);
-});
-
 test("keeps deleting This and following off until the series is known", () => {
-  const known = { cutUnsure: false, seriesRuleLoaded: true };
-  expect(eventDeleteScopeState(known)).toEqual({
+  expect(eventDeleteScopeState({ seriesRuleLoaded: true })).toEqual({
     description: "Delete:",
     disabled: {},
   });
-  expect(eventDeleteScopeState({ ...known, seriesRuleLoaded: false })).toEqual({
+  expect(eventDeleteScopeState({ seriesRuleLoaded: false })).toEqual({
     description: "Loading the series… This and following opens once it's in.",
     disabled: { following: true },
   });
   expect(
-    eventDeleteScopeState({
-      ...known,
-      seriesRuleFailed: true,
-      seriesRuleLoaded: false,
-    }).disabled
-  ).toEqual({ following: true });
-  expect(eventDeleteScopeState({ ...known, cutUnsure: true })).toEqual({
+    eventDeleteScopeState({ seriesRuleFailed: true, seriesRuleLoaded: false })
+  ).toEqual({
     description:
-      "This occurrence was added to the series on its own, and Kompose can't tell where the series' repeat ends, so This and following isn't available.",
+      "Couldn't load the series, so This and following isn't available. Try again later.",
     disabled: { following: true },
   });
 });
@@ -424,7 +377,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
     this: true,
   });
   expect(eventSaveDescription(changes)).toBe(
-    "This and following isn't available for an occurrence added to the series on its own. Counted from the series' first meeting, the new repeat would skip this occurrence. Change the repeat from that first meeting."
+    `${addedWhy} Counted from the series' first meeting, the new repeat would skip this occurrence. Change the repeat from that first meeting.`
   );
   expect(
     eventSaveDescription({
@@ -433,7 +386,7 @@ test("a new repeat from an added occurrence that it would skip says where to cha
       splitBlocked: "severalRules",
     })
   ).toBe(
-    "This and following isn't available for a series with more than one rule. Counted from the series' first meeting, the new end comes before this occurrence. Change the repeat from that first meeting."
+    `${severalWhy} Counted from the series' first meeting, the new end comes before this occurrence. Change the repeat from that first meeting.`
   );
 });
 
@@ -475,134 +428,8 @@ test("a new end before this occurrence says so", () => {
   ).toBe(SCOPE_DIALOG_COPY.repeatEndOff);
 });
 
-describe("an Entire series save that would cost a meeting its own changes", () => {
-  const dec7 = Temporal.PlainDate.from("2026-12-07");
-  const lostSlot = { day: dec7, reason: "lostSlot" } as const;
-  const changes = { ...none, entireSeriesCost: lostSlot, patternChanged: true };
-
-  test("turns Entire series off and names the meeting", () => {
-    expect(off(changes)).toEqual(["all", "this"]);
-    expect(eventSaveDescription(changes)).toBe(
-      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. A new repeat applies from this occurrence on."
-    );
-  });
-
-  test("a new start resets it", () => {
-    const retimed = {
-      ...none,
-      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
-      retimed: true,
-    };
-    expect(off(retimed)).toEqual(["all"]);
-    expect(eventSaveDescription(retimed)).toBe(
-      "Changing the time for the entire series would reset your changed Dec 7 meeting."
-    );
-    expect(eventSaveDescription({ ...retimed, calendarChanged: true })).toBe(
-      "Moving to another calendar moves the whole series, but changing its time would reset your changed Dec 7 meeting. Move the calendar and change the time in two saves."
-    );
-  });
-
-  test("a new length would take its own", () => {
-    const longer = {
-      ...none,
-      entireSeriesCost: { day: dec7, reason: "ownLength" } as const,
-    };
-    expect(off(longer)).toEqual(["all"]);
-    expect(eventSaveDescription(longer)).toBe(
-      "Changing the length for the entire series would also change the length you gave the Dec 7 meeting."
-    );
-  });
-
-  test("says it after why This and following is off too", () => {
-    const blocked = { ...changes, splitBlocked: "addedOccurrence" as const };
-    expect(off(blocked)).toEqual(["all", "following", "this"]);
-    expect(eventSaveDescription(blocked)).toBe(
-      "This and following isn't available for an occurrence added to the series on its own. The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. One occurrence can't take a new repeat either. Pick a repeat that keeps the Dec 7 meeting."
-    );
-  });
-
-  test("holds a calendar move, which takes the whole series", () => {
-    const move = { ...changes, calendarChanged: true };
-    expect(off(move)).toEqual(["all", "following", "this"]);
-    expect(eventSaveDescription(move)).toBe(
-      "Moving to another calendar moves the whole series, but the new repeat would undo your changes to the Dec 7 meeting. Move the calendar and change the repeat in two saves."
-    );
-  });
-
-  test("a repeat that skips this occurrence itself says that first", () => {
-    expect(eventSaveDescription({ ...changes, repeatSkips: "day" })).toBe(
-      SCOPE_DIALOG_COPY.repeatOffDay
-    );
-  });
-
-  test("a series meeting several times a day says why a new time can't go first", () => {
-    const several = {
-      ...none,
-      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
-      retimed: true,
-      severalRules: true,
-    };
-    expect(eventSaveDescription(several)).toBe(
-      "This series' meetings keep times of their own, so a new time can't apply to the entire series. A new time applies to this occurrence, or from it on."
-    );
-    // From the first meeting, This and following is off too: the
-    // server's words.
-    expect(eventSaveDescription({ ...several, opensSeries: true })).toBe(
-      "This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too."
-    );
-  });
-
-  test("from the series' first meeting, This and following is it too", () => {
-    // The server saves This and following from there as the whole series,
-    // and refuses it for the same reasons.
-    const first = {
-      ...none,
-      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
-      opensSeries: true,
-      retimed: true,
-    };
-    expect(off(first)).toEqual(["all", "following"]);
-    expect(eventSaveDescription(first)).toBe(
-      "Changing the time for the entire series would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
-    );
-    // With a new repeat too, nothing is on: the time and the repeat take
-    // two saves. Not so for a repeat that itself undoes the meeting.
-    const firstRepeat = { ...first, patternChanged: true };
-    expect(off(firstRepeat)).toEqual(["all", "following", "this"]);
-    expect(eventSaveDescription(firstRepeat)).toBe(
-      "Changing the time for the entire series would reset your changed Dec 7 meeting. One occurrence can't take a new repeat either. From its first meeting, This and following is the entire series too. Save the new times on their own first."
-    );
-    expect(
-      eventSaveDescription({
-        ...firstRepeat,
-        entireSeriesCost: { day: dec7, reason: "lostSlot" },
-        retimed: false,
-      })
-    ).toBe(
-      "The new repeat would undo your changes to the Dec 7 meeting, so it can't apply to the entire series. One occurrence can't take a new repeat either. From its first meeting, This and following is the entire series too. Pick a repeat that keeps the Dec 7 meeting."
-    );
-    // This and following blocked, with a new time and repeat: the time
-    // goes alone first.
-    expect(
-      eventSaveDescription({
-        ...firstRepeat,
-        opensSeries: false,
-        splitBlocked: "addedOccurrence",
-      })
-    ).toBe(
-      "This and following isn't available for an occurrence added to the series on its own. Changing the time for the entire series would reset your changed Dec 7 meeting. One occurrence can't take a new repeat either. Save the new times on their own first."
-    );
-    // Without a new repeat, Only this takes it: no step to add.
-    expect(
-      eventSaveDescription({
-        ...first,
-        opensSeries: false,
-        splitBlocked: "addedOccurrence",
-      })
-    ).toBe(
-      "This and following isn't available for an occurrence added to the series on its own. Changing the time for the entire series would reset your changed Dec 7 meeting."
-    );
-    // A series meeting several times a day, given a new time there.
+describe("from the series' first meeting, where This and following is the whole series", () => {
+  test("a new time for a series meeting several times a day is off for both", () => {
     const several = {
       ...none,
       opensSeries: true,
@@ -610,6 +437,9 @@ describe("an Entire series save that would cost a meeting its own changes", () =
       severalRules: true,
     };
     expect(off(several)).toEqual(["all", "following"]);
+    expect(eventSaveDescription(several)).toBe(
+      "This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too."
+    );
     // With a new repeat too, nothing is on: the times and the repeat take
     // two saves.
     const severalRepeat = { ...several, patternChanged: true };
@@ -617,26 +447,16 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(eventSaveDescription(severalRepeat)).toBe(
       "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. From its first meeting, This and following is the entire series too. Change the times and the repeat in two saves."
     );
-    // A new day for the first meeting moves the whole series: only Entire
-    // series' own rule keeps it off.
+  });
+
+  test("a new day moves the whole series", () => {
+    // Only Entire series' own rule keeps it off.
     expect(off({ ...none, dateMoved: true, opensSeries: true })).toEqual([
       "all",
     ]);
-    // Unless a meeting has changes of its own, which the new start resets.
-    const newDay = { ...first, dateMoved: true };
-    expect(off(newDay)).toEqual(["all", "following"]);
-    expect(eventSaveDescription(newDay)).toBe(
-      "This occurrence is now on another day than its series, so your changes apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too."
-    );
-    // With a new repeat too, which one occurrence can't take: nothing is on.
-    const newDayRepeat = { ...newDay, patternChanged: true };
-    expect(off(newDayRepeat)).toEqual(["all", "following", "this"]);
-    expect(eventSaveDescription(newDayRepeat)).toBe(
-      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. Moving the series to this day would reset your changed Dec 7 meeting. From its first meeting, This and following is the entire series too. Save the new times on their own first."
-    );
   });
 
-  test("from the series' first meeting, a new day and time for a series meeting several times a day", () => {
+  test("a new day and time for a series meeting several times a day", () => {
     const twice = {
       ...none,
       dateMoved: true,
@@ -658,60 +478,27 @@ describe("an Entire series save that would cost a meeting its own changes", () =
     expect(eventSaveDescription(andRepeat)).toBe(
       "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too. Change the times and the repeat in two saves."
     );
-    // A meeting changed on its own: the repeat alone may cost it too, so
-    // the times go first, with or without a new day.
-    const changed = {
-      ...andRepeat,
-      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
-    };
-    expect(eventSaveDescription(changed)).toBe(
-      "This occurrence is now on another day than its series, and a new repeat can't apply to it alone. This series' meetings keep times of their own, so a new time can't apply to the entire series. From its first meeting, This and following is the entire series too. Save the new times on their own first."
-    );
-    expect(eventSaveDescription({ ...changed, dateMoved: false })).toBe(
-      "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. From its first meeting, This and following is the entire series too. Save the new times on their own first."
-    );
     // A new day alone keeps every meeting's time: only Entire series is off.
     expect(off({ ...twice, movesSeveralADay: false })).toEqual(["all"]);
-  });
-
-  test("a series meeting several times a day takes a new form or length, not a new time", () => {
-    const several = { ...none, retimed: true, severalRules: true };
-    // All day, or a new length: the server keeps every meeting's time.
-    expect(off({ ...several, movesSeveralADay: false })).toEqual([]);
-    expect(off({ ...several, movesSeveralADay: true })).toEqual(["all"]);
-    // Callers that don't say yet: any new start is taken as a new time.
-    expect(off(several)).toEqual(["all"]);
-  });
-
-  test("with a new repeat, says it goes from this occurrence on", () => {
-    // A later occurrence: This and following is the one scope left.
-    const repeat = { ...none, patternChanged: true, retimed: true };
-    const newStart = {
-      ...repeat,
-      entireSeriesCost: { day: dec7, reason: "newStart" } as const,
-    };
-    expect(off(newStart)).toEqual(["all", "this"]);
-    expect(eventSaveDescription(newStart)).toBe(
-      "Changing the time for the entire series would reset your changed Dec 7 meeting. A new repeat applies from this occurrence on."
-    );
-  });
-
-  test("still reads the field it replaces, droppedMovedDay", () => {
-    expect(
-      off({ ...none, droppedMovedDay: dec7, patternChanged: true })
-    ).toEqual(["all", "this"]);
-    expect(off({ ...none, droppedMovedDay: dec7 })).toEqual([]);
   });
 });
 
 describe("a new time for a series of several rules", () => {
   const changes = { ...none, retimed: true, severalRules: true };
 
+  test("is a new time of day, not a new form or length", () => {
+    // All day, or a new length: the server keeps every meeting's time.
+    expect(off({ ...changes, movesSeveralADay: false })).toEqual([]);
+    expect(off({ ...changes, movesSeveralADay: true })).toEqual(["all"]);
+    // Callers that don't say yet: any new start is taken as a new time.
+    expect(off(changes)).toEqual(["all"]);
+  });
+
   test("applies to this occurrence only, and says why", () => {
     const occurrence = { ...changes, splitBlocked: "severalRules" as const };
     expect(off(occurrence)).toEqual(["all", "following"]);
     expect(eventSaveDescription(occurrence)).toBe(
-      "This and following isn't available for a series with more than one rule. This series' meetings keep times of their own, so a new time can't apply to the entire series. A new time applies to this occurrence only."
+      `${severalWhy} This series' meetings keep times of their own, so a new time can't apply to the entire series. A new time applies to this occurrence only.`
     );
     // No split block (one rule at another hour than the start's):
     // This and following takes the new time.
@@ -738,7 +525,7 @@ describe("a new time for a series of several rules", () => {
     };
     expect(off(both)).toEqual(["all", "following", "this"]);
     expect(eventSaveDescription(both)).toBe(
-      "This and following isn't available for a series with more than one rule. This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. Change the times and the repeat in two saves."
+      `${severalWhy} This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence. Change the times and the repeat in two saves.`
     );
   });
 
@@ -789,8 +576,8 @@ describe("the server's refusal of a series write", () => {
   } as const;
 
   test("is read from the error's typed data, by its reason", () => {
-    expect(seriesRefusalOf(refused({ reason: "addedBeforeStart" }))).toEqual({
-      reason: "addedBeforeStart",
+    expect(seriesRefusalOf(refused({ reason: "otherAppRepeat" }))).toEqual({
+      reason: "otherAppRepeat",
     });
     expect(
       seriesRefusalOf(
@@ -850,29 +637,30 @@ describe("the server's refusal of a series write", () => {
   test("says why without the server's advice on where else to save", () => {
     // The dialog says that from the scopes still on.
     expect(refusalReason(drops)).toBe(
-      "This would undo changes made to single occurrences (Dec 7, Dec 8), so it wasn't saved."
+      "This would undo what was changed or deleted on single occurrences (Dec 7, Dec 8), so it wasn't saved."
     );
     expect(
       refusalReason({ ...drops, reason: "resizesChangedOccurrences" })
     ).toBe(
       "This would also change the length of single occurrences given a length of their own (Dec 7, Dec 8), so it wasn't saved."
     );
-    expect(refusalReason({ reason: "addedBeforeStart" })).toBe(
-      "This and following isn't available from this series' first meeting, since meetings were added before it."
+    expect(refusalReason({ reason: "countUnknown" })).toBe(
+      "This and following isn't available for this series: a clock change skips its time on an earlier day that also has a skipped or added occurrence, so how many times it has left to repeat can't be worked out."
+    );
+    expect(refusalReason({ reason: "otherAppRepeat" })).toBe(
+      "This series repeats in a way made in another app (meetings added outside its repeat, or a set hour in its rule), so this change to its time, all-day setting or repeat can't be saved here without bringing back or cancelling a meeting."
     );
     expect(refusalReason({ reason: "endsBeforeStart" })).toBe(
       "The repeat ends before this occurrence, so it can't start a new series here."
     );
     expect(refusalReason({ reason: "severalTimesADay" })).toBe(
-      "This series' meetings keep times of their own, so its time can't be changed for the entire series."
+      "This series meets at several set times each day, so one new time can't replace them for the entire series."
     );
   });
 
   test("keeps the server's words whole where they give no advice", () => {
     const reasons = [
       { reason: "addedOccurrence" },
-      { reason: "countUnknown" },
-      { reason: "deleteFromAddedOccurrence" },
       { reason: "severalRules" },
     ] as const;
     for (const refusal of reasons) {
@@ -896,13 +684,6 @@ describe("the server's refusal of a series write", () => {
     expect(eventSaveDescription(following)).toBe(
       `${refusalReason(drops)} From its first meeting, This and following is the entire series too. Apply your changes to:`
     );
-    // Not meetings added before the first one: only This and following.
-    expect(
-      off({
-        ...first,
-        refused: refuseSave(null, "following", { reason: "addedBeforeStart" }),
-      })
-    ).toEqual(["following"]);
   });
 
   test("says where the save can still go, from the scopes left", () => {
@@ -957,23 +738,26 @@ describe("the server's refusal of a series write", () => {
       ).toEndWith(SCOPE_DIALOG_COPY.keepRefusedMeetings);
     }
     // The same block found again after the refusal is said once.
+    const several = { reason: "severalRules" } as const;
     expect(
       eventSaveDescription({
         ...none,
-        refused: following,
-        splitBlocked: "countUnknown",
+        refused: refuseSave(null, "following", several),
+        splitBlocked: "severalRules",
       })
-    ).toBe(`${unknown} ${SCOPE_DIALOG_COPY.saveEvent.description}`);
+    ).toBe(
+      `${refusalReason(several)} ${SCOPE_DIALOG_COPY.saveEvent.description}`
+    );
     // A blocked split and a refused Entire series: Only this, said plainly.
     expect(
       eventSaveDescription({
         ...none,
         refused: refuseSave(null, "all", { reason: "severalTimesADay" }),
         retimed: true,
-        splitBlocked: "addedBeforeStart",
+        splitBlocked: "addedOccurrence",
       })
     ).toBe(
-      `${refusalReason({ reason: "severalTimesADay" })} ${refusalReason({ reason: "addedBeforeStart" })}`
+      `${refusalReason({ reason: "severalTimesADay" })} ${refusalReason({ reason: "addedOccurrence" })}`
     );
     // A calendar move refused: the move goes on its own.
     const resizes = { ...drops, reason: "resizesChangedOccurrences" } as const;
@@ -986,20 +770,6 @@ describe("the server's refusal of a series write", () => {
     expect(eventSaveDescription(move)).toBe(
       `${refusalReason(resizes)} Moving to another calendar moves the whole series, so move it in a save of its own first.`
     );
-  });
-
-  test("a refused delete keeps This and following off, saying why", () => {
-    const refusal = { reason: "deleteFromAddedOccurrence" } as const;
-    expect(
-      eventDeleteScopeState({
-        cutUnsure: false,
-        refused: refuseSave(null, "following", refusal),
-        seriesRuleLoaded: true,
-      })
-    ).toEqual({
-      description: `${refusalReason(refusal)} Delete:`,
-      disabled: { following: true },
-    });
   });
 
   test("while the series loads, promises only the scopes the server didn't refuse", () => {
@@ -1091,15 +861,82 @@ describe("the server's refusal of a series write", () => {
         `${refusalReason(drops)} Moving to another calendar moves the whole series, so move it in a save of its own first.`
       );
     }
-    // A delete.
-    const refusal = { reason: "deleteFromAddedOccurrence" } as const;
+  });
+
+  test("gives a save dialog its scopes and line from one place, refusals included", () => {
+    // Refused This and following for a new repeat: the line says where
+    // the repeat can still go, and never offers what was refused.
+    const unknown = { reason: "countUnknown" } as const;
+    const state = eventSaveScopeState({
+      ...none,
+      patternChanged: true,
+      refused: refuseSave(null, "following", unknown),
+    });
+    expect(state.disabled).toEqual({ following: true, this: true });
+    expect(state.description).toBe(
+      `${refusalReason(unknown)} A new repeat applies to the entire series.`
+    );
+    // An app's own record of refusals (a message and the scopes) does too.
+    const own = eventSaveScopeState({
+      ...none,
+      patternChanged: true,
+      refused: { message: refusalReason(unknown), scopes: { following: true } },
+    });
+    expect(own).toEqual(state);
+    // From the first meeting, a refused This and following is Entire
+    // series too, from an app's own record as from refuseSave's.
+    const first = { ...none, opensSeries: true, patternChanged: true };
+    const typed = eventSaveScopeState({
+      ...first,
+      refused: refuseSave(null, "following", drops),
+    });
+    const record = eventSaveScopeState({
+      ...first,
+      refused: { message: refusalReason(drops), scopes: { following: true } },
+    });
+    expect(record.disabled).toEqual(typed.disabled);
+    expect(record.disabled).toEqual({ all: true, following: true, this: true });
+    // Still after a refusal of its own is added to that record.
     expect(
-      eventDeleteScopeState({
-        cutUnsure: false,
-        refused: refuseSave(null, "following", refusal),
-        seriesRuleLoaded: false,
-      }).description
-    ).toBe(`${refusalReason(refusal)} Delete:`);
+      eventSaveScopeState({
+        ...first,
+        refused: refuseSave(
+          { message: refusalReason(drops), scopes: { following: true } },
+          "this",
+          { reason: "severalRules" }
+        ),
+      }).disabled.all
+    ).toBe(true);
+    // Later refusals keep an app's own record's reason, through more
+    // than one.
+    const ownRecord = {
+      message: "Own reason.",
+      scopes: { all: true as const },
+    };
+    expect(refuseSave(ownRecord, "following", unknown).message).toBe(
+      `${refusalReason(unknown)} Own reason.`
+    );
+    const otherApp = { reason: "otherAppRepeat" } as const;
+    expect(
+      refuseSave(refuseSave(ownRecord, "following", unknown), "this", otherApp)
+        .message
+    ).toBe(`${refusalReason(otherApp)} ${refusalReason(unknown)} Own reason.`);
+  });
+
+  test("says when the refusals leave no scope at all", () => {
+    // Even Only this refused: nothing the dialog offers can save it.
+    const state = eventSaveScopeState({
+      ...none,
+      refused: refuseSave(
+        refuseSave(refuseSave(null, "all", drops), "following", {
+          reason: "countUnknown",
+        }),
+        "this",
+        { reason: "severalRules" }
+      ),
+    });
+    expect(state.disabled).toEqual({ all: true, following: true, this: true });
+    expect(state.description).toEndWith(SCOPE_DIALOG_COPY.noScopeLeft);
   });
 
   test("keeps every scope refused for the save off, with each reason, latest first", () => {
@@ -1110,90 +947,62 @@ describe("the server's refusal of a series write", () => {
     expect(eventSaveDescription(changes)).toStartWith(
       `${refusalReason({ reason: "countUnknown" })} ${refusalReason(drops)}`
     );
+    // A reason given again moves to the front, said once, from the end of
+    // the message or from its middle.
+    expect(refuseSave(both, "this", drops).message).toBe(
+      `${refusalReason(drops)} ${refusalReason({ reason: "countUnknown" })}`
+    );
+    const unknown = { reason: "countUnknown" } as const;
+    const several = { reason: "severalRules" } as const;
+    const three = refuseSave(
+      refuseSave(refuseSave(null, "following", several), "following", unknown),
+      "all",
+      drops
+    );
+    expect(refuseSave(three, "following", unknown).message).toBe(
+      `${refusalReason(unknown)} ${refusalReason(drops)} ${refusalReason(several)}`
+    );
   });
 });
 
-describe("This and following, turned off before the server would refuse it", () => {
+describe("This and following from the series' first meeting", () => {
   const zone = "America/New_York";
   const at = (dateTime: string) => ({ dateTime, timeZone: zone });
-  const occurrence = (dateTime: string) => ({
-    originalStartTime: at(dateTime),
+  const first = {
+    originalStartTime: at("2026-11-09T09:00:00-05:00"),
     recurringEventId: "series",
-    start: at(dateTime),
+    start: at("2026-11-09T09:00:00-05:00"),
+  };
+  const twoRules = ["RRULE:FREQ=WEEKLY;BYDAY=MO", "RRULE:FREQ=WEEKLY;BYDAY=WE"];
+  const addedBefore = "RDATE;TZID=America/New_York:20261102T090000";
+  const master = (recurrence: string[]) => ({
+    recurrence,
+    start: at("2026-11-09T09:00:00-05:00"),
   });
 
-  test("from the series' first meeting, with meetings added before it", () => {
-    const master = {
-      recurrence: [
-        "RRULE:FREQ=WEEKLY;BYDAY=MO",
-        "RDATE;TZID=America/New_York:20261102T090000",
-      ],
-      start: at("2026-11-09T09:00:00-05:00"),
-    };
-    expect(
-      seriesSplitBlock(occurrence("2026-11-09T09:00:00-05:00"), master, zone)
-    ).toBe("addedBeforeStart");
-    // From the first meeting This and following is the whole series: a
-    // second rule doesn't block it there.
-    expect(
-      seriesSplitBlock(
-        occurrence("2026-11-09T09:00:00-05:00"),
-        {
-          ...master,
-          recurrence: [
-            "RRULE:FREQ=WEEKLY;BYDAY=MO",
-            "RRULE:FREQ=WEEKLY;BYDAY=WE",
-          ],
-        },
-        zone
-      )
-    ).toBeNull();
-    expect(
-      eventSaveDescription({ ...none, splitBlocked: "addedBeforeStart" })
-    ).toBe(refusalReason({ reason: "addedBeforeStart" }));
+  test("is the whole series: a second rule doesn't block it", () => {
+    expect(opensSeries(first, master(twoRules), zone)).toBe(true);
+    expect(seriesSplitBlock(first, master(twoRules), zone)).toBeNull();
   });
 
-  test("where the series' COUNT left can't be worked out", () => {
-    // Five times by a rule the app can't walk (BYWEEKNO), with an added
-    // day: Google's own list can't tell the added meeting apart either.
-    const master = {
-      recurrence: [
-        "RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48;BYDAY=MO;COUNT=5",
-        "RDATE;TZID=America/New_York:20261111T090000",
-      ],
-      start: at("2026-11-09T09:00:00-05:00"),
+  test("splits there when meetings were added before it", () => {
+    const weekly = master(["RRULE:FREQ=WEEKLY;BYDAY=MO", addedBefore]);
+    expect(opensSeries(first, weekly, zone)).toBe(false);
+    expect(seriesSplitBlock(first, weekly, zone)).toBeNull();
+    // A split is blocked there as anywhere.
+    expect(
+      seriesSplitBlock(first, master([...twoRules, addedBefore]), zone)
+    ).toBe("severalRules");
+  });
+
+  test("isn't a later meeting's, or known before the series loads", () => {
+    const later = {
+      ...first,
+      originalStartTime: at("2026-11-16T09:00:00-05:00"),
+      start: at("2026-11-16T09:00:00-05:00"),
     };
-    const later = occurrence("2026-11-16T09:00:00-05:00");
-    expect(seriesSplitBlock(later, master, zone)).toBe("countUnknown");
-    // A new COUNT isn't carried: nothing to work out.
-    expect(
-      seriesSplitBlock(later, master, zone, [
-        "RRULE:FREQ=YEARLY;BYWEEKNO=46,47,48;BYDAY=MO;COUNT=2",
-      ])
-    ).toBeNull();
-    // Without an added day the server counts from Google's own list.
-    expect(
-      seriesSplitBlock(
-        later,
-        { ...master, recurrence: [master.recurrence[0] ?? ""] },
-        zone
-      )
-    ).toBeNull();
-    // Nor with a skip before the split: whether it was a meeting is in
-    // Google's list, which only the server reads.
-    expect(
-      seriesSplitBlock(
-        later,
-        {
-          ...master,
-          recurrence: [
-            master.recurrence[0] ?? "",
-            "EXDATE;TZID=America/New_York:20261109T090000",
-          ],
-        },
-        zone
-      )
-    ).toBeNull();
+    expect(opensSeries(later, master(["RRULE:FREQ=WEEKLY"]), zone)).toBe(false);
+    expect(opensSeries(first, null, zone)).toBe(false);
   });
 });
 
@@ -1206,8 +1015,8 @@ test("a series start without an offset is read in its own zone", () => {
     seriesMeetsSeveralTimesADay({ recurrence, start }, "America/New_York");
   expect(several(["RRULE:FREQ=WEEKLY"])).toBe(false);
   expect(several(["RRULE:FREQ=WEEKLY;BYHOUR=15"])).toBe(true);
-  // A COUNT the app can walk, with an added day, carries on as with an
-  // offset: the split and the series' start are read as the server does.
+  // With an added day, the split and the series' start are read as the
+  // server does, as with an offset.
   const local = (dateTime: string) => ({
     dateTime,
     timeZone: "America/New_York",

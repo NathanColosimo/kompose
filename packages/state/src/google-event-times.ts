@@ -1,5 +1,4 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { keepsTimes, sameTime } from "@kompose/google-cal/series-edits";
 
 /** A Google event's start or end, as it sends them. */
 export type EventTime = GoogleEvent["start"];
@@ -29,10 +28,3 @@ export function withEditedTime(
   const { date: _date, dateTime: _dateTime, ...rest } = source ?? NO_TIME;
   return { ...rest, ...edited };
 }
-
-/**
- * The server's `keepsTimes` and `sameTime` under the names the app layers
- * import; they move to `@kompose/google-cal/series-edits`, then these go.
- */
-export const keepsEventTimes = keepsTimes;
-export const sameEventTime = sameTime;

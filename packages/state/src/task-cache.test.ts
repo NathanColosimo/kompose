@@ -3,6 +3,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
 import { mergeSavedTasks } from "./task-cache";
 
+// Only the fields the merge reads; the rest don't affect it.
 const row = (
   id: string,
   date: string,
@@ -18,7 +19,7 @@ const row = (
     ...extra,
   }) as TaskSelectDecoded;
 
-const ids = (tasks: TaskSelectDecoded[]) =>
+const idStatuses = (tasks: TaskSelectDecoded[]) =>
   tasks.map((task) => `${task.id}:${task.status}`);
 
 describe("mergeSavedTasks", () => {
@@ -33,7 +34,7 @@ describe("mergeSavedTasks", () => {
   test("replaces a this-occurrence save in place", () => {
     const saved = [row("nov9", "2026-11-09", { status: "done" })];
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(cached, saved, { id: "nov9", scope: "this", task: {} })
       )
     ).toEqual([
@@ -53,7 +54,7 @@ describe("mergeSavedTasks", () => {
     ];
     // Nov 16 was replaced; Nov 23 is an exception and stays; Nov 2 is before.
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(cached, saved, {
           id: "nov9",
           scope: "following",
@@ -78,7 +79,7 @@ describe("mergeSavedTasks", () => {
       row("new16", "2026-11-16", { seriesMasterId: "new" }),
     ];
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(cached, saved, {
           id: "nov16",
           scope: "following",
@@ -116,7 +117,7 @@ describe("mergeSavedTasks", () => {
     ];
     const saved = [row("nov11", "2026-11-08", { seriesMasterId: "nov9" })];
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(series, saved, {
           id: "nov11",
           scope: "following",
@@ -147,7 +148,7 @@ describe("mergeSavedTasks", () => {
       row("new9", "2026-11-09", { seriesMasterId: "new8" }),
     ];
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(series, saved, {
           id: "nov11",
           scope: "following",
@@ -160,12 +161,46 @@ describe("mergeSavedTasks", () => {
     ).toEqual(["new8:todo", "new9:todo"]);
   });
 
+  test("drops the occurrences a Repeat: None save removed", () => {
+    // Weekly from Nov 2; Nov 9 "Repeat: None", "following": the server ends
+    // the series at Nov 2, deletes Nov 16, and leaves Nov 9 and the Nov 23
+    // exception standalone.
+    const weekly = {
+      byDay: ["MO" as const],
+      freq: "WEEKLY" as const,
+      interval: 1,
+    };
+    const series = [
+      row("nov2", "2026-11-02", { recurrence: weekly, seriesMasterId: "nov2" }),
+      row("nov9", "2026-11-09", { seriesMasterId: "nov2" }),
+      row("nov16", "2026-11-16", { seriesMasterId: "nov2" }),
+      row("nov23", "2026-11-23", { isException: true, seriesMasterId: "nov2" }),
+    ];
+    const saved = [
+      row("nov2", "2026-11-02", {
+        recurrence: { ...weekly, until: "2026-11-02" },
+        seriesMasterId: "nov2",
+      }),
+      row("nov9", "2026-11-09", { seriesMasterId: null }),
+      row("nov23", "2026-11-23", { seriesMasterId: null }),
+    ];
+    expect(
+      idStatuses(
+        mergeSavedTasks(series, saved, {
+          id: "nov9",
+          scope: "following",
+          task: { recurrence: null },
+        })
+      )
+    ).toEqual(["nov2:todo", "nov9:todo", "nov23:todo"]);
+  });
+
   test("keeps later occurrences when the save moves one to the inbox", () => {
     // Nov 9 moved to the inbox, "following", no pattern change: the server
     // edits it alone and returns only it.
     const saved = [row("nov9", "2026-11-09", { startDate: null })];
     expect(
-      ids(
+      idStatuses(
         mergeSavedTasks(cached, saved, {
           id: "nov9",
           scope: "following",
