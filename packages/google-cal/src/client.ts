@@ -2428,9 +2428,13 @@ export function makeGoogleCalendarService(
         addsSlot(master.recurrence ?? [], slot, zone);
       const split = slotMoment(originalStart, zone);
       // A skip the series had moves with its meeting; one it didn't was
-      // lined up by the client and stays as written.
+      // lined up by the client, and one where nothing met has no meeting
+      // to follow: both stay as written.
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
+      );
+      const unskipped = (master.recurrence ?? []).filter(
+        (line) => !line.startsWith("EXDATE")
       );
       const ownSkip = (value: RecurrenceValue) => {
         const slot = slotString(value.instant ?? value.day, zone);
@@ -2438,7 +2442,13 @@ export function makeGoogleCalendarService(
         return (
           had.has(skipKey(value)) &&
           !isAdded(slot) &&
-          Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
+          Boolean(split && at && Temporal.Instant.compare(at, split) > 0) &&
+          seriesMeetsAt({
+            recurrence: unskipped,
+            seriesZone: zone,
+            slot,
+            start: master.start,
+          }) === true
         );
       };
       const ownSkips = dateValues(fromSplit, "EXDATE", zone)
