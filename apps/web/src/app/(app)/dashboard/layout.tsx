@@ -1,11 +1,12 @@
 "use client";
 
+import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
 import { tagsQueryAtom } from "@kompose/state/atoms/tags";
 import { tasksQueryAtom } from "@kompose/state/atoms/tasks";
 import { useRealtimeSync } from "@kompose/state/hooks/use-realtime-sync";
 import { deserializeCommandBarTaskOpenRequest } from "@kompose/state/task-search-routing";
 import { useAtom, useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect } from "react";
 import { AppHeader } from "@/components/app-header";
 import { SessionFeedback } from "@/components/auth/session-feedback";
@@ -20,11 +21,14 @@ import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { usePreloadTaskParserAfterData } from "@/lib/use-magic-task";
+import { createEventRequestedAtom } from "@/state/calendar-navigation";
 import { applyCommandBarTaskOpenRequestAtom } from "@/state/command-bar";
 import {
   dashboardResponsiveLayoutAtom,
   dashboardViewportWidthAtom,
+  isNarrowViewportAtom,
   SIDEBAR_LEFT_WIDTH,
+  sidebarLeftNarrowOpenAtom,
   sidebarRightOpenAtom,
   sidebarRightOverlayOpenAtom,
 } from "@/state/sidebar";
@@ -101,6 +105,41 @@ export default function DashboardLayout({
     viewportWidth,
   ]);
 
+  // Below the md breakpoint the task panel would leave the calendar about
+  // one cramped day, so it folds each time the window narrows. The saved
+  // choice is untouched; see sidebarLeftOpenAtom.
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
+  const [narrowOpen, setNarrowOpen] = useAtom(sidebarLeftNarrowOpenAtom);
+  // There the open task panel is the whole view, a list; the calendar
+  // behind it is clipped and inert, so it neither widens the page nor takes
+  // Tab, and keeps its place for when the list closes.
+  const showsTaskList = isNarrow && narrowOpen;
+  // The calendar or page takes over from that list whenever it's asked for:
+  // on leaving the calendar (Settings shows), and on a request to create an
+  // event or open a task on the calendar, since their popovers anchor in it.
+  // Those requests come from the command bar, the "c" key and the desktop
+  // app. Arriving at the calendar keeps the list, which a request for an
+  // Inbox task may just have opened.
+  const pathname = usePathname();
+  const createEventRequestedAt = useAtomValue(createEventRequestedAtom);
+  const calendarTaskRequested =
+    useAtomValue(commandBarTaskOpenRequestAtom)?.target === "calendar";
+  useEffect(() => {
+    if (pathname !== "/dashboard") {
+      setNarrowOpen(false);
+    }
+  }, [pathname, setNarrowOpen]);
+  useEffect(() => {
+    if (createEventRequestedAt !== null || calendarTaskRequested) {
+      setNarrowOpen(false);
+    }
+  }, [calendarTaskRequested, createEventRequestedAt, setNarrowOpen]);
+  useEffect(() => {
+    if (isNarrow) {
+      setNarrowOpen(false);
+    }
+  }, [isNarrow, setNarrowOpen]);
+
   // When dock mode becomes available again, close overlay-only right sidebar.
   useEffect(() => {
     if (!responsiveLayout.canDockRightSidebar) {
@@ -155,8 +194,11 @@ export default function DashboardLayout({
         className="min-h-0 flex-1"
         style={
           {
-            // Keep a stable left-sidebar width while the calendar region clamps itself.
-            "--sidebar-width": SIDEBAR_LEFT_WIDTH,
+            // Keep a stable left-sidebar width while the calendar region
+            // clamps itself. In a narrow window there's no room for both,
+            // so the open task panel takes the whole width (a list), and
+            // its rail icon goes back to the calendar.
+            "--sidebar-width": isNarrow ? "100vw" : SIDEBAR_LEFT_WIDTH,
           } as React.CSSProperties
         }
       >
@@ -166,7 +208,12 @@ export default function DashboardLayout({
           <CommandBar />
           <TaskParserPreload />
           <SidebarLeft />
-          <SidebarInset>{children}</SidebarInset>
+          <SidebarInset
+            className={showsTaskList ? "min-w-0 overflow-hidden" : "min-w-0"}
+            inert={showsTaskList}
+          >
+            {children}
+          </SidebarInset>
           <SidebarRight />
         </CalendarDndProvider>
       </SidebarProvider>

@@ -14,6 +14,7 @@ import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
+import { ownPresses } from "../dnd/helpers";
 import { taskItemKey, useIsItemMoving } from "../dnd/moving-item";
 import {
   BLOCK_RAISE_CLASS,
@@ -170,7 +171,7 @@ export const TaskEvent = memo(function TaskEventInner({
         taskStart,
         taskStart.add({ minutes: task.durationMinutes })
       )}`}
-      {...listeners}
+      {...ownPresses(listeners)}
     >
       <div
         className={cn(

@@ -1,8 +1,35 @@
+import type { DraggableSyntheticListeners } from "@dnd-kit/core";
+import type { SyntheticEvent } from "react";
 import { Temporal } from "temporal-polyfill";
 import { clampZonedDateTime, getDayBoundsZoned } from "@/lib/temporal-utils";
 import type { DragDirection } from "./types";
 
 export const MINUTES_STEP = 15;
+
+/**
+ * A draggable's listeners, for presses that start on the element itself.
+ * React bubbles a portal's events to its React parents, so a press inside
+ * an editor opened from the element, or on the page shield under a saving
+ * one, would otherwise start dragging it.
+ */
+export function ownPresses(
+  listeners: DraggableSyntheticListeners
+): DraggableSyntheticListeners {
+  if (!listeners) {
+    return listeners;
+  }
+  return Object.fromEntries(
+    Object.entries(listeners).map(([name, handler]) => [
+      name,
+      (event: SyntheticEvent) => {
+        // A press's target is always a node; the event type says less.
+        if (event.currentTarget.contains(event.target as Node)) {
+          handler(event);
+        }
+      },
+    ])
+  );
+}
 
 /** The day holding the edge being dragged; an end at midnight belongs to the day before. */
 export function edgeDay(

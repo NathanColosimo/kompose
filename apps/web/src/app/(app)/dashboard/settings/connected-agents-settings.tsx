@@ -2,16 +2,15 @@
 
 import { clientEnv } from "@kompose/env/client";
 import { useConnectedAgents } from "@kompose/state/hooks/use-connected-agents";
+import { Copy } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  SettingsEmpty,
+  SettingsRow,
+  SettingsRowSkeleton,
+  SettingsSection,
+} from "./settings-section";
 
 const MCP_URL = `${clientEnv.NEXT_PUBLIC_WEB_URL}/api/mcp`;
 
@@ -22,7 +21,7 @@ export function ConnectedAgentsSettings() {
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(MCP_URL);
-    toast.success("MCP server URL copied.");
+    toast.success("MCP URL copied.");
   };
 
   const revoke = (clientId: string, name: string) =>
@@ -32,65 +31,48 @@ export function ConnectedAgentsSettings() {
     });
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle>AI Agents</CardTitle>
-            <CardDescription>
-              Let ChatGPT, Claude, and other MCP apps manage your tasks. Add{" "}
-              <code className="break-all">{MCP_URL}</code> as a custom connector
-              in the app.
-            </CardDescription>
-          </div>
-          <Button onClick={copyUrl} type="button" variant="outline">
-            Copy URL
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {agentsQuery.isLoading ? (
-          <p className="text-muted-foreground text-sm">Loading agents…</p>
-        ) : null}
-        {agentsQuery.isSuccess && agents.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No agents connected yet.
-          </p>
-        ) : null}
-        {agents.map((agent) => (
-          <div className="rounded-lg border p-3" key={agent.clientId}>
-            <div className="flex items-center gap-3">
-              <Avatar className="size-10">
-                {agent.icon ? (
-                  <AvatarImage alt={agent.name} src={agent.icon} />
-                ) : null}
-                <AvatarFallback>
-                  {agent.name.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0">
-                <p className="truncate font-medium text-sm">{agent.name}</p>
-                <p className="truncate text-muted-foreground text-xs">
-                  Connected {new Date(agent.connectedAt).toLocaleDateString()}
-                </p>
-              </div>
-              <Button
-                className="ml-auto"
-                disabled={revokeAgent.isPending}
-                onClick={() => revoke(agent.clientId, agent.name)}
-                size="sm"
-                type="button"
-                variant="destructive"
-              >
-                {revokeAgent.isPending &&
-                revokeAgent.variables === agent.clientId
-                  ? "Removing..."
-                  : "Remove"}
-              </Button>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
+    <SettingsSection
+      description="Let ChatGPT, Claude, and other MCP apps manage your tasks. Add this URL as a custom connector in the app."
+      title="AI agents"
+    >
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        {/* Wraps rather than truncates: the /api/mcp end is what tells it
+            apart from the site's own URL. */}
+        <code className="min-w-0 flex-1 break-all font-mono text-xs">
+          {MCP_URL}
+        </code>
+        <Button onClick={copyUrl} size="sm" type="button" variant="outline">
+          <Copy />
+          Copy
+        </Button>
+      </div>
+      {agentsQuery.isLoading ? <SettingsRowSkeleton /> : null}
+      {agentsQuery.isSuccess && agents.length === 0 ? (
+        <SettingsEmpty>No apps connected yet.</SettingsEmpty>
+      ) : null}
+      {agents.map((agent) => (
+        <SettingsRow
+          action={
+            <Button
+              className="hover:bg-destructive/10 hover:text-destructive"
+              disabled={revokeAgent.isPending}
+              onClick={() => revoke(agent.clientId, agent.name)}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {revokeAgent.isPending && revokeAgent.variables === agent.clientId
+                ? "Removing…"
+                : "Remove"}
+              <span className="sr-only"> {agent.name}</span>
+            </Button>
+          }
+          detail={`Connected ${new Date(agent.connectedAt).toLocaleDateString()}`}
+          image={agent.icon}
+          key={agent.clientId}
+          name={agent.name}
+        />
+      ))}
+    </SettingsSection>
   );
 }
