@@ -8,9 +8,7 @@ import { buildGoogleMoveUpdate } from "./drop-handlers";
 const zoned = (iso: string) => Temporal.ZonedDateTime.from(iso);
 
 describe("buildGoogleMoveUpdate", () => {
-  test("writes an occurrence in its series' zone, not its own", () => {
-    // A Tokyo series' Tuesday 9:00 meeting, rescheduled from New York, so
-    // its own start carries New York's zone; its slot is still Tokyo's.
+  test("preserves duration and writes the event's time zone", () => {
     const occurrence: GoogleEvent = {
       end: {
         dateTime: "2026-11-10T20:30:00-05:00",
@@ -39,7 +37,8 @@ describe("buildGoogleMoveUpdate", () => {
       },
       start.add({ days: 1 })
     );
-    expect(update.event.start.timeZone).toBe("Asia/Tokyo");
-    expect(update.event.start.dateTime).toBe("2026-11-12T09:30:00+09:00");
+    expect(update.event.end.dateTime).toBe("2026-11-11T20:30:00-05:00");
+    expect(update.event.start.timeZone).toBe("America/New_York");
+    expect(update.event.start.dateTime).toBe("2026-11-11T19:30:00-05:00");
   });
 });

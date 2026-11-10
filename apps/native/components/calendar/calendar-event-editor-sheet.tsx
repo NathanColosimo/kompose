@@ -1,10 +1,5 @@
 import type { LocationSuggestion } from "@kompose/api/routers/maps/contract";
-import {
-  canWriteCalendar,
-  type Event as GoogleEvent,
-  getGoogleEventEditBlockReason,
-} from "@kompose/google-cal/schema";
-import { untilRuleForDay, untilRuleToDay } from "@kompose/google-cal/until";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -15,21 +10,22 @@ import {
   monthlyDayOptions,
 } from "@kompose/state/event-recurrence-words";
 import {
+  calendarEventEditBlockReason,
+  canWriteCalendar,
+} from "@kompose/state/google-event-editability";
+import {
   buildGoogleEventRecurrenceRule,
-  dayInZone,
   type EventRecurrenceFrequency,
   type EventRecurrencePattern,
   eventTimeZone,
-  followStart,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
-  repeatEndsBeforeStart,
+  recurrenceEndDay,
+  recurrenceUntilValue,
   setPrimaryRecurrenceRule,
-  timeInZone,
-  timeZoneCity,
   untilDefaultDay,
   weekdayCodeOf,
   weekOrdered,
@@ -41,7 +37,6 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
-import { seriesRepeatForEdit } from "@kompose/state/series-edit";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -185,7 +180,6 @@ function RecurrenceRow({
   isExpanded,
   onToggle,
   recurrence,
-  zoneCity,
   ...editor
 }: React.ComponentProps<typeof RecurrenceEditorSection> & {
   /** The occurrence's pattern is still loading. */
@@ -198,8 +192,6 @@ function RecurrenceRow({
   isExpanded: boolean;
   onToggle: () => void;
   recurrence: string[];
-  /** The series' zone's city when it isn't the app's ("Tokyo"). */
-  zoneCity: string | null;
 }) {
   const said =
     describeEventRecurrence({
@@ -209,15 +201,13 @@ function RecurrenceRow({
     }) ??
     waitingLabel ??
     "Doesn't repeat";
-  // Its days are the series' zone's, not the ones shown here.
-  const repeats = zoneCity ? `${said} · ${zoneCity} time` : said;
   return (
     <>
       <Pressable
         accessibilityLabel="Repeat"
         accessibilityRole="button"
         accessibilityState={{ disabled, expanded: isExpanded }}
-        accessibilityValue={{ text: repeats }}
+        accessibilityValue={{ text: said }}
         className="mb-2.5 min-h-[38px] flex-row items-center gap-2 rounded-full border border-border px-3"
         disabled={disabled}
         onPress={onToggle}
@@ -225,7 +215,7 @@ function RecurrenceRow({
       >
         <Icon as={Repeat2} className="text-muted-foreground" size={14} />
         <Text className="flex-1 text-[13px] text-foreground" numberOfLines={1}>
-          {repeats}
+          {said}
         </Text>
         <Icon
           as={isExpanded ? ChevronUp : ChevronDown}
@@ -325,8 +315,7 @@ function RecurrenceEditorSection({
           task editor. */}
       <View className="flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
-          // A rule the chips can't show (hourly) reads as "none" when
-          // parsed, but None isn't picked: tapping it clears the rule.
+          // Unsupported frequencies are custom; None clears them too.
           const active =
             frequency.value === "none"
               ? !rule
@@ -360,7 +349,8 @@ function RecurrenceEditorSection({
         })}
       </View>
 
-      {parsedRecurrence.freq === "none" ? null : (
+      {parsedRecurrence.freq === "none" ||
+      parsedRecurrence.freq === "custom" ? null : (
         <IntervalStepper
           freq={parsedRecurrence.freq}
           interval={parsedRecurrence.interval}
@@ -431,7 +421,8 @@ function RecurrenceEditorSection({
         />
       ) : null}
 
-      {parsedRecurrence.freq === "none" ? null : (
+      {parsedRecurrence.freq === "none" ||
+      parsedRecurrence.freq === "custom" ? null : (
         <RecurrenceEndSection
           allDay={allDay}
           endFrom={endFrom}
@@ -574,7 +565,7 @@ function RecurrenceEndSection({
 }) {
   const { end } = parsedRecurrence;
   const untilDay =
-    end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
+    end.type === "until" ? recurrenceEndDay(end.date, timeZone) : null;
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">Ends</Text>
@@ -598,7 +589,7 @@ function RecurrenceEndSection({
             // Three months on from this event (or today).
             updateRecurrence({
               end: {
-                date: untilRuleForDay(
+                date: recurrenceUntilValue(
                   untilDefaultDay(endFrom, timeZone),
                   allDay,
                   timeZone
@@ -638,7 +629,7 @@ function RecurrenceEndSection({
               if (date) {
                 updateRecurrence({
                   end: {
-                    date: untilRuleForDay(
+                    date: recurrenceUntilValue(
                       dateToPlainDate(date),
                       allDay,
                       timeZone
@@ -786,7 +777,7 @@ function readOnlyReasonFor(
       option.accountId === draft.sourceCalendar.accountId &&
       option.calendarId === draft.sourceCalendar.calendarId
   );
-  return getGoogleEventEditBlockReason(draft.sourceEvent, source?.accessRole);
+  return calendarEventEditBlockReason(draft.sourceEvent, source?.accessRole);
 }
 
 function noop() {
@@ -816,26 +807,12 @@ function HeldWhileSaving({
   );
 }
 
-/** Why the sheet can't be saved: an end before the start, of it or its repeat. */
-function EndsBeforeStartNote({
-  endsEarly,
-  repeatEndsOn,
-}: {
-  endsEarly: boolean;
-  /** The repeat's end day, when it's before the start. */
-  repeatEndsOn: Temporal.PlainDate | null;
-}) {
-  if (!(endsEarly || repeatEndsOn)) {
-    return null;
-  }
-  // The end is named: it's inside the Repeat row, out of sight.
-  return (
+function EndsBeforeStartNote({ endsEarly }: { endsEarly: boolean }) {
+  return endsEarly ? (
     <Text className="-mt-1 mb-2.5 text-destructive text-xs">
-      {repeatEndsOn && !endsEarly
-        ? `The repeat ends ${formatPlainDateLong(repeatEndsOn)}, before this starts. Pick a later end.`
-        : "Ends before it starts."}
+      Ends before it starts.
     </Text>
-  );
+  ) : null;
 }
 
 /**
@@ -1227,7 +1204,6 @@ function EventLocationInput({
 function EventDateTimeRow({
   allDay,
   endDate,
-  followsRepeat,
   getValues,
   endDatePickerValue,
   endTimePickerValue,
@@ -1235,27 +1211,16 @@ function EventDateTimeRow({
   startDate,
   startDatePickerValue,
   startTimePickerValue,
-  timeZone,
-  appTimeZone,
 }: {
   allDay: boolean;
   endDate: Temporal.PlainDate;
   endDatePickerValue: Date;
-  /**
-   * The repeat follows the start ("2nd Tue" to "3rd Wed"). Not for one
-   * occurrence: moving it is a reschedule, and its series stays.
-   */
-  followsRepeat: boolean;
   endTimePickerValue: Date;
   getValues: UseFormGetValues<EventDraft>;
   setValue: UseFormSetValue<EventDraft>;
   startDate: Temporal.PlainDate;
   startDatePickerValue: Date;
   startTimePickerValue: Date;
-  /** The series' zone, where its days count. */
-  timeZone: string;
-  /** The zone the start is shown (and picked) in. */
-  appTimeZone: string;
 }) {
   // Moving the start keeps the event's length (shared with web).
   const moveStart = (next: {
@@ -1265,40 +1230,6 @@ function EventDateTimeRow({
     const before = getValues();
     const moved = moveEventStart(before, next);
     setValue("startDate", moved.startDate, { shouldDirty: true });
-    // Days in the series' zone, where its repeat counts them.
-    const seriesDay = (
-      date: Temporal.PlainDate,
-      time: Temporal.PlainTime | null
-    ) => dayInZone(date, before.allDay ? null : time, appTimeZone, timeZone);
-    const recurrence = followsRepeat
-      ? followStart({
-          allDay: before.allDay,
-          from: seriesDay(before.startDate, before.startTime),
-          fromTime: before.allDay
-            ? null
-            : timeInZone(
-                before.startDate,
-                before.startTime,
-                appTimeZone,
-                timeZone
-              ),
-          recurrence: before.recurrence,
-          timeZone,
-          to: seriesDay(moved.startDate, moved.startTime),
-          toTime: before.allDay
-            ? null
-            : timeInZone(
-                moved.startDate,
-                moved.startTime,
-                appTimeZone,
-                timeZone
-              ),
-        })
-      : before.recurrence;
-    if (recurrence !== before.recurrence) {
-      setValue("recurrence", recurrence, { shouldDirty: true });
-      setValue("recurrenceEdited", true);
-    }
     setValue("startTime", moved.startTime, { shouldDirty: true });
     setValue("endDate", moved.endDate, { shouldDirty: true });
     setValue("endTime", moved.endTime, { shouldDirty: true });
@@ -1474,14 +1405,13 @@ interface EventEditorSheetProps {
    * the editor opens.
    */
   masterRecurrence?: string[];
-  /** The series' own start (its master's), once loaded. */
-  masterStart?: { date?: string | null; dateTime?: string | null } | null;
   onClose: () => void;
   onDelete?: (draft: EditEventDraft) => void;
   onRetryMaster?: () => void;
   onSubmit: (draft: EventDraft) => void;
   /** Dialogs that open over the editor (iOS presents them from its modal). */
   overlay?: React.ReactNode;
+  saveFailure?: string | null;
 }
 
 /**
@@ -1491,11 +1421,11 @@ interface EventEditorSheetProps {
 export function EventEditorSheet({
   draft,
   isSaving = false,
+  saveFailure,
   masterFailed = false,
   masterLoading = false,
   onRetryMaster,
   masterRecurrence,
-  masterStart,
   onClose,
   overlay,
   onSubmit,
@@ -1599,8 +1529,7 @@ export function EventEditorSheet({
     location.trim().length > 0 ? getMapsSearchUrl(location) : null;
 
   const sourceEvent = draft.mode === "edit" ? draft.sourceEvent : undefined;
-  // An existing series' days (its end day, its start's weekday) count in
-  // its own zone; a new event's in the app's.
+  // Keep the event zone when encoding its times and a picked repeat end.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
   // The times a save sends, as instants (the event's own while untouched).
   const sentTimes = draftTimes(
@@ -1610,38 +1539,17 @@ export function EventEditorSheet({
     sourceEvent
   );
   const endsInOrder = endsAfterStart(sentTimes);
-  // The repeat a save would send, and the days it counts from
-  // (`seriesRepeatForEdit`): a moved occurrence's rule follows its new day.
-  const seriesEdit = seriesRepeatForEdit({
-    edited: sentTimes,
-    event: sourceEvent,
-    recurrence: values.recurrence,
-    recurrenceEdited: Boolean(values.recurrenceEdited),
-    seriesRecurrence: masterRecurrence,
-    seriesStart: masterStart,
-    timeZone: seriesTimeZone,
-  });
-  const repeatIsChanged = seriesEdit.changed;
-  const seriesRepeat = seriesEdit.recurrence;
-  const formDay = seriesEdit.startDay ?? values.startDate;
-  const repeatDay = seriesEdit.countingDay ?? formDay;
+  const repeatDay = values.startDate;
   const shownRepeat = occurrenceRepeatShown({
     edited: Boolean(values.recurrenceEdited),
-    recurrence: seriesRepeat,
+    recurrence: values.recurrence,
     seriesRecurrence: masterRecurrence,
     unusable: recurrenceDisabled,
   });
   // The repeat editor starts from what the row shows.
-  const primaryRule = getPrimaryRecurrenceRule(seriesRepeat);
+  const primaryRule = getPrimaryRecurrenceRule(values.recurrence);
   const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
-  // Its end picked, then the start moved past it: say so, and don't save.
-  const repeatEndsOn = repeatEndsBeforeStart({
-    recurrence: values.recurrence,
-    sent: repeatIsChanged,
-    startDay: formDay,
-    timeZone: seriesTimeZone,
-  });
-  const canSubmit = summary.trim().length > 0 && endsInOrder && !repeatEndsOn;
+  const canSubmit = summary.trim().length > 0 && endsInOrder;
   const { meetingLink, isConferencePending } = useEventMeeting({
     conferenceData: values.conferenceData,
     description,
@@ -1651,11 +1559,11 @@ export function EventEditorSheet({
 
   const applyPrimaryRecurrenceRule = React.useCallback(
     (rule: string | null) => {
-      const nextRecurrence = setPrimaryRecurrenceRule(seriesRepeat, rule);
+      const nextRecurrence = setPrimaryRecurrenceRule(values.recurrence, rule);
       setValue("recurrence", nextRecurrence, { shouldDirty: true });
       setValue("recurrenceEdited", true);
     },
-    [seriesRepeat, setValue]
+    [values.recurrence, setValue]
   );
 
   const updateRecurrence = React.useCallback(
@@ -1671,7 +1579,7 @@ export function EventEditorSheet({
       allDay={values.allDay}
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
       disabled={recurrenceDisabled}
-      endFrom={formDay}
+      endFrom={values.startDate}
       isExpanded={isRecurrenceExpanded}
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
       parsedRecurrence={parsedRecurrence}
@@ -1683,9 +1591,6 @@ export function EventEditorSheet({
       // It repeats, but how isn't known yet. (Offline, React Native's
       // queries fail rather than pause, and the row offers a retry.)
       waitingLabel={shownRepeat.loading ? "Loading repeat…" : null}
-      zoneCity={
-        seriesTimeZone === appTimeZone ? null : timeZoneCity(seriesTimeZone)
-      }
     />
   );
 
@@ -1781,6 +1686,15 @@ export function EventEditorSheet({
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >
+      {saveFailure ? (
+        <Text
+          accessibilityRole="alert"
+          className="mb-2.5 text-destructive text-sm"
+          selectable
+        >
+          {saveFailure}
+        </Text>
+      ) : null}
       <HeldWhileSaving isSaving={isSaving}>
         {/* The title first: it's the most-edited field, and on create the
             first thing typed. */}
@@ -1810,23 +1724,17 @@ export function EventEditorSheet({
 
         <EventDateTimeRow
           allDay={allDay}
-          appTimeZone={appTimeZone}
           endDate={endDate}
           endDatePickerValue={endDatePickerValue}
           endTimePickerValue={endTimePickerValue}
-          followsRepeat={!sourceEvent?.recurringEventId}
           getValues={getValues}
           setValue={setValue}
           startDate={startDate}
           startDatePickerValue={startDatePickerValue}
           startTimePickerValue={startTimePickerValue}
-          timeZone={seriesTimeZone}
         />
         {/* Save stays off until the end comes after the start; say why. */}
-        <EndsBeforeStartNote
-          endsEarly={!endsInOrder}
-          repeatEndsOn={repeatEndsOn}
-        />
+        <EndsBeforeStartNote endsEarly={!endsInOrder} />
 
         <RepeatSection
           editor={recurrenceEditor}

@@ -4,9 +4,6 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { canWriteCalendar } from "@kompose/google-cal/schema";
-import { keepsTimes } from "@kompose/google-cal/series-edits";
-import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -38,28 +35,21 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
-import { useStateConfig } from "@kompose/state/config";
 import { eventCreationBlockedReason } from "@kompose/state/event-creation";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
 } from "@kompose/state/google-calendar-query-keys";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
 import {
   eventTimeZone,
   getDefaultRecurrenceScopeForEvent,
-  hasSeveralRules,
   isRecurringGoogleEvent,
-  occurrenceDayMoved,
-  otherTimeZone,
   repeatChanged,
-  repeatSkipsOccurrence,
-  seriesCountingDays,
-  seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
-  heldSaveError,
   SAVE_FAILURE_MESSAGE,
 } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
@@ -73,11 +63,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
-  refuseSave,
-  type SaveRefusals,
   SCOPE_DIALOG_COPY,
-  seriesRefusalOf,
-  seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import {
   savedSeriesRecurrence,
@@ -710,25 +696,6 @@ function WorkoutSheet({
 }
 
 /**
- * The repeat in the start's form: an all-day series' UNTIL and skipped
- * days are dates, a timed one's date-times.
- */
-function matchedRecurrence(
-  recurrence: string[] | undefined,
-  start: { date?: string; dateTime?: string },
-  timeZone: string,
-  /** The series' start before the edit: which rules share its time. */
-  seriesStart?: { date?: string; dateTime?: string },
-  /** Where the series counts its days from (`seriesCountingDays`). */
-  days?: ReturnType<typeof seriesCountingDays>
-): string[] | undefined {
-  return (
-    recurrence &&
-    matchRecurrenceToStart(recurrence, start, timeZone, seriesStart, days)
-  );
-}
-
-/**
  * The repeat to send with an event save: only when it changed, so an empty
  * list means "Repeat: None" and leaving it out keeps the series' pattern
  * (also while the master's pattern is still loading).
@@ -832,10 +799,7 @@ function EventSaveScopeDialog({
   pick,
   preferred,
 }: {
-  /**
-   * What the save changes, for the scopes it can use, with the scopes the
-   * server refused for it (`refuseSave`).
-   */
+  /** What the save changes, for the scopes it can use. */
   changes: EventSaveChanges | null;
   isVisible: boolean;
   onCancel: () => void;
@@ -848,7 +812,7 @@ function EventSaveScopeDialog({
   preferred: RecurrenceScope;
 }) {
   const disabled = changes ? eventSaveDisabledScopes(changes) : {};
-  // Why each scope that's off is, led by the server's reasons.
+  // Explain choices disabled by the edit or a pending series load.
   const description = changes
     ? eventSaveDescription(changes)
     : SCOPE_DIALOG_COPY.saveEvent.description;
@@ -889,7 +853,6 @@ export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
   const textScale = useCalendarTextScale();
   const queryClient = useQueryClient();
-  const { notifyError } = useStateConfig();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
 
@@ -1134,7 +1097,6 @@ export default function CalendarTab() {
     event: editingEventDraft?.sourceEvent ?? null,
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
-  const masterStart = recurringMasterEvent.data?.start;
   const [eventSavePick, setEventSavePick] = useState<RecurrenceScope | null>(
     null
   );
@@ -1146,13 +1108,11 @@ export default function CalendarTab() {
   const [pendingEventSaveDraft, setPendingEventSaveDraft] =
     useState<EditEventDraft | null>(null);
 
-  // What the server refused for the pending save (its scopes and
-  // reasons), shown by the scope dialog until it closes.
-  const [saveRefusals, setSaveRefusals] = useState<SaveRefusals | null>(null);
+  const [eventSaveFailure, setEventSaveFailure] = useState<string | null>(null);
 
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
-    setSaveRefusals(null);
+    setEventSaveFailure(null);
     setPendingEventSaveDraft(null);
     setEventDraft(draft);
   }, []);
@@ -1511,22 +1471,12 @@ export default function CalendarTab() {
         description: currentDraft.description.trim() || undefined,
         end: endPayload,
         location: currentDraft.location.trim() || undefined,
-        recurrence: matchedRecurrence(
-          recurrenceToSend(currentDraft, masterRecurrence),
-          startPayload,
-          zone,
-          currentDraft.mode === "edit"
-            ? currentDraft.sourceEvent.start
-            : undefined,
-          currentDraft.mode === "edit"
-            ? seriesCountingDays(currentDraft.sourceEvent, masterStart, zone)
-            : undefined
-        ),
+        recurrence: recurrenceToSend(currentDraft, masterRecurrence),
         start: startPayload,
         summary: currentDraft.summary.trim(),
       };
     },
-    [masterRecurrence, masterStart, timeZone]
+    [masterRecurrence, timeZone]
   );
 
   const commitEventUpdate = useCallback(
@@ -1551,27 +1501,13 @@ export default function CalendarTab() {
               }),
               recurrence: formPayload.recurrence,
             };
-      // A moved date carries the series' rule along, for the series.
-      const recurrence =
-        scope === "this"
-          ? eventPayload.recurrence
-          : (eventPayload.recurrence ??
-            seriesRecurrenceForSave({
-              editedEnd: eventPayload.end,
-              editedStart: eventPayload.start,
-              masterRecurrence,
-              masterStart,
-              occurrence: draft.sourceEvent,
-              recurrence: eventPayload.recurrence,
-              timeZone,
-            }));
       await updateEvent
         .mutateAsync({
           accountId: sourceCalendar.accountId,
           calendarId: sourceCalendar.calendarId,
           // The editor holds on the save; the cache changes once it's in.
           optimistic: false,
-          // Reported below: a refusal says what it would have undone.
+          // The sheet shows failures with the draft still open.
           quiet: true,
           event: {
             // One occurrence keeps its other fields; a save for the series
@@ -1579,95 +1515,65 @@ export default function CalendarTab() {
             // (guests, say) can't carry an old copy onto the series.
             ...(scope === "this" ? draft.sourceEvent : { id: draft.eventId }),
             ...eventPayload,
-            recurrence,
             end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
             start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
           },
           eventId: draft.eventId,
           recurrenceScope: scope,
         })
-        .catch((error: Error) => {
-          // A refusal is shown where the save was asked for (the scope
-          // dialog, or the editor); anything else as a failed save.
-          if (!seriesRefusalOf(error)) {
-            notifyError?.(heldSaveError(error, SAVE_FAILURE_MESSAGE));
-          }
+        .catch((error: unknown) => {
+          setEventSaveFailure(SAVE_FAILURE_MESSAGE);
           throw error;
         });
 
       if (destinationCalendarId) {
-        await moveEvent.mutateAsync({
-          accountId: sourceCalendar.accountId,
-          calendarId: sourceCalendar.calendarId,
-          destinationCalendarId,
-          eventId: draft.eventId,
-          // The edits are in by now: a failed move mustn't say they aren't.
-          failureMessage: SAVED_NOT_MOVED_MESSAGE,
-          scope,
-        });
+        await moveEvent
+          .mutateAsync({
+            accountId: sourceCalendar.accountId,
+            calendarId: sourceCalendar.calendarId,
+            destinationCalendarId,
+            eventId: draft.eventId,
+            // The edits are in by now: a failed move mustn't say they aren't.
+            failureMessage: SAVED_NOT_MOVED_MESSAGE,
+            quiet: true,
+            scope,
+          })
+          .catch((error: unknown) => {
+            setEventSaveFailure(SAVED_NOT_MOVED_MESSAGE);
+            throw error;
+          });
       }
 
       closeEventModal();
     },
-    [
-      buildEventPayload,
-      closeEventModal,
-      masterRecurrence,
-      masterStart,
-      moveEvent,
-      notifyError,
-      timeZone,
-      updateEvent,
-    ]
+    [buildEventPayload, closeEventModal, moveEvent, updateEvent]
   );
 
   /** What a save changes, for the scopes its dialog offers. */
   const eventSaveChanges = useCallback(
     (draft: EditEventDraft): EventSaveChanges => {
       const occurrence = draft.sourceEvent;
-      const edited = buildEventPayload(draft);
       const recurrence = recurrenceToSend(draft, masterRecurrence);
-      const dateMoved = occurrenceDayMoved({
-        editedEnd: edited.end,
-        editedStart: edited.start,
-        occurrence,
-        timeZone,
-      });
+      const originalDay =
+        occurrence.start.date ??
+        (occurrence.start.dateTime
+          ? Temporal.Instant.from(occurrence.start.dateTime)
+              .toZonedDateTimeISO(timeZone)
+              .toPlainDate()
+              .toString()
+          : undefined);
+      const dateMoved = draft.startDate.toString() !== originalDay;
       return {
-        calendarChanged:
-          draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
         dateMoved,
         patternChanged: recurrence !== undefined,
-        repeatSkips: repeatSkipsOccurrence({
-          occurrence,
-          recurrence,
-          seriesStart: masterStart,
-          timeZone,
-        }),
-        retimed: !(
-          dateMoved ||
-          keepsTimes(edited, occurrence, eventTimeZone(occurrence, timeZone))
-        ),
         seriesRuleFailed: recurringMasterEvent.ruleFailed,
         seriesRuleLoaded: Boolean(
           occurrence.recurrence?.length || recurringMasterEvent.ruleReady
         ),
-        seriesTimeZone: otherTimeZone(occurrence, timeZone),
-        severalRules: hasSeveralRules(
-          savedSeriesRecurrence(occurrence, masterRecurrence)
-        ),
-        splitBlocked: seriesSplitBlock(
-          occurrence,
-          recurringMasterEvent.data,
-          timeZone
-        ),
       };
     },
     [
-      buildEventPayload,
       masterRecurrence,
-      masterStart,
-      recurringMasterEvent.data,
       recurringMasterEvent.ruleFailed,
       recurringMasterEvent.ruleReady,
       timeZone,
@@ -1682,12 +1588,18 @@ export default function CalendarTab() {
       }
 
       if (draft.mode === "create") {
-        await createEvent.mutateAsync({
-          accountId: draft.calendar.accountId,
-          calendarId: draft.calendar.calendarId,
-          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-          event: buildEventPayload(draft),
-        });
+        await createEvent
+          .mutateAsync({
+            accountId: draft.calendar.accountId,
+            calendarId: draft.calendar.calendarId,
+            failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+            quiet: true,
+            event: buildEventPayload(draft),
+          })
+          .catch((error: unknown) => {
+            setEventSaveFailure(EVENT_CREATE_FAILURE_MESSAGE);
+            throw error;
+          });
         closeEventModal();
         return;
       }
@@ -1704,18 +1616,14 @@ export default function CalendarTab() {
 
       if (recurring) {
         const changes = eventSaveChanges(draft);
-        // A calendar move applies to the whole series; one occurrence can't
-        // repeat differently from its series.
-        const suggested = changes.calendarChanged
-          ? "all"
-          : getDefaultRecurrenceScopeForEvent({
-              event: draft.sourceEvent,
-              masterRecurrence: masterSeriesRecurrence,
-            });
+        const suggested = getDefaultRecurrenceScopeForEvent({
+          event: draft.sourceEvent,
+          masterRecurrence: masterSeriesRecurrence,
+        });
         // The scope dialog opens over the editor, which stays open; it
         // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
-        setSaveRefusals(null);
+        setEventSaveFailure(null);
         setEventSavePreferred(
           suggested === "this" && changes.patternChanged
             ? "following"
@@ -1726,14 +1634,7 @@ export default function CalendarTab() {
         return;
       }
 
-      // A new repeat on a one-off event can be refused too (it would end
-      // before it starts): the server's words, over the editor.
-      await commitEventUpdate(draft, "this").catch((error: unknown) => {
-        if (error instanceof Error && seriesRefusalOf(error)) {
-          notifyError?.(error);
-        }
-        throw error;
-      });
+      await commitEventUpdate(draft, "this");
     },
     [
       buildEventPayload,
@@ -1742,7 +1643,6 @@ export default function CalendarTab() {
       createEvent,
       eventSaveChanges,
       masterRecurrence,
-      notifyError,
     ]
   );
 
@@ -1753,22 +1653,14 @@ export default function CalendarTab() {
       }
       Keyboard.dismiss();
       setIsSavingEvent(true);
+      setEventSaveFailure(null);
       try {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
-      } catch (error) {
-        // A refused scope (a retry won't help) stays off for this save, and
-        // the dialog leads with the server's reason, which names any meeting
-        // it would have undone, as on web. Any other failure returns to the
-        // editor with the edits.
-        const refusal = seriesRefusalOf(error);
-        if (refusal) {
-          setSaveRefusals((refused) => refuseSave(refused, scope, refusal));
-        } else {
-          setEventDialog(null);
-          setPendingEventSaveDraft(null);
-          setSaveRefusals(null);
-        }
+      } catch {
+        // Return to the sheet, keeping its draft and failure message.
+        setEventDialog(null);
+        setPendingEventSaveDraft(null);
       } finally {
         setIsSavingEvent(false);
       }
@@ -1907,7 +1799,7 @@ export default function CalendarTab() {
 
   function dismissEventSaveDialog() {
     setEventDialog(null);
-    setSaveRefusals(null);
+    setEventSaveFailure(null);
     setPendingEventSaveDraft(null);
   }
 
@@ -2370,7 +2262,6 @@ export default function CalendarTab() {
           masterFailed={recurringMasterEvent.ruleFailed}
           masterLoading={recurringMasterEvent.ruleUnavailable}
           masterRecurrence={masterRecurrence}
-          masterStart={masterStart}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
           onRetryMaster={recurringMasterEvent.retry}
@@ -2380,6 +2271,7 @@ export default function CalendarTab() {
             // Typing after this point wouldn't be saved: close the keyboard.
             Keyboard.dismiss();
             setIsSavingEvent(true);
+            setEventSaveFailure(null);
             saveEvent(draft)
               .catch(() => null)
               .finally(() => setIsSavingEvent(false));
@@ -2400,10 +2292,7 @@ export default function CalendarTab() {
               <EventSaveScopeDialog
                 changes={
                   pendingEventSaveDraft
-                    ? {
-                        ...eventSaveChanges(pendingEventSaveDraft),
-                        refused: saveRefusals,
-                      }
+                    ? eventSaveChanges(pendingEventSaveDraft)
                     : null
                 }
                 isVisible={eventDialog === "save"}
@@ -2418,6 +2307,7 @@ export default function CalendarTab() {
               />
             </>
           }
+          saveFailure={eventSaveFailure}
         />
       ) : null}
 

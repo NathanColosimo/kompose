@@ -18,7 +18,7 @@ Empty-slot creation starts with a chooser for an event or task; event create/edi
 - Uses `react-hook-form` in `EventEditorSheet` for event form state; the form values are the `EventDraft` itself.
 - Uses a single exported `EventEditorSheet` for create and edit. The calendar mounts it only while a draft is open.
 - Uses the existing `TaskEditorSheet` in `mode="create"` for task creation from the calendar tab.
-- Event-specific recurrence parsing/building and default scope logic are centralized in `@kompose/state`.
+- Event recurrence parsing/building and scope choices are shared through `@kompose/state`. The editor preserves rule parts it cannot show and marks them custom. Moving a start does not rewrite its rule.
 
 ## Form layout (matches current mobile UX)
 
@@ -34,10 +34,9 @@ Top-to-bottom:
 - Moving the start keeps the event's length. "Ends before it starts." shows under the rows while the end is before the start, and Save stays off.
 
 3. Repeat row (its own full-width row)
-- Says how the event repeats, in words ("Repeats weekly on Tue"), with "· Tokyo time" when the series' zone isn't the app's
+- Says how the event repeats, in words ("Repeats weekly on Tue")
 - Tapping it opens the repeat editor under it: frequency chips, the interval stepper, weekday chips with a Weekdays shortcut for Monday to Friday (weekly), the monthly day choice, and the end (never / on date / after N, up to 730 as in Google Calendar)
 - For an occurrence it shows the series' rule, which can load after the editor opens ("Loading repeat…"); if the load fails, "The repeat didn't load." (or "didn't refresh.") sits beside a Try again button
-- It shows the rule the save sends (`seriesRepeatForEdit`): an occurrence moved to another day shows the series' rule following that day, and a rescheduled occurrence left where it is counts from its place in the series
 
 4. All-day + meeting row
 - All-day switch in a pill-shaped container
@@ -65,42 +64,22 @@ Locked, Gmail, and birthday events, and those on a calendar the user can only vi
 
 ## Save/delete behavior
 
-Create:
-- Empty-slot tap opens a chooser with `New event` and `New task`.
-- `New event` opens the existing event sheet and saves directly via `createEvent`.
-- `New task` opens the task sheet in create mode and saves via `createTask`.
-- Task creation is prefilled from the tapped slot:
-  - `startDate`
-  - `startTime`
-  - `durationMinutes` (currently 30 minutes)
-
-Edit (non-recurring):
-- Saves directly via `updateEvent`. A save the server refuses (a new repeat that would end before it starts, say) shows the server's words over the editor, which keeps the edits.
-- If calendar changed, then runs `moveEvent` with scope `this`. If the move fails, the edits are already in: the message says they saved, the move didn't, and saving again retries it. The same holds for a recurring save.
-
-Edit (recurring):
-- Save opens the scope dialog over the editor, which stays open: Cancel goes back to it with the edits; Save holds "Saving…" until the save ends. A refusal keeps the dialog (below); any other failure returns to the editor with the edits.
-  - Only this occurrence
-  - This and following
-  - Entire series
-- A scope that can't apply is off, and the dialog's line says why (a moved day, the series still loading, a repeat that would skip this occurrence; see [event-popover.md](./event-popover.md)). If the calendar changes, only `all` is enabled and the entire series moves.
-- A save for the series (`following`/`all`) sends only its times, its repeat, and the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
-- Entire series is off, with the reason in the dialog, when a new time can't apply to a series of several rules. What a save would cost other occurrences changed on their own is the server's to refuse. If the server refuses a series save (a typed refusal: a retry won't help), the dialog stays open and keeps that scope off for this save, as on web (`seriesRefusalOf`, `refuseSave`), so two refusals in a row can't bring the first back. Its line leads with each refusal's reason, which names the occurrences it would have undone, then says where the save can still go from the scopes left (`eventSaveDescription`). Any other failure returns to the editor with the edits.
-
-Delete:
-- Non-recurring: simple confirm dialog.
-- Recurring: scoped delete dialog (`this`/`all`/`following`), over the editor; Cancel goes back to it. Every scope is on at once: the server refuses no delete.
-- A failed delete keeps its dialog open, which says "Couldn't delete it. Try again."
+- Empty-slot tap offers New event or New task, prefilled from the tapped slot.
+- Save keeps the sheet open with Saving… and read-only fields until the write finishes. Dismissal and a second submit wait. A failure keeps the draft and shows a message below the header; Save retries it.
+- Non-recurring edits save directly. A calendar change saves the edits and then moves the event. If that move fails after the edits save, the message says so.
+- Recurring edits open the scope dialog over the sheet. Cancel returns to the draft. The choices are Only this occurrence, This and following, and Entire series, for calendar moves too.
+- The dialog waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series’ date.
+- Series saves send only changed details, with edited times directly. Unchanged occurrence titles, guests, and other details stay out of the series payload.
+- The repeat editor parses and builds its primary rule and keeps unsupported parts and other recurrence lines. Explicitly picked end dates are encoded for the event’s form. Start moves do not rewrite weekdays, month days, UNTIL, COUNT, or exception dates.
+- Entire series applies edited times to the series’ first event, keeping its date. This and following ends the old series and creates a new one. The UI does not inspect other occurrences or handle typed refusals.
+- Recurring delete offers all three scopes. Non-recurring delete asks for confirmation. Deleting… holds the dialog; a failure stays there with retry available.
 
 ## Implementation constraints
 
-- Scope and delete dialogs render inside the editor sheet (its `overlay`): iOS presents a modal only from the one showing.
+- Mount the event sheet only while a draft is open; keep scope and delete dialogs inside its modal overlay.
 - Timed updates include `start.timeZone` and `end.timeZone`.
-- Update payload preserves nested `start`/`end` fields from the source event when merging.
-- Picker triggers in event editor hide leading icons (`showIcon={false}`).
-- Compact date labels use `Mon D` format (year hidden in display label).
-- Year list auto-scrolls to selected year.
-- Time lists auto-scroll to the selected hour/minute.
+- `draftTimes` preserves an unchanged instant during a repeated DST hour and sends one date form per endpoint.
+- Picker triggers hide leading icons. Compact date labels omit the year; date and time lists scroll to the selected values.
 
 ## Quick QA checklist
 
@@ -110,8 +89,8 @@ Delete:
 - Saving the new task creates a scheduled task block in the calendar.
 - Save icon holds "Saving…", then closes the editor once the change is in.
 - Recurring save opens the scope prompt over the editor; Cancel returns to the edits.
-- Moving an occurrence to another day: the Repeat row follows the new day, and Entire series is off with the reason.
-- This and following from a rescheduled occurrence with its own title keeps the series' title and time for the later meetings.
+- Moving an occurrence to another day keeps the repeat rule unchanged; Entire series is off with the reason.
+- A series save leaves an occurrence’s unchanged title and guests out of the payload and sends its edited times directly.
 - Recurring delete opens scope prompt with every scope on; non-recurring delete opens simple confirm.
 - A delete that fails (offline, say) keeps its dialog open with "Couldn't delete it. Try again."
 - `following` updates succeed (no missing timezone error).

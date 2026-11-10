@@ -2,10 +2,6 @@
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import {
-  getGoogleEventEditBlockReason,
-  isGoogleEventEditable,
-} from "@kompose/google-cal/schema";
-import {
   currentDateAtom,
   timezoneAtom,
 } from "@kompose/state/atoms/current-date";
@@ -27,6 +23,7 @@ import {
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { calendarEventEditBlockReason } from "@kompose/state/google-event-editability";
 import { startOfDayZoned } from "@kompose/state/temporal-utils";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -969,9 +966,12 @@ function AllDayEventChip({
       end={zonedDateTimeToDate(endZdt)}
       event={item.event}
       readOnly={
-        !isGoogleEventEditable(item.event, calendar?.calendar.accessRole)
+        calendarEventEditBlockReason(
+          item.event,
+          calendar?.calendar.accessRole
+        ) !== null
       }
-      readOnlyReason={getGoogleEventEditBlockReason(
+      readOnlyReason={calendarEventEditBlockReason(
         item.event,
         calendar?.calendar.accessRole
       )}

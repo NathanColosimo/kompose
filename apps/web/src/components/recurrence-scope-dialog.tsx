@@ -1,6 +1,7 @@
 "use client";
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
+import { SAVE_FAILURE_MESSAGE } from "@kompose/state/held-save";
 import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
 import { XIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
@@ -13,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SavingLabel } from "@/components/ui/held-fieldset";
+import { SaveFailure, SavingLabel } from "@/components/ui/held-fieldset";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value,
   onValueChange,
   confirmLabel = "Save",
+  failureMessage = SAVE_FAILURE_MESSAGE,
   pendingLabel = "Saving…",
   cancelLabel = "Cancel",
   onCancel,
@@ -53,6 +55,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value: S;
   onValueChange: (value: S) => void;
   confirmLabel?: string;
+  failureMessage?: string;
   /** The confirm button's words while it runs: "Deleting…". */
   pendingLabel?: string;
   cancelLabel?: string;
@@ -68,6 +71,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   // would otherwise send the change twice while the first is running.
   const pendingRef = useRef(false);
   const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
   // The callers give a scope that's available (`chosenScope`); should it
   // still be off, nothing is sent.
   const chosenOff = Boolean(disabledScopes?.[value]);
@@ -77,9 +81,12 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
     }
     pendingRef.current = true;
     setPending(true);
+    setFailed(false);
     try {
       await onConfirm();
       onOpenChange(false);
+    } catch {
+      setFailed(true);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -130,8 +137,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
                   {subject.when}
                 </span>
               ) : null}
-              {/* Polite, so a refusal or failure said here once the dialog
-                  is open is read out. */}
+              {/* Announce changes while the series loads. */}
               {description ? (
                 <span aria-live="polite" className="block">
                   {description}
@@ -187,6 +193,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           })}
         </RadioGroup>
 
+        {failed ? <SaveFailure message={failureMessage} /> : null}
         <DialogFooter>
           <Button
             aria-disabled={pending || undefined}
