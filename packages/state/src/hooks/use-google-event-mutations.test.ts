@@ -2,7 +2,11 @@ import { expect, test } from "bun:test";
 import type { CreateEventInput } from "@kompose/api/routers/google-cal/contract";
 import { sanitizeEventPayload } from "@kompose/google-cal/recurrence-utils";
 import type { Event } from "@kompose/google-cal/schema";
-import { MutationObserver, QueryClient } from "@tanstack/react-query";
+import {
+  MutationObserver,
+  onlineManager,
+  QueryClient,
+} from "@tanstack/react-query";
 import type { StateConfig } from "../config";
 import {
   getGoogleEventMastersByCalendarQueryKey,
@@ -421,4 +425,64 @@ test("every write marks the calendar's events and series stale, saved or refused
   expect(await Promise.all(runs)).toEqual(
     Array.from({ length: 6 }, () => [true, true])
   );
+});
+
+// --- offline ---
+
+test("a write made offline fails at once instead of waiting for the connection", async () => {
+  // An editor holds open until its save settles: a write that waited for
+  // the connection would hold it, and the page under it, for as long as
+  // the browser stayed offline.
+  onlineManager.setOnline(false);
+  try {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(november, [standup]);
+    const offline = () => Promise.reject(new Error("Failed to fetch"));
+    const config = (orpc: StateConfig["orpc"]) => ({
+      notifyError: () => undefined,
+      orpc,
+    });
+    const settled = (write: Promise<unknown>) =>
+      Promise.race([
+        write.then(
+          () => "saved",
+          () => "failed"
+        ),
+        // Long enough for a rejected write to settle; a paused one never does.
+        new Promise((resolve) => setTimeout(() => resolve("waiting"), 50)),
+      ]);
+    expect(
+      await Promise.all([
+        settled(
+          new MutationObserver(
+            queryClient,
+            createGoogleEventMutationOptions(
+              queryClient,
+              config(stubbedServer(queryClient, "create", offline).orpc)
+            )
+          ).mutate(lunch)
+        ),
+        settled(
+          new MutationObserver(
+            queryClient,
+            updateGoogleEventMutationOptions(
+              queryClient,
+              config(stubbedServer(queryClient, "update", offline).orpc)
+            )
+          ).mutate({ ...calendar, event: standup, eventId: "event" })
+        ),
+        settled(
+          new MutationObserver(
+            queryClient,
+            deleteGoogleEventMutationOptions(
+              queryClient,
+              config(stubbedServer(queryClient, "delete", offline).orpc)
+            )
+          ).mutate(removal)
+        ),
+      ])
+    ).toEqual(["failed", "failed", "failed"]);
+  } finally {
+    onlineManager.setOnline(true);
+  }
 });
