@@ -211,5 +211,4 @@ export const ColorsSchema = z.object({
     .optional(),
 });
 
-
 export type Colors = z.infer<typeof ColorsSchema>;
