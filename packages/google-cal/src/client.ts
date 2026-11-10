@@ -1652,7 +1652,7 @@ function placesOfSkips(params: {
   const zone = seriesZoneOf(master);
   const lost = new Set<number>();
   const ruleSkips = new Set<string>();
-  // Each place's first rule position, by moment: another there shares it.
+  // The first skip placed at each place holds it; another there shares it.
   const takenBy = new Map<string, number>();
   for (const { added, at, formed, ontoLive, slot } of params.skips) {
     const moment = slotMoment(slot, zone)?.epochMilliseconds;
