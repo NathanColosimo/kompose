@@ -245,6 +245,39 @@ describe("Entire series", () => {
     });
   });
 
+  test("a first meeting moved a day on and an hour earlier keeps a deleted meeting's skip on its own day", async () => {
+    // Daily at 9:00 from Nov 9, Nov 23 deleted on its own; the first
+    // meeting moved to Nov 10 at 8:00. The time turns an hour back, so Nov
+    // 23's place is Nov 23 at 8:00, not Nov 24.
+    const google = fakeGoogle({ ...weekly, recurrence: ["RRULE:FREQ=DAILY"] }, [
+      {
+        ...occurrenceOf(
+          { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] },
+          "2026-11-23T09:00:00-05:00"
+        ),
+        status: "cancelled",
+      },
+    ]);
+    const exit = await run(
+      edit(
+        "all",
+        occurrenceOf(
+          { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] },
+          "2026-11-09T09:00:00-05:00"
+        ),
+        {
+          end: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-10T08:00:00-05:00", timeZone: zone },
+        }
+      )
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261123T130000Z",
+    ]);
+  });
+
   test("a first meeting moved off its rule's days keeps the series' date", async () => {
     // Mon Nov 9 moved to Tue Nov 10 at 10:00, the series' own Monday rule
     // sent back: a Tuesday start would add a meeting no rule makes, so the
