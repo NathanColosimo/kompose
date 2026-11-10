@@ -2,8 +2,8 @@
  * A Google event's repeat in words ("Repeats every 2 weeks on Tue"), and
  * the monthly "On" choices the repeat editors offer.
  */
-import { untilRuleToDay } from "@kompose/google-cal/until";
-import type { Temporal } from "temporal-polyfill";
+import { readRecurrenceValue } from "@kompose/google-cal/until";
+import { Temporal } from "temporal-polyfill";
 import {
   type EventRecurrenceEnd,
   type EventRecurrencePattern,
@@ -237,14 +237,30 @@ function dayWords(
   return { complete, text: words.text };
 }
 
-/** How a series ends: ", until Feb 10, 2027", ", 10 times", "" for never. */
+const DAY_END = Temporal.PlainTime.from("23:59:59");
+
+/**
+ * How a series ends: ", until Feb 10, 2027", ", 10 times", "" for never.
+ * An UNTIL is said only when it names a day: a date, or a day's last
+ * second in the series' zone, as "Ends on" writes it. Any other moment (a
+ * This and following split ends the earlier part the second before a
+ * meeting) may fall before or after that day's meeting, which the words
+ * can't tell, so it's left out rather than said a day late.
+ */
 function endWords(end: EventRecurrenceEnd, timeZone: string): string {
   if (end.type === "count") {
     return `, ${end.count} ${end.count === 1 ? "time" : "times"}`;
   }
-  const day = end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
-  return day
-    ? `, until ${MONTH_NAMES[day.month - 1]} ${day.day}, ${day.year}`
+  const until =
+    end.type === "until"
+      ? readRecurrenceValue(end.date, timeZone, timeZone)
+      : null;
+  const namesDay =
+    until &&
+    (until.instant === null ||
+      until.instant.toZonedDateTimeISO(timeZone).toPlainTime().equals(DAY_END));
+  return until && namesDay
+    ? `, until ${MONTH_NAMES[until.day.month - 1]} ${until.day.day}, ${until.day.year}`
     : "";
 }
 

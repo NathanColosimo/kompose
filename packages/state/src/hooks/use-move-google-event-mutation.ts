@@ -8,7 +8,11 @@ import {
 } from "@tanstack/react-query";
 import { type StateConfig, useStateConfig } from "../config";
 import { invalidateGoogleEventQueries } from "../google-calendar-query-keys";
-import { type HeldSave, reportHeldSaveFailure } from "../held-save";
+import {
+  HELD_WRITE_NETWORK_MODE,
+  type HeldSave,
+  reportHeldSaveFailure,
+} from "../held-save";
 
 export function useMoveGoogleEventMutation() {
   return useMutation(
@@ -26,6 +30,7 @@ export function moveGoogleEventMutationOptions(
   { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
 ) {
   return {
+    networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
       quiet: _quiet,

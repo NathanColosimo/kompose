@@ -223,7 +223,7 @@ describe("seriesRepeatForEdit", () => {
     expect(changed.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"]);
     expect(changed.countingDay?.toString()).toBe("2026-11-16");
     expect(changed.startDay?.toString()).toBe("2026-11-16");
-    // A new end makes its times the user's own: the save starts there.
+    // A new end alone is a new length: the save still starts at its place.
     const retimed = repeat({
       edited: {
         end: { dateTime: "2026-11-17T12:30:00-05:00", timeZone: zone },
@@ -233,14 +233,14 @@ describe("seriesRepeatForEdit", () => {
       recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
       recurrenceEdited: true,
     });
-    expect(retimed.countingDay?.toString()).toBe("2026-11-17");
-    expect(retimed.startDay?.toString()).toBe("2026-11-17");
+    expect(retimed.countingDay?.toString()).toBe("2026-11-16");
+    expect(retimed.startDay?.toString()).toBe("2026-11-16");
   });
 
-  test("new times on a meeting moved before restart the series there", () => {
+  test("a new end alone on a meeting moved before keeps the series' days", () => {
     // Weekly with no day picked, from Monday Nov 2. Nov 16's meeting was
-    // moved to Tuesday Nov 17; only its end changes now. A save for the
-    // series starts at its new times, on Tuesday, so it reads as Tuesdays.
+    // moved to Tuesday Nov 17; only its end changes now. The server gives
+    // the series the new length and keeps its Mondays.
     const movedBefore = {
       ...monday,
       end: { dateTime: "2026-11-17T12:00:00-05:00", timeZone: zone },
@@ -256,8 +256,8 @@ describe("seriesRepeatForEdit", () => {
       seriesRecurrence: ["RRULE:FREQ=WEEKLY"],
     });
     expect(endOnly.changed).toBe(false);
-    expect(endOnly.countingDay?.toString()).toBe("2026-11-17");
-    expect(endOnly.startDay?.toString()).toBe("2026-11-17");
+    expect(endOnly.countingDay?.toString()).toBe("2026-11-02");
+    expect(endOnly.startDay?.toString()).toBe("2026-11-16");
   });
 
   test("a new event's repeat counts from its own start", () => {
