@@ -15,9 +15,10 @@ import { cn } from "@/lib/utils";
  * still take a click. Keep form values above this (react-hook-form), so the
  * remount loses nothing.
  *
- * The page under the editor takes no click while the save runs either: one
- * that changed the view (another list, another week) would unmount the
- * editor, and its edits would be gone if the save then failed. Not while
+ * The page under the editor takes no click or key while the save runs
+ * either: one that changed the view (another list, another week) would
+ * unmount the editor, and its edits would be gone if the save then failed.
+ * Tab still moves focus, so it can come back to the editor. Not while
  * offline, though: a save that waits for the connection (a task's does)
  * would hold the whole page until it's back.
  */
@@ -35,6 +36,27 @@ export function HeldFieldset({
     () => onlineManager.isOnline(),
     () => true
   );
+  const held = saving && online;
+  useEffect(() => {
+    if (!held) {
+      return;
+    }
+    // Enter or Space on a button under the editor, reached with Tab, would
+    // press it. Keys inside the editor and its dialogs go through.
+    const blockKeyUnderEditor = (event: KeyboardEvent) => {
+      const inEditor =
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]') !== null;
+      if (event.key === "Tab" || inEditor) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("keydown", blockKeyUnderEditor, true);
+    return () =>
+      document.removeEventListener("keydown", blockKeyUnderEditor, true);
+  }, [held]);
   return (
     <fieldset
       className={className}
@@ -42,7 +64,7 @@ export function HeldFieldset({
       key={saving ? "saving" : "editing"}
     >
       {children}
-      {saving && online
+      {held
         ? createPortal(
             // Under popovers and dialogs (z-50), over everything else.
             <div aria-hidden className="fixed inset-0 z-40" data-page-held />,
