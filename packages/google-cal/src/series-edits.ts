@@ -212,6 +212,39 @@ function comparable(field: keyof CreateEvent, value: unknown): unknown {
 }
 
 /**
+ * `guests` with each one's answer and comment to `occurrence` where it
+ * has its own (declined that meeting alone); null when none differ.
+ */
+export function withAnswersOf(params: {
+  guests: Attendee[] | undefined;
+  occurrence: Event | undefined;
+}): Attendee[] | null {
+  const own = new Map(
+    (params.occurrence?.attendees ?? []).flatMap((guest) =>
+      guest.email ? [[guest.email, guest] as const] : []
+    )
+  );
+  let differs = false;
+  const guests = (params.guests ?? []).map((guest) => {
+    const answer = guest.email ? own.get(guest.email) : undefined;
+    if (
+      !answer ||
+      (answer.responseStatus === guest.responseStatus &&
+        answer.comment === guest.comment)
+    ) {
+      return guest;
+    }
+    differs = true;
+    return {
+      ...guest,
+      comment: answer.comment,
+      responseStatus: answer.responseStatus,
+    };
+  });
+  return differs ? guests : null;
+}
+
+/**
  * The guests a series write sends: the series' own, less those the edit
  * removed (on the occurrence it was made through, not sent) and with
  * those it added (sent, on neither). A guest an occurrence added or
