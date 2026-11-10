@@ -47,13 +47,17 @@ export const TASK_DELETE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<DeleteSco
   TASK_SCOPE_OPTIONS;
 
 export interface EventSaveChanges {
+  calendarMoved: boolean;
   dateMoved: boolean;
   patternChanged: boolean;
   seriesRuleFailed?: boolean;
   seriesRuleLoaded: boolean;
 }
 
-/** Entire series keeps the series' date; one occurrence can't change its repeat. */
+/**
+ * Entire series keeps the series' date; one occurrence can't change its
+ * repeat; Google moves a series to another calendar only as a whole.
+ */
 export function eventSaveDisabledScopes(
   changes: EventSaveChanges
 ): Partial<Record<RecurrenceScope, boolean>> {
@@ -63,6 +67,7 @@ export function eventSaveDisabledScopes(
   return {
     ...(changes.patternChanged ? { this: true } : {}),
     ...(changes.dateMoved ? { all: true } : {}),
+    ...(changes.calendarMoved ? { following: true, this: true } : {}),
   };
 }
 
@@ -71,6 +76,11 @@ export function eventSaveDescription(changes: EventSaveChanges): string {
     return changes.seriesRuleFailed
       ? "Couldn't load the series. Try again."
       : "Loading the series…";
+  }
+  if (changes.calendarMoved) {
+    return changes.dateMoved
+      ? "A new calendar applies to the entire series, which keeps its date. Save the new day and the new calendar separately."
+      : "A new calendar applies to the entire series.";
   }
   if (changes.dateMoved) {
     return "Entire series keeps the series' date, so it can't apply a move to another day.";
