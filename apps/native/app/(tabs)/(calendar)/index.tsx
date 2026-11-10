@@ -5,6 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { canWriteCalendar } from "@kompose/google-cal/schema";
+import { keepsTimes } from "@kompose/google-cal/series-edits";
 import { matchRecurrenceToStart } from "@kompose/google-cal/until";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
@@ -48,7 +49,6 @@ import {
   getDefaultRecurrenceScopeForEvent,
   hasSeveralRules,
   isRecurringGoogleEvent,
-  movedMeetingDropped,
   occurrenceDayMoved,
   otherTimeZone,
   repeatChanged,
@@ -56,10 +56,7 @@ import {
   seriesCountingDays,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
-import {
-  keepsEventTimes,
-  withEditedTime,
-} from "@kompose/state/google-event-times";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   EVENT_CREATE_FAILURE_MESSAGE,
   heldSaveError,
@@ -78,7 +75,6 @@ import {
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
-  seriesCutUnsure,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
 import { seriesEditFields } from "@kompose/state/series-edit";
@@ -939,17 +935,12 @@ function EventSaveScopeDialog({
   );
 }
 
-/**
- * The recurring delete's This and following: off until the series loads,
- * or where the cut is unsure.
- */
+/** The recurring delete's This and following: off until the series loads. */
 function deleteStateFor(
   event: GoogleEvent | undefined,
-  master: { data?: GoogleEvent; ruleFailed: boolean; ruleReady: boolean },
-  timeZone: string
+  master: { ruleFailed: boolean; ruleReady: boolean }
 ) {
   return eventDeleteScopeState({
-    cutUnsure: seriesCutUnsure(event, master.data, timeZone),
     seriesRuleFailed: master.ruleFailed,
     seriesRuleLoaded: Boolean(event?.recurrence?.length || master.ruleReady),
   });
@@ -1211,8 +1202,7 @@ export default function CalendarTab() {
   const masterStart = recurringMasterEvent.data?.start;
   const eventDeleteState = deleteStateFor(
     editingEventDraft?.sourceEvent,
-    recurringMasterEvent,
-    timeZone
+    recurringMasterEvent
   );
   const [eventSavePick, setEventSavePick] = useState<RecurrenceScope | null>(
     null
@@ -1712,25 +1702,10 @@ export default function CalendarTab() {
         occurrence,
         timeZone,
       });
-      // The series' moved meetings this app has loaded.
-      const loaded = googleEvents.flatMap((item) =>
-        item.accountId === draft.sourceCalendar.accountId &&
-        item.calendarId === draft.sourceCalendar.calendarId &&
-        item.event.recurringEventId === occurrence.recurringEventId
-          ? [item.event]
-          : []
-      );
       return {
         calendarChanged:
           draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
         dateMoved,
-        droppedMovedDay: movedMeetingDropped({
-          loaded,
-          occurrence,
-          recurrence,
-          seriesStart,
-          timeZone,
-        }),
         patternChanged: recurrence !== undefined,
         repeatSkips: repeatSkipsOccurrence({
           occurrence,
@@ -1740,11 +1715,7 @@ export default function CalendarTab() {
         }),
         retimed: !(
           dateMoved ||
-          keepsEventTimes(
-            edited,
-            occurrence,
-            eventTimeZone(occurrence, timeZone)
-          )
+          keepsTimes(edited, occurrence, eventTimeZone(occurrence, timeZone))
         ),
         seriesRuleFailed: recurringMasterEvent.ruleFailed,
         seriesRuleLoaded: Boolean(
@@ -1763,7 +1734,6 @@ export default function CalendarTab() {
     },
     [
       buildEventPayload,
-      googleEvents,
       masterRecurrence,
       recurringMasterEvent.data,
       recurringMasterEvent.ruleFailed,
