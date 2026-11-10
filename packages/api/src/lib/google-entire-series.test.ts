@@ -1945,6 +1945,34 @@ describe("Entire series start and length changes, as Google applies them", () =>
     const kickoff = { ...occurrenceOf(weekly, nov9), summary: "Kickoff" };
 
     test.each([
+      ["from it", "2026-11-09T09:00:00-05:00"],
+      ["from another", "2026-11-16T09:00:00-05:00"],
+    ])("keeping a guest's own answer to it, saved %s", async (_from, from) => {
+      // A guest accepted the series but declined Nov 9 alone.
+      const guests: Event = {
+        ...weekly,
+        attendees: [{ email: "a@example.com", responseStatus: "accepted" }],
+      };
+      const declined = {
+        ...occurrenceOf(guests, nov9),
+        attendees: [{ email: "a@example.com", responseStatus: "declined" }],
+      };
+      const google = fakeGoogle(guests, [declined]);
+      const opened = from === nov9 ? declined : occurrenceOf(guests, from);
+      expect(
+        Exit.isSuccess(await run(edit("all", opened, { recurrence: [] })))
+      ).toBe(true);
+      expect(google.writes()).toMatchObject([
+        {
+          body: {
+            attendees: [{ email: "a@example.com", responseStatus: "declined" }],
+            recurrence: [],
+          },
+        },
+      ]);
+    });
+
+    test.each([
       ["from it", kickoff],
       ["from another", nov16],
     ])("keeping its own title, saved %s", async (_from, opened) => {

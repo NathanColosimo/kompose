@@ -1334,11 +1334,8 @@ export function clockTurn(params: {
     Temporal.PlainDate.compare(to.toPlainDate(), from.toPlainDate())
   );
   const around = change + toward * DAY_NS;
+  // Exactly twelve hours either way keeps the change itself.
   const turn =
-    toward !== 0 &&
-    Math.sign(around) === toward &&
-    Math.abs(around) < Math.abs(change)
-      ? around
-      : change;
+    toward !== 0 && Math.abs(around) < Math.abs(change) ? around : change;
   return Temporal.Duration.from({ nanoseconds: turn });
 }
