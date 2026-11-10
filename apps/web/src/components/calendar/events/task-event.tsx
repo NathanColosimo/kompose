@@ -160,6 +160,8 @@ export const TaskEvent = memo(function TaskEventInner({
       className={cn(
         "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
         BLOCK_RAISE_CLASS,
+        // The editor's trigger is the inner button, so raise on its state.
+        "has-[:focus-visible]:z-50 has-[[data-state=open]]:z-50",
         isDragging || isMoving ? "opacity-0" : "",
         isDone ? "opacity-60" : ""
       )}

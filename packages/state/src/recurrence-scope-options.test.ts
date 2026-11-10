@@ -6,6 +6,7 @@ import {
 } from "./recurrence-scope-options";
 
 const unchanged: EventSaveChanges = {
+  calendarMoved: false,
   dateMoved: false,
   patternChanged: false,
   seriesRuleLoaded: true,
@@ -27,6 +28,11 @@ describe("event save scopes", () => {
     expect(eventSaveDisabledScopes({ ...unchanged, dateMoved: true })).toEqual({
       all: true,
     });
+  });
+  test("a calendar move applies to the entire series", () => {
+    expect(
+      eventSaveDisabledScopes({ ...unchanged, calendarMoved: true })
+    ).toEqual({ following: true, this: true });
   });
   test("waits for the series before saving", () => {
     expect(
