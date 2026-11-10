@@ -3,6 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
@@ -12,7 +13,12 @@ import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../event-position";
+import {
+  BLOCK_RAISE_CLASS,
+  blockHorizontalStyle,
+  blockStackStyle,
+  calculateEventPosition,
+} from "../event-position";
 
 type ScheduledTask = TaskSelectDecoded & {
   startDate: Temporal.PlainDate;
@@ -20,31 +26,25 @@ type ScheduledTask = TaskSelectDecoded & {
 };
 
 interface TaskEventProps {
-  columnIndex?: number;
-  columnSpan?: number;
   /** Whether this segment contains the task's actual start time */
   isFirstSegment: boolean;
   /** Whether this segment contains the task's actual end time */
   isLastSegment: boolean;
+  layout?: ItemLayout;
   /** Clipped end time for this visible day segment */
   segmentEnd: Temporal.ZonedDateTime;
   /** Clipped start time for this visible day segment */
   segmentStart: Temporal.ZonedDateTime;
   task: ScheduledTask;
-  totalColumns?: number;
-  zIndex?: number;
 }
 
 export const TaskEvent = memo(function TaskEventInner({
+  layout,
   task,
   segmentStart,
   segmentEnd,
   isFirstSegment,
   isLastSegment,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
 }: TaskEventProps) {
   const timeZone = useAtomValue(timezoneAtom);
 
@@ -114,18 +114,12 @@ export const TaskEvent = memo(function TaskEventInner({
   const isDone = task.status === "done";
   const isShortTask = segmentDurationMinutes <= 15;
 
-  // columnSpan lets items expand into adjacent empty columns
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
   const style: React.CSSProperties = {
     height,
-    left: `calc(${leftPercent}% + 2px)`,
+    ...blockHorizontalStyle(layout),
     position: "absolute",
     top,
-    width: `calc(${columnWidth}% - 4px)`,
-    zIndex,
+    ...blockStackStyle(layout?.zIndex),
   };
 
   return (
@@ -134,6 +128,7 @@ export const TaskEvent = memo(function TaskEventInner({
         className={cn(
           "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
           "relative",
+          BLOCK_RAISE_CLASS,
           "hover:shadow-md",
           isDragging ? "opacity-0" : "",
           isDone ? "opacity-60" : ""

@@ -10,6 +10,11 @@ import {
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
+import {
+  BLOCK_RAISE_CLASS,
+  blockHorizontalStyle,
+  blockStackStyle,
+} from "../event-position";
 
 interface WhoopWorkoutEventProps {
   /** Calendar date this column represents — used for clamping cross-day workouts */
@@ -67,26 +72,16 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
   const top = (startMinutes / 60) * PIXELS_PER_HOUR;
   const height = Math.max(20, (durationMinutes / 60) * PIXELS_PER_HOUR);
 
-  const columnIndex = layout?.columnIndex ?? 0;
-  const totalColumns = layout?.totalColumns ?? 1;
-  const columnSpan = layout?.columnSpan ?? 1;
-  const zIndex = layout?.zIndex ?? 1;
-
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
   const label = sportName || "Workout";
 
   return (
     <div
-      className="pointer-events-auto absolute rounded-md bg-background p-px shadow-sm"
+      className={`pointer-events-auto absolute rounded-md bg-background p-px ${BLOCK_RAISE_CLASS}`}
       style={{
         height: `${height}px`,
-        left: `calc(${leftPercent}% + 2px)`,
+        ...blockHorizontalStyle(layout),
         top: `${top}px`,
-        width: `calc(${columnWidth}% - 4px)`,
-        zIndex,
+        ...blockStackStyle(layout?.zIndex),
       }}
     >
       <div

@@ -11,6 +11,7 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useAtomValue } from "jotai";
 import { Lock } from "lucide-react";
 import { memo } from "react";
@@ -23,31 +24,30 @@ import {
 import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../event-position";
+import {
+  BLOCK_RAISE_CLASS,
+  blockHorizontalStyle,
+  blockStackStyle,
+  calculateEventPosition,
+} from "../event-position";
 import { EventEditPopover } from "./event-edit-popover";
 
 interface GoogleCalendarEventProps {
   accountId: string;
   calendarId: string;
-  columnIndex?: number;
-  columnSpan?: number;
   end: Temporal.ZonedDateTime;
   event: GoogleEvent;
+  layout?: ItemLayout;
   start: Temporal.ZonedDateTime;
-  totalColumns?: number;
-  zIndex?: number;
 }
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
+  layout,
   event,
   start,
   end,
   accountId,
   calendarId,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
 }: GoogleCalendarEventProps) {
   const durationMinutes = Math.max(
     1,
@@ -126,18 +126,12 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       palette: normalizedPalette?.event,
     });
 
-  // columnSpan lets items expand into adjacent empty columns
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
   const style: React.CSSProperties = {
     height,
-    left: `calc(${leftPercent}% + 2px)`,
+    ...blockHorizontalStyle(layout),
     position: "absolute",
     top,
-    width: `calc(${columnWidth}% - 4px)`,
-    zIndex,
+    ...blockStackStyle(layout?.zIndex),
   };
 
   const fillStyle: React.CSSProperties = {
@@ -150,6 +144,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       className={cn(
         "group pointer-events-auto rounded-md bg-background p-px shadow-sm transition-shadow",
         "relative",
+        BLOCK_RAISE_CLASS,
         isEditable
           ? "cursor-grab hover:shadow-md"
           : "cursor-default opacity-90",
