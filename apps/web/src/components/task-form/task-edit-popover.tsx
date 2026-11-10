@@ -51,6 +51,7 @@ import Image from "next/image";
 import {
   type ReactElement,
   type RefObject,
+  type SyntheticEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -312,7 +313,13 @@ export function TaskEditPopover({
             handleCancel();
           }
         }}
+        onMouseDown={keepInEditor}
         onOpenAutoFocus={handleOpenAutoFocus}
+        // React bubbles a portal's events to its React parents: a press in
+        // the editor would reach the draggable task it opened from, and a
+        // drag from its padding would schedule that task.
+        onPointerDown={keepInEditor}
+        onTouchStart={keepInEditor}
         ref={contentRef}
         // A phone has no room beside the task, and Radix only slides a side
         // placement up or down, so the editor opens below it instead.
@@ -328,6 +335,10 @@ export function TaskEditPopover({
       </PopoverContent>
     </Popover>
   );
+}
+
+function keepInEditor(event: SyntheticEvent) {
+  event.stopPropagation();
 }
 
 /**
