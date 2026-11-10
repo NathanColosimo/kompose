@@ -156,12 +156,12 @@ export function keepsEditedOccurrence(params: {
  * The new occurrences for a "this and following" pattern change, from where
  * the edited occurrence now starts: its new date when the edit moves it
  * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
- * one. Dates other kept tasks hold are left out. When the edited
- * occurrence is kept, it holds the first date, as the master
- * (`seriesMasterId` is its id) carrying the pattern. Otherwise
- * the first row, on its date, replaces it: the new master, with the
- * pattern and its status (so `keptDates` mustn't hold that date, as
- * keepsEditedOccurrence ensures). Other new occurrences start open.
+ * one. Dates other kept tasks hold are left out. When the edited occurrence
+ * is kept, it holds the first date, as the master (`seriesMasterId` is its
+ * id) carrying the pattern. Otherwise the first row, on its date, replaces
+ * it: the new master, with the pattern and its status (so `keptDates`
+ * mustn't hold that date, as keepsEditedOccurrence ensures). Other new
+ * occurrences start open.
  */
 export function regeneratedOccurrenceRows(params: {
   input: TaskUpdateInput;
