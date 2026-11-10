@@ -51,10 +51,10 @@ export const SCOPE_DIALOG_COPY = {
     "A new repeat applies from this occurrence on, or to the entire series.",
   /** A new repeat that, counted from the series' first meeting, skips this one. */
   repeatOffDay:
-    "Counted from the series' first meeting, the new repeat would skip this occurrence, so it applies from here on.",
+    "Applied to the entire series, the new repeat would skip this occurrence, so it applies from here on.",
   /** The same, when it's the new end (COUNT or UNTIL) that comes first. */
   repeatEndOff:
-    "Counted from the series' first meeting, the new end comes before this occurrence, so it applies from here on.",
+    "Applied to the entire series, the new repeat would end before this occurrence, so it applies from here on.",
   /** Shown when the series' rule couldn't load, for a moved day. */
   seriesFailed:
     "Couldn't load the series, so your changes apply to this occurrence only. Try again later for the rest.",
@@ -68,59 +68,61 @@ export const SCOPE_DIALOG_COPY = {
   seriesFailedRepeat:
     "Couldn't load the series, so a new repeat can't be saved. Try again later.",
   /** Shown while a save waits for the series' rule. */
-  seriesLoading: "Loading the series… This and following opens once it's in.",
+  seriesLoading:
+    "Loading the series… This and following is available once it loads.",
   /** The same, where the server refused This and following. */
-  seriesLoadingAll: "Loading the series… Entire series opens once it's in.",
+  seriesLoadingAll:
+    "Loading the series… Entire series is available once it loads.",
   /**
    * Shown while a new repeat waits for the series' rule: whether, counted
    * from its first meeting, it skips this one isn't known yet.
    */
   seriesLoadingRepeat:
-    "Loading the series… A new repeat can be saved once it's in.",
+    "Loading the series… A new repeat can be saved once it loads.",
   /**
    * Shown while a new time waits for the series' rule: whether it repeats
    * by more than one rule, which a new time can't keep, isn't known yet.
    */
   seriesLoadingTime:
-    "Loading the series… This and following and Entire series open once it's in.",
+    "Loading the series… This and following and Entire series are available once it loads.",
   /** Shown instead of the description when the event changes calendar. */
-  moveEvent: "Moving to another calendar moves the whole series.",
+  moveEvent: "Moving to another calendar moves the entire series.",
   /** A calendar move while the occurrence is on another day (`dateMoved`). */
   moveEventDay:
-    "Moving to another calendar moves the whole series, but this occurrence is now on another day than its series, which can't go with it. Move the calendar and change the times in two saves.",
+    "Moving to another calendar moves the entire series, but this occurrence has moved to another day, which can't be saved with a calendar change. Change the calendar and the times in two saves.",
   /** A calendar move with a new repeat that would skip this occurrence. */
   moveEventRepeatDay:
-    "Moving to another calendar moves the whole series, but counted from its first meeting the new repeat would skip this occurrence. Move the calendar and change the repeat in two saves.",
+    "Moving to another calendar moves the entire series, but the new repeat, applied to the entire series, would skip this occurrence. Change the calendar and the repeat in two saves.",
   /** The same, when it's the new end that comes first. */
   moveEventRepeatEnd:
-    "Moving to another calendar moves the whole series, but counted from its first meeting the new end comes before this occurrence. Move the calendar and change the repeat in two saves.",
+    "Moving to another calendar moves the entire series, but the new repeat, applied to the entire series, would end before this occurrence. Change the calendar and the repeat in two saves.",
   /**
    * A calendar move with a new time while the series loads, or after it
    * failed to: only Entire series could take both.
    */
   moveEventLoadingTime:
-    "Moving to another calendar moves the whole series. Loading the series… Entire series opens once it's in.",
+    "Moving to another calendar moves the entire series. Loading the series… Entire series is available once it loads.",
   moveEventFailedTime:
-    "Moving to another calendar moves the whole series. Couldn't load the series, so the move and the new time can't be saved together. Try again later.",
+    "Moving to another calendar moves the entire series. Couldn't load the series, so the move and the new time can't be saved together. Try again later.",
   /** A calendar move the server refused for the whole series. */
   moveEventRefused:
-    "Moving to another calendar moves the whole series, so move it in a save of its own first.",
+    "Moving to another calendar moves the entire series, so change the calendar in a save of its own first.",
   /** A calendar move with a new time for a series meeting several times a day. */
   moveEventSeveralRulesTime:
-    "Moving to another calendar moves the whole series, but its meetings keep times of their own, so a new time can't go with it. Move the calendar and change the time in two saves.",
+    "Moving to another calendar moves the entire series, but its occurrences are at different times of day, so one new time can't apply to them all. Change the calendar and the time in two saves.",
   /** Why a series meeting several times a day can't take a new time. */
   severalRulesTimeReason:
-    "This series' meetings keep times of their own, so a new time can't apply to the entire series.",
+    "This series has occurrences at different times of day, so a new time can't apply to the entire series.",
   /** After `severalRulesTimeReason`, with This and following on. */
   newTimeHere: "A new time applies to this occurrence, or from it on.",
   /**
    * With a new repeat where This and following is off too, after why
    * Entire series is: so no scope is left (`noScopeStep`).
    */
-  repeatNotAlone: "One occurrence can't take a new repeat either.",
+  repeatNotAlone: "A new repeat can't apply to one occurrence either.",
   /** The same with a new repeat on the meeting's own day. */
   severalRulesTimeAndRepeatReason:
-    "This series' meetings keep times of their own, so a new time can't apply to the entire series, nor a new repeat to one occurrence.",
+    "This series has occurrences at different times of day, so a new time can't apply to the entire series, nor a new repeat to one occurrence.",
   /**
    * For new times and a new repeat the server refused for meetings changed
    * on their own (it named them): the times can be saved alone; whether
@@ -137,15 +139,16 @@ export const SCOPE_DIALOG_COPY = {
    * this occurrence, where This and following is off: only Entire series,
    * saved from that first meeting, could take it.
    */
-  repeatFromFirstMeeting: "Change the repeat from that first meeting.",
+  repeatFromFirstMeeting:
+    "Change the repeat from the series' first occurrence instead.",
   /** Where the server refused every scope, Only this included. */
   noScopeLeft:
-    "None of these can save this change as it is. Change it, or cancel.",
+    "This change can't be saved as it is. Cancel and try a different change.",
   /** For new times and a new repeat no scope takes together. */
   timesAndRepeat: "Change the times and the repeat in two saves.",
   /** After why Entire series is off, from the series' first meeting. */
   firstMeetingFollowing:
-    "From its first meeting, This and following is the entire series too.",
+    "This is the first occurrence, so This and following is the entire series.",
   saveEvent: {
     description: "Apply your changes to:",
     title: "Save recurring event",
@@ -167,9 +170,9 @@ export const SCOPE_DIALOG_COPY = {
   splitBlockedThen: {
     repeat: "A new repeat applies to the entire series.",
     repeatOffDay:
-      "Counted from the series' first meeting, the new repeat would skip this occurrence.",
+      "Applied to the entire series, the new repeat would skip this occurrence.",
     repeatEndOff:
-      "Counted from the series' first meeting, the new end comes before this occurrence.",
+      "Applied to the entire series, the new repeat would end before this occurrence.",
     severalRulesTime: "A new time applies to this occurrence only.",
   },
   saveTask: {
@@ -754,8 +757,8 @@ function newDayLine(
     ? timeZoneCity(changes.seriesTimeZone)
     : null;
   const where = city
-    ? `In ${city} time, this occurrence is now on another day than its series`
-    : "This occurrence is now on another day than its series";
+    ? `In ${city} time, this occurrence has moved to another day`
+    : "This occurrence has moved to another day";
   const refused = firstMeetingNewTimeRefused(changes);
   if (refused || splitBlock) {
     const alone = changes.patternChanged
@@ -769,7 +772,7 @@ function newDayLine(
   }
   return changes.patternChanged
     ? `${where}, so a new repeat applies from it on.`
-    : `${where}, so your changes apply to it, or from it on.`;
+    : `${where}, so your changes apply to it alone or from it on.`;
 }
 
 /** The sentences given, in order, those left out skipped. */
