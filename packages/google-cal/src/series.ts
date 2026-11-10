@@ -8,9 +8,11 @@ import { Temporal } from "temporal-polyfill";
 /** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
 export const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
+/** A rule part that ends it: COUNT or UNTIL. */
+const END_PART = /^(?:COUNT|UNTIL)=/;
+
 const DAILY_OR_LONGER = /^FREQ=(?:DAILY|WEEKLY|MONTHLY|YEARLY)$/;
 const TIME_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
-const END_PART = /^(?:COUNT|UNTIL)=/;
 
 /**
  * `rule`'s parts as Google reads them: it meets a day-or-longer rule once
