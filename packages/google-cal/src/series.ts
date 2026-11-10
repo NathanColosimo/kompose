@@ -166,10 +166,12 @@ export function ruleDayCount(params: {
 }): number | null {
   // Its days alone: an UNTIL with a time can't end a rule read by date
   // (RFC 5545 has it take DTSTART's form), so the end is left out.
-  const days = params.rule
+  const body = params.rule.indexOf(":") + 1;
+  const days = `${params.rule.slice(0, body)}${params.rule
+    .slice(body)
     .split(";")
     .filter((part) => !END_PART.test(part))
-    .join(";");
+    .join(";")}`;
   const rule = expand(days, params.from, false);
   const utc = (day: Temporal.PlainDate) =>
     day.toZonedDateTime({ timeZone: "UTC" });
