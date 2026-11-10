@@ -1,6 +1,6 @@
 /**
- * Reading a series' times: its EXDATE/RDATE values, a start's moment,
- * clock and length, and how often its rules meet in a day.
+ * Reading a series' times: its EXDATE/RDATE values, and a start's moment,
+ * clock and length.
  */
 import { Temporal } from "temporal-polyfill";
 
@@ -12,74 +12,6 @@ const UNTIL_DATE_TIME =
 const DATE_LIST = /^(EXDATE|RDATE)([^:]*):(.+)$/;
 const TZID_PARAM = /;TZID=([^;:]+)/;
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/;
-
-const FREQ = /FREQ=([A-Z]+)/;
-const INTERVAL = /INTERVAL=(\d+)/;
-const TIME_PART = /BY(?:HOUR|MINUTE|SECOND)=/;
-/**
- * A time part a rule sets to one value. Google meets a rule once a day, at
- * the start's time, and ignores a list ("BYHOUR=9,15"), so a list reads as
- * left out.
- */
-const CLOCK_PART = /[:;](BYHOUR|BYMINUTE|BYSECOND)=(\d+)(?=;|$)/g;
-
-/**
- * A rule's time of day as a key, "9:0:0". A part it leaves out is the
- * start's (`base`).
- */
-function ruleTime(line: string, base: Temporal.PlainTime): string {
-  const parts = clockParts(line);
-  const fallback = [base.hour, base.minute, base.second];
-  return ["BYHOUR", "BYMINUTE", "BYSECOND"]
-    .map((name, index) => parts.get(name) ?? fallback[index])
-    .join(":");
-}
-
-/** The time parts a rule sets, by name ("BYHOUR" to 9). */
-function clockParts(rule: string): Map<string, number> {
-  return new Map(
-    [...rule.matchAll(CLOCK_PART)].map((match) => [
-      match[1] ?? "",
-      Number(match[2]),
-    ])
-  );
-}
-
-/** A sub-daily rule's steps in a day. */
-const STEPS_A_DAY: Record<string, number> = {
-  HOURLY: 24,
-  MINUTELY: 24 * 60,
-  SECONDLY: 24 * 60 * 60,
-};
-
-/**
- * Whether a sub-daily rule meets more than once a day: unless it steps
- * whole days at a time (`FREQ=HOURLY;INTERVAL=24`) with no time parts.
- */
-function stepsWithinADay(line: string): boolean {
-  const steps = STEPS_A_DAY[FREQ.exec(line)?.[1] ?? ""];
-  if (!steps) {
-    return false;
-  }
-  const interval = Number(INTERVAL.exec(line)?.[1] ?? "1");
-  return interval % steps !== 0 || TIME_PART.test(line);
-}
-
-/**
- * Whether a series meets more than once a day: a sub-daily rule, or rules
- * at different times. The start, at `base`, counts as a meeting, and its
- * time fills the parts a rule leaves out. Such a series' times are its
- * own: they don't follow the start.
- */
-export function meetsSeveralTimesADay(
-  recurrence: string[],
-  base: Temporal.PlainTime
-): boolean {
-  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
-  const times = new Set(rules.map((line) => ruleTime(line, base)));
-  times.add(ruleTime("", base));
-  return rules.some(stepsWithinADay) || times.size > 1;
-}
 
 /**
  * A start as Google writes it: a date (all day) or a date-time, which may

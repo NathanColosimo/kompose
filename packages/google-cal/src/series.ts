@@ -89,3 +89,22 @@ export function ruleDayCount(params: {
     ? rule.between(utc(params.from), utc(params.through), true).length
     : null;
 }
+
+/**
+ * Whether a series meets at more than one time of day: a rule that steps
+ * within a day, or meets at a time other than its start's (`first`), as
+ * its first meetings show. Such a series' times don't follow its start.
+ */
+export function meetsSeveralTimesADay(
+  recurrence: string[],
+  first: Temporal.ZonedDateTime
+): boolean {
+  const clocks = new Set([first.toPlainTime().toString()]);
+  for (const rule of recurrence.filter((line) => line.startsWith("RRULE:"))) {
+    for (const meeting of expand(rule, first, true)?.all((_, i) => i < 3) ??
+      []) {
+      clocks.add(meeting.toPlainTime().toString());
+    }
+  }
+  return clocks.size > 1;
+}

@@ -21,7 +21,7 @@ import {
   EventSchema,
   type RecurrenceScope,
 } from "./schema";
-import { ruleDayCount } from "./series";
+import { meetsSeveralTimesADay, ruleDayCount } from "./series";
 import {
   canonicalRule,
   changedFields,
@@ -50,7 +50,6 @@ import {
   googleDateTime,
   keepingDateValues,
   lengthMs,
-  meetsSeveralTimesADay,
   momentOf,
   type RecurrenceValue,
   startInstant,
@@ -507,13 +506,19 @@ function keptOrEnded(params: {
   start: Event["start"];
 }): boolean {
   const { master, place, start } = params;
-  const seriesZone = repeatZone(master, start);
-  // Read without skips: the save's own skip for it is already there.
-  const rules = params.recurrence.filter((line) => line.startsWith("RRULE:"));
-  const unbounded = rules.map(withoutEnd);
-  const meets = (recurrence: string[]) =>
-    seriesMeetsAt({ recurrence, seriesZone, slot: place, start }) === true;
-  return meets(rules) || meets(unbounded);
+  // Read without skips (the save's own skip for it is already there) and
+  // without its end: a rule meets past its end wherever it would have.
+  const unbounded = params.recurrence
+    .filter((line) => line.startsWith("RRULE:"))
+    .map(withoutEnd);
+  return (
+    seriesMeetsAt({
+      recurrence: unbounded,
+      seriesZone: repeatZone(master, start),
+      slot: place,
+      start,
+    }) === true
+  );
 }
 
 /**
@@ -901,7 +906,7 @@ function movesSeveralADay(params: {
 }): boolean {
   const { edited, master, occurrence, start } = params;
   const zone = seriesZoneOf(master);
-  const from = clockOf(master.start, zone);
+  const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
   const was = clockOf(occurrence.start, zone);
   const now = clockOf(edited.start, zone);
   // Made all day, its times go too.
@@ -910,7 +915,7 @@ function movesSeveralADay(params: {
     Boolean(start.date) ||
     Boolean(was && now && !was.equals(now));
   return Boolean(
-    from && moves && meetsSeveralTimesADay(master.recurrence ?? [], from)
+    first && moves && meetsSeveralTimesADay(master.recurrence ?? [], first)
   );
 }
 
