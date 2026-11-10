@@ -2005,6 +2005,8 @@ function placeSkips(params: {
   fromSplit: string[];
   keeps: boolean;
   master: Event;
+  /** The rule places skipped for the moved meeting (`movedOffRule`). */
+  moved: string[];
   originalStart: string;
   start: Event["start"];
 }): { placed: string[]; rule: string[] } {
@@ -2092,7 +2094,7 @@ function placeSkips(params: {
   return {
     placed,
     rule: countWithinSkips({
-      ...placesOfSkips({ master, skips, startSlot }),
+      ...placesOfSkips({ master, moved: params.moved, skips, startSlot }),
       recurrence: rule,
       start,
       zone: newZone,
@@ -2103,13 +2105,15 @@ function placeSkips(params: {
 /**
  * What a split's skips (each with where it lands) do to a kept COUNT. A
  * rule position, skipped or deleted, whose skip has no place of its own
- * in the new series (none, the new start, another's, or a live meeting's)
- * is gone, and a place with it (`lost`), once however many skips it has.
+ * in the new series (none, the new start, another's, the moved meeting's
+ * old one (`moved`), or a live meeting's) is gone, and a place with it
+ * (`lost`), once however many skips it has.
  * One placed holds its place (`ruleSkips`, by where). An added day's skip
  * stays at its own time, so it holds none.
  */
 function placesOfSkips(params: {
   master: Event;
+  moved: string[];
   skips: {
     added: boolean;
     at: string | null;
@@ -2136,7 +2140,14 @@ function placesOfSkips(params: {
     if (formed && claims) {
       takenBy.set(formed, first);
     }
-    if (onStart || (at === null && !added) || first !== moment || ontoLive) {
+    const onMoved = formed !== null && params.moved.includes(formed);
+    if (
+      onStart ||
+      onMoved ||
+      (at === null && !added) ||
+      first !== moment ||
+      ontoLive
+    ) {
       lost.add(moment);
     } else if (at && formed) {
       ruleSkips.add(formed);
@@ -3238,6 +3249,7 @@ export function makeGoogleCalendarService(
         fromSplit,
         keeps,
         master,
+        moved,
         originalStart,
         start,
       });
