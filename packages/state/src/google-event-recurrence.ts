@@ -1,33 +1,15 @@
-import {
-  addsSlot,
-  carryCountExactly,
-  countOf,
-  seriesMeetsAt,
-  splitAddedDays,
-} from "@kompose/google-cal/recurrence-utils";
-import { isRuleDay } from "@kompose/google-cal/rule-days";
+import { seriesMeetsAt } from "@kompose/google-cal/recurrence-utils";
 import type {
-  CreateEvent,
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import {
-  changedFields,
-  keepsTimes,
-  ownChanges,
-  placeInNewSeries,
-  sameLength,
-  sameTime,
-} from "@kompose/google-cal/series-edits";
+import { meetsSeveralTimesADay } from "@kompose/google-cal/series";
+import { keepsTimes, sameTime } from "@kompose/google-cal/series-edits";
 import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
 import {
-  DATE_ONLY,
   dayOfStart,
-  googleDateTime,
   matchRecurrenceToStart,
-  meetsSeveralTimesADay,
   moveSkippedDays,
-  ruleClock,
   startInstant,
   untilRuleForDay,
   untilRuleToDay,
@@ -634,376 +616,6 @@ export function repeatSkipsOccurrence(params: {
 }
 
 /**
- * What an Entire series save would cost a meeting of the series changed
- * on its own (moved, renamed, any field the series doesn't share), and
- * the earliest such meeting's day as the calendar shows it: the server
- * refuses the save then, as Google would apply it. Google ties such a
- * meeting to its original slot. It cancels every one when the series'
- * start moves, its time or its day ("newStart"), and each one whose slot
- * a new repeat no longer has ("lostSlot"); a new length alone keeps them
- * but gives each the series' length ("ownLength", for one with a length
- * of its own other than the opened one, which takes the edit's).
- */
-export interface EntireSeriesCost {
-  /** The earliest meeting's day, in the app's zone. */
-  day: Temporal.PlainDate;
-  reason: "lostSlot" | "newStart" | "ownLength";
-}
-
-/**
- * What an Entire series save would cost the series' meetings changed on
- * their own, as the server reads it (`EntireSeriesCost`), among those
- * `loaded` (the opened one too); null when it costs none. Only the
- * meetings the app has loaded are seen; the server checks them all.
- */
-export function entireSeriesCost(params: {
-  /** The edited start and end, as the save sends them. */
-  edited: { end: EventTime; start: EventTime };
-  /** The series' occurrences the app has loaded (from its events cache). */
-  loaded: GoogleEvent[];
-  /** The series' own event, loaded. */
-  master: GoogleEvent;
-  occurrence: Pick<
-    GoogleEvent,
-    "end" | "id" | "originalStartTime" | "recurringEventId" | "start"
-  >;
-  /** The repeat the save sends; undefined keeps the series'. */
-  recurrence: string[] | undefined;
-  timeZone: string;
-}): EntireSeriesCost | null {
-  const { edited, master, occurrence } = params;
-  if (!occurrence.recurringEventId) {
-    return null;
-  }
-  const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
-  const times = entireSeriesTimes({ edited, master, occurrence, zone });
-  const seriesZone = master.start.timeZone ?? times.start.timeZone ?? zone;
-  // As the server writes it with the series' new start (its ruleForStart).
-  const recurrence = matchRecurrenceToStart(
-    params.recurrence ?? master.recurrence ?? [],
-    times.start,
-    seriesZone,
-    master.start
-  );
-  const movesStart = !sameTime(times.start, master.start, zone);
-  const movesSlots =
-    movesStart ||
-    JSON.stringify(recurrence) !== JSON.stringify(master.recurrence ?? []);
-  const resizes = !sameLength(times, master, zone);
-  if (!(movesSlots || resizes)) {
-    return null;
-  }
-  const changed = params.loaded.flatMap((event) => {
-    const original = event.originalStartTime;
-    const slot = original?.dateTime ?? original?.date;
-    const own =
-      original &&
-      event.recurringEventId === master.id &&
-      Object.keys(ownChanges(event, master, slotAt(master, original), zone))
-        .length > 0;
-    return own && slot ? [{ event, original, slot }] : [];
-  });
-  /** The earliest by original day, named by the day it's on now. */
-  const earliest = (
-    meetings: typeof changed,
-    reason: EntireSeriesCost["reason"]
-  ): EntireSeriesCost | null => {
-    // ISO days sort as text.
-    const slotDay = (meeting: (typeof changed)[number]) =>
-      dayOfStart(meeting.original, zone)?.toString() ?? "";
-    const [first] = [...meetings].sort((a, b) =>
-      slotDay(a).localeCompare(slotDay(b))
-    );
-    const day = first && dayOfStart(first.event.start, params.timeZone);
-    return day ? { day, reason } : null;
-  };
-  // A new length alone moves no slot, so none is checked.
-  const lost = changed.filter(
-    ({ slot }) =>
-      movesStart ||
-      (movesSlots &&
-        seriesMeetsAt({ recurrence, seriesZone, slot, start: times.start }) !==
-          true)
-  );
-  if (lost.length > 0) {
-    return earliest(lost, movesStart ? "newStart" : "lostSlot");
-  }
-  if (!resizes) {
-    return null;
-  }
-  return earliest(
-    changed.filter(
-      ({ event }) =>
-        event.id !== occurrence.id && !sameLength(event, master, zone)
-    ),
-    "ownLength"
-  );
-}
-
-/**
- * What a This and following save from `occurrence` would cost a later
- * meeting changed on its own, as the server reads it (its placeCarried):
- * the new series carries each meeting after the split changed on its own
- * (by fields the save doesn't set for the series) to its place in it (as
- * many days on as the series moved, `placeInNewSeries`; an added one at
- * its own slot), and refuses the save where the new series has no meeting
- * there ("lostSlot"), or can't carry its times at all, a timed meeting in
- * a series made all day or the reverse ("newStart"). The earliest such
- * meeting among those `loaded`, by original day, named by its day now;
- * null when none. Only the meetings the app has loaded are seen.
- */
-export function followingCost(params: {
-  /** The save as it sends the opened occurrence: its times and fields. */
-  edited: Partial<CreateEvent> & { end: EventTime; start: EventTime };
-  loaded: GoogleEvent[];
-  master: GoogleEvent;
-  occurrence: GoogleEvent;
-  /** The repeat the save sends; undefined keeps the series'. */
-  recurrence: string[] | undefined;
-  timeZone: string;
-}): EntireSeriesCost | null {
-  const { edited, master, occurrence } = params;
-  const original = occurrence.originalStartTime;
-  if (!(occurrence.recurringEventId && original)) {
-    return null;
-  }
-  const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
-  const splitAt = seriesSlotOf(original, zone);
-  const splitMoment = splitAt && slotInstant(splitAt, zone);
-  if (!(splitAt && splitMoment)) {
-    return null;
-  }
-  // The new series' start: the opened occurrence's slot while the save
-  // keeps its times, else the edit's.
-  const keptTimes = keepsTimes(edited, occurrence, zone);
-  const start = keptTimes ? slotAt(master, original).start : edited.start;
-  const recurrence = newSeriesRule({
-    master,
-    recurrence: params.recurrence,
-    splitAt,
-    start,
-    zone,
-  });
-  const forSeries = changedFields(edited, occurrence);
-  const later = laterOwnChanges({
-    forSeries,
-    loaded: params.loaded,
-    master,
-    occurrence,
-    splitMoment,
-    zone,
-  });
-  // The opened occurrence holds the new start's slot when it keeps changes
-  // of its own there (its times only when the save left them).
-  const openedOwn = ownFieldsOf(occurrence, master, forSeries, zone).filter(
-    (field) => keptTimes || !(field === "start" || field === "end")
-  );
-  const startSlot = seriesSlotOf(start, zone);
-  const held =
-    openedOwn.length > 0 && startSlot
-      ? { event: occurrence, slot: startSlot }
-      : null;
-  const lost = unplaced({
-    held,
-    later,
-    master,
-    recurrence,
-    splitAt,
-    start,
-    zone,
-  });
-  const slotDay = (event: GoogleEvent) =>
-    (event.originalStartTime &&
-      dayOfStart(event.originalStartTime, zone)?.toString()) ??
-    "";
-  // The opened occurrence is lost only with a later one that lands on its
-  // slot: that one, which the form doesn't show, is the one to name.
-  const [first] = lost
-    .filter(({ event }) => event.id !== occurrence.id)
-    .sort((a, b) => slotDay(a.event).localeCompare(slotDay(b.event)));
-  const day = first && dayOfStart(first.event.start, params.timeZone);
-  return first && day ? { day, reason: first.reason } : null;
-}
-
-/**
- * The meetings `later` the new series can't carry, and why: each goes to
- * its place in the new series, which must meet there, one meeting to a
- * slot (two that land on one both lose theirs).
- */
-function unplaced(params: {
-  /** The opened occurrence at the new start's slot, when it holds it. */
-  held: { event: GoogleEvent; slot: string } | null;
-  later: { event: GoogleEvent; slot: string }[];
-  master: GoogleEvent;
-  recurrence: string[];
-  splitAt: string;
-  start: EventTime;
-  zone: string;
-}): { event: GoogleEvent; reason: EntireSeriesCost["reason"] }[] {
-  const { later, master, recurrence, splitAt, start, zone } = params;
-  const placed = new Map<number, GoogleEvent>();
-  const heldAt = params.held && slotInstant(params.held.slot, zone);
-  if (params.held && heldAt) {
-    placed.set(heldAt.epochMilliseconds, params.held.event);
-  }
-  const lost: { event: GoogleEvent; reason: EntireSeriesCost["reason"] }[] = [];
-  for (const { event, slot } of later) {
-    const at = addsSlot(master.recurrence ?? [], slot, zone)
-      ? sameForm(slot, start)
-      : placeInNewSeries({
-          newStart: start,
-          originalStart: slot,
-          splitStart: splitAt,
-          zone,
-        });
-    const met =
-      at &&
-      seriesMeetsAt({ recurrence, seriesZone: zone, slot: at, start }) === true
-        ? slotInstant(at, zone)
-        : null;
-    const taken = met && placed.get(met.epochMilliseconds);
-    if (met && !taken) {
-      placed.set(met.epochMilliseconds, event);
-      continue;
-    }
-    lost.push({ event, reason: at ? "lostSlot" : "newStart" });
-    if (taken) {
-      lost.push({ event: taken, reason: "lostSlot" });
-    }
-  }
-  return lost;
-}
-
-/**
- * The loaded meetings of `master` after the split (`splitMoment`), other
- * than the opened one, with changes of their own the save doesn't set for
- * the series (`forSeries`), each with its original slot.
- */
-function laterOwnChanges(params: {
-  forSeries: Partial<CreateEvent>;
-  loaded: GoogleEvent[];
-  master: GoogleEvent;
-  occurrence: Pick<GoogleEvent, "id">;
-  splitMoment: Temporal.Instant;
-  zone: string;
-}): { event: GoogleEvent; slot: string }[] {
-  const { master, zone } = params;
-  return params.loaded.flatMap((event) => {
-    const slot =
-      event.recurringEventId === master.id &&
-      event.id !== params.occurrence.id &&
-      event.originalStartTime
-        ? seriesSlotOf(event.originalStartTime, zone)
-        : null;
-    const moment = slot && slotInstant(slot, zone);
-    if (
-      !(slot && moment) ||
-      Temporal.Instant.compare(moment, params.splitMoment) <= 0
-    ) {
-      return [];
-    }
-    return ownFieldsOf(event, master, params.forSeries, zone).length > 0
-      ? [{ event, slot }]
-      : [];
-  });
-}
-
-/**
- * The fields `event` has of its own at its slot (`ownChanges`) that the
- * save doesn't set for the series (`forSeries`), as the server's
- * changesOwnTo reads them.
- */
-function ownFieldsOf(
-  event: GoogleEvent,
-  master: GoogleEvent,
-  forSeries: Partial<CreateEvent>,
-  zone: string
-): string[] {
-  const original = event.originalStartTime;
-  return original
-    ? Object.keys(
-        ownChanges(event, master, slotAt(master, original), zone)
-      ).filter((field) => !(field in forSeries))
-    : [];
-}
-
-/**
- * The rule a This and following save's new series repeats by, as the
- * server writes it: from the split on (its added days before it stay with
- * the old series), its COUNT carried on where the app can count it, and
- * lined up with the new start from the split (its ruleForStart).
- */
-function newSeriesRule(params: {
-  master: GoogleEvent;
-  recurrence: string[] | undefined;
-  splitAt: string;
-  start: EventTime;
-  zone: string;
-}): string[] {
-  const { master, splitAt, start, zone } = params;
-  const masterRecurrence = master.recurrence ?? [];
-  const fromSplit = splitAddedDays(
-    params.recurrence ?? masterRecurrence,
-    splitAt,
-    zone,
-    "from"
-  );
-  const count = countOf(masterRecurrence);
-  const counted =
-    count !== undefined && countOf(fromSplit) === count
-      ? (carryCountExactly(fromSplit, {
-          masterRecurrence,
-          originalStart: splitAt,
-          seriesStart: seriesSlotOf(master.start, zone) ?? splitAt,
-          seriesZone: zone,
-        }) ?? fromSplit)
-      : fromSplit;
-  const timedSplit = !DATE_ONLY.test(splitAt);
-  const splitClock = timedSplit
-    ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
-    : null;
-  const days =
-    start.date && splitClock
-      ? { firstDay: Temporal.PlainDate.from(start.date), firstTime: splitClock }
-      : undefined;
-  return matchRecurrenceToStart(
-    counted,
-    start,
-    zone,
-    timedSplit ? { dateTime: splitAt } : master.start,
-    days
-  );
-}
-
-/** `slot` when it has `start`'s form (a date, or a date-time); else null. */
-function sameForm(slot: string, start: EventTime): string | null {
-  return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
-}
-
-/** A slot's moment: its own, or its date's start in `zone`. */
-function slotInstant(slot: string, zone: string): Temporal.Instant | null {
-  return DATE_ONLY.test(slot)
-    ? Temporal.PlainDate.from(slot).toZonedDateTime(zone).toInstant()
-    : startInstant({ dateTime: slot }, zone);
-}
-
-/**
- * A start as its series' slot, as the server reads one (its `slotOf`): a
- * date, or a date-time with the series' offset (one Google wrote without
- * an offset read in its own zone). Null when it has neither.
- */
-export function seriesSlotOf(
-  start: StartTime,
-  seriesZone: string
-): string | null {
-  if (start.date) {
-    return start.date;
-  }
-  const moment = startInstant(start, seriesZone);
-  return moment ? googleDateTime(moment.toZonedDateTimeISO(seriesZone)) : null;
-}
-
-/**
  * Whether an Entire series save made through `occurrence` moves the
  * series' start (its time, its day through its first meeting, or its
  * all-day form), as the server reads it: a new length alone doesn't.
@@ -1028,9 +640,9 @@ export function entireSeriesStartMoves(params: {
 /**
  * Whether an Entire series save made through `occurrence` gives a series
  * meeting more than once a day a new time of day, which the server
- * refuses (its movesSeveralADay): its rules would be mixed up. A new day,
- * length or all-day form keeps every meeting's time. For
- * `EventSaveChanges`' `movesSeveralADay`.
+ * refuses (its movesSeveralADay): its rules would be mixed up. A new day
+ * or length keeps every meeting's time. For `EventSaveChanges`'
+ * `movesSeveralADay`.
  */
 export function entireSeriesMovesSeveralADay(params: {
   edited: { end: EventTime; start: EventTime };
@@ -1041,13 +653,13 @@ export function entireSeriesMovesSeveralADay(params: {
   const { edited, master, occurrence } = params;
   const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
   const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
-  const from = timeOfStart(master.start, zone);
+  const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
   const to = timeOfStart(start, zone);
   return Boolean(
-    from &&
+    first &&
       to &&
-      Temporal.PlainTime.compare(from, to) !== 0 &&
-      meetsSeveralTimesADay(master.recurrence ?? [], from)
+      Temporal.PlainTime.compare(first.toPlainTime(), to) !== 0 &&
+      meetsSeveralTimesADay({ first, recurrence: master.recurrence ?? [] })
   );
 }
 
@@ -1088,101 +700,28 @@ function entireSeriesTimes(params: {
   );
 }
 
-/**
- * The series' own slot at an occurrence's original start: there, with the
- * series' length (days when all day), as the server compares a meeting
- * with it to tell whether it moved.
- */
-function slotAt(
-  master: Pick<GoogleEvent, "end" | "start">,
-  original: EventTime
-): Pick<GoogleEvent, "end" | "start"> {
-  if (master.start.date && master.end.date && original.date) {
-    const days = Math.max(
-      1,
-      Temporal.PlainDate.from(master.start.date).until(master.end.date).days
-    );
-    const day = Temporal.PlainDate.from(original.date);
-    return {
-      end: { date: day.add({ days }).toString() },
-      start: { date: original.date },
-    };
-  }
-  const zone = master.start.timeZone ?? "UTC";
-  const from = startInstant(master.start, zone);
-  const to = startInstant(master.end, zone);
-  const at = startInstant(original, zone);
-  if (!(from && to && at)) {
-    return { end: master.end, start: original };
-  }
-  return {
-    end: {
-      dateTime: at.add(from.until(to)).toString(),
-      timeZone: master.end.timeZone ?? master.start.timeZone,
-    },
-    start: original,
-  };
-}
+/** A rule part that ends it: COUNT or UNTIL. */
+const END_PART = /^(?:COUNT|UNTIL)=/;
 
-/**
- * Replaced by `entireSeriesCost` (an `EntireSeriesCost`: every change
- * the server keeps, under a new repeat, start or length); kept until the
- * app layers switch.
- *
- * The series' first moved (rescheduled) meeting, among those `loaded`,
- * that a new repeat saved for the entire series would cancel: Google keeps
- * one only while the rule still produces its original slot. The day it's
- * on now in `timeZone` (the app's), for the scope dialog to name; null
- * when none would go, or before the series loads. The edited occurrence
- * is `repeatSkipsOccurrence`'s.
- */
-export function movedMeetingDropped(params: {
-  /** The series' occurrences the app has loaded (from its events cache). */
-  loaded: Pick<
-    GoogleEvent,
-    "id" | "originalStartTime" | "recurringEventId" | "start"
-  >[];
-  occurrence: Pick<GoogleEvent, "id" | "recurringEventId" | "start">;
-  /** The repeat the save sends. */
-  recurrence: string[] | undefined;
-  /** The series' own start (its master's), once loaded. */
-  seriesStart?: StartTime | null;
-  timeZone: string;
-}): Temporal.PlainDate | null {
-  const { occurrence, recurrence, seriesStart } = params;
-  if (!(occurrence.recurringEventId && seriesStart && recurrence?.length)) {
-    return null;
+/** A rule line without its end (COUNT or UNTIL); any other line as it is. */
+function withoutEnd(line: string): string {
+  if (!isRule(line)) {
+    return line;
   }
-  const timeZone =
-    seriesStart.timeZone ?? eventTimeZone(occurrence, params.timeZone);
-  const dropped = params.loaded.flatMap((event) => {
-    const slot = event.originalStartTime;
-    const moved =
-      event.recurringEventId === occurrence.recurringEventId &&
-      event.id !== occurrence.id &&
-      slot &&
-      !sameTime(event.start, slot, timeZone);
-    if (!moved) {
-      return [];
-    }
-    return slotDropped({ recurrence, seriesStart, slot, timeZone })
-      ? [{ slot, start: event.start }]
-      : [];
-  });
-  // Earliest original day first (ISO days sort as text).
-  const slotDay = (event: (typeof dropped)[number]) =>
-    dayOfStart(event.slot, timeZone)?.toString() ?? "";
-  const [first] = dropped.sort((a, b) => slotDay(a).localeCompare(slotDay(b)));
-  return first ? dayOfStart(first.start, params.timeZone) : null;
+  const parts = line
+    .slice("RRULE:".length)
+    .split(";")
+    .filter((part) => part && !END_PART.test(part));
+  return `RRULE:${parts.join(";")}`;
 }
 
 /**
  * Why `recurrence` no longer has `slot`, an occurrence's original start,
  * as the server reads it (`seriesMeetsAt`: the series' first meeting, an
- * added RDATE one, or a rule's, skipped ones aside): "end" when a rule at
- * the slot's time still has its day but its COUNT or UNTIL comes first,
- * else "day" (not a rule's day or time: an implicit day, an interval's
- * phase, another time of day).
+ * added RDATE one, or a rule's, skipped ones aside): "end" when its rules
+ * would still meet there without their COUNT or UNTIL, else "day" (not a
+ * rule's day or time: an implicit day, an interval's phase, another time
+ * of day).
  * Null while the series still has it, or when that can't be told.
  */
 function slotDropped(params: {
@@ -1191,37 +730,22 @@ function slotDropped(params: {
   slot: StartTime;
   timeZone: string;
 }): "day" | "end" | null {
-  const { recurrence, seriesStart, slot, timeZone } = params;
-  const slotText = slot.dateTime ?? slot.date;
-  const meets =
-    slotText &&
+  const { seriesStart, timeZone } = params;
+  const slot = params.slot.dateTime ?? params.slot.date;
+  if (!slot) {
+    return null;
+  }
+  const meets = (recurrence: string[]) =>
     seriesMeetsAt({
       recurrence,
       seriesZone: timeZone,
-      slot: slotText,
+      slot,
       start: seriesStart,
     });
-  if (meets !== false) {
+  if (meets(params.recurrence) !== false) {
     return null;
   }
-  const first = dayOfStart(seriesStart, timeZone);
-  const day = dayOfStart(slot, timeZone);
-  const seriesTime = timeOfStart(seriesStart, timeZone);
-  const slotTime = timeOfStart(slot, timeZone);
-  // Only a rule at the slot's time could have had it.
-  const slotRules = recurrence
-    .filter(isRule)
-    .filter(
-      (rule) =>
-        !(seriesTime && slotTime) ||
-        Temporal.PlainTime.compare(ruleClock(rule, seriesTime), slotTime) === 0
-    );
-  const onItsDay = Boolean(
-    first &&
-      day &&
-      slotRules.some((rule) => isRuleDay(rule, first, day) === true)
-  );
-  return onItsDay ? "end" : "day";
+  return meets(params.recurrence.map(withoutEnd)) === true ? "end" : "day";
 }
 
 /**
