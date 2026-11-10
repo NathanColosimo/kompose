@@ -114,6 +114,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 
 #### Backend safety: Entire series
 - An `all` save writes only the fields the edit changed. When Google would cancel or resize occurrences changed on their own (a new start, a rule without their slot, a new length), or a deleted occurrence's skip would miss its meeting, the server refuses before writing and returns the refusal as `BAD_REQUEST` data naming them. When the opened occurrence has values of its own, the change is written to it in a second request after the series; if that one fails, the series is saved and the error returned.
+- Where a series meets is read from its rules with `rrule-temporal` (`packages/google-cal/src/series.ts`, the only module that uses it), as Google reads them: a daily-or-longer rule meets once a day, at the start's time or a time part's one value, ignoring a list there. An exclusion rule (EXRULE) isn't read, so a refusal that depends on one says it may not apply (`unsure`).
 
 #### Error feedback
 - Mutations surface failures via toast errors:

@@ -1,23 +1,13 @@
 import { Temporal } from "temporal-polyfill";
-import { countedRuleDays, isRuleDay } from "./rule-days";
 import type { CreateEvent, Event } from "./schema";
+import { ruleMeetsAt } from "./series";
 import {
-  atOwnWallTime,
-  countedRuleMeetings,
   DATE_ONLY,
   dateValues,
   type RecurrenceValue,
   readRecurrenceValue,
-  ruleClock,
-  ruleTimeOf,
-  untilMoment,
 } from "./until";
 
-const COUNT_PART = /([:;])COUNT=([^;]+)/;
-const UNTIL_VALUE = /[:;]UNTIL=([^;]+)/;
-const FREQ_VALUE = /FREQ=([A-Z]+)/;
-const INTERVAL_VALUE = /INTERVAL=(\d+)/;
-const BY_PART = /[:;]BY[A-Z]+=/;
 const STRIP_TIME_SEPARATORS = /[-:]/g;
 const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/;
 const UNTIL_REGEX = /;?UNTIL=[^;]+/;
@@ -53,13 +43,6 @@ export function truncateRecurrenceForFollowing(
 
   return [nextRule, ...recurrence.slice(1)];
 }
-
-/** The unit a sub-daily rule steps by. */
-const SUB_DAILY_UNIT: Record<string, "hours" | "minutes" | "seconds"> = {
-  HOURLY: "hours",
-  MINUTELY: "minutes",
-  SECONDLY: "seconds",
-};
 
 /** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
 function asValue(start: string, seriesZone: string): RecurrenceValue | null {
@@ -123,17 +106,6 @@ export function skipping(
   ];
 }
 
-/** A value as a moment: its own, or its day's start in `seriesZone`. */
-function valueMoment(
-  value: RecurrenceValue,
-  seriesZone: string
-): Temporal.Instant {
-  return (
-    value.instant ??
-    value.day.toZonedDateTime({ timeZone: seriesZone }).toInstant()
-  );
-}
-
 function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
   return a.instant && b.instant
     ? Temporal.Instant.compare(a.instant, b.instant) === 0
@@ -141,84 +113,11 @@ function sameValue(a: RecurrenceValue, b: RecurrenceValue): boolean {
 }
 
 /**
- * Whether a plain hourly (minutely, secondly) rule, stepping from `first`,
- * meets at `slot`. Null with BY parts, or across a clock change (see
- * `subDailyEndsBefore`).
- */
-function subDailyHasSlot(
-  rule: string,
-  step: "hours" | "minutes" | "seconds",
-  first: RecurrenceValue,
-  slot: RecurrenceValue,
-  seriesZone: string
-): boolean | null {
-  if (!(first.instant && slot.instant) || BY_PART.test(rule)) {
-    return null;
-  }
-  const change = first.instant
-    .toZonedDateTimeISO(seriesZone)
-    .getTimeZoneTransition("next");
-  if (
-    change &&
-    Temporal.Instant.compare(change.toInstant(), slot.instant) <= 0
-  ) {
-    return null;
-  }
-  const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
-  const steps = first.instant.until(slot.instant).total({ unit: step });
-  if (steps < 0 || !Number.isInteger(steps / interval)) {
-    return false;
-  }
-  const ended = ruleEndsBefore(rule, first, slot.instant, seriesZone);
-  return ended === null ? null : !ended;
-}
-
-/**
- * Whether `rule`, repeating from `first`, meets at `slot`: on its day,
- * before its end, at its time. Google meets a rule once a day, at its one
- * BYHOUR / BYMINUTE or the start's time, and ignores a list there. Null
- * when that can't be told.
- */
-function ruleHasSlot(
-  rule: string,
-  first: RecurrenceValue,
-  slot: RecurrenceValue,
-  seriesZone: string
-): boolean | null {
-  const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
-  if (step) {
-    return subDailyHasSlot(rule, step, first, slot, seriesZone);
-  }
-  const clock = (value: RecurrenceValue) =>
-    value.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const firstClock = clock(first);
-  const slotClock = clock(slot);
-  if (
-    firstClock &&
-    slotClock &&
-    (Temporal.PlainTime.compare(ruleClock(rule, firstClock), slotClock) !== 0 ||
-      !(slot.instant && atOwnWallTime(slot.instant, seriesZone)))
-  ) {
-    return false;
-  }
-  const onDay = isRuleDay(rule, first.day, slot.day);
-  if (onDay !== true) {
-    return onDay;
-  }
-  const ended = ruleEndsBefore(
-    rule,
-    first,
-    valueMoment(slot, seriesZone),
-    seriesZone
-  );
-  return ended === null ? null : !ended;
-}
-
-/**
  * Whether the series has a meeting at `slot` (an original start): its
  * start, an added (RDATE) meeting, or a rule's, less EXDATE skips. Google
  * keeps an occurrence's own changes only while the series still has its
- * original slot. Null when that can't be told.
+ * original slot. Null when that can't be told: an exclusion rule (EXRULE)
+ * isn't read.
  */
 export function seriesMeetsAt(params: {
   recurrence: string[];
@@ -239,14 +138,12 @@ export function seriesMeetsAt(params: {
   if (Boolean(first.instant) !== Boolean(slot.instant)) {
     return false;
   }
-  // EXRULE isn't read, so whether it drops `slot` can't be told.
   if (recurrence.some((line) => line.startsWith("EXRULE"))) {
     return null;
   }
   const at = (values: RecurrenceValue[]) =>
     values.some((value) => sameValue(value, slot));
-  const skipped = dateValues(recurrence, "EXDATE", seriesZone);
-  if (at(skipped)) {
+  if (at(dateValues(recurrence, "EXDATE", seriesZone))) {
     return false;
   }
   if (
@@ -255,119 +152,20 @@ export function seriesMeetsAt(params: {
   ) {
     return true;
   }
-  if (
-    Temporal.Instant.compare(
-      valueMoment(slot, seriesZone),
-      valueMoment(first, seriesZone)
-    ) < 0
-  ) {
-    return false;
-  }
-  let unknown = false;
-  for (const rule of recurrence.filter(isRule)) {
-    const meets = ruleHasSlot(rule, first, slot, seriesZone);
-    if (meets) {
-      return true;
-    }
-    unknown ||= meets === null;
-  }
-  return unknown ? null : false;
-}
-
-/**
- * Whether a plain hourly (minutely, secondly) COUNT rule ends before
- * `split`. Null with BY parts, or across a clock change: calendars step by
- * wall time or by elapsed time, and which can't be told.
- */
-function subDailyEndsBefore(
-  rule: string,
-  step: "hours" | "minutes" | "seconds",
-  first: RecurrenceValue,
-  count: number,
-  split: Temporal.Instant,
-  seriesZone: string
-): boolean | null {
-  if (!first.instant || BY_PART.test(rule)) {
-    return null;
-  }
-  const interval = Number(INTERVAL_VALUE.exec(rule)?.[1] ?? 1) || 1;
-  const last = first.instant.add({ [step]: interval * (count - 1) });
-  // Any clock change by the last meeting, even one undone later, makes the
-  // wall-time and elapsed-time readings differ.
-  const change = first.instant
-    .toZonedDateTimeISO(seriesZone)
-    .getTimeZoneTransition("next");
-  if (change && Temporal.Instant.compare(change.toInstant(), last) <= 0) {
-    return null;
-  }
-  return Temporal.Instant.compare(last, split) < 0;
-}
-
-/**
- * Whether `rule` ends before `split`: its UNTIL is earlier, or its last
- * COUNT meeting is, counted from the series' `first` start. Null when that
- * can't be told.
- */
-function ruleEndsBefore(
-  rule: string,
-  first: RecurrenceValue,
-  split: Temporal.Instant,
-  seriesZone: string
-): boolean | null {
-  const until = UNTIL_VALUE.exec(rule)?.[1];
-  if (until) {
-    const end = untilMoment(until, seriesZone);
-    return end ? Temporal.Instant.compare(end, split) < 0 : null;
-  }
-  const count = ruleCount(rule);
-  if (count === null) {
-    return false;
-  }
-  const step = SUB_DAILY_UNIT[FREQ_VALUE.exec(rule)?.[1] ?? ""];
-  if (step) {
-    return subDailyEndsBefore(rule, step, first, count, split, seriesZone);
-  }
-  const clock = first.instant?.toZonedDateTimeISO(seriesZone).toPlainTime();
-  const time = clock ? ruleTimeOf(rule, clock) : null;
-  // Walked only up to the split's day: a rule with meetings left by then
-  // hasn't ended, however long its COUNT runs on.
-  const through = split.toZonedDateTimeISO(seriesZone).toPlainDate();
-  // Counted meeting by meeting: a time the clocks skip isn't a meeting
-  // (RFC 5545; see until.ts `existsOn`).
-  if (clock && time) {
-    const meetings = countedRuleMeetings({
-      base: clock,
-      count,
-      from: first.day,
+  const meets = recurrence.filter(isRule).map((rule) =>
+    ruleMeetsAt({
+      first: first.instant?.toZonedDateTimeISO(seriesZone) ?? first.day,
       rule,
-      through,
-      time,
-      timeZone: seriesZone,
-    });
-    if (!meetings) {
-      return null;
-    }
-    return (
-      meetings.size === count && Math.max(...meetings) < split.epochMilliseconds
-    );
+      slot: slot.instant ?? slot.day,
+    })
+  );
+  if (meets.includes(true)) {
+    return true;
   }
-  const days = countedRuleDays({ count, rule, start: first.day, through });
-  const last = days?.length === count ? days.at(-1) : null;
-  if (!(days && last)) {
-    return days ? false : null;
-  }
-  // Timed rules were counted meeting by meeting above: this one is all day.
-  const lastAt = last.toZonedDateTime({ timeZone: seriesZone }).toInstant();
-  return Temporal.Instant.compare(lastAt, split) < 0;
+  return meets.includes(null) ? null : false;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
-
-/** A rule line's COUNT; null for a line that isn't a rule or has none. */
-function ruleCount(line: string): number | null {
-  const count = isRule(line) ? Number(COUNT_PART.exec(line)?.[2]) : Number.NaN;
-  return Number.isFinite(count) ? count : null;
-}
 
 // Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {

@@ -5,7 +5,11 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { isRuleDay, WEEKDAY_CODES } from "./rule-days";
+import { ruleDayCount } from "./series";
+
+/** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
+const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 import { type CreateEvent, type Event, EventSchema } from "./schema";
 import { lengthMs, startInstant } from "./until";
 
@@ -41,8 +45,9 @@ export const SeriesRefusalSchema = Schema.Union([
     /** Only a series takes it: a new repeat. */
     seriesOnly: Schema.optional(Schema.Literal(true)),
     /**
-     * A rule it read can't be read here (made in another app): the save
-     * may not cost the occurrences it names, but that can't be told.
+     * The series has an exclusion rule (EXRULE, made in another app), which
+     * isn't read here: the save may not cost the occurrences it names, but
+     * that can't be told.
      */
     unsure: Schema.optional(Schema.Literal(true)),
   }),
@@ -305,8 +310,8 @@ export function canonicalRule(line: string): string {
  * Whether `saved` is `own` rebuilt for a series moved from the day `from`
  * to `to`: a weekly rule meets on its other weekdays still, the moved one
  * swapped for the new day's (or kept); any other picks as many days in
- * the two years from its start. One whose days can't be read is taken as
- * rebuilt.
+ * the two years from its start. One the rule library can't read is taken
+ * as rebuilt.
  */
 function rebuiltForDay(
   own: string,
@@ -328,21 +333,12 @@ function rebuiltForDay(
       after === [...weekdays(own, from)].sort().join(",")
     );
   }
-  const daysIn = (rule: string, start: Temporal.PlainDate) => {
-    let days = 0;
-    for (
-      let day = start;
-      Temporal.PlainDate.compare(day, start.add({ years: 2 })) < 0;
-      day = day.add({ days: 1 })
-    ) {
-      const meets = isRuleDay(rule, start, day);
-      if (meets === null) {
-        return null;
-      }
-      days += meets ? 1 : 0;
-    }
-    return days;
-  };
+  const daysIn = (rule: string, start: Temporal.PlainDate) =>
+    ruleDayCount({
+      from: start,
+      rule,
+      through: start.add({ years: 2 }).subtract({ days: 1 }),
+    });
   const before = daysIn(own, from);
   const after = daysIn(saved, to);
   // Two years from another day can hold one day more or less.
