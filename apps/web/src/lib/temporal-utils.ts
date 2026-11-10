@@ -37,16 +37,6 @@ export function formatPlainDate(
   return date.toLocaleString(undefined, options ?? { dateStyle: "medium" });
 }
 
-/** A duration for display: 30 → "30m", 90 → "1h 30m", 120 → "2h". */
-export function formatDuration(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) {
-    return `${rest}m`;
-  }
-  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
-}
-
 export function formatTime(
   zdt: Temporal.ZonedDateTime,
   options?: Intl.DateTimeFormatOptions
