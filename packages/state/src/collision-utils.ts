@@ -1,17 +1,31 @@
 /**
- * Horizontal layout for overlapping calendar items (web + native):
- * - Overlapping items that start within 30 minutes of each other sit side by
- *   side, up to 3 columns.
- * - Items that start 30+ minutes later stack on top of the earlier one.
- * - An item widens into columns to its right that are free (or stackable)
- *   for its time range.
+ * Horizontal layout for overlapping calendar items (web + native).
+ *
+ * Items are grouped in start order. An item joins the latest group when it
+ * overlaps one of its members and starts within 30 minutes of the group's
+ * first item; otherwise it starts a new group. Members of a group sit side
+ * by side, splitting the group's width.
+ *
+ * No item is covered before one line of it shows. When an item would start
+ * within 15 minutes of a member it overlaps, it sits beside that member: if
+ * the member joined its group late, the two (and anything after the member)
+ * move into a new group stacked on the earlier members, so those still show
+ * 15 minutes or more; otherwise the item joins the group.
+ *
+ * Each group is indented one level deeper than the deepest earlier group
+ * still running when it starts, and runs to the right edge. So a long block
+ * keeps its full width, and a meeting that starts inside it sits on top with
+ * a small indent, leaving the block's edge (and its title, above) in view.
  */
 
-/** Threshold in minutes: events starting closer than this are displayed side-by-side */
+/** Items starting closer together than this sit side by side. */
 const SIDE_BY_SIDE_THRESHOLD_MINUTES = 30;
 
-/** Maximum number of side-by-side columns before stacking */
-const MAX_COLUMNS = 3;
+/**
+ * No item is stacked over before this much of it shows: one line of title
+ * (20px on web; 15pt on a phone, where a covered strip uses a 12pt line).
+ */
+const MIN_SHOWN_MINUTES = 15;
 
 export interface PositionedItem {
   /** End time in minutes from midnight */
@@ -23,207 +37,226 @@ export interface PositionedItem {
 }
 
 export interface ItemLayout {
-  /** Column index (0, 1, or 2) for horizontal positioning */
+  /** Column within the item's group, from 0. */
   columnIndex: number;
-  /** How many consecutive columns this item spans (1 = own column only) */
+  /** Consecutive group columns the item spans (1 = its own column). */
   columnSpan: number;
-  /** Total columns in this item's collision group */
+  /**
+   * Indent level: how many groups run underneath this one. Renderers indent
+   * by this much, then split the rest of the width into `totalColumns`.
+   */
+  stackDepth: number;
+  /** Columns in the item's group. */
   totalColumns: number;
+  /**
+   * Minutes from the item's start until a deeper group is drawn over it (its
+   * whole drawn length if none is). Renderers fit the item's text into this
+   * part, so it isn't cut off mid-line by the item on top.
+   */
+  uncoveredMinutes: number;
   zIndex: number;
+}
+
+interface Group {
+  depth: number;
+  members: PositionedItem[];
+  start: number;
 }
 
 function itemsOverlap(a: PositionedItem, b: PositionedItem): boolean {
   return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes;
 }
 
-/**
- * Find all items that overlap with a given item, recursively expanding
- * to find the complete collision cluster.
- */
-function findCollisionCluster(
-  item: PositionedItem,
-  allItems: PositionedItem[],
-  visited: Set<string>
-): PositionedItem[] {
-  const cluster: PositionedItem[] = [item];
-  visited.add(item.id);
+function isRunningAt(item: PositionedItem, minutes: number): boolean {
+  return item.startMinutes <= minutes && item.endMinutes > minutes;
+}
 
-  for (const other of allItems) {
-    if (visited.has(other.id)) {
-      continue;
-    }
-    const overlapsCluster = cluster.some((clusterItem) =>
-      itemsOverlap(clusterItem, other)
-    );
-    if (overlapsCluster) {
-      visited.add(other.id);
-      const subCluster = findCollisionCluster(other, allItems, visited);
-      cluster.push(...subCluster.filter((i) => i.id !== other.id));
-      cluster.push(other);
+/** Indent level for a group starting at `minutes`: one past the deepest running. */
+function depthAt(groups: Group[], minutes: number): number {
+  let depth = 0;
+  for (const group of groups) {
+    if (group.members.some((member) => isRunningAt(member, minutes))) {
+      depth = Math.max(depth, group.depth + 1);
     }
   }
+  return depth;
+}
 
-  return cluster;
+/** The first member `item` overlaps that started under 15 minutes before it. */
+function crowdedMember(
+  item: PositionedItem,
+  group: Group
+): PositionedItem | undefined {
+  return group.members.find(
+    (member) =>
+      itemsOverlap(member, item) &&
+      item.startMinutes - member.startMinutes < MIN_SHOWN_MINUTES
+  );
 }
 
 /**
- * Assign columns to items in a cluster using a greedy first-available-slot algorithm.
- * Items are processed in start time order. An item can reuse a column when it starts
- * at least SIDE_BY_SIDE_THRESHOLD_MINUTES after the existing item in that column.
+ * Where to split `group` so that `item` and the members from that point on
+ * form a new group stacked on the rest, with every member that stays still
+ * showing 15 minutes. Null when no such point exists (the item then joins).
  */
-function assignColumnsToCluster(
-  cluster: PositionedItem[]
-): Map<string, { columnIndex: number; zIndex: number }> {
-  const sorted = [...cluster].sort((a, b) => a.startMinutes - b.startMinutes);
-  const result = new Map<string, { columnIndex: number; zIndex: number }>();
-  const columnItems: PositionedItem[][] = [];
-
-  for (const [i, item] of sorted.entries()) {
-    let assignedColumn = columnItems.findIndex((itemsInColumn) =>
-      itemsInColumn.every((existing) => {
-        if (!itemsOverlap(item, existing)) {
-          return true;
-        }
-        const startDelta = item.startMinutes - existing.startMinutes;
-        return startDelta >= SIDE_BY_SIDE_THRESHOLD_MINUTES;
-      })
+function splitPoint(
+  group: Group,
+  item: PositionedItem,
+  crowded: PositionedItem
+): number | null {
+  let start = crowded.startMinutes;
+  for (;;) {
+    if (start <= group.start) {
+      return null;
+    }
+    const split = start;
+    const moved = [
+      ...group.members.filter((member) => member.startMinutes >= split),
+      item,
+    ];
+    // A staying member that started under 15 minutes before the split, and
+    // would be covered by the moved ones, has to move too.
+    const tooClose = group.members.find(
+      (member) =>
+        member.startMinutes < split &&
+        split - member.startMinutes < MIN_SHOWN_MINUTES &&
+        moved.some((other) => itemsOverlap(member, other))
     );
-
-    if (assignedColumn === -1) {
-      assignedColumn = columnItems.length;
+    if (!tooClose) {
+      return split;
     }
+    start = tooClose.startMinutes;
+  }
+}
 
-    // Cap at MAX_COLUMNS - 1 (items beyond stack in last column)
-    if (assignedColumn >= MAX_COLUMNS) {
-      assignedColumn = MAX_COLUMNS - 1;
+/** Split items into side-by-side groups and give each its indent level. */
+function groupItems(sorted: PositionedItem[]): Group[] {
+  const groups: Group[] = [];
+  for (const item of sorted) {
+    const latest = groups.at(-1);
+    const crowded = latest && crowdedMember(item, latest);
+    const split = latest && crowded ? splitPoint(latest, item, crowded) : null;
+    if (latest && split !== null) {
+      // Move the members from the split on into a new group with the item,
+      // stacked on the members that stay.
+      const moved = latest.members.filter(
+        (member) => member.startMinutes >= split
+      );
+      latest.members = latest.members.filter(
+        (member) => member.startMinutes < split
+      );
+      groups.push({
+        depth: depthAt(groups, split),
+        members: [...moved, item],
+        start: split,
+      });
+      continue;
     }
-
-    columnItems[assignedColumn] ??= [];
-    const col = columnItems[assignedColumn] as PositionedItem[];
-    col.push(item);
-
-    // Later starts render on top so stacked items retain visible titles and times.
-    result.set(item.id, {
-      columnIndex: assignedColumn,
-      zIndex: i + 1,
+    if (
+      latest &&
+      (crowded ||
+        (item.startMinutes - latest.start < SIDE_BY_SIDE_THRESHOLD_MINUTES &&
+          latest.members.some((member) => itemsOverlap(member, item))))
+    ) {
+      latest.members.push(item);
+      continue;
+    }
+    groups.push({
+      depth: depthAt(groups, item.startMinutes),
+      members: [item],
+      start: item.startMinutes,
     });
   }
+  return groups;
+}
 
-  return result;
+/** When a later, deeper group first covers `item`, in minutes from its start. */
+function uncoveredMinutes(
+  item: PositionedItem,
+  group: Group,
+  later: Group[]
+): number {
+  let uncovered = item.endMinutes - item.startMinutes;
+  for (const other of later) {
+    if (
+      other.depth > group.depth &&
+      other.start < item.endMinutes &&
+      other.members.some((member) => itemsOverlap(member, item))
+    ) {
+      uncovered = Math.min(uncovered, other.start - item.startMinutes);
+    }
+  }
+  return Math.max(uncovered, 0);
+}
+
+/** First-fit columns within a group, then widen each item into free columns. */
+function layoutGroup(
+  group: Group,
+  later: Group[],
+  zIndexOf: Map<string, number>,
+  result: Map<string, ItemLayout>
+): void {
+  const columns: PositionedItem[][] = [];
+  const columnOf = new Map<string, number>();
+  for (const member of group.members) {
+    let index = columns.findIndex((column) =>
+      column.every((other) => !itemsOverlap(member, other))
+    );
+    if (index === -1) {
+      index = columns.length;
+      columns.push([]);
+    }
+    columns[index]?.push(member);
+    columnOf.set(member.id, index);
+  }
+
+  for (const member of group.members) {
+    const columnIndex = columnOf.get(member.id) ?? 0;
+    let columnSpan = 1;
+    for (let next = columnIndex + 1; next < columns.length; next += 1) {
+      if (columns[next]?.some((other) => itemsOverlap(member, other))) {
+        break;
+      }
+      columnSpan += 1;
+    }
+    result.set(member.id, {
+      columnIndex,
+      columnSpan,
+      stackDepth: group.depth,
+      totalColumns: columns.length,
+      uncoveredMinutes: uncoveredMinutes(member, group, later),
+      zIndex: zIndexOf.get(member.id) ?? 1,
+    });
+  }
 }
 
 /**
- * How many columns each item spans: it widens into each column to its right
- * whose items it doesn't overlap or can stack on (it started at least
- * SIDE_BY_SIDE_THRESHOLD_MINUTES later), the same rule column assignment uses.
+ * Lay out one day at a time; startMinutes/endMinutes are relative to that day.
+ * `minDrawnMinutes` is the shortest block the caller draws (its minimum
+ * height in minutes): items are laid out as drawn, so a 5-minute task and
+ * the one right after it sit side by side instead of hiding each other.
  */
-function calculateColumnSpans(
-  cluster: PositionedItem[],
-  columnAssignments: Map<string, { columnIndex: number; zIndex: number }>,
-  totalColumns: number
-): Map<string, number> {
-  const spans = new Map<string, number>();
-
-  const itemsByColumn = new Map<number, PositionedItem[]>();
-  for (const item of cluster) {
-    const assignment = columnAssignments.get(item.id);
-    if (!assignment) {
-      continue;
-    }
-    const col = assignment.columnIndex;
-    if (!itemsByColumn.has(col)) {
-      itemsByColumn.set(col, []);
-    }
-    itemsByColumn.get(col)?.push(item);
-  }
-
-  for (const item of cluster) {
-    const assignment = columnAssignments.get(item.id);
-    if (!assignment) {
-      continue;
-    }
-
-    let span = 1;
-    for (let col = assignment.columnIndex + 1; col < totalColumns; col += 1) {
-      const colItems = itemsByColumn.get(col) ?? [];
-      const hasBlockingItem = colItems.some((other) => {
-        if (!itemsOverlap(item, other)) {
-          return false;
-        }
-        // Later-starting items also block: the delta is intentionally signed.
-        const startDelta = item.startMinutes - other.startMinutes;
-        return startDelta < SIDE_BY_SIDE_THRESHOLD_MINUTES;
-      });
-      if (hasBlockingItem) {
-        break;
-      }
-      span += 1;
-    }
-
-    spans.set(item.id, span);
-  }
-
-  return spans;
-}
-
-/** Lay out one day at a time; startMinutes/endMinutes are relative to that day. */
 export function calculateCollisionLayout(
-  items: PositionedItem[]
+  items: PositionedItem[],
+  { minDrawnMinutes = 15 }: { minDrawnMinutes?: number } = {}
 ): Map<string, ItemLayout> {
-  if (items.length === 0) {
-    return new Map();
-  }
-
-  const sortedItems = [...items].sort(
-    (a, b) => a.startMinutes - b.startMinutes
+  const drawn = items.map((item) => ({
+    ...item,
+    endMinutes: Math.max(item.endMinutes, item.startMinutes + minDrawnMinutes),
+  }));
+  // Earlier first; for equal starts the longer item goes first, underneath.
+  const sorted = drawn.sort(
+    (a, b) =>
+      a.startMinutes - b.startMinutes ||
+      b.endMinutes - b.startMinutes - (a.endMinutes - a.startMinutes)
   );
+  // Later starts render on top so stacked items keep their titles visible.
+  const zIndexOf = new Map(sorted.map((item, index) => [item.id, index + 1]));
 
   const result = new Map<string, ItemLayout>();
-  const visited = new Set<string>();
-
-  for (const item of sortedItems) {
-    if (visited.has(item.id)) {
-      continue;
-    }
-
-    const cluster = findCollisionCluster(item, sortedItems, visited);
-
-    if (cluster.length === 1) {
-      result.set(item.id, {
-        columnIndex: 0,
-        columnSpan: 1,
-        totalColumns: 1,
-        zIndex: 1,
-      });
-      continue;
-    }
-
-    const columnAssignments = assignColumnsToCluster(cluster);
-
-    let maxColumn = 0;
-    for (const { columnIndex } of columnAssignments.values()) {
-      maxColumn = Math.max(maxColumn, columnIndex);
-    }
-    const totalColumns = maxColumn + 1;
-
-    const columnSpans = calculateColumnSpans(
-      cluster,
-      columnAssignments,
-      totalColumns
-    );
-
-    for (const clusterItem of cluster) {
-      const assignment = columnAssignments.get(clusterItem.id);
-      if (assignment) {
-        result.set(clusterItem.id, {
-          columnIndex: assignment.columnIndex,
-          columnSpan: columnSpans.get(clusterItem.id) ?? 1,
-          totalColumns,
-          zIndex: assignment.zIndex,
-        });
-      }
-    }
+  const groups = groupItems(sorted);
+  for (const [index, group] of groups.entries()) {
+    layoutGroup(group, groups.slice(index + 1), zIndexOf, result);
   }
-
   return result;
 }

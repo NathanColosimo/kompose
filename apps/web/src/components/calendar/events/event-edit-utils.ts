@@ -25,7 +25,13 @@ export function buildRecurrenceRule(
   byDay: string[],
   end: RecurrenceEnd
 ): string | null {
-  return buildGoogleEventRecurrenceRule(freq, byDay, end);
+  return buildGoogleEventRecurrenceRule({
+    byDay,
+    end,
+    freq,
+    interval: 1,
+    monthDays: [],
+  });
 }
 
 interface TemporalFormValues {
@@ -38,9 +44,6 @@ interface TemporalFormValues {
 
 interface TemporalPayload {
   endPayload: { date?: string; dateTime?: string; timeZone?: string };
-  isAllDay: boolean;
-  occurrenceStart: Date;
-  startDateTime: Date | null;
   startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
@@ -105,9 +108,6 @@ export function buildTemporalPayload(
 
   return {
     endPayload,
-    isAllDay: isAllDayEvent,
-    occurrenceStart: startDateTime ?? startDate,
-    startDateTime,
     startPayload,
   };
 }

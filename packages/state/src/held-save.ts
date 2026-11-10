@@ -13,6 +13,14 @@ export interface HeldSave {
   quiet?: boolean;
 }
 
+/**
+ * The network mode of a write an editor can hold open for: it runs at once,
+ * online or not. By default a write made offline waits for the connection,
+ * and the editor, held until its save settles, would wait with it. This
+ * way it fails and the editor keeps the draft.
+ */
+export const HELD_WRITE_NETWORK_MODE = "always" as const;
+
 export const SAVE_FAILURE_MESSAGE =
   "Couldn't save your changes. They're still here.";
 export const TASK_CREATE_FAILURE_MESSAGE =

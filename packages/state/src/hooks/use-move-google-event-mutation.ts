@@ -1,78 +1,56 @@
 "use client";
 
 import type { MoveEventInput } from "@kompose/api/routers/google-cal/contract";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useStateConfig } from "../config";
-import { getGoogleEventsByCalendarQueryKey } from "../google-calendar-query-keys";
+import {
+  type QueryClient,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { type StateConfig, useStateConfig } from "../config";
+import { invalidateGoogleEventQueries } from "../google-calendar-query-keys";
+import {
+  HELD_WRITE_NETWORK_MODE,
+  type HeldSave,
+  reportHeldSaveFailure,
+} from "../held-save";
 
 export function useMoveGoogleEventMutation() {
-  const queryClient = useQueryClient();
-  const { orpc, notifyError } = useStateConfig();
+  return useMutation(
+    moveGoogleEventMutationOptions(useQueryClient(), useStateConfig())
+  );
+}
 
-  return useMutation({
-    mutationFn: async (variables: MoveEventInput) =>
-      orpc.googleCal.events.move(variables),
-    onMutate: async (variables) => {
-      // Snapshot both calendars for "move" operations. The destination is only
-      // read when it differs from the source, so the two lists never overlap.
-      const sourceKey = getGoogleEventsByCalendarQueryKey({
-        accountId: variables.accountId,
-        calendarId: variables.calendarId,
-      });
-      const destinationKey = getGoogleEventsByCalendarQueryKey({
-        accountId: variables.accountId,
-        calendarId: variables.destinationCalendarId,
-      });
-
-      await queryClient.cancelQueries({
-        queryKey: sourceKey,
-      });
-      if (variables.destinationCalendarId !== variables.calendarId) {
-        await queryClient.cancelQueries({
-          queryKey: destinationKey,
-        });
-      }
-
-      const sourceQueries = queryClient.getQueriesData({
-        queryKey: sourceKey,
-      });
-      const destinationQueries =
-        variables.destinationCalendarId === variables.calendarId
-          ? []
-          : queryClient.getQueriesData({
-              queryKey: destinationKey,
-            });
-
-      return {
-        previousQueries: [...sourceQueries, ...destinationQueries],
-      };
+/**
+ * A calendar move. Nothing changes in the cache before the server answers;
+ * either way, both calendars' events and series are refetched. A failure
+ * is reported unless the editor holding the save says it (`quiet`).
+ */
+export function moveGoogleEventMutationOptions(
+  queryClient: QueryClient,
+  { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
+) {
+  return {
+    networkMode: HELD_WRITE_NETWORK_MODE,
+    mutationFn: async ({
+      failureMessage: _failureMessage,
+      quiet: _quiet,
+      ...variables
+    }: MoveEventInput & HeldSave) => orpc.googleCal.events.move(variables),
+    onError: (err: Error, variables: MoveEventInput & HeldSave) => {
+      reportHeldSaveFailure(notifyError, err, variables);
     },
-    onError: (err, _variables, context) => {
-      notifyError?.(err);
-
-      if (context?.previousQueries) {
-        for (const [queryKey, data] of context.previousQueries) {
-          queryClient.setQueryData(queryKey, data);
-        }
-      }
-    },
-    onSettled: (_data, _error, variables) => {
-      if (!variables) {
-        return;
-      }
-
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
-          accountId: variables.accountId,
-          calendarId: variables.calendarId,
-        }),
-      });
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
+    onSettled: (
+      _data: unknown,
+      _error: Error | null,
+      variables: MoveEventInput & HeldSave
+    ) => {
+      invalidateGoogleEventQueries(queryClient, [
+        { accountId: variables.accountId, calendarId: variables.calendarId },
+        {
           accountId: variables.accountId,
           calendarId: variables.destinationCalendarId,
-        }),
-      });
+        },
+      ]);
     },
-  });
+  };
 }
