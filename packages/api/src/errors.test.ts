@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import { describe, expect, test } from "bun:test";
 import { GoogleApiError } from "@kompose/google-cal/client";
 import { publicORPCError } from "./errors";
