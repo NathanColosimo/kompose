@@ -30,6 +30,7 @@
     "jotai-family": "catalog:",
     "jotai-tanstack-query": "catalog:",
     "react": "catalog:",
+    "rrule-temporal": "2.2.8",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:"
   },

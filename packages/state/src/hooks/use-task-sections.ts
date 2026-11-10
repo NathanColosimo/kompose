@@ -15,6 +15,10 @@ import {
 } from "../task-search-routing";
 import { useTasks } from "./use-tasks";
 
+/** Recurring masters also carry seriesMasterId, so this excludes the whole series. */
+export const isNonRecurring = (task: TaskSelectDecoded): boolean =>
+  task.seriesMasterId === null;
+
 /** Planned: scheduled on the target calendar date. Today excludes overdue tasks. */
 const isPlanned = (
   task: TaskSelectDecoded,
@@ -74,8 +78,8 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
         };
       }
 
-      // isInboxTask also catches legacy rows with an orphaned startTime but
-      // no startDate.
+      // Inbox: uncompleted, non-recurring, no startDate. This also catches
+      // legacy rows with an orphaned startTime but no startDate.
       const inbox = tasks
         .filter(isInboxTask)
         .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));

@@ -25,7 +25,6 @@ import { tagsDataAtom } from "../atoms/tags";
 import { TASKS_QUERY_KEY, tasksQueryOptions } from "../atoms/tasks";
 import { useStateConfig } from "../config";
 import { type HeldSave, reportHeldSaveFailure } from "../held-save";
-import { mergeSavedTasks, withoutUnchangedPattern } from "../task-cache";
 
 interface UpdateTaskVariables extends HeldSave {
   id: string;
@@ -152,20 +151,12 @@ export function useTasks(options: UseTasksOptions = {}) {
       if (optimistic === false) {
         return { previousTasks: undefined };
       }
-      // Optimistic for scope "this" (one task). A "following" save that sets
-      // a status applies it to this task alone (the server keeps it), so
-      // that status shows at once too; the rest waits for the server.
-      if (scope !== "this" && task.status === undefined) {
+      if (scope !== "this") {
         return { previousTasks: undefined };
       }
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
-      const optimisticEdit: TaskUpdateDecoded =
-        scope === "this"
-          ? withoutUnchangedPattern(previousTasks ?? [], id, task)
-          : { status: task.status };
-
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
         old?.map((t) => {
           if (t.id !== id) {
@@ -173,15 +164,13 @@ export function useTasks(options: UseTasksOptions = {}) {
           }
 
           const nextTags =
-            optimisticEdit.tagIds === undefined
+            task.tagIds === undefined
               ? t.tags
-              : tags.filter((tag) =>
-                  (optimisticEdit.tagIds ?? []).includes(tag.id)
-                );
+              : tags.filter((tag) => (task.tagIds ?? []).includes(tag.id));
 
           return {
             ...t,
-            ...optimisticEdit,
+            ...task,
             createdAt: t.createdAt,
             tags: nextTags,
             updatedAt: Temporal.Now.instant(),
@@ -191,20 +180,8 @@ export function useTasks(options: UseTasksOptions = {}) {
 
       return { previousTasks };
     },
-    // Without the early update, write the saved tasks in as soon as the
-    // server answers, so the editor that waited closes onto them (the
-    // refetch below can take a while on a cold start).
-    onSuccess: (saved, { id, optimistic, scope, task }) => {
-      if (optimistic !== false) {
-        return;
-      }
-      queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>
-        old ? mergeSavedTasks(old, saved, { id, scope, task }) : old
-      );
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
-    },
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY }),
   });
 
   const deleteTask = useMutation({
