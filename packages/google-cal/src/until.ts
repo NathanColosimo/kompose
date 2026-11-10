@@ -6,8 +6,7 @@ import { Temporal } from "temporal-polyfill";
 import {
   isRuleDay,
   meetsSeveralTimesADay,
-  ruleMeetings,
-  ruleMeetsAt,
+  readRule,
   WEEKDAY_CODES,
 } from "./series";
 
@@ -591,33 +590,23 @@ function allDayDates(params: {
     );
   const skipped = new Set(momentsOf("EXDATE").map((m) => m.epochMilliseconds));
   const added = momentsOf("RDATE");
+  const readers = first ? rules.map((rule) => readRule({ first, rule })) : [];
   // The rules' meetings on a day; null when they can't be listed.
   const ruleMeetingsOn = (day: Temporal.PlainDate): number[] | null => {
-    if (!first) {
+    if (!first || readers.some((reader) => reader === null)) {
       return null;
     }
-    const meetings: number[] = [];
-    for (const rule of rules) {
-      const listed = ruleMeetings({
-        first,
-        from: day.toZonedDateTime({ timeZone }).toInstant(),
-        rule,
-        to: day
-          .add({ days: 1 })
-          .toZonedDateTime({ timeZone })
-          .toInstant()
-          .subtract({ nanoseconds: 1 }),
-      });
-      if (!listed) {
-        return null;
-      }
-      for (const meeting of listed) {
-        if (meeting instanceof Temporal.Instant) {
-          meetings.push(meeting.epochMilliseconds);
-        }
-      }
-    }
-    return meetings;
+    const from = day.toZonedDateTime({ timeZone }).toInstant();
+    const to = day
+      .add({ days: 1 })
+      .toZonedDateTime({ timeZone })
+      .toInstant()
+      .subtract({ nanoseconds: 1 });
+    return readers.flatMap((reader) =>
+      (reader?.meetingsBetween(from, to) ?? []).flatMap((meeting) =>
+        meeting instanceof Temporal.Instant ? [meeting.epochMilliseconds] : []
+      )
+    );
   };
   const dayOf = (moment: Temporal.Instant) =>
     moment.toZonedDateTimeISO(timeZone).toPlainDate();
@@ -868,13 +857,13 @@ function staleSkipCancels(params: {
         .toPlainDate()
         .toZonedDateTime({ plainTime: base, timeZone }).epochMilliseconds
     );
+  const readers = first
+    ? params.rules.map((rule) => readRule({ first, rule }))
+    : [];
   return (instant) =>
-    first !== null &&
     had.has(instant.epochMilliseconds) &&
     !dayMeetingSkipped(instant) &&
-    params.rules.some(
-      (rule) => ruleMeetsAt({ first, rule, slot: instant }) === true
-    );
+    readers.some((reader) => reader?.meetsAt(instant) === true);
 }
 
 /**
@@ -956,15 +945,14 @@ export function matchRecurrenceToStart(
   // Whether a skip was on a meeting of the rules (or the start) before the
   // edit. A rule that can't be read may meet there: a skip where nothing
   // meets does nothing, one missed brings a meeting back.
+  const readers = first ? rules.map((rule) => readRule({ first, rule })) : [];
   const ownSlot = first
     ? (value: RecurrenceValue) =>
         value.instant !== null &&
         ((startMoment !== null &&
           Temporal.Instant.compare(value.instant, startMoment) === 0) ||
-          rules.some(
-            (rule) =>
-              ruleMeetsAt({ first, rule, slot: value.instant ?? value.day }) !==
-              false
+          readers.some(
+            (reader) => !reader || reader.meetsAt(value.instant ?? value.day)
           ))
     : null;
   const moveMeetingDay = meetingDayMover({
@@ -1189,12 +1177,10 @@ export function moveSkippedDays(params: {
   // A meeting of the old rule, before its end: a skip of anything else
   // (another rule's, the second pass of a repeated hour, past the end)
   // skipped nothing it can carry.
+  const old = readRule({ first, rule: oldRule });
   const oldMet = (value: RecurrenceValue) =>
-    ruleMeetsAt({
-      first,
-      rule: oldRule,
-      slot: fromTime && value.instant ? value.instant : value.day,
-    }) === true;
+    old?.meetsAt(fromTime && value.instant ? value.instant : value.day) ===
+    true;
   const placeOf = (day: Temporal.PlainDate): Temporal.PlainDate | null => {
     if (
       Temporal.PlainDate.compare(day, from) < 0 ||

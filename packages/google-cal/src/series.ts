@@ -54,28 +54,6 @@ function expand(
   }
 }
 
-/**
- * Whether `rule`, repeating from the series' start (`first`), has a
- * meeting at `slot`, before its end: a moment, or a date when all day.
- * The start is always a meeting (Google meets at it, rule or not). Null
- * when the rule can't be read.
- */
-export function ruleMeetsAt(params: {
-  first: Temporal.PlainDate | Temporal.ZonedDateTime;
-  rule: string;
-  slot: Temporal.PlainDate | Temporal.Instant;
-}): boolean | null {
-  const { first, slot } = params;
-  const rule = expand(params.rule, first, true);
-  if (!rule) {
-    return null;
-  }
-  return slot instanceof Temporal.PlainDate
-    ? rule.occursOn(slot)
-    : first instanceof Temporal.ZonedDateTime &&
-        rule.matches(slot.toZonedDateTimeISO(first.timeZoneId));
-}
-
 /** A slot of a series: a moment, or a date when it's all day. */
 type Slot = Temporal.PlainDate | Temporal.Instant;
 
@@ -102,10 +80,111 @@ function fromLibrary(
     : meeting.toInstant();
 }
 
+/** A rule read once, for many questions about its meetings. */
+export interface RuleReader {
+  /** Its meetings from `from` through `to`. */
+  meetingsBetween: (from: Slot, to: Slot) => Slot[];
+  /**
+   * Whether it has a meeting at `slot`, before its end: a moment, or a
+   * date (any meeting that day).
+   */
+  meetsAt: (slot: Slot) => boolean;
+}
+
+/**
+ * `rule`, repeating from the series' start (`first`), read once: the start
+ * is always a meeting (Google meets at it, rule or not). Asking about it
+ * many times stays cheap. Null when the rule can't be read.
+ */
+export function readRule(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+}): RuleReader | null {
+  const { first } = params;
+  const rule = expand(params.rule, first, true);
+  if (!rule) {
+    return null;
+  }
+  const between = (from: Slot, to: Slot) =>
+    rule
+      .between(asLibraryTime(from, first), asLibraryTime(to, first), true)
+      .map((meeting) => fromLibrary(meeting, first));
+  const meets = (slot: Slot) =>
+    slot instanceof Temporal.PlainDate
+      ? rule.occursOn(slot)
+      : first instanceof Temporal.ZonedDateTime &&
+        rule.matches(slot.toZonedDateTimeISO(first.timeZoneId));
+  // A rule with an end, asked more than once, is expanded once: the
+  // library walks it from its start for each question. One too long to
+  // expand is asked directly.
+  let asked = 0;
+  let expanded:
+    | { all: Temporal.ZonedDateTime[]; days: Set<string>; moments: Set<number> }
+    | null
+    | undefined;
+  const meetings = () => {
+    asked += 1;
+    if (asked < 2 || endless(params.rule) === params.rule) {
+      return null;
+    }
+    if (expanded === undefined) {
+      try {
+        const all = rule.all();
+        expanded = {
+          all,
+          days: new Set(all.map((meeting) => meeting.toPlainDate().toString())),
+          moments: new Set(all.map((meeting) => meeting.epochMilliseconds)),
+        };
+      } catch {
+        expanded = null;
+      }
+    }
+    return expanded;
+  };
+  return {
+    meetingsBetween: (from, to) => {
+      const known = meetings();
+      if (!known) {
+        return between(from, to);
+      }
+      const lo = asLibraryTime(from, first).epochMilliseconds;
+      const hi = asLibraryTime(to, first).epochMilliseconds;
+      return known.all
+        .filter(
+          (meeting) =>
+            meeting.epochMilliseconds >= lo && meeting.epochMilliseconds <= hi
+        )
+        .map((meeting) => fromLibrary(meeting, first));
+    },
+    meetsAt: (slot) => {
+      const known = meetings();
+      if (!known) {
+        return meets(slot);
+      }
+      return slot instanceof Temporal.PlainDate
+        ? known.days.has(slot.toString())
+        : first instanceof Temporal.ZonedDateTime &&
+            known.moments.has(slot.epochMilliseconds);
+    },
+  };
+}
+
+/**
+ * Whether `rule`, repeating from the series' start (`first`), has a
+ * meeting at `slot`, before its end (`readRule`). Null when the rule can't
+ * be read.
+ */
+export function ruleMeetsAt(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+  slot: Slot;
+}): boolean | null {
+  return readRule(params)?.meetsAt(params.slot) ?? null;
+}
+
 /**
  * `rule`'s meetings from `from` through `to`, as a series starting at
- * `first` repeats it (its start is a meeting). Null when the rule can't be
- * read.
+ * `first` repeats it (`readRule`). Null when the rule can't be read.
  */
 export function ruleMeetings(params: {
   first: Temporal.PlainDate | Temporal.ZonedDateTime;
@@ -113,17 +192,7 @@ export function ruleMeetings(params: {
   rule: string;
   to: Slot;
 }): Slot[] | null {
-  const { first } = params;
-  const rule = expand(params.rule, first, true);
-  return rule
-    ? rule
-        .between(
-          asLibraryTime(params.from, first),
-          asLibraryTime(params.to, first),
-          true
-        )
-        .map((meeting) => fromLibrary(meeting, first))
-    : null;
+  return readRule(params)?.meetingsBetween(params.from, params.to) ?? null;
 }
 
 /**
