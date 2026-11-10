@@ -145,16 +145,11 @@ export function useTasks(options: UseTasksOptions = {}) {
         queryClient.setQueryData(TASKS_QUERY_KEY, context.previousTasks);
       }
     },
-    onMutate: async ({
-      id,
-      optimistic: isOptimistic = true,
-      task,
-      scope,
-    }: UpdateTaskVariables) => {
-      // An editor that holds open until its save ends (Mark done with edits)
+    onMutate: async ({ id, optimistic, task, scope }: UpdateTaskVariables) => {
+      // An editor that holds open until its save ends (its Save or Mark done)
       // skips this: an early update could unmount it (the task leaves its
       // list) or roll its fields back over the draft on failure.
-      if (!isOptimistic) {
+      if (optimistic === false) {
         return { previousTasks: undefined };
       }
       // Optimistic for scope "this" (one task). A "following" save that sets
@@ -166,7 +161,7 @@ export function useTasks(options: UseTasksOptions = {}) {
       await queryClient.cancelQueries({ queryKey: TASKS_QUERY_KEY });
       const previousTasks =
         queryClient.getQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY);
-      const optimistic: TaskUpdateDecoded =
+      const optimisticEdit: TaskUpdateDecoded =
         scope === "this"
           ? withoutUnchangedPattern(previousTasks ?? [], id, task)
           : { status: task.status };
@@ -178,15 +173,15 @@ export function useTasks(options: UseTasksOptions = {}) {
           }
 
           const nextTags =
-            optimistic.tagIds === undefined
+            optimisticEdit.tagIds === undefined
               ? t.tags
               : tags.filter((tag) =>
-                  (optimistic.tagIds ?? []).includes(tag.id)
+                  (optimisticEdit.tagIds ?? []).includes(tag.id)
                 );
 
           return {
             ...t,
-            ...optimistic,
+            ...optimisticEdit,
             createdAt: t.createdAt,
             tags: nextTags,
             updatedAt: Temporal.Now.instant(),
@@ -199,11 +194,8 @@ export function useTasks(options: UseTasksOptions = {}) {
     // Without the early update, write the saved tasks in as soon as the
     // server answers, so the editor that waited closes onto them (the
     // refetch below can take a while on a cold start).
-    onSuccess: (
-      saved,
-      { id, optimistic: isOptimistic = true, scope, task }
-    ) => {
-      if (isOptimistic) {
+    onSuccess: (saved, { id, optimistic, scope, task }) => {
+      if (optimistic !== false) {
         return;
       }
       queryClient.setQueryData<TaskSelectDecoded[]>(TASKS_QUERY_KEY, (old) =>

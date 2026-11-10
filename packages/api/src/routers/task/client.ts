@@ -19,7 +19,6 @@ import {
   isNull,
   lt,
   ne,
-  or,
 } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
@@ -42,11 +41,16 @@ import {
   parsePlainDate,
   regeneratedOccurrenceRows,
   type SystemManagedTaskField,
-  type TaskInsertInput,
   type TaskInsertRow,
   type TaskUpdateInput,
   withMovedDueDate,
 } from "./occurrence-rows";
+
+type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
+  createdAt?: never;
+  tagIds?: string[];
+  updatedAt?: never;
+};
 
 function stripSystemManagedTaskFields<
   T extends Partial<Record<SystemManagedTaskField, unknown>>,
@@ -153,6 +157,13 @@ const dbUpdate = (
       .returning();
   });
 
+/** A task's series fields once it's out of any series. */
+const STANDALONE = {
+  isException: false,
+  recurrence: null,
+  seriesMasterId: null,
+} as const;
+
 const dbDelete = (userId: string, taskId: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
@@ -160,20 +171,6 @@ const dbDelete = (userId: string, taskId: string) =>
       .delete(taskTable)
       .where(and(eq(taskTable.id, taskId), eq(taskTable.userId, userId)));
   });
-
-/**
- * Delete a series master on its own. The master holds the series' pattern
- * (a done occurrence can be one after a pattern change), so the next
- * remaining occurrence takes over its role and pattern (counting the rows
- * left), and the rest of the series keeps a master to read it from.
- */
-const deleteMasterAlone = Effect.fn("deleteMasterAlone")(function* (
-  userId: string,
-  master: TaskSelect
-) {
-  yield* handOffMasterRole(userId, master);
-  yield* dbDelete(userId, master.id);
-});
 
 /**
  * Pass a master's role and pattern to the series' next dated occurrence
@@ -202,44 +199,39 @@ const handOffMasterRole = Effect.fn("handOffMasterRole")(function* (
   if (!heir) {
     return yield* dbDetachUndated(userId, master.id);
   }
-  const followed = yield* db
-    .update(taskTable)
-    .set({ seriesMasterId: heir.id })
-    .where(
-      and(
-        eq(taskTable.userId, userId),
-        eq(taskTable.seriesMasterId, master.id),
-        ne(taskTable.id, master.id)
-      )
-    )
-    .returning();
-  const [newMaster] = yield* dbUpdate(userId, heir.id, {
+  return yield* makeMaster(userId, {
+    heir,
     recurrence: heirPattern(master.recurrence, dated.length),
+    rows: rest,
   });
-  return newMaster
-    ? [...followed.filter((row) => row.id !== heir.id), newMaster]
-    : followed;
 });
 
 /**
- * Take an undated occurrence (moved to the inbox) out of its series, as a
- * standalone task: it has no place in a pattern. A master hands its role
- * to the next occurrence first.
+ * Make `heir` the master of `rows` (itself among them), carrying
+ * `recurrence`: the part of a series that outlives its master.
  */
-const releaseFromSeries = Effect.fn("releaseFromSeries")(function* (
+const makeMaster = Effect.fn("makeMaster")(function* (
   userId: string,
-  task: TaskSelect
+  params: {
+    heir: TaskSelect;
+    recurrence: TaskSelect["recurrence"];
+    rows: TaskSelect[];
+  }
 ) {
-  const handedOff =
-    task.seriesMasterId === task.id
-      ? yield* handOffMasterRole(userId, task)
-      : [];
-  const released = yield* dbUpdate(userId, task.id, {
-    isException: false,
-    recurrence: null,
-    seriesMasterId: null,
+  const db = yield* Database;
+  const followed = yield* db
+    .update(taskTable)
+    .set({ seriesMasterId: params.heir.id })
+    .where(
+      and(eq(taskTable.userId, userId), inArray(taskTable.id, ids(params.rows)))
+    )
+    .returning();
+  const [newMaster] = yield* dbUpdate(userId, params.heir.id, {
+    recurrence: params.recurrence,
   });
-  return [...handedOff, ...released];
+  return newMaster
+    ? [...followed.filter((row) => row.id !== params.heir.id), newMaster]
+    : followed;
 });
 
 const dbDeleteBySeriesFrom = (
@@ -304,9 +296,8 @@ const dbSelectExceptionsBySeriesFrom = (
       );
   });
 
-/** A series' exceptions from `fromDate` on (but `editedId`) become standalone. */
+/** A series' exceptions from `fromDate` on become standalone. */
 const dbDetachExceptionsFrom = (params: {
-  editedId: string;
   fromDate: string;
   seriesMasterId: string;
   userId: string;
@@ -315,22 +306,20 @@ const dbDetachExceptionsFrom = (params: {
     const db = yield* Database;
     return yield* db
       .update(taskTable)
-      .set({ isException: false, seriesMasterId: null })
+      .set(STANDALONE)
       .where(
         and(
           eq(taskTable.userId, params.userId),
           eq(taskTable.seriesMasterId, params.seriesMasterId),
           eq(taskTable.isException, true),
-          gte(taskTable.startDate, params.fromDate),
-          ne(taskTable.id, params.editedId)
+          gte(taskTable.startDate, params.fromDate)
         )
       )
       .returning();
   });
 
-/** Move a series' exceptions from `fromDate` on (and `editedId`) to another series. */
+/** Move a series' exceptions from `fromDate` on to another series. */
 const dbMoveExceptionsToSeries = (params: {
-  editedId: string;
   fromDate: string;
   fromSeriesMasterId: string;
   toSeriesMasterId: string;
@@ -346,10 +335,7 @@ const dbMoveExceptionsToSeries = (params: {
           eq(taskTable.userId, params.userId),
           eq(taskTable.seriesMasterId, params.fromSeriesMasterId),
           eq(taskTable.isException, true),
-          or(
-            gte(taskTable.startDate, params.fromDate),
-            eq(taskTable.id, params.editedId)
-          )
+          gte(taskTable.startDate, params.fromDate)
         )
       )
       .returning();
@@ -747,16 +733,19 @@ function buildRecurringTaskRows(
 }
 
 /**
- * Whether a "this" update writes the task: a field changes, or the tags of
- * a series occurrence do (that makes it an exception, so a later pattern
- * change keeps it and its tags).
+ * Whether a "this" update writes the task: a field changes, or the edit
+ * sends a series occurrence's tags (that makes it an exception, so a later
+ * pattern change keeps it and its tags).
  */
 function editsThisTask(
   task: TaskSelect,
-  hasDbUpdates: boolean,
+  dbInput: TaskUpdateInput,
   tagIds: string[] | undefined
 ): boolean {
-  return hasDbUpdates || (task.seriesMasterId !== null && tagIds !== undefined);
+  return (
+    Object.keys(dbInput).length > 0 ||
+    (task.seriesMasterId !== null && tagIds !== undefined)
+  );
 }
 
 /**
@@ -775,7 +764,6 @@ function allRetagged(rows: TaskSelect[]): WrittenRows {
 /** Writes an update's rows for its scope (no tags), returning them. */
 const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
   dbInput: TaskUpdateInput;
-  hasDbUpdates: boolean;
   /** The pattern the edit sets, checked. */
   newPattern: CheckedPattern | null;
   normalizedTagIds: string[] | undefined;
@@ -799,7 +787,7 @@ const writeTaskUpdate = Effect.fn("writeTaskUpdate")(function* (params: {
       yield* convertToRecurring(userId, task, dbInput, params.newPattern)
     );
   }
-  if (editsThisTask(task, params.hasDbUpdates, params.normalizedTagIds)) {
+  if (editsThisTask(task, dbInput, params.normalizedTagIds)) {
     // Edit this task alone, marked as an exception to its series.
     return allRetagged(
       yield* dbUpdate(userId, task.id, {
@@ -874,9 +862,10 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
       task,
     });
   // The earlier part of the series stops before the edit, so its master no
-  // longer claims to repeat past it. First, while the master is still
-  // there: a split before it deletes it below, and its undated and earlier
-  // occurrences need it to move to a series of their own.
+  // longer claims to repeat past it. This runs first, while the master is
+  // still there: a split before the master deletes it below, so its earlier
+  // occurrences move to a series of their own and its undated ones become
+  // standalone.
   const ended = yield* endSeriesBefore(userId, task, boundary);
   const deletedIds = new Set(
     ids(
@@ -901,7 +890,7 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
         recurrence: pattern.recurrence,
         seriesMasterId: task.id,
       }
-    : { isException: false, recurrence: null, seriesMasterId: null };
+    : STANDALONE;
   const updatedAnchor = keepEdited
     ? yield* dbUpdate(userId, task.id, { ...occurrenceFields, ...anchorSeries })
     : [];
@@ -911,7 +900,6 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     // standalone tasks rather than members of a series that no longer
     // repeats there.
     const detached = yield* dbDetachExceptionsFrom({
-      editedId: task.id,
       fromDate: boundary,
       seriesMasterId: task.seriesMasterId,
       userId,
@@ -922,15 +910,11 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
     };
   }
 
-  // A kept edited occurrence holds the new series' first date.
-  const keptDates = keepEdited
-    ? new Set([...otherKeptDates, pattern.startDate])
-    : otherKeptDates;
   const seriesMasterId = keepEdited ? task.id : uuidv7();
   const taskRows = regeneratedOccurrenceRows({
     input,
     keepEdited,
-    keptDates,
+    keptDates: otherKeptDates,
     pattern,
     seriesMasterId,
     task,
@@ -940,32 +924,26 @@ const regenerateOccurrences = Effect.fn("regenerateOccurrences")(function* (
   // Kept occurrences from the boundary on join the new series as
   // exceptions, so they show and follow its pattern rather than the old one.
   const moved = yield* dbMoveExceptionsToSeries({
-    editedId: task.id,
     fromDate: boundary,
     fromSeriesMasterId: task.seriesMasterId,
     toSeriesMasterId: seriesMasterId,
     userId,
   });
-  // Every changed row goes back, once, latest write wins (so clients see
-  // the moved exceptions in their new series), but only the edited
-  // occurrence and the new rows take the edit's tags: the other kept
-  // exceptions keep their own.
-  const rows = new Map(
-    [...updatedAnchor, ...endedMaster, ...inserted, ...moved].map((row) => [
-      row.id,
-      row,
-    ])
-  );
+  // Every changed row goes back (updateTask reads them fresh by id), but
+  // only the edited occurrence and the new rows take the edit's tags: the
+  // other kept exceptions keep their own.
   return {
     retagIds: [...(keepEdited ? [task.id] : []), ...ids(inserted)],
-    rows: [...rows.values()],
+    rows: [...updatedAnchor, ...endedMaster, ...inserted, ...moved],
   };
 });
 
 /**
- * Ends the series' pattern the day before `task` (when `task` isn't its
- * first): the master keeps its days up to there, and stops claiming the
- * ones a pattern change or "Repeat: None" replaced.
+ * Ends the series' pattern before `boundary` (when `task` isn't its first):
+ * the master keeps its days up to there, and stops claiming the later ones,
+ * deleted or replaced by a pattern change or "Repeat: None". When the split
+ * reaches the master (or it's gone or undated), the series' undated
+ * occurrences stand alone.
  */
 const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
   userId: string,
@@ -988,32 +966,20 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
     return [] as TaskSelect[];
   }
   // The master was moved to the inbox: it can't carry the earlier part's
-  // pattern, so that part becomes a series of its own (or a lone task), and
-  // the master and any other undated occurrences stand alone.
+  // pattern, so that part becomes a series of its own, and the master and
+  // any other undated occurrences stand alone.
   if (!master.startDate) {
-    const handedOff = yield* handOffEarlierPart(
-      userId,
-      { ...master, seriesMasterId: master.id, startDate: boundary },
-      boundary
-    );
+    const handedOff = yield* handOffEarlierPart(userId, master, boundary);
     const detached = yield* dbDetachUndated(userId, master.id);
-    const released = yield* dbUpdate(userId, master.id, {
-      isException: false,
-      recurrence: null,
-      seriesMasterId: null,
-    });
+    const released = yield* dbUpdate(userId, master.id, STANDALONE);
     return [...handedOff, ...detached, ...released];
   }
-  // The edit starts on or before the master, so the master's pattern goes
-  // rather than ending before its own start. Occurrences before the edit
+  // The split starts on or before the master, so the master's pattern goes
+  // rather than ending before its own start. Occurrences before the split
   // (the master was moved later alone) keep the original pattern as a
   // series of their own first.
-  if (master.startDate && boundary <= master.startDate) {
-    const handedOff = yield* handOffEarlierPart(
-      userId,
-      { ...master, seriesMasterId: master.id, startDate: master.startDate },
-      boundary
-    );
+  if (boundary <= master.startDate) {
+    const handedOff = yield* handOffEarlierPart(userId, master, boundary);
     const detached = yield* dbDetachUndated(userId, master.id);
     const cleared = yield* dbUpdate(userId, master.id, { recurrence: null });
     return [...handedOff, ...detached, ...cleared];
@@ -1038,16 +1004,15 @@ const endSeriesBefore = Effect.fn("endSeriesBefore")(function* (
 
 /**
  * A series' undated occurrences (moved to the inbox alone) have no place
- * before or after a split, so when a split starts at or before their master
- * they become standalone tasks rather than members of a series that's
- * changed or gone.
+ * before or after a split, so they become standalone tasks rather than
+ * members of a series that's changed or gone.
  */
 const dbDetachUndated = (userId: string, seriesMasterId: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
     return yield* db
       .update(taskTable)
-      .set({ isException: false, recurrence: null, seriesMasterId: null })
+      .set(STANDALONE)
       .where(
         and(
           eq(taskTable.userId, userId),
@@ -1060,17 +1025,19 @@ const dbDetachUndated = (userId: string, seriesMasterId: string) =>
   });
 
 /**
- * The edited task is its series' master but some occurrences come before
- * the edit (the master was moved later alone, then its repeat changed or
- * stopped). Those keep the original pattern, ended the day before, under
- * the earliest of them as their own master, so the master's new pattern
- * (or none) doesn't reach them.
+ * Occurrences of `master`'s series before `boundary` (the master was moved
+ * later alone, then the series split at or before it) keep the original
+ * pattern, ended at their last day, under the earliest of them as their own
+ * master, so what happens to the master from there on doesn't reach them.
  */
 const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
   userId: string,
-  master: DatedSeriesTask,
+  master: Pick<TaskSelect, "id" | "recurrence">,
   boundary: string
 ) {
+  if (!master.recurrence) {
+    return [] as TaskSelect[];
+  }
   const db = yield* Database;
   const earlier = yield* db
     .select()
@@ -1085,29 +1052,18 @@ const handOffEarlierPart = Effect.fn("handOffEarlierPart")(function* (
     )
     .orderBy(asc(taskTable.startDate));
   const [heir] = earlier;
-  if (!(heir && master.recurrence)) {
+  if (!heir) {
     return [] as TaskSelect[];
   }
-  const moved = yield* db
-    .update(taskTable)
-    .set({ seriesMasterId: heir.id })
-    .where(
-      inArray(
-        taskTable.id,
-        earlier.map((row) => row.id)
-      )
-    )
-    .returning();
-  const [newMaster] = yield* dbUpdate(userId, heir.id, {
+  return yield* makeMaster(userId, {
+    heir,
     recurrence: endedBefore(
       master.recurrence,
       boundary,
       earlier.at(-1)?.startDate
     ),
+    rows: earlier,
   });
-  return newMaster
-    ? [...moved.filter((row) => row.id !== heir.id), newMaster]
-    : moved;
 });
 
 function ids(rows: Pick<TaskSelect, "id">[]): string[] {
@@ -1203,8 +1159,9 @@ const convertToRecurring = Effect.fn("convertToRecurring")(function* (
 
 /**
  * A repeat change on an undated occurrence (moved to the inbox): it leaves
- * its series as a standalone task, and a new pattern makes it a series of
- * its own, from the start date the edit gives it.
+ * its series as a standalone task (a master hands its role to the next
+ * occurrence first), and a new pattern makes it a series of its own, from
+ * the start date the edit gives it.
  */
 const repatternUndated = Effect.fn("repatternUndated")(function* (
   userId: string,
@@ -1212,18 +1169,14 @@ const repatternUndated = Effect.fn("repatternUndated")(function* (
   input: TaskUpdateInput,
   newPattern: CheckedPattern | null
 ) {
-  const released = yield* releaseFromSeries(userId, task);
-  const standalone: TaskSelect = {
-    ...task,
-    isException: false,
-    recurrence: null,
-    seriesMasterId: null,
-  };
+  const handedOff =
+    task.seriesMasterId === task.id
+      ? yield* handOffMasterRole(userId, task)
+      : [];
   const rows = newPattern
-    ? yield* convertToRecurring(userId, standalone, input, newPattern)
-    : yield* dbUpdate(userId, task.id, { ...input, recurrence: null });
-  const written = new Map([...released, ...rows].map((row) => [row.id, row]));
-  return { retagIds: ids(rows), rows: [...written.values()] };
+    ? yield* convertToRecurring(userId, task, input, newPattern)
+    : yield* dbUpdate(userId, task.id, { ...input, ...STANDALONE });
+  return { retagIds: ids(rows), rows: [...handedOff, ...rows] };
 });
 
 /** Handle scope=following update for recurring task */
@@ -1236,7 +1189,8 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (params: {
   userId: string;
 }) {
   const { input, recurrenceChanged, task, userId } = params;
-  // Without a start date there is no "following"; edit this occurrence alone.
+  // Without a start date there is no "following": edit this occurrence
+  // alone, unless its repeat changes (see repatternUndated).
   if (!isDatedSeriesTask(task)) {
     if (recurrenceChanged) {
       return yield* repatternUndated(userId, task, input, params.newPattern);
@@ -1356,15 +1310,14 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       const { tagIds, ...unsafeDbInput } = input;
       const sent = stripSystemManagedTaskFields(unsafeDbInput);
       const normalizedTagIds = yield* resolveTagIdsForUser(userId, tagIds);
+      const inSeries = task.seriesMasterId !== null;
       const changesPattern =
-        task.seriesMasterId !== null &&
-        (yield* changesSeriesRecurrence(userId, task, sent));
+        inSeries && (yield* changesSeriesRecurrence(userId, task, sent));
       // A series' pattern sent along unchanged is no edit: only its master
       // carries it, so it must not be written onto an occurrence.
-      const { recurrence: _unchangedPattern, ...withoutPattern } = sent;
+      const { recurrence: _pattern, ...withoutPattern } = sent;
       const dbInput: TaskUpdateInput =
-        task.seriesMasterId !== null && !changesPattern ? withoutPattern : sent;
-      const hasDbUpdates = Object.keys(dbInput).length > 0;
+        inSeries && !changesPattern ? withoutPattern : sent;
       // One occurrence can't repeat differently from its series: a new
       // pattern (or "Repeat: None") applies from this occurrence on.
       if (changesPattern && scope === "this") {
@@ -1375,7 +1328,6 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
           })
         );
       }
-      const recurrenceChanged = changesPattern && scope === "following";
       // Checked before anything is deleted.
       const newPattern = dbInput.recurrence
         ? yield* checkPattern(
@@ -1387,7 +1339,7 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
       // Regenerating a series replaces its rows. When the edit doesn't set
       // tags, read this task's tags now so the new rows can keep them.
       const carriedTagIds =
-        normalizedTagIds === undefined && recurrenceChanged
+        normalizedTagIds === undefined && changesPattern
           ? ((yield* dbSelectByIdsWithTags(userId, [taskId]))[0]?.tags.map(
               (tag) => tag.id
             ) ?? [])
@@ -1401,10 +1353,9 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         Effect.gen(function* () {
           const written = yield* writeTaskUpdate({
             dbInput,
-            hasDbUpdates,
             newPattern,
             normalizedTagIds,
-            recurrenceChanged,
+            recurrenceChanged: changesPattern,
             scope,
             task,
             userId,
@@ -1442,42 +1393,43 @@ export class TaskService extends Context.Service<TaskService>()("TaskService", {
         return;
       }
 
+      // Each transaction below is scoped to this fiber by drizzle's effect
+      // driver, so the helpers' queries join it.
+      const db = yield* Database;
       // Without a start date there's no "following": delete it alone.
       const alone = scope === "this" || !task.startDate;
-      // A series master deleted alone hands its role to the next one.
+      // A series master deleted alone hands its role and pattern to the
+      // next occurrence, so the rest keep a master to read the pattern from.
       if (alone && task.seriesMasterId === task.id) {
-        const db = yield* Database;
-        yield* db.transaction(() => deleteMasterAlone(userId, task));
+        yield* db.transaction(() =>
+          Effect.gen(function* () {
+            yield* handOffMasterRole(userId, task);
+            yield* dbDelete(userId, taskId);
+          })
+        );
         return;
       }
 
       // Non-recurring or alone: delete single task
-      if (!task.seriesMasterId || alone) {
+      if (alone || !isDatedSeriesTask(task)) {
         yield* dbDelete(userId, taskId);
         return;
       }
 
       // scope=following: delete this task and all future tasks in series.
-      // What's left before it ends its pattern there, or, when this is a
-      // master moved later alone, keeps it as a series of its own.
-      if (scope === "following" && task.startDate && task.seriesMasterId) {
-        const dated = {
-          ...task,
-          seriesMasterId: task.seriesMasterId,
-          startDate: task.startDate,
-        };
-        const db = yield* Database;
-        yield* db.transaction(() =>
-          Effect.gen(function* () {
-            yield* endSeriesBefore(userId, dated, dated.startDate);
-            yield* dbDeleteBySeriesFrom(
-              userId,
-              dated.seriesMasterId,
-              dated.startDate
-            );
-          })
-        );
-      }
+      // What's left before it ends its pattern there. When the master was
+      // moved later alone, to this date or after, the occurrences before
+      // this one become a series of their own.
+      yield* db.transaction(() =>
+        Effect.gen(function* () {
+          yield* endSeriesBefore(userId, task, task.startDate);
+          yield* dbDeleteBySeriesFrom(
+            userId,
+            task.seriesMasterId,
+            task.startDate
+          );
+        })
+      );
     });
 
     return { createTask, deleteTask, getTask, listTasks, updateTask };

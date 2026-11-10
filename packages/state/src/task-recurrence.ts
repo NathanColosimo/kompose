@@ -380,8 +380,6 @@ export function markStatusFailureMessage(
     : "Couldn't reopen the task. Your changes are still here.";
 }
 
-const SPACES = / /g;
-
 /**
  * The blocking note, naming both dates so it says what to fix: "The repeat
  * ends Nov 13, before the task starts on Nov 14."
@@ -394,7 +392,7 @@ function repeatEndsBeforeStartText(
   const day = (date: Temporal.PlainDate) =>
     date
       .toLocaleString(undefined, { day: "numeric", month: "short" })
-      .replace(SPACES, "\u00A0");
+      .replaceAll(" ", "\u00A0");
   return `The repeat ends ${day(Temporal.PlainDate.from(until))}, before the task starts on ${day(startDate)}.`;
 }
 
@@ -445,38 +443,30 @@ export function repeatNote(params: {
           : PICK_START_TO_REPEAT,
     };
   }
-  const text = params.undatedMember
-    ? undatedRepeatNote(params)
-    : repeatChangeNote(params);
-  return text ? { blocking: false, text } : null;
-}
-
-function undatedRepeatNote(params: {
-  next: TaskRecurrence | null | undefined;
-  previous: TaskRecurrence | null;
-}): string | null {
   if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
     return null;
   }
-  return params.next
-    ? "Makes this task a series of its own."
-    : "Takes this task out of its series.";
+  const text = repeatChangeText(params);
+  return text ? { blocking: false, text } : null;
 }
 
 /**
- * What a repeat change on a recurring task will do, shown before Save: it
- * applies from the edited occurrence on, with no scope question. Null when
- * the task doesn't repeat or the pattern is unchanged.
+ * What a changed repeat will do, shown before Save. An inbox occurrence
+ * leaves its series or becomes one of its own; a series' change applies
+ * from the edited occurrence on, with no scope question. Null for a task
+ * that doesn't repeat.
  */
-export function repeatChangeNote(params: {
+function repeatChangeText(params: {
   isRecurring: boolean;
   next: TaskRecurrence | null | undefined;
-  previous: TaskRecurrence | null;
+  undatedMember?: boolean;
 }): string | null {
-  if (
-    !params.isRecurring ||
-    taskRecurrenceEquals(params.previous, params.next ?? null)
-  ) {
+  if (params.undatedMember) {
+    return params.next
+      ? "Makes this task a series of its own."
+      : "Takes this task out of its series.";
+  }
+  if (!params.isRecurring) {
     return null;
   }
   return params.next
