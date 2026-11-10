@@ -1541,15 +1541,17 @@ function carriedAt(params: {
   if (place === null) {
     return null;
   }
-  // On its own place (its day, or less than a day off), another meeting
-  // moved there too is the one that gives way; carried further, it
-  // would overwrite one.
+  // On its own place (its day, or less than a day off by the clock, as
+  // `landingOf` measures a move), another meeting moved there too is the
+  // one that gives way; carried further, it would overwrite one.
   const zone = repeatZone(master, start);
-  const from = slotMoment(slot, seriesZoneOf(master));
-  const to = slotMoment(place, zone);
+  const wall = (at: string) =>
+    slotMoment(at, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
+  const from = wall(slot);
+  const to = wall(place);
   const ownPlace =
-    from !== null &&
-    to !== null &&
+    from !== undefined &&
+    to !== undefined &&
     Math.abs(from.until(to).total("hours")) < 24;
   const shared =
     !ownPlace &&
