@@ -2787,3 +2787,57 @@ describe("a dormant skip through a new weekday and time", () => {
     );
   });
 });
+
+describe("a dormant skip through a new weekday and form", () => {
+  // Mondays and Wednesdays, with a skip on Tue Nov 17 where nothing met;
+  // the Entire series adds Tuesdays and changes form. Nov 17's new meeting
+  // isn't skipped.
+  test("made all day", async () => {
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "EXDATE:20261117T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { date: "2026-11-17" },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE"],
+            start: { date: "2026-11-16" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "20261117"
+    );
+  });
+
+  test("made timed", async () => {
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-11-10" },
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,WE",
+        "EXDATE;VALUE=DATE:20261117",
+      ],
+      start: { date: "2026-11-09" },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-16"), {
+            end: { dateTime: "2026-11-16T09:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE"],
+            start: { dateTime: "2026-11-16T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "20261117"
+    );
+  });
+});

@@ -726,7 +726,8 @@ function matchDateList(
         values
           .filter(
             (value) =>
-              !(value.instant && keepAsDate) || keepAsDate(list.name, value)
+              !(list.name === "EXDATE" && ownSlot && !ownSlot(value)) &&
+              (!(value.instant && keepAsDate) || keepAsDate(list.name, value))
           )
           .map((value) => compactDate(value.day))
       ),
@@ -784,9 +785,16 @@ function matchDateList(
     if (value.instant) {
       return timedSkip(value, value.instant);
     }
+    if (list.name !== "EXDATE") {
+      return [atTime(value.day)];
+    }
+    // A date skipped where the rules didn't meet skipped nothing: it goes,
+    // or it would cancel the new meeting there.
+    if (ownSlot && !ownSlot(value)) {
+      return [];
+    }
     // A date skipped the whole day: its added meetings too.
-    const moment = atTime(value.day);
-    return list.name === "EXDATE" ? [moment, ...addedOn(value.day)] : [moment];
+    return [atTime(value.day), ...addedOn(value.day)];
   });
   const same =
     moments.length === values.length &&
@@ -952,11 +960,13 @@ export function matchRecurrenceToStart(
   // there stays dormant); one the client placed, against the saved rules. A rule that
   // can't be read may meet there: a skip where nothing meets does nothing,
   // one missed brings a meeting back.
+  // An all-day series' rules are read from its first day.
+  const readFrom = first ?? baseDay;
   const readersOf = (lines: readonly string[]) =>
-    first
+    readFrom
       ? lines
           .filter((line) => line.startsWith("RRULE:"))
-          .map((rule) => readRule({ first, rule }))
+          .map((rule) => readRule({ first: readFrom, rule }))
       : [];
   const savedReaders = readersOf(rules);
   const before = [...(days?.before ?? [])];
@@ -969,10 +979,21 @@ export function matchRecurrenceToStart(
     );
   const inherited = momentsIn("EXDATE");
   const ownAdded = momentsIn("RDATE");
-  const ownSlot = first
+  const inheritedDays = new Set(
+    dateValues(before, "EXDATE", timeZone).flatMap((value) =>
+      value.instant ? [] : [value.day.toString()]
+    )
+  );
+  const ownSlot = readFrom
     ? (value: RecurrenceValue) => {
+        // A skipped date: whether the rules met that day.
         if (value.instant === null) {
-          return false;
+          const day = value.day;
+          const ownDay =
+            ownReaders.length > 0 && inheritedDays.has(day.toString());
+          return (ownDay ? ownReaders : savedReaders).some(
+            (reader) => !reader || reader.meetsAt(day)
+          );
         }
         if (
           startMoment !== null &&
