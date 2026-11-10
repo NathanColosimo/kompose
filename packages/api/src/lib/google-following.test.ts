@@ -487,6 +487,93 @@ describe("This and following", () => {
     ]);
   });
 
+  describe("a move past later meetings", () => {
+    // A changed meeting the move passes lands where a later meeting does:
+    // carrying it would overwrite that one, so the save is refused.
+    test("refuses a meeting moved on its own whose place is a later one's", async () => {
+      // Nov 23 moved to Wed Nov 25 10:00; from Nov 16 moved to Nov 30.
+      const google = fakeGoogle(weekly, [
+        occurrenceOf(weekly, "2026-11-23T09:00:00-05:00", {
+          end: "2026-11-25T10:30:00-05:00",
+          start: "2026-11-25T10:00:00-05:00",
+        }),
+      ]);
+      expect(
+        await refusalOf(
+          edit("following", nov16, {
+            end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: ["2026-11-23T09:00:00-05:00"],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    test("refuses a renamed meeting whose place is a later one's", async () => {
+      // Nov 23 renamed; from Nov 16 moved to Dec 7.
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-11-23T09:00:00-05:00"),
+          summary: "Planning (Nov 23)",
+        },
+      ]);
+      expect(
+        await refusalOf(
+          edit("following", nov16, {
+            end: { dateTime: "2026-12-07T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-12-07T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: ["2026-11-23T09:00:00-05:00"],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+
+    test("refuses a renamed monthly meeting whose place is a later one's", async () => {
+      // The third Monday from Oct 19, Dec 21 renamed; from Nov 16 moved to
+      // Jan 18: Dec 21's place, two months on, is Feb 15's own.
+      const monthly: Event = {
+        ...weekly,
+        end: { dateTime: "2026-10-19T09:30:00-04:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3MO"],
+        start: { dateTime: "2026-10-19T09:00:00-04:00", timeZone: zone },
+      };
+      const google = fakeGoogle(monthly, [
+        {
+          ...occurrenceOf(monthly, "2026-12-21T09:00:00-05:00"),
+          summary: "Planning (Dec 21)",
+        },
+      ]);
+      expect(
+        await refusalOf(
+          edit(
+            "following",
+            occurrenceOf(monthly, "2026-11-16T09:00:00-05:00"),
+            {
+              end: { dateTime: "2027-01-18T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2027-01-18T09:00:00-05:00", timeZone: zone },
+            }
+          )
+        )
+      ).toMatchObject({
+        data: {
+          originalStarts: ["2026-12-21T09:00:00-05:00"],
+          reason: "dropsChangedOccurrences",
+        },
+      });
+      expect(google.writes()).toEqual([]);
+    });
+  });
+
   describe("a monthly series moved into the next month", () => {
     // Each later meeting lands as many months on as the split moved: the
     // 28th moved to Dec 2 puts Dec 28 on Jan 2 and Feb 28 on Mar 2.
