@@ -2,8 +2,10 @@
  * A Google event's repeat in words ("Repeats every 2 weeks on Tue"), and
  * the monthly "On" choices the repeat editors offer.
  */
+import { untilRuleToDay } from "@kompose/google-cal/until";
 import type { Temporal } from "temporal-polyfill";
 import {
+  type EventRecurrenceEnd,
   type EventRecurrencePattern,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
@@ -45,13 +47,14 @@ const ORDINAL_WORDS: Record<string, string> = {
 };
 const BY_MONTH_PATTERN = /BYMONTH=([\d,]+)(?:;|$)/;
 const POSITIVE_DAY = /^\d{1,2}$/;
+const WEEKDAYS = "MO,TU,WE,TH,FR";
 /** Day sets a BYSETPOS rule picks from, by their sorted BYDAY. */
 const DAY_SET_WORDS: Record<string, string> = {
-  "MO,TU,WE,TH,FR": "weekday",
+  [WEEKDAYS]: "weekday",
   "MO,TU,WE,TH,FR,SA,SU": "day",
   "SA,SU": "weekend day",
 };
-/** Rule parts the words always cover. */
+/** Rule parts that aren't BY... parts (`constraintKeys`). */
 const PLAIN_PARTS = new Set(["FREQ", "INTERVAL", "UNTIL", "COUNT", "WKST"]);
 
 const FREQUENCY_WORDS: Record<string, [string, string] | undefined> = {
@@ -210,10 +213,16 @@ function dayWords(
   let words: DayWords = { text: null, used: [] };
   if (freq === "WEEKLY") {
     const startDay = start ? weekdayCodeOf(start) : undefined;
-    const days = weekOrdered(byDay.length > 0 || !startDay ? byDay : [startDay])
-      .map((code) => DAY_NAMES[code])
-      .filter(Boolean)
-      .join(", ");
+    const codes = weekOrdered(
+      byDay.length > 0 || !startDay ? byDay : [startDay]
+    );
+    const days =
+      codes.join(",") === WEEKDAYS
+        ? "weekdays"
+        : codes
+            .map((code) => DAY_NAMES[code])
+            .filter(Boolean)
+            .join(", ");
     const plain = byDay.every(isPlainWeekday);
     words = { text: days && plain ? `on ${days}` : null, used: ["BYDAY"] };
   } else if (freq === "MONTHLY") {
@@ -228,13 +237,25 @@ function dayWords(
   return { complete, text: words.text };
 }
 
+/** How a series ends: ", until Feb 10, 2027", ", 10 times", "" for never. */
+function endWords(end: EventRecurrenceEnd, timeZone: string): string {
+  if (end.type === "count") {
+    return `, ${end.count} ${end.count === 1 ? "time" : "times"}`;
+  }
+  const day = end.type === "until" ? untilRuleToDay(end.date, timeZone) : null;
+  return day
+    ? `, until ${MONTH_NAMES[day.month - 1]} ${day.day}, ${day.year}`
+    : "";
+}
+
 /**
- * How a Google event repeats, for a read-only view ("Repeats weekly on Mon,
- * Wed"). `rules` is the series' RRULE list (the event's own, or its
- * master's). An instance whose rule isn't loaded still says it repeats.
- * A rule whose parts the words don't all cover, or a series with more
- * than one rule, ends in "(custom)", so what they leave out isn't hidden.
- * Null for a one-off event.
+ * How a Google event repeats, in words ("Repeats weekly on Mon, Wed", or
+ * with `timeZone` "Repeats weekly on Mon, Wed, until Feb 10, 2027").
+ * `rules` is the series' RRULE list (the event's own, or its master's).
+ * An instance whose rule isn't loaded still says it repeats. A rule whose
+ * parts the words don't all cover, or a series with more than one rule,
+ * ends in "(custom)", so what they leave out isn't hidden. Null for a
+ * one-off event.
  */
 export function describeEventRecurrence(params: {
   eventType?: string | null;
@@ -246,6 +267,12 @@ export function describeEventRecurrence(params: {
    * "Repeats monthly on day 7").
    */
   start?: RecurrenceStart;
+  /**
+   * The series' zone, where its end day is counted. Given, the words say
+   * how the series ends too (", until Feb 10, 2027", ", 10 times"); left
+   * out, they stop at how it repeats, for a short label.
+   */
+  timeZone?: string;
 }): string | null {
   const rule = getPrimaryRecurrenceRule(params.rules ?? []) ?? undefined;
   const pattern = parseGoogleEventRecurrenceRule(rule);
@@ -262,7 +289,10 @@ export function describeEventRecurrence(params: {
       ? `Repeats every ${pattern.interval} ${words[1]}`
       : `Repeats ${words[0]}`;
   const { complete, text } = dayWords(rule, pattern, params.start);
-  const said = text ? `${base} ${text}` : base;
+  const repeats = text ? `${base} ${text}` : base;
+  const said = params.timeZone
+    ? `${repeats}${endWords(pattern.end, params.timeZone)}`
+    : repeats;
   return complete && !hasSeveralRules(params.rules) ? said : `${said} (custom)`;
 }
 
