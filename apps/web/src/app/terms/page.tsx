@@ -31,7 +31,7 @@ function normalizeBlockText(block: string) {
 export default function TermsPage() {
   return (
     <LegalShell
-      summary="These terms govern access to and use of Kompose."
+      summary="The rules for using Kompose, and what you and Kompose each agree to."
       title="Terms of Service"
       updatedAt={updatedAt}
     >

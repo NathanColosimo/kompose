@@ -9,7 +9,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDuration } from "@/lib/temporal-utils";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { cn } from "@/lib/utils";
 
 interface DurationPickerProps {
