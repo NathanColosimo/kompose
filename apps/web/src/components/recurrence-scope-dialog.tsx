@@ -1,7 +1,6 @@
 "use client";
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
-import { SAVE_FAILURE_MESSAGE } from "@kompose/state/held-save";
 import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
 import { useMutation } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
@@ -15,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SaveFailure, SavingLabel } from "@/components/ui/held-fieldset";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -38,11 +36,9 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value,
   onValueChange,
   confirmLabel = "Save",
-  failureMessage = SAVE_FAILURE_MESSAGE,
   pendingLabel = "Saving…",
   cancelLabel = "Cancel",
   onCancel,
-  onCloseAutoFocus,
   onConfirm,
   disabledScopes,
   options,
@@ -56,13 +52,10 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value: S;
   onValueChange: (value: S) => void;
   confirmLabel?: string;
-  failureMessage?: string;
   /** The confirm button's words while it runs: "Deleting…". */
   pendingLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
-  /** Where focus goes as it closes; by default, back where it was. */
-  onCloseAutoFocus?: (event: Event) => void;
   onConfirm: () => void | Promise<void>;
   disabledScopes?: Partial<Record<S, boolean>>;
   options: readonly RecurrenceScopeOption<S>[];
@@ -88,8 +81,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
     pendingRef.current = true;
     confirmation.mutate();
   };
-  // Held open while a confirm runs, so its failure is said here rather
-  // than to a dialog already gone.
+  // Keep the choice available for a retry after a failed confirmation.
   const requestOpenChange = (next: boolean) => {
     if (next || !pendingRef.current) {
       confirmation.reset();
@@ -101,7 +93,6 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
     <Dialog onOpenChange={requestOpenChange} open={open}>
       <DialogContent
         className="sm:max-w-[420px]"
-        onCloseAutoFocus={onCloseAutoFocus}
         // Cmd+Enter confirms the choice, as it saves the editor behind.
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -190,7 +181,6 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           })}
         </RadioGroup>
 
-        {confirmation.isError ? <SaveFailure message={failureMessage} /> : null}
         <DialogFooter>
           <Button
             aria-disabled={pending || undefined}
@@ -217,9 +207,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
             }}
             type="button"
           >
-            <SavingLabel saving={pending} savingLabel={pendingLabel}>
-              {confirmLabel}
-            </SavingLabel>
+            {pending ? pendingLabel : confirmLabel}
           </Button>
         </DialogFooter>
         <Button

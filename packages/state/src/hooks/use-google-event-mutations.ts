@@ -113,8 +113,7 @@ interface CreateContext {
 
 /**
  * A create: a one-off event shows in the cached lists at once, under a
- * stand-in id the server's copy replaces. A failure is reported unless the
- * editor says it (`quiet`).
+ * stand-in id the server's copy replaces. Failures use the app's error toast.
  */
 export function createGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -124,7 +123,6 @@ export function createGoogleEventMutationOptions(
     networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
-      quiet: _quiet,
       ...variables
     }: CreateEventInput & HeldSave) => orpc.googleCal.events.create(variables),
     onMutate: async (variables: CreateEventInput & HeldSave) => {
@@ -192,7 +190,7 @@ export function createGoogleEventMutationOptions(
  * An update: for one occurrence, unless the editor holds the save
  * (`optimistic: false`), the event changes in the cached lists at once,
  * and on failure each list's old copy comes back where the edit still
- * shows. A failure is reported unless the editor says it (`quiet`).
+ * shows. Failures use the app's error toast.
  */
 export function updateGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -278,8 +276,7 @@ export function updateGoogleEventMutationOptions(
 /**
  * A delete: the event leaves the cached lists at once and, on failure,
  * comes back to those it left (only it: what a refetch brought meanwhile
- * stays). A failure is reported unless the dialog holding it says it
- * (`quiet`), as for a held save.
+ * stays). Failures use the app's error toast.
  */
 export function deleteGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -289,7 +286,6 @@ export function deleteGoogleEventMutationOptions(
     networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
-      quiet: _quiet,
       ...variables
     }: DeleteEventInput & HeldSave) => orpc.googleCal.events.delete(variables),
     onMutate: async (variables: DeleteEventInput & HeldSave) => {

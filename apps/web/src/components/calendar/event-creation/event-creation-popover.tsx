@@ -152,11 +152,6 @@ export function EventCreationPopover() {
   if (!(state.showPopover && popoverTimes)) {
     return null;
   }
-  // With no calendar to write to, the chooser still makes a task.
-  const eventCalendar =
-    state.accountId && state.calendarId
-      ? { accountId: state.accountId, calendarId: state.calendarId }
-      : null;
 
   return (
     <Popover open={state.showPopover}>
@@ -201,7 +196,9 @@ export function EventCreationPopover() {
                 Cancel
               </Button>
               <Button
-                disabled={mode === "event" && !eventCalendar}
+                disabled={
+                  mode === "event" && !(state.accountId && state.calendarId)
+                }
                 onClick={handleSave}
                 size="sm"
                 type="button"
@@ -217,21 +214,21 @@ export function EventCreationPopover() {
             forceMount
             value="event"
           >
-            {eventCalendar ? (
+            {state.accountId && state.calendarId ? (
               <EventEditForm
-                accountId={eventCalendar.accountId}
-                calendarId={eventCalendar.calendarId}
+                accountId={state.accountId}
+                calendarId={state.calendarId}
                 closeSaveRequestRef={eventCloseSaveRequestRef}
                 createInteropRef={eventInteropRef}
                 end={endDate}
                 mode="create"
                 onDelete={() => undefined}
                 onSave={handleSave}
-                open={state.showPopover}
+                open
                 start={startDate}
               />
             ) : (
-              <p className="text-muted-foreground text-sm">
+              <p className="py-6 text-center text-muted-foreground text-sm">
                 {eventUnavailableReason}
               </p>
             )}
