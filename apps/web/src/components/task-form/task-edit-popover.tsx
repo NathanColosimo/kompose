@@ -1,5 +1,6 @@
 "use client";
 
+import { sameRecurrence } from "@kompose/api/lib/recurrence";
 import type {
   ClientTaskInsertDecoded,
   DeleteScope,
@@ -33,7 +34,6 @@ import {
   repeatBlocksSave,
   repeatNote,
   resolveTaskRecurrenceForEditor,
-  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useAtom, useAtomValue } from "jotai";
 import {
@@ -50,7 +50,6 @@ import {
 import Image from "next/image";
 import {
   type ReactElement,
-  type ReactNode,
   type RefObject,
   useCallback,
   useEffect,
@@ -85,7 +84,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { DurationPicker } from "@/components/ui/duration-picker";
-import { HeldFieldset, SaveFailure } from "@/components/ui/held-fieldset";
+import {
+  HeldFieldset,
+  SaveFailure,
+  SavingLabel,
+} from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -400,24 +403,6 @@ function hasFollowing(task: TaskSelectDecoded): boolean {
   return Boolean(task.seriesMasterId && task.startDate);
 }
 
-/** Mark done waits while Save runs, or while the repeat can't save. */
-function isDoneBlocked(saving: "done" | "save" | null, repeatBlocked: boolean) {
-  return saving === "save" || repeatBlocked;
-}
-
-/**
- * Cmd+Enter saves the open editor, but not while it saves, and not behind
- * a dialog over it (the scope or delete question), where it would re-ask
- * and drop the choice made in it.
- */
-function canSaveFromKeyboard(params: {
-  dialogOpen: boolean;
-  open: boolean;
-  saving: boolean;
-}): boolean {
-  return params.open && !params.saving && !params.dialogOpen;
-}
-
 /**
  * Holds an editor open on a save, for Mark done ("done") or Save ("save"):
  * it closes when the save succeeds and keeps the draft if not. Owned by the
@@ -474,34 +459,6 @@ function RepeatNote({
   );
 }
 
-/**
- * A button's label, or "Saving…" while its save runs. Both share one cell,
- * so the button keeps the wider one's width and nothing beside it shifts.
- */
-export function SavingLabel({
-  children,
-  saving,
-}: {
-  children: ReactNode;
-  saving: boolean;
-}) {
-  return (
-    <span className="grid justify-items-center">
-      <span
-        className={cn(
-          "col-start-1 row-start-1 flex items-center gap-1.5",
-          saving && "invisible"
-        )}
-      >
-        {children}
-      </span>
-      <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
-        Saving…
-      </span>
-    </span>
-  );
-}
-
 /** Done / Not done; narrow calendar blocks hide their checkbox, so it's here too. */
 function TaskDoneButton({
   disabled,
@@ -537,7 +494,7 @@ function TaskDoneButton({
 }
 
 /** Edits a task: Save, Mark done and Delete, with the scope question for a series. */
-export function TaskEditForm({
+function TaskEditForm({
   task,
   onClose,
   hold,
@@ -672,10 +629,7 @@ export function TaskEditForm({
             links: values.links,
             // Sent only when it changed: an explicit null ends the repeat,
             // so an untouched occurrence must not send one.
-            recurrence: taskRecurrenceEquals(
-              resolvedRecurrence,
-              values.recurrence
-            )
+            recurrence: sameRecurrence(resolvedRecurrence, values.recurrence)
               ? undefined
               : values.recurrence,
             startDate: values.startDate,
@@ -766,8 +720,6 @@ export function TaskEditForm({
         return;
       }
 
-      // The editor holds open ("Saving…") until the save succeeds, so a
-      // failed save keeps the edits.
       holdOpen(
         "save",
         commitUpdate(values, decision.scope, SAVE_FAILURE_MESSAGE)
@@ -777,9 +729,7 @@ export function TaskEditForm({
   );
 
   // Mark done saves unsaved edits with it, so they're never dropped: in one
-  // save where it can, through the scope dialog when
-  // the task repeats. With edits, the editor stays open until they've
-  // saved, so a failed save keeps them.
+  // save where it can, through the scope dialog when the task repeats.
   const handleToggleDone = useCallback(() => {
     const status = task.status === "done" ? "todo" : "done";
     const values = getValues();
@@ -819,12 +769,11 @@ export function TaskEditForm({
       e.preventDefault();
       handleSaveClick();
     },
+    // Not behind a dialog over the editor, where it would re-ask and drop
+    // the choice made in it.
     {
-      enabled: canSaveFromKeyboard({
-        dialogOpen: showTagScopeDialog || showDeleteConfirm,
-        open,
-        saving: isSavingStatus,
-      }),
+      enabled:
+        open && !isSavingStatus && !showTagScopeDialog && !showDeleteConfirm,
       enableOnFormTags: true,
     },
     [
@@ -925,7 +874,7 @@ export function TaskEditForm({
             </AlertDialogContent>
           </AlertDialog>
           <TaskDoneButton
-            disabled={isDoneBlocked(saving, repeatBlocked)}
+            disabled={saving === "save" || repeatBlocked}
             isDone={task.status === "done"}
             isSaving={saving === "done"}
             onClick={handleToggleDone}
@@ -976,8 +925,6 @@ export function TaskEditForm({
               );
               return;
             }
-            // With Mark done, the editor stays open ("Saving…") until the
-            // save succeeds, so a failed save keeps the edits.
             holdOpen("done", commitWithStatus(pendingUpdate, tagScope, status));
           }}
           onOpenChange={(nextOpen) => {

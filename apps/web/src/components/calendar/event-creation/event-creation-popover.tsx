@@ -10,7 +10,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
-import { SaveFailure } from "@/components/ui/held-fieldset";
+import { SaveFailure, SavingLabel } from "@/components/ui/held-fieldset";
 import {
   Popover,
   PopoverContent,
@@ -23,7 +23,6 @@ import {
 } from "@/lib/temporal-utils";
 import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
-  SavingLabel,
   TaskCreateForm,
   type TaskFormValues,
   useHeldSave,

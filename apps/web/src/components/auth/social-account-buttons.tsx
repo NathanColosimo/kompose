@@ -11,29 +11,11 @@ import {
 import { Button } from "../ui/button";
 
 const PROVIDERS = [
-  {
-    id: "google",
-    label: "Continue with Google",
-    name: "Google",
-    variant: "default",
-  },
-  {
-    id: "apple",
-    label: "Continue with Apple",
-    name: "Apple",
-    variant: "outline",
-  },
+  { id: "google", name: "Google", variant: "default" },
+  { id: "apple", name: "Apple", variant: "outline" },
 ] as const;
 
 type SocialProvider = (typeof PROVIDERS)[number]["id"];
-
-function buildSocialAuthUrls() {
-  const baseUrl = window.location.origin;
-  return {
-    callbackURL: `${baseUrl}/dashboard`,
-    errorCallbackURL: `${baseUrl}/login`,
-  };
-}
 
 export function SocialAccountButtons() {
   const lastUsedMethod = authClient.getLastUsedLoginMethod();
@@ -41,13 +23,13 @@ export function SocialAccountButtons() {
     mutationFn: async (provider: SocialProvider) => {
       // Runs OAuth in this browser tab. A desktop sign-in request in the URL
       // is forwarded so the app receives the session afterwards.
-      const { callbackURL, errorCallbackURL } = buildSocialAuthUrls();
+      const { origin } = window.location;
       const query = getElectronAuthQuery();
       const result = await authClient.signIn.social({
         provider,
         ...(query ? { fetchOptions: { query } } : {}),
-        callbackURL,
-        errorCallbackURL,
+        callbackURL: `${origin}/dashboard`,
+        errorCallbackURL: `${origin}/login`,
       });
       const authError = extractAuthErrorMessage(result);
       if (authError) {
@@ -77,7 +59,7 @@ export function SocialAccountButtons() {
 
   return (
     <div className="flex flex-col gap-2.5">
-      {PROVIDERS.map(({ id, label, variant }) => (
+      {PROVIDERS.map(({ id, name, variant }) => (
         <Button
           className="h-10 w-full text-sm"
           disabled={busy}
@@ -86,7 +68,9 @@ export function SocialAccountButtons() {
           type="button"
           variant={variant}
         >
-          {busy && signIn.variables === id ? "Connecting…" : label}
+          {busy && signIn.variables === id
+            ? "Connecting…"
+            : `Continue with ${name}`}
         </Button>
       ))}
       {lastUsed ? (

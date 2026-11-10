@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
@@ -7,6 +8,10 @@ import { cn } from "@/lib/utils";
  * picker, whose options render in a portal outside the fieldset and would
  * still take a click. Keep form values above this (react-hook-form), so the
  * remount loses nothing.
+ *
+ * The page under the editor takes no click while the save runs either: one
+ * that changed the view (another list, another week) would unmount the
+ * editor, and its edits would be gone if the save then failed.
  */
 export function HeldFieldset({
   children,
@@ -24,6 +29,13 @@ export function HeldFieldset({
       key={saving ? "saving" : "editing"}
     >
       {children}
+      {saving
+        ? createPortal(
+            // Under popovers and dialogs (z-50), over everything else.
+            <div aria-hidden className="fixed inset-0 z-40" />,
+            document.body
+          )
+        : null}
     </fieldset>
   );
 }
