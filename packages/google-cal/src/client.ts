@@ -403,7 +403,6 @@ function timesOnOwnDay(params: {
 /** A set hour or minute in a rule (BYHOUR=9), which only other apps write. */
 const SET_TIME_PART = /[:;]BY(?:HOUR|MINUTE)=/;
 /** A rule's end parts, to compare rules by their days alone. */
-const END_PARTS = /;(?:COUNT|UNTIL)=[^;]*/g;
 
 /** A meeting of a series on one day: a rule's, or one added to it. */
 interface DayMeeting {
@@ -550,8 +549,8 @@ function dayLoses(params: {
 
 /**
  * Whether a save that gives a series made in another app (meetings added
- * outside its repeat, or a set hour in its rule) a new time of day or form
- * would lose a meeting (`otherAppRepeat`): on a day with a skip, a deleted
+ * outside its repeat, or a set hour in its rule) a new time of day, form
+ * or repeat would lose a meeting (`otherAppRepeat`): on a day with a skip, a deleted
  * occurrence or an added meeting (from `from`, mapped by the start's move
  * in days), a meeting still on skipped after the save, a skipped or
  * deleted one back, a rule meeting with no place (the clocks skip its new
@@ -562,6 +561,13 @@ function losesMeetings(params: {
   cancelled: string[];
   /** The start the save moves from: the series' own, or a split's. */
   from: Event["start"];
+  /**
+   * The occurrences deleted on their own that Google keeps through the
+   * save: all of them when an Entire series save keeps its start, as their
+   * slots stay; none when it moves, or for a split's new series, which
+   * writes its skips itself.
+   */
+  keptDeleted: string[];
   master: Event;
   start: Event["start"];
   written: string[];
@@ -584,7 +590,7 @@ function losesMeetings(params: {
   const placed = (lines: string[]) =>
     lines
       .filter((line) => line.startsWith("RRULE:") || line.startsWith("RDATE"))
-      .map((line) => line.replace(END_PARTS, ""))
+      .map((line) => (line.startsWith("RRULE:") ? withoutEnd(line) : line))
       .sort()
       .join("\n");
   const replaced = placed(own) !== placed(written);
@@ -602,7 +608,7 @@ function losesMeetings(params: {
     zone,
   });
   const after = seriesDays({
-    deleted: [],
+    deleted: params.keptDeleted,
     first: start,
     lines: written,
     zone: newZone,
@@ -669,6 +675,7 @@ function splitRuleForStart(params: {
   return losesMeetings({
     cancelled: params.cancelled,
     from: asStart(params.originalStart),
+    keptDeleted: [],
     master,
     start,
     written,
@@ -2965,6 +2972,7 @@ export function makeGoogleCalendarService(
         losesMeetings({
           cancelled,
           from: master.start,
+          keptDeleted: plan.movesStart ? [] : cancelled,
           master,
           start: times.start,
           written: kept.recurrence,
