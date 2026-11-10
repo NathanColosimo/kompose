@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { seriesEditFields, seriesRepeatForEdit } from "./series-edit";
+import {
+  savedSeriesRecurrence,
+  seriesEditFields,
+  seriesRepeatForEdit,
+} from "./series-edit";
 
 const zone = "America/New_York";
 
@@ -8,6 +12,7 @@ describe("seriesEditFields", () => {
   // Nov 17 11:00-12:00 and renamed.
   const rescheduled = {
     colorId: "5",
+    id: "series_20261116",
     description: "Agenda",
     end: { dateTime: "2026-11-17T12:00:00-05:00", timeZone: zone },
     location: "Room 1",
@@ -42,6 +47,20 @@ describe("seriesEditFields", () => {
       start: rescheduled.start,
       summary: undefined,
     });
+  });
+
+  test("an occurrence's own stray spaces aren't a change", () => {
+    const spaced = {
+      ...rescheduled,
+      description: "Agenda\n",
+      summary: "Moved standup ",
+    };
+    const fields = seriesEditFields({
+      edited: { ...untouched, description: "Agenda", summary: "Moved standup" },
+      occurrence: spaced,
+    });
+    expect(fields.summary).toBeUndefined();
+    expect(fields.description).toBeUndefined();
   });
 
   test("sends what the user changed, a cleared field included", () => {
@@ -108,6 +127,77 @@ describe("seriesRepeatForEdit", () => {
     expect(moved.changed).toBe(false);
     expect(moved.countingDay?.toString()).toBe("2026-11-17");
     expect(moved.startDay?.toString()).toBe("2026-11-17");
+  });
+
+  test("counts days in the series' zone, not a rescheduled meeting's", () => {
+    // Tuesdays 9:00 in Tokyo; the Nov 10 meeting, rescheduled to New York
+    // Mon Nov 9 20:00, moved to Tue Nov 10 20:00 there: Wednesday in Tokyo.
+    const tokyo = {
+      dateTime: "2026-11-03T09:00:00+09:00",
+      timeZone: "Asia/Tokyo",
+    };
+    const rescheduled = {
+      end: { dateTime: "2026-11-09T20:30:00-05:00", timeZone: zone },
+      originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-09T20:00:00-05:00", timeZone: zone },
+    };
+    const tuesdays = ["RRULE:FREQ=WEEKLY;BYDAY=TU"];
+    const moved = repeat({
+      edited: {
+        end: { dateTime: "2026-11-10T20:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-10T20:00:00-05:00", timeZone: zone },
+      },
+      event: rescheduled,
+      recurrence: tuesdays,
+      seriesRecurrence: tuesdays,
+      seriesStart: tokyo,
+    });
+    expect(moved.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+    expect(moved.startDay?.toString()).toBe("2026-11-11");
+  });
+
+  test("new times on its own day keep counting from the series' first day", () => {
+    // Mondays from Nov 2, plus an added Wednesday Nov 11 meeting. Entire
+    // series keeps its first day for new times on the meeting's own day,
+    // so the repeat stays "weekly on Mon".
+    const weekly = [
+      "RRULE:FREQ=WEEKLY",
+      "RDATE;TZID=America/New_York:20261111T100000",
+    ];
+    const added = {
+      end: { dateTime: "2026-11-11T10:30:00-05:00", timeZone: zone },
+      originalStartTime: {
+        dateTime: "2026-11-11T10:00:00-05:00",
+        timeZone: zone,
+      },
+      recurringEventId: "series",
+      start: { dateTime: "2026-11-11T10:00:00-05:00", timeZone: zone },
+    };
+    const edit = (start: string, end: string) =>
+      repeat({
+        edited: {
+          end: { dateTime: end, timeZone: zone },
+          start: { dateTime: start, timeZone: zone },
+        },
+        event: added,
+        recurrence: weekly,
+        seriesRecurrence: weekly,
+      });
+    // A new end only.
+    const longer = edit(
+      "2026-11-11T10:00:00-05:00",
+      "2026-11-11T11:00:00-05:00"
+    );
+    expect(longer.countingDay?.toString()).toBe("2026-11-02");
+    expect(longer.recurrence).toEqual(weekly);
+    // A new time, the same day.
+    const later = edit(
+      "2026-11-11T14:00:00-05:00",
+      "2026-11-11T14:30:00-05:00"
+    );
+    expect(later.countingDay?.toString()).toBe("2026-11-02");
+    expect(later.startDay?.toString()).toBe("2026-11-11");
   });
 
   test("left where it is, the series' own rule from its first day", () => {
@@ -184,5 +274,25 @@ describe("seriesRepeatForEdit", () => {
     });
     expect(fresh.recurrence).toEqual(["RRULE:FREQ=WEEKLY"]);
     expect(fresh.countingDay?.toString()).toBe("2026-11-18");
+  });
+});
+
+describe("savedSeriesRecurrence", () => {
+  const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=MO"];
+
+  test("is the series' own rules, from its master for an occurrence", () => {
+    // An occurrence carries no rules of its own: its master has them.
+    expect(savedSeriesRecurrence({ recurrence: undefined }, weekly)).toEqual(
+      weekly
+    );
+    // The series itself has its own.
+    const daily = ["RRULE:FREQ=DAILY"];
+    expect(savedSeriesRecurrence({ recurrence: daily }, weekly)).toEqual(daily);
+  });
+
+  test("is none for a one-off event, whatever its draft adds", () => {
+    // Not the draft's: a repeat added to a one-off event isn't a series yet.
+    expect(savedSeriesRecurrence({ recurrence: [] }, undefined)).toEqual([]);
+    expect(savedSeriesRecurrence({}, null)).toEqual([]);
   });
 });

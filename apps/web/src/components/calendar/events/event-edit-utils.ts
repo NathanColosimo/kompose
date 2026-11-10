@@ -3,16 +3,20 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import {
+  entireSeriesMovesSeveralADay,
+  entireSeriesStartMoves,
   GOOGLE_EVENT_WEEKDAYS,
+  occurrenceDayMoved,
+  otherTimeZone,
+  repeatSkipsOccurrence,
   seriesRecurrenceForSave,
 } from "@kompose/state/google-event-recurrence";
 import {
   type EventSaveChanges,
-  eventSaveDescription,
-  eventSaveDisabledScopes,
+  opensSeries,
+  seriesMeetsSeveralTimesADay,
 } from "@kompose/state/recurrence-scope-options";
 import { seriesEditFields } from "@kompose/state/series-edit";
-import { ORPCError } from "@orpc/client";
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
 
 export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
@@ -158,56 +162,73 @@ export function eventForScope({
 }
 
 /**
- * The server's refusal of a series write, from a failed save: a
- * BAD_REQUEST whose data says why (packages/google-cal's SeriesRefusal),
- * worded in its message. A retry won't help, so the editor shows it.
+ * What a recurring event's save changes, for the scopes its dialog offers
+ * (#127's `EventSaveChanges`), as the server will read it: from what the
+ * save sends (its times, and its repeat when it sends one) and the series
+ * as loaded (`master`, once it is). What it would cost the series' other
+ * occurrences is the server's to refuse. Shared by the editor and drops.
  */
-export function seriesRefusal(
-  error: unknown
-): { message: string; reason: unknown } | null {
-  if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
-    return null;
+export function saveFacts({
+  edited,
+  event,
+  master,
+  timeZone,
+}: {
+  edited: Pick<GoogleEvent, "end" | "recurrence" | "start">;
+  /** The event the edit started from, as loaded. */
+  event: GoogleEvent;
+  master: GoogleEvent | undefined;
+  /** The app's zone. */
+  timeZone: string;
+}): Pick<
+  EventSaveChanges,
+  | "dateMoved"
+  | "movesSeveralADay"
+  | "opensSeries"
+  | "repeatSkips"
+  | "retimed"
+  | "seriesTimeZone"
+  | "severalRules"
+> {
+  const seriesStart = master?.start;
+  const seriesTimeZone = otherTimeZone(event, timeZone, seriesStart);
+  if (!event.recurringEventId) {
+    return { dateMoved: false, seriesTimeZone };
   }
-  const data: unknown = error.data;
-  if (!(typeof data === "object" && data !== null && "reason" in data)) {
-    return null;
-  }
-  return { message: error.message, reason: data.reason };
-}
-
-/** The scopes the server refused for one pending save, and its latest reason. */
-export interface Refusals {
-  message: string;
-  scopes: Partial<Record<RecurrenceScope, true>>;
-}
-
-/** `refused` with `scope` refused too, for `message`. */
-export function refuse(
-  refused: Refusals | null,
-  scope: RecurrenceScope,
-  message: string
-): Refusals {
-  return { message, scopes: { ...refused?.scopes, [scope]: true } };
-}
-
-/**
- * The save scope dialog: the shared rules and the line saying why each
- * scope that's off is, plus the scopes the server refused for this save,
- * turned off and led by its latest reason.
- */
-export function saveScopeDialog(
-  changes: EventSaveChanges,
-  refused: Refusals | null
-): {
-  description: string;
-  disabled: Partial<Record<RecurrenceScope, boolean>>;
-} {
-  const description = eventSaveDescription(changes);
-  const disabled = eventSaveDisabledScopes(changes);
-  return refused
-    ? {
-        description: `${refused.message} ${description}`,
-        disabled: { ...disabled, ...refused.scopes },
-      }
-    : { description, disabled };
+  const times = { end: edited.end, start: edited.start };
+  const { recurrence } = edited;
+  return {
+    dateMoved: occurrenceDayMoved({
+      editedEnd: edited.end,
+      editedStart: edited.start,
+      occurrence: event,
+      seriesStart,
+      timeZone,
+    }),
+    movesSeveralADay: master
+      ? entireSeriesMovesSeveralADay({
+          edited: times,
+          master,
+          occurrence: event,
+          timeZone,
+        })
+      : undefined,
+    opensSeries: opensSeries(event, master, timeZone),
+    repeatSkips: repeatSkipsOccurrence({
+      occurrence: event,
+      recurrence,
+      seriesStart,
+      timeZone,
+    }),
+    retimed: entireSeriesStartMoves({
+      edited: times,
+      master: master ?? null,
+      occurrence: event,
+      timeZone,
+    }),
+    severalRules: master
+      ? seriesMeetsSeveralTimesADay(master, timeZone)
+      : undefined,
+    seriesTimeZone,
+  };
 }

@@ -1,7 +1,7 @@
 /**
- * Enter or Space on a focused card opens its editor, as on a button. Task
- * and event cards are divs (a task's checkbox can't sit inside a button),
- * so the browser doesn't do this for them.
+ * Enter or Space on a focused card opens its editor, as on a button. An
+ * event card is a div (it holds a lock's tooltip, which a button can't),
+ * so the browser doesn't do this for it.
  */
 export function openOnEnterOrSpace(event: React.KeyboardEvent<HTMLElement>) {
   if (

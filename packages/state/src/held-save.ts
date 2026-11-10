@@ -7,8 +7,8 @@ export interface HeldSave {
   /** Shown instead of the server's error when the save fails. */
   failureMessage?: string;
   /**
-   * The editor shows the failure itself, beside its Save button, so there's
-   * no toast to land on top of it (web).
+   * The caller reports the failure itself (the web editor shows it beside
+   * Save), so no toast lands on top of it.
    */
   quiet?: boolean;
 }

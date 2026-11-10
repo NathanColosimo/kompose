@@ -7,14 +7,13 @@ import {
 } from "./task-recurrence";
 
 const dailyUntil14 = {
-  byDay: [],
   freq: "DAILY" as const,
   interval: 1,
   until: "2026-11-14",
 };
 const nov16 = Temporal.PlainDate.from("2026-11-16");
 
-describe("repeatBlocksSave", () => {
+describe("repeatBlocksSave and repeatNote", () => {
   test("lets the last occurrence move past an unchanged series' end", () => {
     const params = {
       next: dailyUntil14,
@@ -62,6 +61,23 @@ describe("repeatBlocksSave", () => {
     });
   });
 
+  test("says what a repeat change does to a series from this occurrence on", () => {
+    const base = {
+      isRecurring: true,
+      previous: dailyUntil14,
+      startDate: nov16,
+    };
+    expect(
+      repeatNote({ ...base, next: { ...dailyUntil14, until: undefined } })
+    ).toEqual({
+      blocking: false,
+      text: "Applies to this and later occurrences.",
+    });
+    expect(repeatNote({ ...base, next: null })?.text).toBe(
+      "Stops repeating here. Later ones you haven't edited are removed."
+    );
+  });
+
   test("says what a repeat change does to an inbox occurrence", () => {
     const base = {
       isRecurring: true,
@@ -91,7 +107,7 @@ describe("getTaskUpdateScopeDecision", () => {
     previousRecurrence: null,
     previousTagIds: [],
   };
-  test("asks this-or-following for a dated occurrence", () => {
+  test("asks this-or-following for other edits", () => {
     expect(getTaskUpdateScopeDecision(base)).toEqual({
       action: "prompt",
       defaultScope: "this",
@@ -131,5 +147,14 @@ describe("getTaskUpdateScopeDecision", () => {
     expect(
       getTaskUpdateScopeDecision({ ...base, hasFollowing: false })
     ).toEqual({ action: "apply", scope: "this" });
+    // A pattern change still applies as "following": the server rejects it
+    // for "this", and makes the occurrence a series of its own.
+    expect(
+      getTaskUpdateScopeDecision({
+        ...base,
+        hasFollowing: false,
+        previousRecurrence: { freq: "DAILY", interval: 1 },
+      })
+    ).toEqual({ action: "apply", scope: "following" });
   });
 });

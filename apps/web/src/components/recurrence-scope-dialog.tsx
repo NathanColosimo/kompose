@@ -2,6 +2,7 @@
 
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
+import { XIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SavingLabel } from "@/components/ui/held-fieldset";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -34,6 +36,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value,
   onValueChange,
   confirmLabel = "Save",
+  pendingLabel = "Saving…",
   cancelLabel = "Cancel",
   onCancel,
   onCloseAutoFocus,
@@ -50,6 +53,8 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   value: S;
   onValueChange: (value: S) => void;
   confirmLabel?: string;
+  /** The confirm button's words while it runs: "Deleting…". */
+  pendingLabel?: string;
   cancelLabel?: string;
   onCancel?: () => void;
   /** Where focus goes as it closes; by default, back where it was. */
@@ -80,9 +85,16 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
       setPending(false);
     }
   };
+  // Held open while a confirm runs, so its failure is said here rather
+  // than to a dialog already gone.
+  const requestOpenChange = (next: boolean) => {
+    if (next || !pendingRef.current) {
+      onOpenChange(next);
+    }
+  };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog onOpenChange={requestOpenChange} open={open}>
       <DialogContent
         className="sm:max-w-[420px]"
         onCloseAutoFocus={onCloseAutoFocus}
@@ -95,6 +107,9 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
             }
           }
         }}
+        // Its own close button, which shows it does nothing while a
+        // confirm runs, as Cancel does.
+        showCloseButton={false}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -115,15 +130,26 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
                   {subject.when}
                 </span>
               ) : null}
+              {/* Polite, so a refusal or failure said here once the dialog
+                  is open is read out. */}
               {description ? (
-                <span className="block">{description}</span>
+                <span aria-live="polite" className="block">
+                  {description}
+                </span>
               ) : null}
             </DialogDescription>
           ) : null}
         </DialogHeader>
 
+        {/* Read-only while a confirm runs, so the choice shown is the one
+            being sent. Not disabled, which would drop focus. */}
         <RadioGroup
+          aria-readonly={pending || undefined}
+          className={cn(pending && "opacity-60")}
           onValueChange={(next) => {
+            if (pendingRef.current) {
+              return;
+            }
             // The radio group gives a string; pass on the option it names.
             const picked = options.find((opt) => opt.value === next);
             if (picked) {
@@ -163,7 +189,12 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
 
         <DialogFooter>
           <Button
+            aria-disabled={pending || undefined}
+            className="aria-disabled:opacity-50"
             onClick={() => {
+              if (pendingRef.current) {
+                return;
+              }
               onCancel?.();
               onOpenChange(false);
             }}
@@ -172,16 +203,32 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           >
             {cancelLabel}
           </Button>
+          {/* Not disabled while it runs, which would drop focus to the
+              page; `confirm` ignores a second press. */}
           <Button
-            disabled={pending || chosenOff}
+            aria-disabled={pending || undefined}
+            disabled={chosenOff}
             onClick={() => {
               confirm().catch(() => null);
             }}
             type="button"
           >
-            {confirmLabel}
+            <SavingLabel saving={pending} savingLabel={pendingLabel}>
+              {confirmLabel}
+            </SavingLabel>
           </Button>
         </DialogFooter>
+        <Button
+          aria-disabled={pending || undefined}
+          className="absolute top-2 right-2 aria-disabled:opacity-50"
+          onClick={() => requestOpenChange(false)}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <XIcon />
+          <span className="sr-only">Close</span>
+        </Button>
       </DialogContent>
     </Dialog>
   );
