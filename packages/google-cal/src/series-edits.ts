@@ -309,9 +309,11 @@ export function canonicalRule(line: string): string {
 /**
  * Whether `saved` is `own` rebuilt for a series moved from the day `from`
  * to `to`: a weekly rule meets on its other weekdays still, the moved one
- * swapped for the new day's (or kept); any other picks as many days in
- * the two years from its start. One the rule library can't read is taken
- * as rebuilt.
+ * swapped for the new day's (or kept); any other has the same day parts,
+ * each with as many values, and meets on `to` (the 31st made the 30th),
+ * or picks as many days in the two years from its start (the first
+ * Saturday made the second Sunday, in any form). One the rule library
+ * can't read is taken as rebuilt.
  */
 function rebuiltForDay(
   own: string,
@@ -332,6 +334,22 @@ function rebuiltForDay(
       after === [...before].sort().join(",") ||
       after === [...weekdays(own, from)].sort().join(",")
     );
+  }
+  const dayShape = (rule: string) =>
+    rule
+      .slice(rule.indexOf(":") + 1)
+      .split(";")
+      .flatMap((part) => {
+        const [key = "", values = ""] = part.split("=");
+        return DAY_PARTS.has(key) ? [`${key}=${values.split(",").length}`] : [];
+      })
+      .sort()
+      .join(";");
+  if (
+    dayShape(own) === dayShape(saved) &&
+    (ruleDayCount({ from: to, rule: saved, through: to }) ?? 1) > 0
+  ) {
+    return true;
   }
   const daysIn = (rule: string, start: Temporal.PlainDate) =>
     ruleDayCount({
