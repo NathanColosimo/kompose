@@ -215,6 +215,92 @@ describe("Entire series", () => {
     });
   });
 
+  test("a first meeting moved past midnight keeps a deleted meeting's skip on its new place", async () => {
+    // Daily at 23:00 from Nov 9, Nov 20 deleted on its own; the first
+    // meeting moved to 00:30 on Nov 10 for the Entire series. Each meeting
+    // moves an hour and a half on, so Nov 20's place is Nov 21 00:30, and
+    // Nov 20 00:30 (Nov 19's meeting) stays on.
+    const late: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      start: { dateTime: "2026-11-09T23:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(late, [
+      {
+        ...occurrenceOf(late, "2026-11-20T23:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    const exit = await run(
+      edit("all", occurrenceOf(late, "2026-11-09T23:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T01:00:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-10T00:30:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      recurrence: ["RRULE:FREQ=DAILY", "EXDATE:20261121T053000Z"],
+      start: { dateTime: "2026-11-10T00:30:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("a new evening time keeps a deleted meeting's skip on its own day", async () => {
+    // Daily at 9:00 from Nov 9, Nov 20 deleted on its own; from Nov 16 the
+    // series moves to 23:00: Nov 20's place is Nov 20 at 23:00.
+    const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+    const google = fakeGoogle(daily, [
+      {
+        ...occurrenceOf(daily, "2026-11-20T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    const exit = await run(
+      edit("all", occurrenceOf(daily, "2026-11-16T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-16T23:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-16T23:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261121T040000Z",
+    ]);
+  });
+
+  test("a first meeting moved a day on and an hour earlier keeps a deleted meeting's skip on its own day", async () => {
+    // Daily at 9:00 from Nov 9, Nov 23 deleted on its own; the first
+    // meeting moved to Nov 10 at 8:00. The time turns an hour back, so Nov
+    // 23's place is Nov 23 at 8:00, not Nov 24.
+    const google = fakeGoogle({ ...weekly, recurrence: ["RRULE:FREQ=DAILY"] }, [
+      {
+        ...occurrenceOf(
+          { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] },
+          "2026-11-23T09:00:00-05:00"
+        ),
+        status: "cancelled",
+      },
+    ]);
+    const exit = await run(
+      edit(
+        "all",
+        occurrenceOf(
+          { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] },
+          "2026-11-09T09:00:00-05:00"
+        ),
+        {
+          end: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-10T08:00:00-05:00", timeZone: zone },
+        }
+      )
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY",
+      "EXDATE:20261123T130000Z",
+    ]);
+  });
+
   test("a first meeting moved off its rule's days keeps the series' date", async () => {
     // Mon Nov 9 moved to Tue Nov 10 at 10:00, the series' own Monday rule
     // sent back: a Tuesday start would add a meeting no rule makes, so the

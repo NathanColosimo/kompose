@@ -80,6 +80,9 @@ import {
   startInstant,
 } from "./until";
 
+/** A day, in nanoseconds: the most a clock's turn can go round. */
+const DAY_NS = 86_400_000_000_000;
+
 /** A rule part that ends it: COUNT or UNTIL. */
 const END_PART = /^(?:COUNT|UNTIL)=/;
 
@@ -756,23 +759,50 @@ function ruleMeetingAt(slot: string, master: Event): boolean {
 
 /**
  * Where an occurrence's place (`slot`, its original start) is once the
- * series is written as `plan` says: its own day at the new time, or its
- * date when the series is made all day (a series that meets once a day).
- * Null if it doesn't parse.
+ * series is written as `plan` says: moved as far as the start's time of
+ * day, the smaller way round when the start changes day (23:00 to the
+ * next day's 00:30 is an hour and a half on, into the next day; 9:00 to
+ * the next day's 8:00 is an hour back, on its own day), as the rule's
+ * own skips are moved (`matchRecurrenceToStart`); its date when the series is made all
+ * day, and its own date at the new time when it's made timed (a series
+ * that meets once a day). Null if it doesn't parse.
  */
 function placeIn(slot: string, plan: SeriesPlan): string | null {
   const { master, times } = plan;
-  const day = dayOfStart(asStart(slot), seriesZoneOf(master));
+  const zone = seriesZoneOf(master);
   const repeatsIn = repeatZone(master, times.start);
-  const clock = clockOf(times.start, repeatsIn);
-  if (!day) {
+  const wall = (time: Event["start"], timeZone: string) =>
+    momentOf(time, timeZone)?.toZonedDateTimeISO(timeZone).toPlainDateTime();
+  const at = wall(asStart(slot), zone);
+  if (!at) {
     return null;
   }
-  return clock
-    ? googleDateTime(
-        day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
-      )
-    : day.toString();
+  const to = wall(times.start, repeatsIn);
+  if (!(to && times.start.dateTime)) {
+    return at.toPlainDate().toString();
+  }
+  const from = master.start.dateTime && wall(master.start, zone);
+  // Made timed, it has no old time of day: its own date at the new time.
+  if (!from) {
+    return googleDateTime(
+      at.toPlainDate().toZonedDateTime({
+        plainTime: to.toPlainTime(),
+        timeZone: repeatsIn,
+      })
+    );
+  }
+  const change = from
+    .toPlainTime()
+    .until(to.toPlainTime())
+    .total("nanoseconds");
+  // A start kept on its day moves by the change itself (9:00 to 23:00 is
+  // fourteen hours on); one moved to another day, the smaller way round.
+  const turn = from.toPlainDate().equals(to.toPlainDate())
+    ? change
+    : ((((change + DAY_NS / 2) % DAY_NS) + DAY_NS) % DAY_NS) - DAY_NS / 2;
+  return googleDateTime(
+    at.add({ nanoseconds: turn }).toZonedDateTime(repeatsIn)
+  );
 }
 
 /**
