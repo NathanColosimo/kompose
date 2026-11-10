@@ -3,7 +3,13 @@
 import { describe, expect, test } from "bun:test";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { eventSaveDisabledScopes } from "@kompose/state/recurrence-scope-options";
-import { eventForScope, saveFacts } from "./event-edit-utils";
+import { Temporal } from "temporal-polyfill";
+import {
+  buildTemporalPayload,
+  eventForScope,
+  moveEventFormStart,
+  saveFacts,
+} from "./event-edit-utils";
 
 const zone = "America/New_York";
 const at = (dateTime: string) => ({ dateTime, timeZone: zone });
@@ -135,4 +141,43 @@ describe("saveFacts", () => {
       })
     ).toEqual({ all: true });
   });
+});
+
+test("a start move keeps the repeated-hour offset through another move and saving", () => {
+  const values = {
+    allDay: false,
+    startDate: new Date(2026, 9, 31),
+    startTime: "00:00",
+    endDate: new Date(2026, 9, 31),
+    endTime: "02:00",
+  };
+  const moved = moveEventFormStart(
+    values,
+    { date: Temporal.PlainDate.from("2026-11-01") },
+    zone
+  );
+  const payload = buildTemporalPayload(
+    moved,
+    (start, end) => ({ start, end }),
+    { timeZone: zone }
+  );
+  expect(payload?.startPayload.dateTime).toBe("2026-11-01T04:00:00.000Z");
+  expect(payload?.endPayload.dateTime).toBe("2026-11-01T06:00:00.000Z");
+  const again = moveEventFormStart(
+    moved,
+    { time: Temporal.PlainTime.from("00:30") },
+    zone
+  );
+  const savedAgain = buildTemporalPayload(
+    again,
+    (start, end) => ({ start, end }),
+    { timeZone: zone }
+  );
+  expect(savedAgain?.endPayload.dateTime).toBe("2026-11-01T06:30:00.000Z");
+  const editedEnd = buildTemporalPayload(
+    { ...moved, endTime: "02:00" },
+    (start, end) => ({ start, end }),
+    { timeZone: zone }
+  );
+  expect(editedEnd?.endPayload.dateTime).toBe("2026-11-01T07:00:00.000Z");
 });
