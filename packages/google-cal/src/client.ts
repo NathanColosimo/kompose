@@ -1244,7 +1244,9 @@ function ruleDaysIn(
  * Where a monthly or yearly series' meeting on `day` lands by its place in
  * its month or year (the third Monday made the third Tuesday): the new
  * rule's day as many into the period as `day` is into the old rule's,
- * each counted from the split. Null for other rules, or none there.
+ * each counted from the split, in the period as many on as the split moved
+ * (the 28th moved to the 2nd of the next month puts Dec 28 on Jan 2). Null
+ * for other rules, or none there.
  */
 function placeInPeriod(
   day: Temporal.PlainDate,
@@ -1257,28 +1259,36 @@ function placeInPeriod(
   const oldStart = dayOfStart(master.start, seriesZoneOf(master));
   const newStart = dayOfStart(start, zone);
   const split = dayOfStart(asStart(plan.originalStart), zone);
-  const period = newRule && periodOf(newRule, day);
   if (
-    !(oldRule && newRule && oldStart && newStart && split && period) ||
+    !(oldRule && newRule && oldStart && newStart && split) ||
     oldOthers.length + newOthers.length > 0 ||
     cadence(oldRule) !== cadence(newRule)
   ) {
     return null;
   }
-  const [first, next] = period;
+  const from = periodOf(oldRule, day);
+  const splitPeriod = periodOf(oldRule, split);
+  const newPeriod = periodOf(newRule, newStart);
+  if (!(from && splitPeriod && newPeriod)) {
+    return null;
+  }
+  const unit = oldRule.includes("FREQ=YEARLY") ? "years" : "months";
+  const shift = splitPeriod[0].until(newPeriod[0], { largestUnit: unit });
+  const to = periodOf(newRule, from[0].add(shift));
   const later = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
     Temporal.PlainDate.compare(a, b) < 0 ? b : a;
   const place = ruleDaysIn(
     oldRule,
     oldStart,
-    later(first, split),
-    next
+    later(from[0], split),
+    from[1]
   )?.findIndex((at) => at.equals(day));
-  if (place === undefined || place < 0) {
+  if (!to || place === undefined || place < 0) {
     return null;
   }
   return (
-    ruleDaysIn(newRule, newStart, later(first, newStart), next)?.[place] ?? null
+    ruleDaysIn(newRule, newStart, later(to[0], newStart), to[1])?.[place] ??
+    null
   );
 }
 
@@ -1287,13 +1297,12 @@ function placeInPeriod(
  * split's new series, in its form (made all day or timed, by day). Each
  * place is tried in turn, and the first the new series meets at is it:
  * - its own day, its time moved as much as the split's;
- * - as far on as the split moved, days and time;
  * - in a monthly or yearly series, the new meeting as many into its month
- *   or year (`placeInPeriod`).
+ *   or year (`placeInPeriod`);
+ * - as far on as the split moved, days and time.
  * A move of less than a day by the clock (23:30 to 00:30 the next day)
- * shifts each meeting by as much first; a move within its month or year
- * keeps each meeting's place in it first. Null when the new series meets
- * at none.
+ * shifts each meeting by as much first. Null when the new series meets at
+ * none.
  */
 function landingOf(slot: string, plan: SplitPlan): string | null {
   const { master, start } = plan;
@@ -1325,20 +1334,9 @@ function landingOf(slot: string, plan: SplitPlan): string | null {
     momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
   const from = wall(asStart(splitStart));
   const to = wall(start);
-  const newDay = dayOfStart(start, zone);
-  const samePeriod = Boolean(
-    period &&
-      splitDay &&
-      newDay &&
-      splitDay.year === newDay.year &&
-      (rulesOf(plan.recurrence)[0]?.includes("FREQ=YEARLY") ||
-        splitDay.month === newDay.month)
-  );
-  let order = [ownDay, moved, period];
+  let order = [ownDay, period, moved];
   if (from && to && Math.abs(from.until(to).total("hours")) < 24) {
     order = [moved, ownDay, period];
-  } else if (samePeriod) {
-    order = [ownDay, period, moved];
   }
   return (
     order.find(
