@@ -114,6 +114,7 @@ describe("saveFacts", () => {
     expect(
       eventSaveDisabledScopes({
         ...facts,
+        calendarMoved: false,
         patternChanged: false,
         seriesRuleLoaded: true,
       })
@@ -128,6 +129,7 @@ describe("saveFacts", () => {
     expect(
       eventSaveDisabledScopes({
         ...facts,
+        calendarMoved: false,
         patternChanged: false,
         seriesRuleLoaded: true,
       })
