@@ -18,7 +18,11 @@ import {
   getGoogleEventsByCalendarQueryKey,
   invalidateGoogleEventQueries,
 } from "../google-calendar-query-keys";
-import { type HeldSave, reportHeldSaveFailure } from "../held-save";
+import {
+  HELD_WRITE_NETWORK_MODE,
+  type HeldSave,
+  reportHeldSaveFailure,
+} from "../held-save";
 
 /**
  * Extended update input that includes the full Event for client-side sanitization.
@@ -117,6 +121,7 @@ export function createGoogleEventMutationOptions(
   { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
 ) {
   return {
+    networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
       quiet: _quiet,
@@ -204,6 +209,7 @@ export function updateGoogleEventMutationOptions(
   { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
 ) {
   return {
+    networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async (variables: UpdateGoogleEventVariables) =>
       orpc.googleCal.events.update({
         accountId: variables.accountId,
@@ -284,6 +290,7 @@ export function deleteGoogleEventMutationOptions(
   { notifyError, orpc }: Pick<StateConfig, "notifyError" | "orpc">
 ) {
   return {
+    networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
       quiet: _quiet,

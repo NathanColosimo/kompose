@@ -1,4 +1,10 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { onlineManager } from "@tanstack/react-query";
+import {
+  type ReactNode,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +17,9 @@ import { cn } from "@/lib/utils";
  *
  * The page under the editor takes no click while the save runs either: one
  * that changed the view (another list, another week) would unmount the
- * editor, and its edits would be gone if the save then failed.
+ * editor, and its edits would be gone if the save then failed. Not while
+ * offline, though: a save that waits for the connection (a task's does)
+ * would hold the whole page until it's back.
  */
 export function HeldFieldset({
   children,
@@ -22,6 +30,11 @@ export function HeldFieldset({
   className?: string;
   saving: boolean;
 }) {
+  const online = useSyncExternalStore(
+    (onChange) => onlineManager.subscribe(onChange),
+    () => onlineManager.isOnline(),
+    () => true
+  );
   return (
     <fieldset
       className={className}
@@ -29,7 +42,7 @@ export function HeldFieldset({
       key={saving ? "saving" : "editing"}
     >
       {children}
-      {saving
+      {saving && online
         ? createPortal(
             // Under popovers and dialogs (z-50), over everything else.
             <div aria-hidden className="fixed inset-0 z-40" />,
