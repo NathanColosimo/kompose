@@ -39,6 +39,31 @@ describe("repeat descriptions", () => {
     ).toBe("Repeats every day");
   });
 
+  test("a date-only end stays on its calendar date west of UTC", () => {
+    expect(
+      describeEventRecurrence({
+        rules: ["RRULE:FREQ=DAILY;UNTIL=20270211"],
+        timeZone: "America/New_York",
+      })
+    ).toBe("Repeats every day until February 11, 2027");
+  });
+
+  test("yearly day selectors do not invent a month or day", () => {
+    const start = Temporal.PlainDate.from("2026-11-01");
+    const monthDay = describeEventRecurrence({
+      rules: ["RRULE:FREQ=YEARLY;BYMONTHDAY=1"],
+      start,
+    });
+    expect(monthDay).toContain("1st day");
+    expect(monthDay).not.toContain("November");
+    const yearDay = describeEventRecurrence({
+      rules: ["RRULE:FREQ=YEARLY;BYYEARDAY=100"],
+      start,
+    });
+    expect(yearDay).not.toContain("November");
+    expect(yearDay).not.toContain("1st day of the month");
+  });
+
   test("marks additional rules and dates as custom", () => {
     expect(
       describeEventRecurrence({
