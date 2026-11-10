@@ -947,24 +947,48 @@ export function matchRecurrenceToStart(
       })
     : null;
   // Whether a skip was on a meeting of the rules (or the start) before the
-  // edit: the series' own rules (`days.before`) as well as the saved ones,
-  // as a save may change its weekdays too. A rule that can't be read may
-  // meet there: a skip where nothing meets does nothing, one missed brings
-  // a meeting back.
-  const readers = first
-    ? [
-        ...rules,
-        ...(days?.before ?? []).filter((line) => line.startsWith("RRULE:")),
-      ].map((rule) => readRule({ first, rule }))
-    : [];
+  // edit. One the series had is read against its own rules and added days
+  // (`days.before`), as a save may change its weekdays too (a dormant one
+  // there stays dormant); one the client placed, against the saved rules. A rule that
+  // can't be read may meet there: a skip where nothing meets does nothing,
+  // one missed brings a meeting back.
+  const readersOf = (lines: readonly string[]) =>
+    first
+      ? lines
+          .filter((line) => line.startsWith("RRULE:"))
+          .map((rule) => readRule({ first, rule }))
+      : [];
+  const savedReaders = readersOf(rules);
+  const before = [...(days?.before ?? [])];
+  const ownReaders = readersOf(before);
+  const momentsIn = (name: "EXDATE" | "RDATE") =>
+    new Set(
+      dateValues(before, name, timeZone).flatMap((value) =>
+        value.instant ? [value.instant.epochMilliseconds] : []
+      )
+    );
+  const inherited = momentsIn("EXDATE");
+  const ownAdded = momentsIn("RDATE");
   const ownSlot = first
-    ? (value: RecurrenceValue) =>
-        value.instant !== null &&
-        ((startMoment !== null &&
-          Temporal.Instant.compare(value.instant, startMoment) === 0) ||
-          readers.some(
-            (reader) => !reader || reader.meetsAt(value.instant ?? value.day)
-          ))
+    ? (value: RecurrenceValue) => {
+        if (value.instant === null) {
+          return false;
+        }
+        if (
+          startMoment !== null &&
+          Temporal.Instant.compare(value.instant, startMoment) === 0
+        ) {
+          return true;
+        }
+        const at = value.instant.epochMilliseconds;
+        // One the series had on its own added meeting follows it only
+        // where the saved rules meet: the meeting outlives the save there.
+        const isOwn =
+          ownReaders.length > 0 && inherited.has(at) && !ownAdded.has(at);
+        return (isOwn ? ownReaders : savedReaders).some(
+          (reader) => !reader || reader.meetsAt(value.instant ?? value.day)
+        );
+      }
     : null;
   const moveMeetingDay = meetingDayMover({
     rulesFrom: days?.rulesFrom ?? startDay,

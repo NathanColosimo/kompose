@@ -2760,3 +2760,30 @@ describe("a weekdays series moved past midnight with a skip in the rule", () => 
     );
   });
 });
+
+describe("a dormant skip through a new weekday and time", () => {
+  test("stays dormant, not on the new day's meeting", async () => {
+    // Mondays and Wednesdays 9:00, with a skip on Tue Nov 17 9:00 where
+    // nothing met; the Entire series made Mondays, Tuesdays and Wednesdays
+    // at 10:00. Tuesday's 10:00 meetings are new: none is skipped.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "EXDATE:20261117T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE"],
+            start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).not.toContain(
+      "20261117T150000Z"
+    );
+  });
+});
