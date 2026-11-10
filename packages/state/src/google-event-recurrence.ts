@@ -1,25 +1,12 @@
-import { seriesMeetsAt } from "@kompose/google-cal/recurrence-utils";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { meetsSeveralTimesADay } from "@kompose/google-cal/series";
-import { keepsTimes, sameTime } from "@kompose/google-cal/series-edits";
-import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
-import {
-  clockOf,
-  dayOfStart,
-  matchRecurrenceToStart,
-  moveSkippedDays,
-  startInstant,
-  untilRuleForDay,
-  untilRuleToDay,
-} from "@kompose/google-cal/until";
 import { Temporal } from "temporal-polyfill";
-import type { EventTime, StartTime } from "./google-event-times";
 
 export type EventRecurrenceFrequency =
   | "none"
+  | "custom"
   | "DAILY"
   | "WEEKLY"
   | "MONTHLY"
@@ -88,7 +75,7 @@ export function parseGoogleEventRecurrenceRule(
   const body = rule.replace("RRULE:", "");
   const parts = body.split(";");
 
-  let freq: EventRecurrenceFrequency = "none";
+  let freq: EventRecurrenceFrequency = "custom";
   let byDay: string[] = [];
   let until: string | null = null;
   let count: number | null = null;
@@ -189,16 +176,10 @@ function keptRuleParts(
 }
 
 const PLAIN_WEEKDAY = /^[A-Z]{2}$/;
-const WEEKDAY_OF_MONTH = /^-?\d[A-Z]{2}$/;
 
 /** A plain BYDAY weekday ("TU"), not a weekday of the month ("2TU"). */
 export function isPlainWeekday(code: string): boolean {
   return PLAIN_WEEKDAY.test(code);
-}
-
-/** A BYDAY weekday of the month: "2TU", "-1FR". */
-function isWeekdayOfMonth(code: string): boolean {
-  return WEEKDAY_OF_MONTH.test(code);
 }
 
 /**
@@ -233,6 +214,10 @@ export function buildGoogleEventRecurrenceRule(
   const { byDay, end, freq, interval, monthDays } = pattern;
   if (freq === "none") {
     return null;
+  }
+
+  if (freq === "custom") {
+    return baseRule ?? null;
   }
 
   const parts: string[] = [`FREQ=${freq}`];
@@ -290,31 +275,12 @@ export function lastWeekdayOf(date: Temporal.PlainDate): string | null {
   return date.day + 7 > date.daysInMonth ? `-1${weekdayCodeOf(date)}` : null;
 }
 
-/** The end date "On date" starts at: three months after the series starts. */
-function defaultUntilDay(start: Temporal.PlainDate): Temporal.PlainDate {
-  return start.add({ months: 3 });
-}
-
-/** The BYDAY a weekday-of-the-month pick has when the start moves. */
-function followedWeekday(
-  code: string,
-  from: Temporal.PlainDate,
-  to: Temporal.PlainDate
-): string {
-  if (code === lastWeekdayOf(from) && code.startsWith("-1")) {
-    return lastWeekdayOf(to) ?? monthlyWeekdayOf(to);
-  }
-  return code === monthlyWeekdayOf(from) ? monthlyWeekdayOf(to) : code;
-}
-
 const BY_SET_POS = /(?:^|;)BYSETPOS=(-?\d)(?:;|$)/;
 const HAS_SET_POS = /(?:^|;)BYSETPOS=/;
-const BY_MONTH = /(?:^|;)BYMONTH=(\d{1,2})(?:;|$)/;
-const UNTIL_PART = /([:;])UNTIL=[^;]+/;
 
 /**
  * The BYSETPOS a rule picks with, when it's one position ("-1"); null when
- * it has several ("1,3"), which nothing here puts in words or follows;
+ * it has several ("1,3"), which the editor labels custom;
  * undefined when it has none.
  */
 export function setPositionOf(
@@ -326,128 +292,6 @@ export function setPositionOf(
   return BY_SET_POS.exec(rule ?? "")?.[1] ?? null;
 }
 
-/**
- * The days a series repeats on once its start moves from `from` to `to`:
- * a weekly series' start weekday swaps for the new one (Tuesdays become
- * Wednesdays); a monthly or yearly weekday of the month that was the
- * start's follows it ("2nd Tue" to "3rd Wed", "BYDAY=SA;BYSETPOS=1" too;
- * a last stays a last), as does a day of the month that was the start's.
- */
-function followedDays(
-  rule: string,
-  pattern: EventRecurrencePattern,
-  from: Temporal.PlainDate,
-  to: Temporal.PlainDate
-): Pick<EventRecurrencePattern, "byDay" | "monthDays"> {
-  const { byDay, freq, monthDays } = pattern;
-  if (freq === "WEEKLY") {
-    const fromCode = weekdayCodeOf(from);
-    const toCode = weekdayCodeOf(to);
-    // Several days keep their set when the new start is already one of
-    // them (a weekday standup moved to Tuesday still meets Mondays); the
-    // start's day swaps for the new one only when that's a new day.
-    const follows = byDay.includes(fromCode) && !byDay.includes(toCode);
-    return {
-      byDay: follows
-        ? byDay.map((day) => (day === fromCode ? toCode : day))
-        : byDay,
-      monthDays,
-    };
-  }
-  if (freq !== "MONTHLY" && freq !== "YEARLY") {
-    return { byDay, monthDays };
-  }
-  // "BYDAY=SA;BYSETPOS=1" is the 1st Sat, written another way.
-  const setPos = setPositionOf(rule);
-  const [onlyDay = ""] = byDay;
-  const weekday =
-    byDay.length === 1 && setPos && isPlainWeekday(onlyDay)
-      ? `${setPos}${onlyDay}`
-      : onlyDay;
-  const followed =
-    byDay.length === 1 && isWeekdayOfMonth(weekday)
-      ? followedWeekday(weekday, from, to)
-      : null;
-  return {
-    byDay: followed && followed !== weekday ? [followed] : byDay,
-    monthDays:
-      monthDays.join() === String(from.day) ? [String(to.day)] : monthDays,
-  };
-}
-
-/**
- * `recurrence` after the series' start moves from `from` to `to`: the
- * days that were the start's follow it (see followedDays), a yearly
- * series' month does too when it was the start's, and an end date the
- * start moved past moves three months after the new start. The same
- * array when nothing follows.
- */
-export function followStart(params: {
-  allDay: boolean;
-  from: Temporal.PlainDate;
-  recurrence: string[];
-  timeZone: string;
-  to: Temporal.PlainDate;
-  /** The start's time before the move, in `timeZone`; null all day. */
-  fromTime?: Temporal.PlainTime | null;
-  /** The new start's time in `timeZone`; null for an all-day one. */
-  toTime?: Temporal.PlainTime | null;
-}): string[] {
-  const { allDay, from, fromTime, recurrence, timeZone, to, toTime } = params;
-  const rule = getPrimaryRecurrenceRule(recurrence);
-  if (!rule || Temporal.PlainDate.compare(from, to) === 0) {
-    return recurrence;
-  }
-  const pattern = parseGoogleEventRecurrenceRule(rule);
-  const untilDay =
-    pattern.end.type === "until"
-      ? untilRuleToDay(pattern.end.date, timeZone)
-      : null;
-  const movedEnd =
-    untilDay && Temporal.PlainDate.compare(untilDay, to) < 0
-      ? {
-          date: untilRuleForDay(defaultUntilDay(to), allDay, timeZone),
-          type: "until" as const,
-        }
-      : null;
-  const end = movedEnd ?? pattern.end;
-  const built = buildGoogleEventRecurrenceRule(
-    { ...pattern, ...followedDays(rule, pattern, from, to), end },
-    rule
-  );
-  const next =
-    pattern.freq === "YEARLY" && BY_MONTH.exec(rule)?.[1] === String(from.month)
-      ? built?.replace(BY_MONTH, (match) =>
-          match.replace(`=${from.month}`, `=${to.month}`)
-        )
-      : built;
-  // A rule the editor can't write (hourly, say) keeps its pattern; only an
-  // end the start passed moves on.
-  const kept =
-    next ??
-    (movedEnd ? rule.replace(UNTIL_PART, `$1UNTIL=${movedEnd.date}`) : rule);
-  // Skipped days move with the pattern (also one that follows its start
-  // without naming it, like a plain weekly rule), so none comes back; the
-  // picked start is never left skipped.
-  return moveSkippedDays({
-    from,
-    newRule: kept,
-    oldRule: rule,
-    recurrence:
-      kept === rule ? recurrence : setPrimaryRecurrenceRule(recurrence, kept),
-    fromTime,
-    seriesZone: timeZone,
-    to,
-    toTime,
-  });
-}
-
-/**
- * The zone an event's own times are in: a recurring one's days are
- * counted, and its edits written, there (a Tokyo 9:00 meeting is on
- * Tokyo's Tuesday wherever it's viewed from, and Google repeats it in that
- * zone). `fallback` when the event doesn't say.
- */
 export function eventTimeZone(
   event: Pick<GoogleEvent, "start"> | undefined,
   fallback: string
@@ -455,481 +299,17 @@ export function eventTimeZone(
   return event?.start?.timeZone ?? fallback;
 }
 
-/**
- * The zone an occurrence's series counts its days in: its master's once
- * loaded, as the server reads it, else its original slot's. Not the
- * occurrence's own: a Tokyo series' meeting rescheduled in New York
- * still holds a Tokyo slot. `fallback` when none says.
- */
-export function seriesTimeZone(
-  occurrence: Pick<GoogleEvent, "originalStartTime" | "start">,
-  seriesStart: StartTime | null | undefined,
-  fallback: string
-): string {
-  return (
-    seriesStart?.timeZone ??
-    occurrence.originalStartTime?.timeZone ??
-    eventTimeZone(occurrence, fallback)
-  );
-}
-
-/**
- * The day a start shown in `fromZone` falls on in the series' zone: a
- * Tuesday 9:00 Tokyo meeting shown Monday evening in New York is on
- * Tuesday, which is the day its repeat counts. An all-day start (no time)
- * is the same day everywhere.
- */
-export function dayInZone(
-  date: Temporal.PlainDate,
-  time: Temporal.PlainTime | null,
-  fromZone: string,
-  toZone: string
-): Temporal.PlainDate {
-  if (!time || fromZone === toZone) {
-    return date;
-  }
-  return date
-    .toZonedDateTime({ plainTime: time, timeZone: fromZone })
-    .withTimeZone(toZone)
-    .toPlainDate();
-}
-
-/** The wall time a start shown in `fromZone` is at in the series' zone. */
-export function timeInZone(
-  date: Temporal.PlainDate,
-  time: Temporal.PlainTime | null,
-  fromZone: string,
-  toZone: string
-): Temporal.PlainTime | null {
-  if (!time || fromZone === toZone) {
-    return time;
-  }
-  return date
-    .toZonedDateTime({ plainTime: time, timeZone: fromZone })
-    .withTimeZone(toZone)
-    .toPlainTime();
-}
-
-/** "Tokyo" for "Asia/Tokyo"; null for a zone that isn't a place ("UTC"). */
-export function timeZoneCity(timeZone: string): string | null {
-  const [area, ...rest] = timeZone.split("/");
-  const city = rest.at(-1);
-  return area === "Etc" || !city ? null : city.replace(/_/g, " ");
-}
-
-/**
- * The zone the event's days count in when it isn't `appZone`, for saying
- * so: its own, or an occurrence's series' (`seriesTimeZone`, from
- * `seriesStart` once the series loads).
- */
-export function otherTimeZone(
-  event: Pick<GoogleEvent, "originalStartTime" | "start"> | undefined,
-  appZone: string,
-  seriesStart?: StartTime | null
-): string | undefined {
-  const zone = event && seriesTimeZone(event, seriesStart, appZone);
-  return zone && zone !== appZone ? zone : undefined;
-}
-
-/**
- * The day a series' own repeat counts its implicit days from ("weekly" on
- * which weekday, "monthly" on which date), in the series' zone, for an
- * occurrence whose save keeps the series' rule and the meeting's day (new
- * times there keep the series' first day too): the series' first
- * day (its DTSTART, which anchors the rule's implicit days; an added RDATE
- * meeting needn't share them), or, before the series loads, the
- * occurrence's place in the series (where the rule puts it). Any other
- * event's counts from the form's day. A new repeat or day starts the
- * series again elsewhere: `seriesRepeatForEdit` says where.
- */
-export function repeatCountingDay(params: {
-  event:
-    | Pick<GoogleEvent, "originalStartTime" | "recurringEventId">
-    | null
-    | undefined;
-  /** The form's start day, in the series' zone. */
-  formDay: Temporal.PlainDate | null;
-  /** The series' own start (its master's), once loaded. */
-  seriesStart?: StartTime | null;
-  timeZone: string;
-}): Temporal.PlainDate | null {
-  const { event, formDay, timeZone } = params;
-  if (!event?.recurringEventId) {
-    return formDay;
-  }
-  const first = params.seriesStart
-    ? dayOfStart(params.seriesStart, timeZone)
-    : null;
-  const placed = event.originalStartTime
-    ? dayOfStart(event.originalStartTime, timeZone)
-    : null;
-  return first ?? placed ?? formDay;
-}
-
-/**
- * Why a new repeat, saved for the entire series, would cancel this
- * occurrence (null when it wouldn't, or before the series loads: the
- * scope rules wait for it). Google keeps an occurrence, a rescheduled one
- * too, only while the series' rule still produces its original slot
- * (`originalStartTime`), counted from the series' first meeting (its
- * DTSTART): a day left implicit (weekly with no days picked, monthly on
- * "Day N", yearly) comes from that first meeting, an interval counts its
- * weeks or months from it, and a COUNT or UNTIL can end the series before
- * the slot. The editor's words count from the occurrence instead, so
- * Entire series would then save something else and drop the very meeting
- * being edited.
- */
-export function repeatSkipsOccurrence(params: {
-  occurrence: Pick<
-    GoogleEvent,
-    "originalStartTime" | "recurringEventId" | "start"
-  >;
-  /** The repeat the save sends. */
-  recurrence: string[] | undefined;
-  /** The series' own start (its master's), once loaded. */
-  seriesStart?: StartTime | null;
-  timeZone: string;
-}): "day" | "end" | null {
-  const { occurrence, recurrence, seriesStart } = params;
-  if (!(occurrence.recurringEventId && seriesStart && recurrence?.length)) {
-    return null;
-  }
-  return slotDropped({
-    recurrence,
-    seriesStart,
-    slot: occurrence.originalStartTime ?? occurrence.start,
-    timeZone: seriesTimeZone(occurrence, seriesStart, params.timeZone),
-  });
-}
-
-/**
- * Whether an Entire series save made through `occurrence` moves the
- * series' start (its time, its day through its first meeting, or its
- * all-day form), as the server reads it: a new length alone doesn't.
- * Before the series loads (`master` null), any new time might. For
- * `EventSaveChanges`' `retimed`.
- */
-export function entireSeriesStartMoves(params: {
-  edited: { end: EventTime; start: EventTime };
-  master: GoogleEvent | null;
-  occurrence: Pick<GoogleEvent, "end" | "originalStartTime" | "start">;
-  timeZone: string;
-}): boolean {
-  const { edited, master, occurrence } = params;
-  const zone = seriesTimeZone(occurrence, master?.start, params.timeZone);
-  if (!master) {
-    return !keepsTimes(edited, occurrence, zone);
-  }
-  const start = entireSeriesStart({ edited, master, occurrence, zone });
-  return !sameTime(start, master.start, zone);
-}
-
-/**
- * Whether an Entire series save made through `occurrence` gives a series
- * meeting more than once a day a new time of day, which the server
- * refuses (its movesSeveralADay): its rules would be mixed up. A new day
- * or length keeps every meeting's time. For `EventSaveChanges`'
- * `movesSeveralADay`.
- */
-export function entireSeriesMovesSeveralADay(params: {
-  edited: { end: EventTime; start: EventTime };
-  master: GoogleEvent;
-  occurrence: Pick<GoogleEvent, "end" | "originalStartTime" | "start">;
-  timeZone: string;
-}): boolean {
-  const { edited, master, occurrence } = params;
-  const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
-  const start = entireSeriesStart({ edited, master, occurrence, zone });
-  const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
-  const to = clockOf(start, zone);
-  return Boolean(
-    first &&
-      to &&
-      Temporal.PlainTime.compare(first.toPlainTime(), to) !== 0 &&
-      meetsSeveralTimesADay({ first, recurrence: master.recurrence ?? [] })
-  );
-}
-
-/**
- * The series' start after an Entire series save made through
- * `occurrence`, as the server sets it (its entireSeriesTimes): its own
- * while the edit keeps the occurrence's start (a new length alone, also
- * for one moved on its own before); the edit's through the series' first
- * meeting; otherwise the edit's time of day on the series' first day.
- */
-function entireSeriesStart(params: {
-  edited: { end: EventTime; start: EventTime };
-  master: GoogleEvent;
-  occurrence: Pick<GoogleEvent, "originalStartTime" | "start">;
-  zone: string;
-}): EventTime {
-  const { edited, master, occurrence, zone } = params;
-  if (sameTime(edited.start, occurrence.start, zone)) {
-    return master.start;
-  }
-  if (
-    sameTime(
-      occurrence.originalStartTime ?? occurrence.start,
-      master.start,
-      zone
-    )
-  ) {
-    return edited.start;
-  }
-  return (
-    seriesTimesForEdit({
-      editedEnd: edited.end,
-      editedStart: edited.start,
-      masterEnd: master.end,
-      masterStart: master.start,
-    })?.start ?? master.start
-  );
-}
-
-/** A rule part that ends it: COUNT or UNTIL. */
-const END_PART = /^(?:COUNT|UNTIL)=/;
-
-/** A rule line without its end (COUNT or UNTIL); any other line as it is. */
-function withoutEnd(line: string): string {
-  if (!isRule(line)) {
-    return line;
-  }
-  const parts = line
-    .slice("RRULE:".length)
-    .split(";")
-    .filter((part) => part && !END_PART.test(part));
-  return `RRULE:${parts.join(";")}`;
-}
-
-/**
- * Why `recurrence` no longer has `slot`, an occurrence's original start,
- * as the server reads it (`seriesMeetsAt`: the series' first meeting, an
- * added RDATE one, or a rule's, skipped ones aside): "end" when its rules
- * would still meet there without their COUNT or UNTIL, else "day" (not a
- * rule's day or time: an implicit day, an interval's phase, another time
- * of day).
- * Null while the series still has it, or when that can't be told.
- */
-function slotDropped(params: {
-  recurrence: string[];
-  seriesStart: StartTime;
-  slot: StartTime;
-  timeZone: string;
-}): "day" | "end" | null {
-  const { seriesStart, timeZone } = params;
-  const slot = params.slot.dateTime ?? params.slot.date;
-  if (!slot) {
-    return null;
-  }
-  const meets = (recurrence: string[]) =>
-    seriesMeetsAt({
-      recurrence,
-      seriesZone: timeZone,
-      slot,
-      start: seriesStart,
-    });
-  if (meets(params.recurrence) !== false) {
-    return null;
-  }
-  return meets(params.recurrence.map(withoutEnd)) === true ? "end" : "day";
-}
-
-/**
- * The day an "Ends on" date defaults to: three months
- * (`defaultUntilDay`) after the occurrence's own day (not the series'
- * first, which can be years back), or after today when that's later, in
- * the series' zone.
- */
 export function untilDefaultDay(
   from: Temporal.PlainDate,
   timeZone: string
 ): Temporal.PlainDate {
   const today = Temporal.Now.plainDateISO(timeZone);
-  return defaultUntilDay(
-    Temporal.PlainDate.compare(from, today) > 0 ? from : today
-  );
-}
-
-/**
- * Whether a save moves an occurrence's series to another day: the edit
- * changes its start, and its new start is on another day than its place
- * in the series (its original start; a rescheduled one's was where it was
- * moved from). An edit that keeps its start keeps the series' slot, as the
- * server reads it: one rescheduled before, then only renamed or given a
- * new end, hasn't moved, and one moved back onto its own day hasn't either.
- */
-export function occurrenceDayMoved(params: {
-  /** Not read: a new end alone moves nothing. Kept for the callers. */
-  editedEnd: EventTime;
-  editedStart: EventTime;
-  occurrence: Pick<
-    GoogleEvent,
-    "end" | "originalStartTime" | "recurringEventId" | "start"
-  >;
-  /** The series' own start (its master's), once loaded: its zone. */
-  seriesStart?: StartTime | null;
-  timeZone: string;
-}): boolean {
-  const { editedStart, occurrence } = params;
-  if (!occurrence.recurringEventId) {
-    return false;
-  }
-  const timeZone = seriesTimeZone(
-    occurrence,
-    params.seriesStart,
-    params.timeZone
-  );
-  if (sameTime(editedStart, occurrence.start, timeZone)) {
-    return false;
-  }
-  const from = dayOfStart(
-    occurrence.originalStartTime ?? occurrence.start,
-    timeZone
-  );
-  const to = dayOfStart(editedStart, timeZone);
-  return Boolean(from && to && Temporal.PlainDate.compare(from, to) !== 0);
-}
-
-/**
- * The series' rule to send when a save applies to an occurrence's series
- * ("following" or "all"; one occurrence never sends a rule) without the
- * user changing it: it follows a moved date (followStart), so "Book club,
- * 1st Sat" moved to the 2nd Sat repeats on 2nd Sats, and its UNTIL takes
- * the form an all-day or timed start needs. Undefined (the series keeps
- * its rule) when the save sends its own rule or nothing changes.
- */
-export function seriesRecurrenceForSave(params: {
-  /** The edited end. */
-  editedEnd: EventTime;
-  /** The edited start. */
-  editedStart: EventTime;
-  masterRecurrence: string[] | null | undefined;
-  /** The series' own start, its first day (where COUNT counts from). */
-  masterStart?: StartTime | null;
-  occurrence: Pick<
-    GoogleEvent,
-    "end" | "originalStartTime" | "recurringEventId" | "start"
-  >;
-  /** The rule the save already sends, if any. */
-  recurrence: string[] | undefined;
-  timeZone: string;
-}): string[] | undefined {
-  const { editedEnd, editedStart, masterRecurrence, occurrence } = params;
-  const timeZone = seriesTimeZone(
-    occurrence,
-    params.masterStart,
-    params.timeZone
-  );
-  if (
-    params.recurrence !== undefined ||
-    !occurrence.recurringEventId ||
-    !masterRecurrence?.length
-  ) {
-    return;
-  }
-  // The rule follows only a day the save moves the series to, from the
-  // occurrence's place in the series (where the rule puts it, even if it
-  // was rescheduled before). Without one, nothing is sent: an edit that
-  // keeps the occurrence's times keeps the series' own (renaming one
-  // rescheduled before mustn't retarget the series to it), and a new time
-  // or form (All day) on its own day is lined up with the series' own
-  // rule, freshly read, on the server, so a copy cached here can't write
-  // an old rule back.
-  if (
-    !occurrenceDayMoved({
-      editedEnd,
-      editedStart,
-      occurrence,
-      seriesStart: params.masterStart,
-      timeZone,
-    })
-  ) {
-    return;
-  }
-  const allDay = Boolean(editedStart.date);
-  const from = dayOfStart(
-    occurrence.originalStartTime ?? occurrence.start,
-    timeZone
-  );
-  const to = dayOfStart(editedStart, timeZone);
-  if (!(from && to)) {
-    return;
-  }
-  const followed = followStart({
-    allDay,
-    from,
-    recurrence: masterRecurrence,
-    timeZone,
-    fromTime: clockOf(
-      occurrence.originalStartTime ?? occurrence.start,
-      timeZone
-    ),
-    to,
-    toTime: clockOf(editedStart, timeZone),
+  return (Temporal.PlainDate.compare(from, today) > 0 ? from : today).add({
+    months: 3,
   });
-  const matched = matchRecurrenceToStart(
-    followed,
-    editedStart,
-    timeZone,
-    occurrence.originalStartTime ?? occurrence.start,
-    // The rules followed the start, so they and their COUNT count from the
-    // new day (a later occurrence's day can only run long, which keeps
-    // skips), from the series' own start time.
-    {
-      firstDay: to,
-      firstTime: params.masterStart
-        ? clockOf(params.masterStart, timeZone)
-        : null,
-      rulesFrom: to,
-      viaOccurrence: true,
-    }
-  );
-  return matched === masterRecurrence ? undefined : matched;
-}
-
-/**
- * Where a series edited through one of its occurrences counts its days
- * and COUNT from: the series' own first day, for lining its rule up with
- * the start (`matchRecurrenceToStart`'s `days`). Undefined for the series
- * itself, or before its master loads: the start is then its own.
- */
-export function seriesCountingDays(
-  event: Pick<GoogleEvent, "recurringEventId"> | null | undefined,
-  masterStart: StartTime | null | undefined,
-  timeZone: string
-):
-  | {
-      firstDay: Temporal.PlainDate | null;
-      firstTime: Temporal.PlainTime | null;
-      rulesFrom?: Temporal.PlainDate;
-      viaOccurrence: true;
-    }
-  | undefined {
-  const firstDay =
-    event?.recurringEventId && masterStart
-      ? dayOfStart(masterStart, timeZone)
-      : null;
-  return firstDay && masterStart
-    ? {
-        firstDay,
-        firstTime: clockOf(masterStart, timeZone),
-        rulesFrom: firstDay,
-        viaOccurrence: true,
-      }
-    : undefined;
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
-
-/**
- * Whether a series repeats by more than one RRULE (Mondays at 9:00, and
- * Mondays at 15:00, as two lines): EXDATE and RDATE lines don't count.
- */
-export function hasSeveralRules(
-  recurrence: string[] | null | undefined
-): boolean {
-  return (recurrence ?? []).filter(isRule).length > 1;
-}
 
 /** The series' RRULE line; Google may list EXDATE/RDATE lines with it. */
 export function getPrimaryRecurrenceRule(
@@ -1030,28 +410,43 @@ export function repeatChanged(params: {
   );
 }
 
-/**
- * The end day (UNTIL) of a repeat the save sends when it's before the
- * event's own start day, else null: possible once its end was picked and
- * the start then moved past it. Saved, the new series would end before it
- * starts.
- */
-export function repeatEndsBeforeStart(params: {
-  /** The save sends this repeat (a new event's, or a changed one). */
-  sent: boolean;
-  recurrence: string[] | undefined;
-  /** The start's day, in the series' zone. */
-  startDay: Temporal.PlainDate | null;
-  timeZone: string;
-}): Temporal.PlainDate | null {
-  const rule = getPrimaryRecurrenceRule(params.recurrence);
-  if (!(params.sent && rule && params.startDay)) {
+const RECURRENCE_DATE = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/;
+
+/** Read an UNTIL date for the repeat editor and label. */
+export function recurrenceEndDay(
+  value: string,
+  timeZone: string
+): Temporal.PlainDate | null {
+  const match = RECURRENCE_DATE.exec(value);
+  if (!match) {
     return null;
   }
-  const { end } = parseGoogleEventRecurrenceRule(rule);
-  const last =
-    end.type === "until" ? untilRuleToDay(end.date, params.timeZone) : null;
-  return last && Temporal.PlainDate.compare(last, params.startDay) < 0
-    ? last
-    : null;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = `${year}-${month}-${day}`;
+  try {
+    return hour === undefined
+      ? Temporal.PlainDate.from(date)
+      : Temporal.Instant.from(`${date}T${hour}:${minute}:${second}Z`)
+          .toZonedDateTimeISO(timeZone)
+          .toPlainDate();
+  } catch {
+    return null;
+  }
+}
+
+const DATE_SEPARATORS = /[-:]/g;
+/** Encode the end date picked in the repeat editor. */
+export function recurrenceUntilValue(
+  day: Temporal.PlainDate,
+  allDay: boolean,
+  timeZone: string
+): string {
+  if (allDay) {
+    return day.toString().replace(DATE_SEPARATORS, "");
+  }
+  return day
+    .toZonedDateTime({ plainTime: "23:59:59", timeZone })
+    .toInstant()
+    .toString({ smallestUnit: "second" })
+    .replace(DATE_SEPARATORS, "");
 }

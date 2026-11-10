@@ -1,17 +1,14 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import {
-  type Event as GoogleEvent,
-  getGoogleEventEditBlockReason,
-  isGoogleEventEditable,
-} from "@kompose/google-cal/schema";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import type { ItemLayout } from "@kompose/state/collision-utils";
+import { calendarEventEditBlockReason } from "@kompose/state/google-event-editability";
 import { extractMeetingLink } from "@kompose/state/meeting";
 import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
@@ -79,8 +76,8 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     (c) => c.accountId === accountId && c.calendar.id === calendarId
   );
   const accessRole = calendar?.calendar.accessRole;
-  const isEditable = isGoogleEventEditable(event, accessRole);
-  const editBlockedReason = getGoogleEventEditBlockReason(event, accessRole);
+  const editBlockedReason = calendarEventEditBlockReason(event, accessRole);
+  const isEditable = editBlockedReason === null;
   // An overnight event is drawn as one part per day (start/end). Its text,
   // editor, and drags use the whole event's times, so editing or moving
   // the second day's part never cuts the event at midnight.
