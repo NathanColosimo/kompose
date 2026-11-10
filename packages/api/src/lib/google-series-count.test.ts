@@ -1594,3 +1594,40 @@ describe("a COUNT through a move past midnight that keeps its weekday", () => {
     ]);
   });
 });
+
+describe("a COUNT through a move whose old slot's skip a deleted meeting lands on", () => {
+  test("gives that place up once", async () => {
+    // Mondays and Tuesdays at 00:30 five times from Nov 9 (Nov 9, 10, 16,
+    // 17, 23), Tue Nov 17 deleted on its own. From Mon Nov 16 moved to Sun
+    // Nov 15 23:30, the days kept: the rule's Mon Nov 16 23:30 is skipped
+    // (the moved meeting isn't there twice), and Nov 17's skip, an hour
+    // earlier, lands on that same place. Two meetings were left, so two
+    // are: the start, the skip, then one more.
+    const early: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T01:00:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU;COUNT=5"],
+      start: { dateTime: "2026-11-09T00:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(early, [
+      {
+        ...occurrenceOf(early, "2026-11-17T00:30:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(early, "2026-11-16T00:30:00-05:00"), {
+            end: { dateTime: "2026-11-16T00:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-15T23:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,TU;COUNT=3",
+      "EXDATE:20261117T043000Z",
+    ]);
+  });
+});
