@@ -174,6 +174,27 @@ describe("Entire series", () => {
     });
   });
 
+  test("an edit to the first occurrence moves the date of a series with an end date", async () => {
+    // Mondays until Dec 31 (an UNTIL with a time, as Google writes it);
+    // its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
+    const ending: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z"],
+    };
+    const google = fakeGoogle(ending);
+    const exit = await run(
+      edit("all", occurrenceOf(ending, "2026-11-09T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T235959Z"],
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
   test("a first meeting moved off its rule's days keeps the series' date", async () => {
     // Mon Nov 9 moved to Tue Nov 10 at 10:00, the series' own Monday rule
     // sent back: a Tuesday start would add a meeting no rule makes, so the
