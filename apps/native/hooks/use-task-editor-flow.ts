@@ -3,22 +3,17 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
-import {
-  SAVE_FAILURE_MESSAGE,
-  TASK_CREATE_FAILURE_MESSAGE,
-} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
   haveTaskTagIdsChanged,
-  markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
   taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
-import { useCallback, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, Keyboard } from "react-native";
+import { useCallback, useState } from "react";
+import { Alert } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
@@ -91,25 +86,10 @@ export function useTaskEditorFlow() {
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
-  /** A save is running; the editor holds open (read-only) until it ends. */
-  const isSaving = createTask.isPending || updateTask.isPending;
-  const resetCreate = createTask.reset;
-  const resetUpdate = updateTask.reset;
-  /**
-   * The editor session: bumped on every open and close, so a save that
-   * resolves later only acts on the session it started in (not a closed
-   * editor, another task, or the same task reopened).
-   */
-  const sessionRef = useRef(0);
-
-  /** Ends the current session and resets everything it held. */
   const resetSession = useCallback(() => {
-    sessionRef.current += 1;
-    resetCreate();
-    resetUpdate();
     setPendingSaveDraft(null);
     setScopeDialog(null);
-  }, [resetCreate, resetUpdate]);
+  }, []);
 
   // Stable so callers can use it in effect dependencies.
   const openCreate = useCallback(
@@ -165,99 +145,55 @@ export function useTaskEditorFlow() {
 
   const canSave = Boolean(
     draft &&
-      !isSaving &&
       resolvedTitle(draft) &&
       draft.durationMinutes > 0 &&
       (!draft.recurrence || draft.startDate)
   );
 
-  /**
-   * Saves the draft over `task`, with its done state when that changed.
-   * Resolves to whether it saved. Not optimistic: the editor holds open on
-   * it, so the cache waits for the server instead of rolling back over the
-   * draft on failure.
-   */
+  /** Save the draft, including a status change, and close immediately. */
   function commitUpdate(
     task: TaskSelectDecoded,
     nextDraft: TaskDraft,
     scope: UpdateScope
-  ): Promise<boolean> {
+  ) {
     // The status goes on this occurrence alone; the server keeps it when a
     // "following" save also changes the series.
     const statusChanged = nextDraft.status !== task.status;
-    return updateTask
-      .mutateAsync({
-        failureMessage: statusChanged
-          ? markStatusFailureMessage(
-              nextDraft.status === "done" ? "done" : "todo"
-            )
-          : SAVE_FAILURE_MESSAGE,
-        id: task.id,
-        optimistic: false,
-        scope,
-        task: {
-          ...(statusChanged ? { status: nextDraft.status } : {}),
-          description: nextDraft.description.trim() || null,
-          dueDate: nextDraft.dueDate,
-          durationMinutes: nextDraft.durationMinutes,
-          links: nextDraft.links,
-          recurrence: nextDraft.recurrence,
-          startDate: nextDraft.startDate,
-          startTime: nextDraft.startTime,
-          tagIds: nextDraft.tagIds,
-          title: resolvedTitle(nextDraft),
-        },
-      })
-      .then(
-        () => true,
-        () => false
-      );
-  }
-
-  /** Resolves true once the task is created. */
-  function create(nextDraft: TaskDraft): Promise<boolean> {
-    return createTask
-      .mutateAsync({
+    updateTask.mutate({
+      id: task.id,
+      scope,
+      task: {
+        ...(statusChanged ? { status: nextDraft.status } : {}),
         description: nextDraft.description.trim() || null,
         dueDate: nextDraft.dueDate,
         durationMinutes: nextDraft.durationMinutes,
-        failureMessage: TASK_CREATE_FAILURE_MESSAGE,
-        isException: false,
         links: nextDraft.links,
         recurrence: nextDraft.recurrence,
-        seriesMasterId: null,
         startDate: nextDraft.startDate,
         startTime: nextDraft.startTime,
-        status: "todo",
         tagIds: nextDraft.tagIds,
         title: resolvedTitle(nextDraft),
-      })
-      .then(
-        () => true,
-        () => false
-      );
+      },
+    });
+    close();
   }
 
-  /**
-   * Holds the editor (and any scope dialog, its Apply reading "Saving…")
-   * until `saved` resolves: then everything closes, or on failure the
-   * dialog goes and the editor keeps the edits, with its done state as
-   * saved.
-   */
-  function holdUntil(saved: Promise<boolean>) {
-    Keyboard.dismiss();
-    AccessibilityInfo.announceForAccessibility("Saving…");
-    const session = sessionRef.current;
-    saved.then((ok) => {
-      if (sessionRef.current !== session) {
-        return;
-      }
-      if (ok) {
-        close();
-        return;
-      }
-      cancelScopeDialog();
+  function create(nextDraft: TaskDraft) {
+    createTask.mutate({
+      description: nextDraft.description.trim() || null,
+      dueDate: nextDraft.dueDate,
+      durationMinutes: nextDraft.durationMinutes,
+      isException: false,
+      links: nextDraft.links,
+      recurrence: nextDraft.recurrence,
+      seriesMasterId: null,
+      startDate: nextDraft.startDate,
+      startTime: nextDraft.startTime,
+      status: "todo",
+      tagIds: nextDraft.tagIds,
+      title: resolvedTitle(nextDraft),
     });
+    close();
   }
 
   /** Saves `nextDraft`, through the scope dialog when the task repeats. */
@@ -271,7 +207,7 @@ export function useTaskEditorFlow() {
       setScopeDialog("save");
       return;
     }
-    holdUntil(commitUpdate(task, nextDraft, decision.scope));
+    commitUpdate(task, nextDraft, decision.scope);
   }
 
   function save() {
@@ -279,7 +215,7 @@ export function useTaskEditorFlow() {
       return;
     }
     if (!editingTask) {
-      holdUntil(create(draft));
+      create(draft);
       return;
     }
     saveDraft(editingTask, draft);
@@ -312,8 +248,7 @@ export function useTaskEditorFlow() {
 
   /**
    * Back to the editor underneath any scope dialog, edits kept and the done
-   * checkbox as saved: on Cancel (or a backdrop tap), and after a failed
-   * save.
+   * checkbox as saved on Cancel or a backdrop tap.
    */
   function cancelScopeDialog() {
     if (editingTask) {
@@ -328,7 +263,7 @@ export function useTaskEditorFlow() {
     if (!(editingTask && pendingSaveDraft)) {
       return;
     }
-    holdUntil(commitUpdate(editingTask, pendingSaveDraft, saveScope));
+    commitUpdate(editingTask, pendingSaveDraft, saveScope);
   }
 
   function requestDelete() {
@@ -377,7 +312,6 @@ export function useTaskEditorFlow() {
     draft,
     editingTask,
     isEditorOpen,
-    isSaving,
     openCreate,
     openEdit,
     requestDelete,

@@ -123,7 +123,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 
 #### Error feedback
 - Failed saves, creates, moves and deletes use the app's normal error toast. A failure keeps the editor and its draft open; a failed recurring delete keeps its scope dialog open.
-- The create popover (`EventCreationPopover`) holds its save the same way ("Saving…", read-only). With no calendar to write to, it opens on Task and its Event tab says why.
+- The create popover (`EventCreationPopover`) waits for event creates ("Saving…", read-only) and keeps failed event drafts. Task creates close immediately and use optimistic task mutations. With no calendar to write to, it opens on Task and its Event tab says why.
 
 ### Manual test checklist
 

@@ -25,7 +25,7 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
   return (
     <>
       <AlertDialog
-        // The flow hides the dialog itself once the save ends.
+        // Saving closes the editor and its scope dialog immediately.
         closeOnConfirm={false}
         confirmText="Apply"
         description={SCOPE_DIALOG_COPY.saveTask.description}
@@ -34,12 +34,10 @@ export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
         // hides the dialog by `isVisible`.
         onCancel={flow.cancelScopeDialog}
         onConfirm={flow.confirmScopedSave}
-        pending={flow.isSaving}
         title={SCOPE_DIALOG_COPY.saveTask.title}
       >
         <View className="mt-2">
           <RadioGroup
-            disabled={flow.isSaving}
             onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
             optionStyle={SCOPE_OPTION_STYLE}
             options={TASK_UPDATE_SCOPE_OPTIONS}
