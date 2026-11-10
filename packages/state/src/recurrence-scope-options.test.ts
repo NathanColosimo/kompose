@@ -592,6 +592,13 @@ describe("the server's refusal of a series write", () => {
     });
   });
 
+  test("keeps what else the server says of the occurrences it names", () => {
+    // A refusal the server isn't sure of is worded as one.
+    const unsure = { ...drops, seriesOnly: true, unsure: true } as const;
+    expect(seriesRefusalOf(refused(unsure))).toEqual(unsure);
+    expect(refusalReason(unsure)).toStartWith("This may undo");
+  });
+
   test("reads a length refusal with the meetings it names", () => {
     expect(
       seriesRefusalOf(

@@ -12,6 +12,7 @@ import type {
 } from "@kompose/google-cal/schema";
 import { meetsSeveralTimesADay } from "@kompose/google-cal/series";
 import {
+  type NamingRefusal,
   refusalMessage,
   type SeriesRefusal,
   sameTime,
@@ -309,16 +310,13 @@ export function refusalReason(refusal: SeriesRefusal): string {
   return end === -1 ? message : message.slice(0, end + 1);
 }
 
-/** A refusal that names the occurrences it's for. */
-type ListRefusal = Extract<SeriesRefusal, { originalStarts: unknown }>;
-
 /**
  * Every reason a series write is refused for, to tell one from data, by
  * whether it names occurrences: a new reason of either kind fails to
  * compile until it's listed.
  */
 const PLAIN_REASONS: Record<
-  Exclude<SeriesRefusal, ListRefusal>["reason"],
+  Exclude<SeriesRefusal, NamingRefusal>["reason"],
   true
 > = {
   addedOccurrence: true,
@@ -328,17 +326,17 @@ const PLAIN_REASONS: Record<
   severalRules: true,
   severalTimesADay: true,
 };
-const LIST_REASONS: Record<ListRefusal["reason"], true> = {
+const NAMING_REASONS: Record<NamingRefusal["reason"], true> = {
   dropsChangedOccurrences: true,
   resizesChangedOccurrences: true,
 };
 
 const isPlainReason = (
   reason: string
-): reason is Exclude<SeriesRefusal, ListRefusal>["reason"] =>
+): reason is Exclude<SeriesRefusal, NamingRefusal>["reason"] =>
   Object.hasOwn(PLAIN_REASONS, reason);
-const isListReason = (reason: string): reason is ListRefusal["reason"] =>
-  Object.hasOwn(LIST_REASONS, reason);
+const isNamingReason = (reason: string): reason is NamingRefusal["reason"] =>
+  Object.hasOwn(NAMING_REASONS, reason);
 
 /**
  * The server's refusal of a series write, from a failed save: a
@@ -361,11 +359,24 @@ export function seriesRefusalOf(error: unknown): SeriesRefusal | null {
     return { reason };
   }
   const starts = "originalStarts" in data ? data.originalStarts : null;
-  return isListReason(reason) &&
-    Array.isArray(starts) &&
-    starts.every((start) => typeof start === "string")
-    ? { originalStarts: starts, reason }
-    : null;
+  if (
+    !(
+      isNamingReason(reason) &&
+      Array.isArray(starts) &&
+      starts.every((start) => typeof start === "string")
+    )
+  ) {
+    return null;
+  }
+  return {
+    originalStarts: starts,
+    reason,
+    // `unsure` changes the reason's words ("may undo").
+    ...("seriesOnly" in data && data.seriesOnly === true
+      ? { seriesOnly: true }
+      : {}),
+    ...("unsure" in data && data.unsure === true ? { unsure: true } : {}),
+  };
 }
 
 /**
@@ -590,7 +601,7 @@ function noScopeStepFor(changes: EventSaveChanges): string | null {
  */
 function noScopeStep(changes: EventSaveChanges): string {
   const named = changes.refused?.refusals?.find(({ refusal }) =>
-    isListReason(refusal.reason)
+    isNamingReason(refusal.reason)
   );
   if (named) {
     return named.refusal.reason === "dropsChangedOccurrences" &&
