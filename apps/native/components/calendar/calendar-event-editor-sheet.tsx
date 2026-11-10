@@ -277,6 +277,14 @@ function RepeatSection({
   );
 }
 
+/** Monday to Friday, as BYDAY: the Weekdays shortcut's days. */
+const WORKWEEK = GOOGLE_EVENT_WEEKDAYS.slice(0, 5).map(
+  (weekday) => weekday.value
+);
+
+/** The most occurrences a repeat can end after, as in Google Calendar. */
+const MAX_OCCURRENCES = 730;
+
 function RecurrenceEditorSection({
   allDay,
   endFrom,
@@ -309,6 +317,7 @@ function RecurrenceEditorSection({
     parsedRecurrence.byDay.length > 0
       ? parsedRecurrence.byDay
       : [weekdayCodeOf(startDate)];
+  const weekdaysOnly = weekOrdered(shownDays).join() === WORKWEEK.join();
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
       {/* Chips at their own width, wrapping (3 + 2 on a phone), as in the
@@ -360,7 +369,25 @@ function RecurrenceEditorSection({
 
       {parsedRecurrence.freq === "WEEKLY" ? (
         <View className="mt-3">
-          <Text className="text-muted-foreground text-xs">On days</Text>
+          <View className="flex-row items-center justify-between">
+            <Text className="text-muted-foreground text-xs">On days</Text>
+            {/* Monday to Friday in one tap, as Google's "Every weekday". */}
+            <Button
+              accessibilityLabel="Weekdays, Monday to Friday"
+              accessibilityState={{ selected: weekdaysOnly }}
+              onPress={() => {
+                if (!weekdaysOnly) {
+                  updateRecurrence({ byDay: WORKWEEK });
+                }
+              }}
+              size="sm"
+              // As tall as the day circles under it.
+              style={{ borderRadius: 999, height: 36, paddingHorizontal: 14 }}
+              variant={weekdaysOnly ? "default" : "outline"}
+            >
+              <Text>Weekdays</Text>
+            </Button>
+          </View>
           {/* Seven equal circles in one row. */}
           <View className="mt-1 flex-row gap-1.5">
             {GOOGLE_EVENT_WEEKDAYS.map((weekday) => {
@@ -631,6 +658,7 @@ function RecurrenceEndSection({
         <View className="mt-2 flex-row items-center gap-2">
           <CountInput
             label="Occurrences"
+            max={MAX_OCCURRENCES}
             onValue={(count) =>
               updateRecurrence({ end: { count, type: "count" } })
             }
@@ -660,12 +688,12 @@ function formatPlainDateLong(date: Temporal.PlainDate): string {
  */
 function CountInput({
   label,
-  max = 999,
+  max,
   onValue,
   value,
 }: {
   label: string;
-  max?: number;
+  max: number;
   onValue: (value: number) => void;
   value: number;
 }) {
