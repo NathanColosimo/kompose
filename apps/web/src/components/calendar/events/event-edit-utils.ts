@@ -44,9 +44,6 @@ interface TemporalFormValues {
 
 interface TemporalPayload {
   endPayload: { date?: string; dateTime?: string; timeZone?: string };
-  isAllDay: boolean;
-  occurrenceStart: Date;
-  startDateTime: Date | null;
   startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
@@ -111,9 +108,6 @@ export function buildTemporalPayload(
 
   return {
     endPayload,
-    isAllDay: isAllDayEvent,
-    occurrenceStart: startDateTime ?? startDate,
-    startDateTime,
     startPayload,
   };
 }
