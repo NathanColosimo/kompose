@@ -850,8 +850,6 @@ export function EventEditPopover({
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const setRecurringDelete = useSetAtom(recurringDeleteAtom);
   const moveEvent = useMoveGoogleEventMutation();
-  // The series' rule (an occurrence's lives on its master; shared with the
-  // form's query): a moved day follows it for the series.
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
     eventEditDialogInitialState
@@ -863,8 +861,8 @@ export function EventEditPopover({
     selectedScope,
   } = dialogState;
 
-  // The series stays loaded while its delete dialog asks, after the
-  // editor has closed.
+  // The series' rule (an occurrence's lives on its master; shared with the
+  // form's query): a moved day follows it for the series.
   const seriesMaster = useRecurringEventMaster({
     accountId,
     calendarId,
