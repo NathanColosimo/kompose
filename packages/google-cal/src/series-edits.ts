@@ -5,12 +5,8 @@
  */
 import { Schema } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { ruleDayCount } from "./series";
-
-/** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
-const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-
 import { type CreateEvent, type Event, EventSchema } from "./schema";
+import { ruleDayCount, WEEKDAY_CODES } from "./series";
 import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
 /**

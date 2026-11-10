@@ -5,8 +5,12 @@
 import { RRuleTemporal } from "rrule-temporal";
 import { Temporal } from "temporal-polyfill";
 
+/** RFC 5545 weekday codes, Monday first (Temporal's `dayOfWeek` - 1). */
+export const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+
 const DAILY_OR_LONGER = /^FREQ=(?:DAILY|WEEKLY|MONTHLY|YEARLY)$/;
 const TIME_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
+const END_PART = /^(?:COUNT|UNTIL)=/;
 
 /**
  * `rule`'s parts as Google reads them: it meets a day-or-longer rule once
@@ -209,16 +213,28 @@ function meetsOnceADay(rule: string): boolean {
 }
 
 /**
+ * `rule` without its end (COUNT or UNTIL): its days alone. An UNTIL with
+ * a time can't end a rule read by date (RFC 5545 has it take DTSTART's
+ * form), and these questions are about the days.
+ */
+function endless(rule: string): string {
+  return rule
+    .split(";")
+    .filter((part) => !END_PART.test(part))
+    .join(";");
+}
+
+/**
  * How many days `rule` meets on from `from` through `through`, as a series
- * starting on `from` (which counts only if the rule meets on it). Null
- * when the rule can't be read.
+ * starting on `from` (which counts only if the rule meets on it), its end
+ * left out. Null when the rule can't be read.
  */
 export function ruleDayCount(params: {
   from: Temporal.PlainDate;
   rule: string;
   through: Temporal.PlainDate;
 }): number | null {
-  const rule = expand(params.rule, params.from, false);
+  const rule = expand(endless(params.rule), params.from, false);
   const utc = (day: Temporal.PlainDate) =>
     day.toZonedDateTime({ timeZone: "UTC" });
   return rule
@@ -231,16 +247,36 @@ export function ruleDayCount(params: {
  * within a day, or meets at a time other than its start's (`first`), as
  * its first meetings show. Such a series' times don't follow its start.
  */
-export function meetsSeveralTimesADay(
-  recurrence: string[],
-  first: Temporal.ZonedDateTime
-): boolean {
+export function meetsSeveralTimesADay(params: {
+  first: Temporal.ZonedDateTime;
+  recurrence: string[];
+}): boolean {
+  const { first } = params;
   const clocks = new Set([first.toPlainTime().toString()]);
-  for (const rule of recurrence.filter((line) => line.startsWith("RRULE:"))) {
+  for (const rule of params.recurrence.filter((line) =>
+    line.startsWith("RRULE:")
+  )) {
     for (const meeting of expand(rule, first, true)?.all((_, i) => i < 3) ??
       []) {
       clocks.add(meeting.toPlainTime().toString());
     }
   }
   return clocks.size > 1;
+}
+
+/**
+ * Whether `day` is one of `rule`'s days, repeating from the series'
+ * `start` day, as Google reads it: its time and its end left out. Null
+ * when the rule can't be read.
+ */
+export function isRuleDay(
+  rule: string,
+  start: Temporal.PlainDate,
+  day: Temporal.PlainDate
+): boolean | null {
+  try {
+    return expand(endless(rule), start, false)?.occursOn(day) ?? null;
+  } catch {
+    return null;
+  }
 }

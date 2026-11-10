@@ -67,6 +67,7 @@ import {
   googleDateTime,
   keepingDateValues,
   lengthMs,
+  matchRecurrenceToStart,
   momentOf,
   type RecurrenceValue,
   readRecurrenceValue,
@@ -391,6 +392,36 @@ function timesOnOwnDay(params: {
 }
 
 /**
+ * `rule` rewritten for the series' `start` (`matchRecurrenceToStart`):
+ * UNTIL and EXDATE/RDATE in the start's form, the rule's own skips at its
+ * meetings' new times. A split's are read from its original start
+ * (`splitAt`), and a COUNT made all day counts from its time.
+ */
+function ruleForStart(
+  rule: string[],
+  master: Pick<Event, "recurrence" | "start">,
+  start: Event["start"],
+  splitAt?: string
+): string[] {
+  const zone = repeatZone(master, start);
+  const splitClock =
+    splitAt && !DATE_ONLY.test(splitAt)
+      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
+      : null;
+  const before = master.recurrence ?? [];
+  const days =
+    start.date && splitClock
+      ? {
+          before,
+          firstDay: Temporal.PlainDate.from(start.date),
+          firstTime: splitClock,
+        }
+      : { before };
+  const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
+  return matchRecurrenceToStart(rule, start, zone, from, days);
+}
+
+/**
  * A rule a save sends with the series' skips it leaves out: a client that
  * rebuilds the rule may send it alone. A day the rule skips whole (a date)
  * already covers that day's skips.
@@ -572,6 +603,43 @@ interface SeriesPlan {
   /** Only a whole series takes the save: a new repeat. */
   seriesOnly: boolean;
   times: { end: Event["end"]; start: Event["start"] };
+}
+
+/** The plan of an Entire series save (`SeriesPlan`), worked out once. */
+function seriesPlan(
+  params: Pick<SeriesPlan, "changes" | "edited" | "master" | "opened" | "times">
+): SeriesPlan {
+  const { edited, master, times } = params;
+  const zone = seriesZoneOf(master);
+  const movesStart = !sameTime(times.start, master.start, zone);
+  // Left out keeps the series' pattern; an empty list ends it ("Repeat:
+  // None").
+  const rule = edited.recurrence
+    ? withSeriesSkips(edited.recurrence, master)
+    : (master.recurrence ?? []);
+  // Read for what it means: the series' own skips, written again in
+  // another form, aren't a new rule.
+  const movesSlots =
+    movesStart ||
+    recurrenceValues(rule, zone) !==
+      recurrenceValues(master.recurrence ?? [], zone);
+  return {
+    ...params,
+    movesSlots,
+    movesStart,
+    // Moved, its skips go to their meetings' new times, in the start's
+    // form; a save that keeps its slots writes its values as they were.
+    recurrence:
+      movesSlots && repeats(rule)
+        ? ruleForStart(rule, master, times.start)
+        : rule,
+    seriesOnly: givesNewRepeat({
+      from: master.start,
+      master,
+      saved: edited.recurrence,
+      start: times.start,
+    }),
+  };
 }
 
 /**
@@ -919,7 +987,9 @@ function movesSeveralADay(params: {
     Boolean(start.date) ||
     Boolean(was && now && !was.equals(now));
   return Boolean(
-    first && moves && meetsSeveralTimesADay(master.recurrence ?? [], first)
+    first &&
+      moves &&
+      meetsSeveralTimesADay({ first, recurrence: master.recurrence ?? [] })
   );
 }
 
@@ -2542,35 +2612,16 @@ export function makeGoogleCalendarService(
       }
 
       const movesStart = !sameTime(times.start, master.start, zone);
-      // Left out keeps the series' pattern; an empty list ends it
-      // ("Repeat: None").
-      const rule = edited.recurrence
-        ? withSeriesSkips(edited.recurrence, master)
-        : (master.recurrence ?? []);
-      const plan: SeriesPlan = {
+      const plan = seriesPlan({
         // As the series is written: a guest list merged into its own.
         changes: changes.attendees
           ? { ...changes, attendees: event.attendees }
           : changes,
         edited,
         master,
-        // Read for what it means: the series' own skips, written again in
-        // another form, aren't a new rule.
-        movesSlots:
-          movesStart ||
-          recurrenceValues(rule, zone) !==
-            recurrenceValues(master.recurrence ?? [], zone),
-        movesStart,
         opened: currentEvent,
-        recurrence: rule,
-        seriesOnly: givesNewRepeat({
-          from: master.start,
-          master,
-          saved: edited.recurrence,
-          start: times.start,
-        }),
         times,
-      };
+      });
       const { carried, recurrence } = yield* keptOccurrences(calendarId, plan);
 
       const payload: CreateEvent = {
@@ -2713,7 +2764,7 @@ export function makeGoogleCalendarService(
       });
       const recurrence = skipping(rule, [...placed, ...moved], zone);
       if (!endsBeforeStart(recurrence, start, newZone)) {
-        return recurrence;
+        return ruleForStart(recurrence, master, start, originalStart);
       }
       // The series' own end before the new start (a meeting moved past
       // it): its rule is spent, so the new part has that meeting and any
