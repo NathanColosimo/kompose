@@ -21,6 +21,7 @@ import {
   recurrenceUntilValue,
   GOOGLE_EVENT_WEEKDAYS as WEEKDAYS,
 } from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -981,17 +982,11 @@ function buildEditPayload(
       colorId: values.colorId ?? undefined,
       conferenceData: ctx.conferenceData ?? undefined,
       description: values.description ?? "",
-      end: {
-        ...ctx.event?.end,
-        ...temporalPayload.endPayload,
-      },
+      end: withEditedTime(ctx.event?.end, temporalPayload.endPayload),
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
       recurrence: values.recurrence ?? ctx.event?.recurrence,
-      start: {
-        ...ctx.event?.start,
-        ...temporalPayload.startPayload,
-      },
+      start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
       summary: values.summary.trim(),
     },
     eventId: ctx.event?.id ?? "",
