@@ -785,8 +785,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         occurrence,
         scope: googleScope,
       }),
-      // The dialog reports failures beside Save.
-      quiet: true,
+
       recurrenceScope: googleScope,
     });
   }, [googleScope, pendingGoogleUpdate, updateGoogleEventMutation]);

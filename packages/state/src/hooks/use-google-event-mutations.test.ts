@@ -72,7 +72,7 @@ const removal = { ...calendar, eventId: "event", scope: "following" as const };
  * `refreshed`, and what the app and cache were left with.
  */
 async function failedDelete(
-  held: { failureMessage?: string; quiet?: boolean },
+  held: { failureMessage?: string },
   refreshed: unknown[] = [{ id: "other" }, { id: "new" }]
 ) {
   const told: Error[] = [];
@@ -100,9 +100,9 @@ async function failedDelete(
   };
 }
 
-test("a failed delete the dialog reports itself shows no toast", async () => {
-  const { told } = await failedDelete({ quiet: true });
-  expect(told).toEqual([]);
+test("a failed delete reports the server error", async () => {
+  const { told } = await failedDelete({});
+  expect(told.map((error) => error.message)).toEqual(["failed"]);
 });
 
 test("a failed delete otherwise says what failed, in the dialog's words", async () => {
@@ -114,9 +114,9 @@ test("a failed delete otherwise says what failed, in the dialog's words", async 
 });
 
 test("the event leaves the list at once, and comes back on failure", async () => {
-  const { novemberAfter, octoberAfter, sent, whileSent } = await failedDelete({
-    quiet: true,
-  });
+  const { novemberAfter, octoberAfter, sent, whileSent } = await failedDelete(
+    {}
+  );
   expect(sent).toEqual([removal]);
   expect(whileSent).toEqual([[{ id: "other" }]]);
   // Only the deleted event comes back, to the list it left: what the
@@ -132,7 +132,7 @@ test("the event leaves the list at once, and comes back on failure", async () =>
 test("a failed delete doesn't add the event twice where a refetch brought it", async () => {
   // The server still had it while the delete was out.
   const refreshed = [{ id: "event" }, { id: "new" }];
-  const { novemberAfter } = await failedDelete({ quiet: true }, refreshed);
+  const { novemberAfter } = await failedDelete({}, refreshed);
   expect(novemberAfter).toEqual(refreshed);
 });
 
@@ -196,7 +196,6 @@ test("an update sends its scope and event, not the editor's options", async () =
     variables: {
       failureMessage: "x",
       optimistic: false,
-      quiet: true,
       recurrenceScope: "all",
     },
   });
@@ -210,18 +209,13 @@ test("an update sends its scope and event, not the editor's options", async () =
   ]);
 });
 
-test("a failed update says what failed, in the editor's words, unless quiet", async () => {
+test("a failed update says what failed, in the editor's words", async () => {
   const { told } = await update({
     answer: failed,
     variables: { failureMessage: "Couldn't save it." },
   });
   expect(told.map((error) => error.message)).toEqual(["Couldn't save it."]);
   expect(told[0]?.cause).toEqual(new Error("failed"));
-  const { told: quiet } = await update({
-    answer: failed,
-    variables: { quiet: true },
-  });
-  expect(quiet).toEqual([]);
 });
 
 test("a failed held update leaves the list as it's since been refreshed", async () => {
@@ -231,7 +225,7 @@ test("a failed held update leaves the list as it's since been refreshed", async 
       update({
         answer: failed,
         meanwhile: anotherEvent,
-        variables: { optimistic: false, quiet: true, recurrenceScope },
+        variables: { optimistic: false, recurrenceScope },
       })
     )
   );
@@ -246,7 +240,7 @@ test("a held update of one occurrence shows the server's copy once it's in", asy
   const { after } = await update({
     answer: () => Promise.resolve(saved),
     meanwhile: anotherEvent,
-    variables: { optimistic: false, quiet: true },
+    variables: { optimistic: false },
   });
   expect(after).toEqual([saved, { id: "new" }]);
 });
@@ -301,7 +295,7 @@ const lunch: CreateEventInput = {
  */
 async function create(params: {
   answer: () => Promise<unknown>;
-  held?: { failureMessage?: string; quiet?: boolean };
+  held?: { failureMessage?: string };
   input?: CreateEventInput;
 }) {
   const told: Error[] = [];
@@ -331,23 +325,18 @@ async function create(params: {
 test("a create sends the event, not the editor's options", async () => {
   const { sent } = await create({
     answer: failed,
-    held: { failureMessage: "x", quiet: true },
+    held: { failureMessage: "x" },
   });
   expect(sent).toEqual([lunch]);
 });
 
-test("a failed create says what failed, in the editor's words, unless quiet", async () => {
+test("a failed create says what failed, in the editor's words", async () => {
   const { told } = await create({
     answer: failed,
     held: { failureMessage: "Couldn't create it." },
   });
   expect(told.map((error) => error.message)).toEqual(["Couldn't create it."]);
   expect(told[0]?.cause).toEqual(new Error("failed"));
-  const { told: quiet } = await create({
-    answer: failed,
-    held: { quiet: true },
-  });
-  expect(quiet).toEqual([]);
 });
 
 test("a failed create takes back only the event it added", async () => {

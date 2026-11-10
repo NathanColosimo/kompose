@@ -8,6 +8,8 @@ import {
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  recurrenceEndDay,
+  recurrenceUntilValue,
   repeatChanged,
   setPrimaryRecurrenceRule,
   untilDefaultDay,
@@ -292,5 +294,25 @@ describe("repeatChanged", () => {
         source,
       })
     ).toBe(true);
+  });
+});
+
+describe("repeat end date picker", () => {
+  test("all-day ends keep the picked calendar date", () => {
+    const pickedDay = Temporal.PlainDate.from("2026-11-10");
+    const value = recurrenceUntilValue(pickedDay, true, "Pacific/Auckland");
+    expect(value).toBe("20261110");
+    expect(recurrenceEndDay(value, "Pacific/Auckland")?.equals(pickedDay)).toBe(
+      true
+    );
+  });
+
+  test("timed ends include the whole picked day across a DST change", () => {
+    const pickedDay = Temporal.PlainDate.from("2026-11-01");
+    const value = recurrenceUntilValue(pickedDay, false, "America/New_York");
+    expect(value).toBe("20261102T045959Z");
+    expect(recurrenceEndDay(value, "America/New_York")?.equals(pickedDay)).toBe(
+      true
+    );
   });
 });

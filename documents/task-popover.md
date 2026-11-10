@@ -5,9 +5,7 @@ and the task side of the calendar's create popover.
 
 ## Pieces
 
-These live in `apps/web/src/components/task-form/task-edit-popover.tsx`;
-`HeldFieldset`, `SaveFailure` and `SavingLabel` are in
-`components/ui/held-fieldset.tsx`.
+These live in `apps/web/src/components/task-form/task-edit-popover.tsx`.
 
 - **`TaskEditPopover`**: wraps a trigger (a sidebar row or a calendar block)
   and edits that task. It always has a task; creating goes through the create
@@ -46,21 +44,17 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 
 - **Held saves.** Save, and Mark done when there are unsaved edits, keep the
   editor open with "Saving…" until the server confirms; then it closes. While
-  a save holds, the fields are read-only, any open picker closes (the fields
-  remount, see `HeldFieldset`), and Escape and outside clicks do nothing.
+  a save holds, a native disabled fieldset makes the fields read-only, and
+  Escape and outside clicks do nothing.
   These saves aren't optimistic, so a failure can't roll the cache back over
   the draft.
-- **Failures** keep the draft and show the reason above the buttons
-  (`SaveFailure`), which takes focus. The next save clears it.
+- **Failures** keep the draft and use the app's normal error toast.
 - **Mark done with no other edits** saves at once and closes.
-- **Save and Mark done keep their width** while they show "Saving…"
-  (`SavingLabel`).
 - **Moving or resizing the task** on the calendar while its editor is open
   updates the editor's date, time and duration and keeps the other unsaved
   edits, so Save can't write the old times back.
 - **Create** (create popover, Task tab) holds the same way: the popover stays
-  open with "Saving…", keeps the draft on failure, and shows the reason beside
-  its own Save.
+  open with "Saving…", keeps the draft on failure, and shows an error toast.
 
 ## Repeating tasks
 
@@ -80,10 +74,6 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 - **Cmd+Enter** saves. **Backspace** or **Delete** (outside a text field)
   asks to delete. Neither works while a save holds or a question is open over
   the editor.
-- When the scope question closes, focus returns to where the user was (the
-  title after Cmd+Enter, or Save). If a save started, the fields remount, so
-  focus goes to the editor instead; a save that already failed keeps focus on
-  its message.
 - When the delete question closes, focus returns to the editor if Backspace
   opened it, or to the trash icon if the icon did.
 - Opened from command-bar search or the desktop app, the editor scrolls its

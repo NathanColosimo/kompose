@@ -36,13 +36,13 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 ### Save / Cancel behavior
 - Explicit **Save** / **Cancel** buttons at the bottom of the form (edit mode).
 - **Save**: builds a close-save request from the form, then processes mutations (update, move, create).
-  - The editor stays open ("Saving…", fields read-only; Save keeps its width) until the save succeeds. A failure keeps it open with the edits and says so beside Save ("Couldn't save your changes. They're still here."). If the edits saved but the move to another calendar that followed didn't, it says that instead, and Save tries again.
+  - The editor stays open ("Saving…", fields read-only) until the save succeeds. A failure keeps it open with the edits and shows an error toast ("Couldn't save your changes. They're still here."). If the edits saved but the move to another calendar that followed didn't, it says that instead, and Save tries again.
   - A recurring event asks for the scope in a dialog over the editor. Cancel goes back to the editor with the edits; Save there holds the editor the same way.
   - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
   - The repeat is sent only when the user changes it with the Repeat control. The editor parses and builds the primary rule, preserving unsupported parts and other recurrence lines. Custom rules are marked in the label.
   - Moving the start does not rewrite weekdays, month days, UNTIL, COUNT, or exception dates.
   - Series saves send only changed details, with the edited times directly. Unchanged occurrence-specific titles, guests, and other details stay out of the series payload.
-- **Cancel**, **Escape**, or **click-outside** discards edits. While saving, the editor remains read-only and holds focus.
+- **Cancel**, **Escape**, or **click-outside** discards edits. While saving, the editor remains read-only.
 - The scope dialog offers Only this occurrence, This and following, and Entire series. It waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series date.
 - The server applies edited times to the series’ first event for Entire series. This and following ends the old series and starts a new one.
 - The repeat editor has daily, weekly, monthly, and yearly frequencies, interval, day choices, and never/date/count ends. End dates are encoded when picked; moves do not adjust them.
@@ -122,10 +122,8 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server.
 
 #### Error feedback
-- The editor's saves (`createEvent`, `updateEvent`) are held and quiet: a failure shows beside Save, with the edits kept, not as a toast.
-- The create popover (`EventCreationPopover`) holds its save the same way ("Saving…", read-only), and a failure keeps the draft. With no calendar to write to, it still opens on Task, and its Event tab says why.
-- `moveEvent` (the calendar move) runs quiet too: the editor says beside Save that it failed, and whether the edits before it saved.
-- A recurring delete runs quiet; its dialog says a failure (a polite live region) and stays open while the delete runs, its Delete button reading "Deleting…" and keeping focus.
+- Failed saves, creates, moves and deletes use the app's normal error toast. A failure keeps the editor and its draft open; a failed recurring delete keeps its scope dialog open.
+- The create popover (`EventCreationPopover`) holds its save the same way ("Saving…", read-only). With no calendar to write to, it opens on Task and its Event tab says why.
 
 ### Manual test checklist
 

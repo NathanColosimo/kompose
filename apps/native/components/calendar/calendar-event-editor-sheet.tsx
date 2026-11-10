@@ -1,5 +1,6 @@
 import type { LocationSuggestion } from "@kompose/api/routers/maps/contract";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
@@ -12,6 +13,9 @@ import {
   getPrimaryRecurrenceRule,
   isRecurringGoogleEvent,
   parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
+  recurrenceEndDay,
+  recurrenceUntilValue,
   setPrimaryRecurrenceRule,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
@@ -46,43 +50,6 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColor } from "@/hooks/use-color";
-
-// Until-date helpers this editor used before the repeat rules moved to
-// Temporal. The redesigned editor replaces this file later in the stack.
-const UNTIL_RULE_DATE_ONLY = /^(\d{4})(\d{2})(\d{2})$/;
-const UNTIL_RULE_FULL =
-  /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?$/;
-const UNTIL_SEPARATORS = /[-:]/g;
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function untilRuleToDate(raw?: string | null): Date | null {
-  if (!raw) {
-    return null;
-  }
-  const cleaned = raw.replace(UNTIL_SEPARATORS, "");
-  const dateOnly = cleaned.match(UNTIL_RULE_DATE_ONLY);
-  if (dateOnly) {
-    const [, y, m, d] = dateOnly;
-    return new Date(Number(y), Number(m) - 1, Number(d));
-  }
-  const full = cleaned.match(UNTIL_RULE_FULL);
-  if (!full) {
-    return null;
-  }
-  const [, y, m, d, hh, mm, ss, offset] = full;
-  const date = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}${offset ?? "Z"}`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateToUntilRule(date: Date): string | null {
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}00Z`;
-}
 
 const RECURRENCE_FREQUENCIES: Array<{
   value: EventRecurrenceFrequency;
@@ -143,32 +110,13 @@ function findCalendarOptionByValue(
   );
 }
 
-function buildRecurrenceRuleFromCurrent(
-  currentRule: string | undefined,
-  patch: {
-    freq?: EventRecurrenceFrequency;
-    byDay?: string[];
-    end?: EventRecurrenceEnd;
-  }
-): string | null {
-  const parsed = parseGoogleEventRecurrenceRule(currentRule);
-  const freq = patch.freq ?? parsed.freq;
-  const byDay = patch.byDay ?? parsed.byDay;
-  const end = patch.end ?? parsed.end;
-  return buildGoogleEventRecurrenceRule({
-    byDay,
-    end,
-    freq,
-    interval: 1,
-    monthDays: [],
-  });
-}
-
 function RecurrenceEditorSection({
+  allDay,
   parsedRecurrence,
   updateRecurrence,
   applyPrimaryRecurrenceRule,
 }: {
+  allDay: boolean;
   parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
   updateRecurrence: (patch: {
     freq?: EventRecurrenceFrequency;
@@ -191,14 +139,7 @@ function RecurrenceEditorSection({
                   return;
                 }
 
-                let byDay: string[] = [];
-                if (frequency.value === "WEEKLY") {
-                  byDay =
-                    parsedRecurrence.byDay.length > 0
-                      ? parsedRecurrence.byDay
-                      : ["MO"];
-                }
-                updateRecurrence({ byDay, freq: frequency.value });
+                updateRecurrence({ freq: frequency.value });
               }}
               size="sm"
               variant={active ? "default" : "outline"}
@@ -239,6 +180,7 @@ function RecurrenceEditorSection({
 
       {parsedRecurrence.freq === "none" ? null : (
         <RecurrenceEndSection
+          allDay={allDay}
           parsedRecurrence={parsedRecurrence}
           updateRecurrence={updateRecurrence}
         />
@@ -248,12 +190,19 @@ function RecurrenceEditorSection({
 }
 
 function RecurrenceEndSection({
+  allDay,
   parsedRecurrence,
   updateRecurrence,
 }: {
+  allDay: boolean;
   parsedRecurrence: ReturnType<typeof parseGoogleEventRecurrenceRule>;
   updateRecurrence: (patch: { end?: EventRecurrenceEnd }) => void;
 }) {
+  const timeZone = useAtomValue(timezoneAtom);
+  const untilDay =
+    parsedRecurrence.end.type === "until"
+      ? recurrenceEndDay(parsedRecurrence.end.date, timeZone)
+      : null;
   return (
     <View className="mt-3">
       <Text className="text-muted-foreground text-xs">Ends</Text>
@@ -270,11 +219,13 @@ function RecurrenceEndSection({
             const fallbackUntil =
               parsedRecurrence.end.type === "until"
                 ? parsedRecurrence.end.date
-                : (dateToUntilRule(new Date()) ?? undefined);
+                : recurrenceUntilValue(
+                    dateToPlainDate(new Date()),
+                    allDay,
+                    timeZone
+                  );
             updateRecurrence({
-              end: fallbackUntil
-                ? { date: fallbackUntil, type: "until" }
-                : { type: "none" },
+              end: { date: fallbackUntil, type: "until" },
             });
           }}
           size="sm"
@@ -308,21 +259,23 @@ function RecurrenceEndSection({
       {parsedRecurrence.end.type === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
-            mode="datetime"
+            mode="date"
             onChange={(date) => {
               if (!date) {
                 updateRecurrence({ end: { type: "none" } });
                 return;
               }
-              const untilRule = dateToUntilRule(date);
+              const untilRule = recurrenceUntilValue(
+                dateToPlainDate(date),
+                allDay,
+                timeZone
+              );
               updateRecurrence({
-                end: untilRule
-                  ? { date: untilRule, type: "until" }
-                  : { type: "none" },
+                end: { date: untilRule, type: "until" },
               });
             }}
             placeholder="Until"
-            value={untilRuleToDate(parsedRecurrence.end.date) ?? undefined}
+            value={untilDay ? plainDateToPickerDate(untilDay) : undefined}
             variant="outline"
           />
         </View>
@@ -933,7 +886,14 @@ export function EventEditorSheet({
       end?: EventRecurrenceEnd;
     }) => {
       const currentRule = getPrimaryRecurrenceRule(getValues("recurrence"));
-      const nextRule = buildRecurrenceRuleFromCurrent(currentRule, patch);
+      const parsed = parseGoogleEventRecurrenceRule(currentRule);
+      const nextRule = buildGoogleEventRecurrenceRule(
+        {
+          ...pickRecurrenceFrequency(parsed, patch.freq ?? parsed.freq),
+          ...patch,
+        },
+        currentRule
+      );
       applyPrimaryRecurrenceRule(nextRule);
     },
     [applyPrimaryRecurrenceRule, getValues]
@@ -942,6 +902,7 @@ export function EventEditorSheet({
   const recurrenceEditor =
     canEditRecurrence && isRecurrenceExpanded ? (
       <RecurrenceEditorSection
+        allDay={allDay}
         applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
         parsedRecurrence={parsedRecurrence}
         updateRecurrence={updateRecurrence}
