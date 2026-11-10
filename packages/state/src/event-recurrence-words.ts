@@ -2,17 +2,16 @@
  * A Google event's repeat in words ("Repeats every 2 weeks on Tue"), and
  * the monthly "On" choices the repeat editors offer.
  */
-import { readRecurrenceValue } from "@kompose/google-cal/until";
-import { Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 import {
   type EventRecurrenceEnd,
   type EventRecurrencePattern,
   GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
-  hasSeveralRules,
   isPlainWeekday,
   lastWeekdayOf,
   parseGoogleEventRecurrenceRule,
+  recurrenceEndDay,
   setPositionOf,
   weekdayCodeOf,
   weekOrdered,
@@ -237,30 +236,14 @@ function dayWords(
   return { complete, text: words.text };
 }
 
-const DAY_END = Temporal.PlainTime.from("23:59:59");
-
-/**
- * How a series ends: ", until Feb 10, 2027", ", 10 times", "" for never.
- * An UNTIL is said only when it names a day: a date, or a day's last
- * second in the series' zone, as "Ends on" writes it. Any other moment (a
- * This and following split ends the earlier part the second before a
- * meeting) may fall before or after that day's meeting, which the words
- * can't tell, so it's left out rather than said a day late.
- */
 function endWords(end: EventRecurrenceEnd, timeZone: string): string {
   if (end.type === "count") {
     return `, ${end.count} ${end.count === 1 ? "time" : "times"}`;
   }
-  const until =
-    end.type === "until"
-      ? readRecurrenceValue(end.date, timeZone, timeZone)
-      : null;
-  const namesDay =
-    until &&
-    (until.instant === null ||
-      until.instant.toZonedDateTimeISO(timeZone).toPlainTime().equals(DAY_END));
-  return until && namesDay
-    ? `, until ${MONTH_NAMES[until.day.month - 1]} ${until.day.day}, ${until.day.year}`
+  const day =
+    end.type === "until" ? recurrenceEndDay(end.date, timeZone) : null;
+  return day
+    ? `, until ${MONTH_NAMES[day.month - 1]} ${day.day}, ${day.year}`
     : "";
 }
 
@@ -298,7 +281,10 @@ export function describeEventRecurrence(params: {
       return "Repeats yearly";
     }
     // A rule this app can't put in words (hourly, say) still repeats.
-    return params.recurringEventId || rule ? "Repeats" : null;
+    if (rule) {
+      return "Repeats (custom)";
+    }
+    return params.recurringEventId ? "Repeats" : null;
   }
   const base =
     pattern.interval > 1
@@ -309,7 +295,12 @@ export function describeEventRecurrence(params: {
   const said = params.timeZone
     ? `${repeats}${endWords(pattern.end, params.timeZone)}`
     : repeats;
-  return complete && !hasSeveralRules(params.rules) ? said : `${said} (custom)`;
+  const customLines =
+    (params.rules ?? []).some(
+      (line) => line.startsWith("RDATE") || line.startsWith("EXRULE")
+    ) ||
+    (params.rules ?? []).filter((line) => line.startsWith("RRULE:")).length > 1;
+  return complete && !customLines ? said : `${said} (custom)`;
 }
 
 /** One monthly "On" choice: its label and the BYDAY / BYMONTHDAY it sets. */

@@ -31,8 +31,6 @@ export type CreateCalendar = z.infer<typeof CreateCalendarInputSchema>;
 
 export const EventSchema = z.object({
   id: z.string(),
-  /** Shared by a series' master and its exceptions. */
-  iCalUID: z.string().optional(),
   summary: z.string().optional(),
   description: z.string().optional(),
   location: z.string().optional(),
@@ -97,18 +95,6 @@ export const EventSchema = z.object({
   outOfOfficeProperties: googleEventOpaqueObjectSchema.optional(),
   workingLocationProperties: googleEventOpaqueObjectSchema.optional(),
 
-  // Kept so a write (a full replace) doesn't reset them, and so an
-  // occurrence that sets its own is seen as changed.
-  anyoneCanAddSelf: z.boolean().optional(),
-  attachments: z.array(googleEventOpaqueObjectSchema).optional(),
-  guestsCanInviteOthers: z.boolean().optional(),
-  guestsCanModify: z.boolean().optional(),
-  guestsCanSeeOtherGuests: z.boolean().optional(),
-  reminders: googleEventOpaqueObjectSchema.optional(),
-  source: googleEventOpaqueObjectSchema.optional(),
-  transparency: z.string().optional(),
-  visibility: z.string().optional(),
-
   conferenceData: z
     .object({
       entryPoints: z
@@ -167,27 +153,9 @@ export function isGoogleEventFromGmail(
   );
 }
 
-/** Calendar access roles that can only read (Google's calendarList). */
-const READ_ONLY_ROLES = new Set(["freeBusyReader", "reader"]);
-
-/**
- * Whether events on a calendar can be changed: any role but a read-only
- * one (Google's writers include "writerWithoutPrivateAccess"). An unknown
- * role (not loaded yet) doesn't block.
- */
-export function canWriteCalendar(accessRole: string | null | undefined) {
-  return !(accessRole && READ_ONLY_ROLES.has(accessRole));
-}
-
 export function getGoogleEventEditBlockReason(
-  event: GoogleEventEditabilityInput,
-  /** The event's calendar's access role, when known. */
-  calendarAccessRole?: string | null
+  event: GoogleEventEditabilityInput
 ): string | null {
-  if (!canWriteCalendar(calendarAccessRole)) {
-    return "You can only view this calendar, so its events can't be edited here.";
-  }
-
   if (event.locked) {
     return "Google marked this event as locked, so it can't be edited here.";
   }
@@ -204,10 +172,9 @@ export function getGoogleEventEditBlockReason(
 }
 
 export function isGoogleEventEditable(
-  event: GoogleEventEditabilityInput,
-  calendarAccessRole?: string | null
+  event: GoogleEventEditabilityInput
 ): boolean {
-  return getGoogleEventEditBlockReason(event, calendarAccessRole) === null;
+  return getGoogleEventEditBlockReason(event) === null;
 }
 
 export const RecurrenceScopeSchema = z.enum(["this", "all", "following"]);
@@ -216,8 +183,6 @@ export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;
 export const CreateEventInputSchema = EventSchema.omit({
   id: true,
   htmlLink: true,
-  // Google gives each new event its own; one sent would claim another's.
-  iCalUID: true,
   organizer: true,
 });
 
