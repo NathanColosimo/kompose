@@ -3,8 +3,9 @@
 import type { RecurrenceScope } from "@kompose/google-cal/schema";
 import { SAVE_FAILURE_MESSAGE } from "@kompose/state/held-save";
 import type { RecurrenceScopeOption } from "@kompose/state/recurrence-scope-options";
+import { useMutation } from "@tanstack/react-query";
 import { XIcon } from "lucide-react";
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -70,32 +71,27 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   // One confirm at a time: a held Cmd+Enter or a double click on Delete
   // would otherwise send the change twice while the first is running.
   const pendingRef = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // The callers give a scope that's available (`chosenScope`); should it
-  // still be off, nothing is sent.
+  const confirmation = useMutation({
+    mutationFn: async () => onConfirm(),
+    onSuccess: () => onOpenChange(false),
+    onSettled: () => {
+      pendingRef.current = false;
+    },
+  });
+  const pending = confirmation.isPending;
   const chosenOff = Boolean(disabledScopes?.[value]);
-  const confirm = async () => {
+  const confirm = () => {
     if (pendingRef.current || chosenOff) {
       return;
     }
     pendingRef.current = true;
-    setPending(true);
-    setFailed(false);
-    try {
-      await onConfirm();
-      onOpenChange(false);
-    } catch {
-      setFailed(true);
-    } finally {
-      pendingRef.current = false;
-      setPending(false);
-    }
+    confirmation.mutate();
   };
   // Held open while a confirm runs, so its failure is said here rather
   // than to a dialog already gone.
   const requestOpenChange = (next: boolean) => {
     if (next || !pendingRef.current) {
+      confirmation.reset();
       onOpenChange(next);
     }
   };
@@ -110,7 +106,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             if (!e.repeat) {
-              confirm().catch(() => null);
+              confirm();
             }
           }
         }}
@@ -193,7 +189,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           })}
         </RadioGroup>
 
-        {failed ? <SaveFailure message={failureMessage} /> : null}
+        {confirmation.isError ? <SaveFailure message={failureMessage} /> : null}
         <DialogFooter>
           <Button
             aria-disabled={pending || undefined}
@@ -203,7 +199,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
                 return;
               }
               onCancel?.();
-              onOpenChange(false);
+              requestOpenChange(false);
             }}
             type="button"
             variant="ghost"
@@ -216,7 +212,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
             aria-disabled={pending || undefined}
             disabled={chosenOff}
             onClick={() => {
-              confirm().catch(() => null);
+              confirm();
             }}
             type="button"
           >

@@ -35,22 +35,12 @@ export function isTaskScheduledOnCalendar(task: TaskSelectDecoded): boolean {
   return task.startDate !== null && task.startTime !== null;
 }
 
-/**
- * Whether a task is listed on its own, outside the calendar: one that
- * doesn't repeat, or a series occurrence moved to the inbox alone. A
- * series' dated occurrences show on the calendar instead.
- */
-export function isListedAlone(task: TaskSelectDecoded): boolean {
-  return task.seriesMasterId === null || task.startDate === null;
-}
-
-/**
- * Inbox: open tasks with no date. That includes an occurrence of a series
- * moved there alone ("I'll do this one later"); a series' scheduled
- * occurrences always have a date.
- */
 export function isInboxTask(task: TaskSelectDecoded): boolean {
-  return task.status !== "done" && task.startDate === null;
+  return (
+    task.status !== "done" &&
+    task.seriesMasterId === null &&
+    task.startDate === null
+  );
 }
 
 /** Overdue: uncompleted tasks with past due date or past end time (start + duration). */

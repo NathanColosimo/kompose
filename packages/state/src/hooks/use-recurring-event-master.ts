@@ -65,22 +65,22 @@ export function useRecurringEventMaster(params: {
     queryKey,
     staleTime: 5 * 60 * 1000,
   });
+  const ready = seriesRuleReady(query);
   // Only the fields callers read: spreading the query would track (and
   // re-render on) every one of its fields.
   return {
     data: query.data,
-    ruleReady: seriesRuleReady(query),
+    ruleReady: ready,
     /**
      * An occurrence's series rule that can't be used now (loading, or its
      * load failed): its repeat can't be edited from it.
      */
-    ruleUnavailable: enabled && !seriesRuleReady(query),
+    ruleUnavailable: enabled && !ready,
     /**
      * The series' rule couldn't be loaded: unavailable, failed, and no
      * fetch running (a retry in flight shows as loading again).
      */
-    ruleFailed:
-      enabled && !seriesRuleReady(query) && query.isError && !query.isFetching,
+    ruleFailed: enabled && !ready && query.isError && !query.isFetching,
     /** Its fetch waits for the network: it loads once back online. */
     rulePaused: enabled && query.isPaused,
     /** Load the series again (after it failed). */
@@ -102,25 +102,8 @@ export function seriesRuleReady(query: {
   isStale: boolean;
 }): boolean {
   return (
-    Boolean(query.data) && !seriesRefreshing(query) && !query.isRefetchError
-  );
-}
-
-/**
- * Whether a loaded series is a stale copy being fetched again: after a
- * write marks it stale, its old rule mustn't feed a save until the new one
- * is in.
- */
-export function seriesRefreshing(query: {
-  data?: unknown;
-  isFetching: boolean;
-  isPaused?: boolean;
-  isStale: boolean;
-}): boolean {
-  // A fetch waiting for the network (paused) is still owed.
-  return (
     Boolean(query.data) &&
-    query.isStale &&
-    (query.isFetching || Boolean(query.isPaused))
+    !(query.isStale && (query.isFetching || query.isPaused)) &&
+    !query.isRefetchError
   );
 }

@@ -58,6 +58,7 @@ import {
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
 } from "@kompose/state/recurrence-scope-options";
+import { savedSeriesRecurrence } from "@kompose/state/series-edit";
 import {
   formatAllDayWhen,
   formatEventWhen,
@@ -84,6 +85,7 @@ import {
   useReducer,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import {
   Controller,
@@ -213,41 +215,24 @@ export type CloseSaveRequest =
       payload: CreateEventInput;
     };
 
-function parseTimeString(
-  value: string
-): { hours: number; minutes: number } | null {
-  const [hours, minutes] = value.split(":").map(Number);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
-    return null;
-  }
-  return { hours, minutes };
-}
-
 function buildSharedEndFields(
   startDate: Date | null,
   startTime: string,
   durationMinutes: number
 ): Pick<EventFormValues, "endDate" | "endTime"> {
-  const normalizedDuration =
+  if (!(startDate && startTime)) {
+    return { endDate: startDate, endTime: startTime };
+  }
+  const minutes =
     Number.isFinite(durationMinutes) && durationMinutes > 0
       ? Math.round(durationMinutes)
       : 30;
-  const parsedStartTime = parseTimeString(startTime);
-
-  if (!(startDate && parsedStartTime)) {
-    return {
-      endDate: startDate,
-      endTime: startTime,
-    };
-  }
-
-  const nextEndDate = new Date(startDate);
-  nextEndDate.setHours(parsedStartTime.hours, parsedStartTime.minutes, 0, 0);
-  nextEndDate.setMinutes(nextEndDate.getMinutes() + normalizedDuration);
-
+  const end = pickerDateToTemporal(startDate)
+    .toPlainDateTime(startTime)
+    .add({ minutes });
   return {
-    endDate: nextEndDate,
-    endTime: formatTimeString(nextEndDate),
+    endDate: temporalToPickerDate(end.toPlainDate()),
+    endTime: end.toPlainTime().toString({ smallestUnit: "minute" }),
   };
 }
 
@@ -255,31 +240,19 @@ function getSharedFieldsFromEventValues(
   values: EventFormValues
 ): CalendarCreateSharedFields {
   const startDate = values.startDate ?? values.endDate ?? null;
-  const parsedStartTime = parseTimeString(values.startTime);
-  const parsedEndTime = parseTimeString(values.endTime);
   let durationMinutes = 30;
-
-  if (startDate && parsedStartTime && parsedEndTime) {
-    const startDateTime = new Date(startDate);
-    startDateTime.setHours(
-      parsedStartTime.hours,
-      parsedStartTime.minutes,
-      0,
-      0
+  if (startDate && values.startTime && values.endTime) {
+    const start = pickerDateToTemporal(startDate).toPlainDateTime(
+      values.startTime
     );
-
-    const endBaseDate = values.endDate ?? startDate;
-    const endDateTime = new Date(endBaseDate);
-    endDateTime.setHours(parsedEndTime.hours, parsedEndTime.minutes, 0, 0);
-
-    const computedDuration = Math.round(
-      (endDateTime.getTime() - startDateTime.getTime()) / 60_000
-    );
-    if (computedDuration > 0) {
-      durationMinutes = computedDuration;
+    const end = pickerDateToTemporal(
+      values.endDate ?? startDate
+    ).toPlainDateTime(values.endTime);
+    const minutes = Math.round(start.until(end).total("minutes"));
+    if (minutes > 0) {
+      durationMinutes = minutes;
     }
   }
-
   return {
     description: values.description,
     durationMinutes,
@@ -822,7 +795,7 @@ export function EventEditPopover({
 
   // The editor stays open ("Saving…") until a save succeeds, so a failed
   // save keeps the edits. Escape and outside clicks wait too.
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving, startSaving] = useTransition();
   const savingRef = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const narrowWindow = useIsMobile();
@@ -843,21 +816,17 @@ export function EventEditPopover({
       // to the page, where the calendar's keys could navigate away from the
       // save; the editor itself holds it instead.
       contentRef.current?.focus();
-      setIsSaving(true);
       setSaveFailure(null);
-      const settle = (failure: string | null) => {
-        savingRef.current = false;
-        setIsSaving(false);
-        if (failure) {
-          setSaveFailure(failure);
-        } else {
+      startSaving(async () => {
+        try {
+          await save;
           setOpen(false);
+        } catch (error) {
+          setSaveFailure(heldFailure(error, failureMessage));
+        } finally {
+          savingRef.current = false;
         }
-      };
-      save.then(
-        () => settle(null),
-        (error: unknown) => settle(heldFailure(error, failureMessage))
-      );
+      });
     },
     [setOpen]
   );
@@ -1231,39 +1200,6 @@ function buildCreatePayload(
   };
 }
 
-/**
- * Whether the save changes the series' pattern, and the scope to suggest.
- * The repeat is sent only when the user changed it: an empty list then
- * means "Repeat: None", and leaving it out keeps the series' pattern. The
- * form's value alone can't say, since the master's pattern may load after
- * the editor opened.
- */
-function editedPattern(
-  values: EventFormValues,
-  ctx: {
-    event: GoogleEvent | undefined;
-    masterRecurrence: string[] | null | undefined;
-    recurrenceEdited: boolean;
-  }
-): { defaultScope: RecurrenceScope; patternChanged: boolean } {
-  const sourceRecurrence = ctx.event?.recurrence?.length
-    ? ctx.event.recurrence
-    : (ctx.masterRecurrence ?? []);
-  const patternChanged = repeatChanged({
-    edited: ctx.recurrenceEdited,
-    recurrence: values.recurrence,
-    source: sourceRecurrence,
-  });
-  if (!ctx.event?.recurringEventId) {
-    return { defaultScope: "all", patternChanged };
-  }
-  // A pattern change on an occurrence applies from it on, as for tasks.
-  return {
-    defaultScope: patternChanged ? "following" : "this",
-    patternChanged,
-  };
-}
-
 function buildEditPayload(
   values: EventFormValues,
   ctx: {
@@ -1310,7 +1246,17 @@ function buildEditPayload(
       ctx.event?.recurrence?.length ||
       ctx.masterRecurrence?.length
   );
-  const { defaultScope, patternChanged } = editedPattern(values, ctx);
+  const patternChanged = repeatChanged({
+    edited: ctx.recurrenceEdited,
+    recurrence: values.recurrence,
+    source: ctx.event
+      ? savedSeriesRecurrence(ctx.event, ctx.masterRecurrence)
+      : [],
+  });
+  let defaultScope: RecurrenceScope = "all";
+  if (ctx.event?.recurringEventId) {
+    defaultScope = patternChanged ? "following" : "this";
+  }
 
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
@@ -2095,16 +2041,19 @@ function applyMovedStart(
   setValue("startDate", temporalToPickerDate(moved.startDate), dirty);
   setValue("endDate", temporalToPickerDate(moved.endDate), dirty);
   if (moved.startTime) {
-    setValue("startTime", timeInputValue(moved.startTime), dirty);
+    setValue(
+      "startTime",
+      moved.startTime.toString({ smallestUnit: "minute" }),
+      dirty
+    );
   }
   if (moved.endTime) {
-    setValue("endTime", timeInputValue(moved.endTime), dirty);
+    setValue(
+      "endTime",
+      moved.endTime.toString({ smallestUnit: "minute" }),
+      dirty
+    );
   }
-}
-
-/** A time input's value ("09:05"). */
-function timeInputValue(time: Temporal.PlainTime): string {
-  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
 }
 
 /** The form's range as Temporal values, for moveEventStart. */
@@ -2294,10 +2243,8 @@ export function EventEditForm({
 
   const recurrenceSource = useMemo(
     () =>
-      event?.recurrence?.length
-        ? event.recurrence
-        : (masterQuery.data?.recurrence ?? []),
-    [event?.recurrence, masterQuery.data?.recurrence]
+      event ? savedSeriesRecurrence(event, masterQuery.data?.recurrence) : [],
+    [event, masterQuery.data?.recurrence]
   );
 
   const initialValues = useMemo<EventFormValues>(

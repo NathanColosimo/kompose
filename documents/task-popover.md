@@ -35,10 +35,6 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
    clears the time.
 3. **Due date** and **Repeat**. Repeat end dates before the start are
    disabled.
-4. A note under Repeat when there's something to say: what a repeat change
-   will do, or why it can't save ("The repeat ends Nov 10, before…"). While it
-   blocks, the editor's Save and Mark done are disabled; the create popover's
-   Save does nothing.
 5. **Links**: a card per link, and an input that takes a pasted or typed URL.
    The first link's metadata fills an empty title and the duration.
 6. **Tags**.
@@ -72,17 +68,10 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
   and following** when the edit could apply beyond it. The question and its
   default come from `getTaskUpdateScopeDecision` in
   `packages/state/src/task-recurrence.ts`, shared with iOS.
-- **A repeat change** asks no question; the note under Repeat says what it
-  will do. On a dated occurrence it applies from that occurrence on. On an
-  occurrence in the inbox it changes only that task: clearing Repeat takes
-  it out of its series, and a new pattern makes it a series of its own.
-- **Moving an occurrence to the inbox** (clearing its date) asks nothing: it
-  changes that occurrence alone, as the server does.
 - **Mark done** with unsaved edits on a series follows the same rules, then
   saves the edits and the status in one write; the status applies to this
   occurrence only.
-- **Delete** on a dated occurrence offers this occurrence or this and
-  following; otherwise it asks to confirm.
+- **Delete** on a recurring task offers this occurrence or this and following; otherwise it asks to confirm.
 
 ## Keyboard and focus
 
