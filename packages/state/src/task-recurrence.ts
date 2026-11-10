@@ -377,10 +377,3 @@ export function getTaskUpdateScopeDecision(params: {
     defaultScope: recurrenceChanged ? "following" : "this",
   };
 }
-
-/** A failed status save leaves the task editor open with its draft. */
-export function markStatusFailureMessage(status: "todo" | "done"): string {
-  return status === "done"
-    ? "Couldn't mark the task done. Your changes are still here."
-    : "Couldn't reopen the task. Your changes are still here.";
-}

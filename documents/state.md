@@ -31,7 +31,7 @@
 - `hooks/use-move-google-event-mutation.ts`: Google event move mutation (`moveGoogleEventMutationOptions`). It changes nothing in the cache before the server answers, then refetches both calendars' events and series. An editor holding the save passes `HeldSave` (`quiet`, `failureMessage`), reported through `reportHeldSaveFailure` as for updates.
 - `hooks/use-recurring-event-master.ts`: Recurring master query hook. Its failure shows beside Repeat (`meta.quietError`, typed in `state-provider.tsx`), not as a toast.
 - `hooks/use-realtime-sync.ts`: Shared SSE sync hook. Initial connects now stay quiet; broad task/calendar invalidation only happens after an explicit `reconnect` event.
-- `hooks/use-tasks.ts`: Shared task query + optimistic mutations. Editors can wait for a save and refreshed tasks before closing, leaving their draft open after a failure.
+- `hooks/use-tasks.ts`: Shared task query + optimistic mutations. Editors close immediately; failed writes roll back and use the app's error toast.
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
 - `google-event-times.ts`: The `EventTime` type and `withEditedTime`, which gives an event's start or end the edited time without the date form it no longer has.
