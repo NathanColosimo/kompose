@@ -45,7 +45,8 @@ interface TaskSection {
   tone?: "overdue";
 }
 
-type BaseTaskTab = "Inbox" | "Today";
+const BASE_TASK_TABS = ["Inbox", "Today"] as const;
+type BaseTaskTab = (typeof BASE_TASK_TABS)[number];
 
 type TaskListItem =
   | { count: number; title: string; tone?: "overdue"; type: "header" }
@@ -437,56 +438,33 @@ export default function TasksScreen() {
                 accessibilityRole="tabbar"
                 className="h-11 flex-row items-center gap-1.5"
               >
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{
-                    selected: !isTagView && activeTab === "Inbox",
-                  }}
-                  className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                    !isTagView && activeTab === "Inbox"
-                      ? "bg-foreground/15"
-                      : ""
-                  }`}
-                  // 32pt to sit in the header's glass; the slop makes 44pt.
-                  hitSlop={{ bottom: 6, top: 6 }}
-                  onPress={() => selectBaseTab("Inbox")}
-                >
-                  <Text
-                    className={
-                      !isTagView && activeTab === "Inbox"
-                        ? "font-sans-medium text-foreground"
-                        : "text-foreground"
-                    }
-                    maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
-                  >
-                    Inbox
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{
-                    selected: !isTagView && activeTab === "Today",
-                  }}
-                  className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                    !isTagView && activeTab === "Today"
-                      ? "bg-foreground/15"
-                      : ""
-                  }`}
-                  // 32pt to sit in the header's glass; the slop makes 44pt.
-                  hitSlop={{ bottom: 6, top: 6 }}
-                  onPress={() => selectBaseTab("Today")}
-                >
-                  <Text
-                    className={
-                      !isTagView && activeTab === "Today"
-                        ? "font-sans-medium text-foreground"
-                        : "text-foreground"
-                    }
-                    maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
-                  >
-                    Today
-                  </Text>
-                </Pressable>
+                {BASE_TASK_TABS.map((tab) => {
+                  const selected = !isTagView && activeTab === tab;
+                  return (
+                    <Pressable
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected }}
+                      className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
+                        selected ? "bg-foreground/15" : ""
+                      }`}
+                      // 32pt to sit in the header's glass; the slop makes 44pt.
+                      hitSlop={{ bottom: 6, top: 6 }}
+                      key={tab}
+                      onPress={() => selectBaseTab(tab)}
+                    >
+                      <Text
+                        className={
+                          selected
+                            ? "font-sans-medium text-foreground"
+                            : "text-foreground"
+                        }
+                        maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                      >
+                        {tab}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
               <Pressable
                 accessibilityLabel="New task"
