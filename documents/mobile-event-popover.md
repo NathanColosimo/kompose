@@ -35,7 +35,7 @@ Top-to-bottom:
 
 3. Repeat row (its own full-width row)
 - Says how the event repeats, in words ("Repeats weekly on Tue"), with "· Tokyo time" when the series' zone isn't the app's
-- Tapping it opens the repeat editor under it: frequency chips, the interval stepper, weekday chips (weekly), the monthly day choice, and the end (never / on date / after N)
+- Tapping it opens the repeat editor under it: frequency chips, the interval stepper, weekday chips with a Weekdays shortcut for Monday to Friday (weekly), the monthly day choice, and the end (never / on date / after N, up to 730 as in Google Calendar)
 - For an occurrence it shows the series' rule, which can load after the editor opens ("Loading repeat…"); if the load fails, "The repeat didn't load." (or "didn't refresh.") sits beside a Try again button
 - It shows the rule the save sends (`seriesRepeatForEdit`): an occurrence moved to another day shows the series' rule following that day, and a rescheduled occurrence left where it is counts from its place in the series
 
@@ -76,20 +76,21 @@ Create:
 
 Edit (non-recurring):
 - Saves directly via `updateEvent`. A save the server refuses (a new repeat that would end before it starts, say) shows the server's words over the editor, which keeps the edits.
-- If calendar changed, then runs `moveEvent` with scope `this`.
+- If calendar changed, then runs `moveEvent` with scope `this`. If the move fails, the edits are already in: the message says they saved, the move didn't, and saving again retries it. The same holds for a recurring save.
 
 Edit (recurring):
-- Save opens the scope dialog over the editor, which stays open: Cancel goes back to it with the edits; Apply holds "Saving…" until the save ends. A refusal keeps the dialog (below); any other failure returns to the editor with the edits.
+- Save opens the scope dialog over the editor, which stays open: Cancel goes back to it with the edits; Save holds "Saving…" until the save ends. A refusal keeps the dialog (below); any other failure returns to the editor with the edits.
   - Only this occurrence
   - This and following
   - Entire series
 - A scope that can't apply is off, and the dialog's line says why (a moved day, the series still loading, a repeat that would skip this occurrence; see [event-popover.md](./event-popover.md)). If the calendar changes, only `all` is enabled and the entire series moves.
 - A save for the series (`following`/`all`) sends only its times, its repeat, and the fields the user changed against the occurrence the editor opened with (`seriesEditFields` in `packages/state/src/series-edit.ts`), so the series keeps its own title, place, notes and color; times the user left alone go as the occurrence's own, and the server keeps the series' slot for them.
-- Entire series is off, with the reason in the dialog, when a new time can't apply to a series of several rules. What a save would cost other occurrences changed on their own is the server's to refuse. If the server refuses a series save (a typed refusal: a retry won't help), the dialog stays open, leads with the server's reason, and keeps that scope off for this save, as on web (`seriesRefusalOf`, `refuseSave`), so two refusals in a row can't bring the first back. The server's reason names any meeting it would have undone. Any other failure returns to the editor with the edits.
+- Entire series is off, with the reason in the dialog, when a new time can't apply to a series of several rules. What a save would cost other occurrences changed on their own is the server's to refuse. If the server refuses a series save (a typed refusal: a retry won't help), the dialog stays open and keeps that scope off for this save, as on web (`seriesRefusalOf`, `refuseSave`), so two refusals in a row can't bring the first back. Its line leads with each refusal's reason, which names the occurrences it would have undone, then says where the save can still go from the scopes left (`eventSaveDescription`). Any other failure returns to the editor with the edits.
 
 Delete:
 - Non-recurring: simple confirm dialog.
-- Recurring: scoped delete dialog (`this`/`all`/`following`), over the editor; Cancel goes back to it.
+- Recurring: scoped delete dialog (`this`/`all`/`following`), over the editor; Cancel goes back to it. Every scope is on at once: the server refuses no delete.
+- A failed delete keeps its dialog open, which says "Couldn't delete it. Try again."
 
 ## Implementation constraints
 
@@ -111,7 +112,8 @@ Delete:
 - Recurring save opens the scope prompt over the editor; Cancel returns to the edits.
 - Moving an occurrence to another day: the Repeat row follows the new day, and Entire series is off with the reason.
 - This and following from a rescheduled occurrence with its own title keeps the series' title and time for the later meetings.
-- Recurring delete opens scope prompt; non-recurring delete opens simple confirm.
+- Recurring delete opens scope prompt with every scope on; non-recurring delete opens simple confirm.
+- A delete that fails (offline, say) keeps its dialog open with "Couldn't delete it. Try again."
 - `following` updates succeed (no missing timezone error).
 - Calendar picker shows color dots and same-account calendars only.
 - Repeat editor opens under the Repeat row and stays collapsed until toggled.
