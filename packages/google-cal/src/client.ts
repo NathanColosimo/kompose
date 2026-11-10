@@ -439,23 +439,35 @@ function ruleMeetingAt(slot: string, master: Event): boolean {
 
 /**
  * Where an occurrence's place (`slot`, its original start) is once the
- * series is written as `plan` says: its own day at the new time, or its
- * date when the series is made all day (a series that meets once a day).
- * Null if it doesn't parse.
+ * series is written as `plan` says: as many hours on as the series' start
+ * moved by the clock when that's less than a day (23:00 to 00:30 the next
+ * day moves each meeting a day on, as This and following does), else its
+ * own day at the new time; its date when the series is made all day (a
+ * series that meets once a day). Null if it doesn't parse.
  */
 function placeIn(slot: string, plan: SeriesPlan): string | null {
   const { master, times } = plan;
-  const day = dayOfStart(asStart(slot), seriesZoneOf(master));
+  const zone = seriesZoneOf(master);
+  const day = dayOfStart(asStart(slot), zone);
   const repeatsIn = repeatZone(master, times.start);
   const clock = clockOf(times.start, repeatsIn);
   if (!day) {
     return null;
   }
-  return clock
-    ? googleDateTime(
-        day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
-      )
-    : day.toString();
+  if (!clock) {
+    return day.toString();
+  }
+  const wall = (time: Event["start"], timeZone: string) =>
+    momentOf(time, timeZone)?.toZonedDateTimeISO(timeZone).toPlainDateTime();
+  const from = wall(master.start, zone);
+  const to = wall(times.start, repeatsIn);
+  const at = wall(asStart(slot), zone);
+  if (from && to && at && Math.abs(from.until(to).total("hours")) < 24) {
+    return googleDateTime(at.add(from.until(to)).toZonedDateTime(repeatsIn));
+  }
+  return googleDateTime(
+    day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
+  );
 }
 
 /**
