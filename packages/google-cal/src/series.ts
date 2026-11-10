@@ -289,10 +289,13 @@ function meetsOnceADay(rule: string): boolean {
  * form), and these questions are about the days.
  */
 function endless(rule: string): string {
-  return rule
+  // Read past "RRULE:": an UNTIL may be written first.
+  const body = rule.indexOf(":") + 1;
+  return `${rule.slice(0, body)}${rule
+    .slice(body)
     .split(";")
     .filter((part) => !END_PART.test(part))
-    .join(";");
+    .join(";")}`;
 }
 
 /**
