@@ -4,8 +4,8 @@
   "exports": {
     "./client": "./src/client.ts",
     "./recurrence-utils": "./src/recurrence-utils.ts",
-    "./rule-days": "./src/rule-days.ts",
     "./schema": "./src/schema.ts",
+    "./series": "./src/series.ts",
     "./series-edits": "./src/series-edits.ts",
     "./series-times": "./src/series-times.ts",
     "./until": "./src/until.ts"
@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "effect": "catalog:",
+    "rrule-temporal": "2.2.8",
     "temporal-polyfill": "catalog:",
     "zod": "catalog:"
   },

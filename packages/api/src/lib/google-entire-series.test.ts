@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import { seriesMeetsAt } from "@kompose/google-cal/recurrence-utils";
-import { isRuleDay } from "@kompose/google-cal/rule-days";
 import type { CreateEvent, Event } from "@kompose/google-cal/schema";
 import { newRepeat } from "@kompose/google-cal/series-edits";
 import { Exit } from "effect";
@@ -175,6 +174,47 @@ describe("Entire series", () => {
     });
   });
 
+  test("an edit to the first occurrence moves the date of a series whose end comes first in its rule", async () => {
+    // As below, the rule written with its UNTIL first, as another app may.
+    const ending: Event = {
+      ...weekly,
+      recurrence: ["RRULE:UNTIL=20261231T235959Z;FREQ=WEEKLY;BYDAY=MO"],
+    };
+    const google = fakeGoogle(ending);
+    const exit = await run(
+      edit("all", occurrenceOf(ending, "2026-11-09T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:UNTIL=20261231T235959Z;FREQ=WEEKLY;BYDAY=TU"],
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
+  test("an edit to the first occurrence moves the date of a series with an end date", async () => {
+    // Mondays until Dec 31 (an UNTIL with a time, as Google writes it);
+    // its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
+    const ending: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z"],
+    };
+    const google = fakeGoogle(ending);
+    const exit = await run(
+      edit("all", occurrenceOf(ending, "2026-11-09T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20261231T235959Z"],
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
   test("a first meeting moved off its rule's days keeps the series' date", async () => {
     // Mon Nov 9 moved to Tue Nov 10 at 10:00, the series' own Monday rule
     // sent back: a Tuesday start would add a meeting no rule makes, so the
@@ -195,9 +235,9 @@ describe("Entire series", () => {
     });
   });
 
-  test("a first meeting moved under a rule that can't be read keeps the series' date", async () => {
-    // A day-of-year rule isn't read here, so whether it meets Jan 2 can't
-    // be told: the series keeps Jan 1, as main did.
+  test("a first meeting moved to a day its rule doesn't meet keeps the series' date", async () => {
+    // Yearly on day 1 doesn't meet Jan 2: the series keeps Jan 1, as main
+    // did.
     const yearly: Event = {
       ...weekly,
       end: { dateTime: "2027-01-01T09:30:00-05:00", timeZone: zone },
@@ -582,6 +622,40 @@ describe("what Google keeps as an occurrence's own", () => {
       },
     });
     expect(google.writes()).toEqual([]);
+  });
+
+  test("a refusal names its occurrences by date, however Google lists them", async () => {
+    // Nov 23, Nov 30 and Jan 4 renamed on their own, listed last first.
+    // The series moves to 10:00 from Nov 16.
+    const renamed = (iso: string) => ({
+      ...occurrenceOf(weekly, iso),
+      summary: "Planning (own)",
+    });
+    fakeGoogle(weekly, [
+      renamed("2027-01-04T09:00:00-05:00"),
+      renamed("2026-11-30T09:00:00-05:00"),
+      renamed("2026-11-23T09:00:00-05:00"),
+    ]);
+    const refusal = await refusalOf(
+      edit("all", nov16, {
+        end: { dateTime: "2026-11-16T10:30:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-16T10:00:00-05:00", timeZone: zone },
+        summary: "Planning (new)",
+      })
+    );
+    expect(refusal).toMatchObject({
+      data: {
+        originalStarts: [
+          "2026-11-23T09:00:00-05:00",
+          "2026-11-30T09:00:00-05:00",
+          "2027-01-04T09:00:00-05:00",
+        ],
+        reason: "dropsChangedOccurrences",
+      },
+      message: expect.stringContaining(
+        "(Nov 23, 2026; Nov 30, 2026; Jan 4, 2027)"
+      ),
+    });
   });
 
   test("a rule with an exclusion it can't read is refused, not guessed", async () => {
@@ -1110,7 +1184,6 @@ describe("Entire series start and length changes, as Google applies them", () =>
         )
       )
     ).toBe(true);
-    // Nov 23 at 23:00 New York, in the new start's form.
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=DAILY",
       "EXDATE:20261124T040000Z",
@@ -1504,9 +1577,9 @@ describe("Entire series start and length changes, as Google applies them", () =>
     });
   });
 
-  test("a new time with a deleted occurrence under a rule that can't be read is refused", async () => {
-    // Yearly on day 1 (not read here), the 2028 meeting deleted; moved to
-    // 10:00: where that meeting goes can't be told.
+  test("a new time keeps a deleted occurrence deleted under a yearly day-of-year rule", async () => {
+    // Yearly on day 1, the 2028 meeting deleted; moved to 10:00: it stays
+    // deleted at 10:00.
     const yearly: Event = {
       ...weekly,
       end: { dateTime: "2027-01-01T09:30:00-05:00", timeZone: zone },
@@ -1520,19 +1593,19 @@ describe("Entire series start and length changes, as Google applies them", () =>
       },
     ]);
     expect(
-      await refusalOf(
-        edit("all", yearly, {
-          end: { dateTime: "2027-01-01T10:30:00-05:00", timeZone: zone },
-          start: { dateTime: "2027-01-01T10:00:00-05:00", timeZone: zone },
-        })
+      Exit.isSuccess(
+        await run(
+          edit("all", yearly, {
+            end: { dateTime: "2027-01-01T10:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2027-01-01T10:00:00-05:00", timeZone: zone },
+          })
+        )
       )
-    ).toMatchObject({
-      data: {
-        originalStarts: ["2028-01-01T09:00:00-05:00"],
-        reason: "dropsChangedOccurrences",
-      },
-    });
-    expect(google.writes()).toEqual([]);
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=YEARLY;BYYEARDAY=1",
+      "EXDATE:20280101T150000Z",
+    ]);
   });
 
   test("a new time keeps a deleted occurrence deleted at it", async () => {
@@ -2044,7 +2117,7 @@ describe("Entire series start and length changes, as Google applies them", () =>
   });
 
   test("a rule sent without the series' skip, otherwise its own, isn't a new rule", async () => {
-    // A rule not read here, Nov 16 skipped (written with its zone), Nov 30
+    // Mondays in some weeks of the year, Nov 16 skipped (written with its zone), Nov 30
     // renamed on its own; a new title for the Entire series from Dec 7,
     // sent with the rule alone.
     const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;BYWEEKNO=1,2,3,47,48,49,50";
@@ -2547,108 +2620,28 @@ describe("follow-up checks on the start and length rules", () => {
   });
 });
 
-describe("isRuleDay", () => {
-  const day = (iso: string) => Temporal.PlainDate.from(iso);
+describe("a rule as Google reads it", () => {
+  // Google meets a day-or-longer rule once a day, at the start's time, and
+  // ignores a list of times there.
+  const meets = (rule: string, slot: string) =>
+    seriesMeetsAt({
+      recurrence: [rule],
+      seriesZone: zone,
+      slot,
+      start: { dateTime: "2026-11-02T09:00:00-05:00" },
+    });
 
-  test("reads the rule parts the editors write", () => {
-    const start = day("2026-11-02");
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", start, day("2026-11-11"))
-    ).toBe(true);
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;BYDAY=MO,WE", start, day("2026-11-10"))
-    ).toBe(false);
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;INTERVAL=2", start, day("2026-11-09"))
-    ).toBe(false);
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;INTERVAL=2", start, day("2026-11-16"))
-    ).toBe(true);
-    expect(
-      isRuleDay("RRULE:FREQ=MONTHLY;BYDAY=-1FR", start, day("2026-11-27"))
-    ).toBe(true);
-    expect(
-      isRuleDay("RRULE:FREQ=MONTHLY;BYMONTHDAY=-1", start, day("2026-11-30"))
-    ).toBe(true);
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
-        start,
-        day("2027-11-25")
-      )
-    ).toBe(true);
-    // Every BY part narrows the set: Friday the 13th; a yearly day of the
-    // month in every month; a weekly rule kept to the 1st.
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
-        start,
-        day("2027-08-13")
-      )
-    ).toBe(true);
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=FR;BYMONTHDAY=13",
-        start,
-        day("2026-12-13")
-      )
-    ).toBe(false);
-    expect(
-      isRuleDay("RRULE:FREQ=YEARLY;BYMONTHDAY=1", start, day("2027-02-01"))
-    ).toBe(true);
-    expect(
-      isRuleDay("RRULE:FREQ=WEEKLY;BYMONTHDAY=1", start, day("2027-01-08"))
-    ).toBe(false);
-    // BYSETPOS: the 2nd Tuesday, and the last weekday.
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=TU;BYSETPOS=2",
-        start,
-        day("2026-12-08")
-      )
-    ).toBe(true);
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
-        start,
-        day("2026-11-30")
-      )
-    ).toBe(true);
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1",
-        start,
-        day("2026-11-27")
-      )
-    ).toBe(false);
-    // Parts not read: can't tell.
-    expect(
-      isRuleDay("RRULE:FREQ=YEARLY;BYYEARDAY=100", start, day("2027-04-10"))
-    ).toBeNull();
-    // A list of times still meets on the rule's days: Google ignores the
-    // list and meets once a day.
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
-        start,
-        day("2026-11-16")
-      )
-    ).toBe(true);
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15",
-        start,
-        day("2026-11-17")
-      )
-    ).toBe(false);
-    // Google ignores a list of times, so BYSETPOS picks among days.
-    expect(
-      isRuleDay(
-        "RRULE:FREQ=MONTHLY;BYDAY=MO;BYHOUR=9,15;BYSETPOS=1",
-        start,
-        day("2026-12-07")
-      )
-    ).toBe(true);
+  test("a list of times still meets once a day, at the start's time", () => {
+    const rule = "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9,15";
+    expect(meets(rule, "2026-11-16T09:00:00-05:00")).toBe(true);
+    expect(meets(rule, "2026-11-16T15:00:00-05:00")).toBe(false);
+    expect(meets(rule, "2026-11-17T09:00:00-05:00")).toBe(false);
+  });
+
+  test("BYSETPOS picks among days, not a list of times", () => {
+    const rule = "RRULE:FREQ=MONTHLY;BYDAY=MO;BYHOUR=9,15;BYSETPOS=1";
+    expect(meets(rule, "2026-12-07T09:00:00-05:00")).toBe(true);
+    expect(meets(rule, "2026-12-14T09:00:00-05:00")).toBe(false);
   });
 });
 
@@ -2718,6 +2711,37 @@ describe("newRepeat", () => {
       data: { reason: "dropsChangedOccurrences", seriesOnly: true },
     });
     expect(google.writes()).toEqual([]);
+  });
+
+  test("a monthly day rebuilt for a shorter one isn't a new repeat", () => {
+    // Monthly on the 31st five times, moved from May 31 to May 30: the
+    // editor rebuilds it as the 30th, which meets more often in a year.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-05-31"),
+      to: Temporal.PlainDate.from("2026-05-30"),
+    };
+    expect(
+      newRepeat({
+        moved,
+        own: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=31;COUNT=5"],
+        saved: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=30;COUNT=5"],
+      })
+    ).toBe(false);
+  });
+
+  test("a monthly day given a second day is a new repeat, whatever its end", () => {
+    // The 9th made the 9th and 10th, three times either way.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-11-09"),
+      to: Temporal.PlainDate.from("2026-11-10"),
+    };
+    expect(
+      newRepeat({
+        moved,
+        own: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=9;COUNT=3"],
+        saved: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=9,10;COUNT=3"],
+      })
+    ).toBe(true);
   });
 
   test("a weekly rule moved to a new day keeps its other days", () => {

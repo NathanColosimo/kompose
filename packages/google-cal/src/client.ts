@@ -12,13 +12,9 @@ import {
 } from "./api-client/core/error";
 import {
   addsSlot,
-  carryCountExactly,
-  carryCountFromList,
-  changeCount,
+  countLeft,
   countOf,
-  deleteFromListed,
   endsBeforeStart,
-  followingDelete,
   followingIsWhole,
   followingSplitBlocked,
   repeats,
@@ -28,8 +24,8 @@ import {
   skipping,
   splitAddedDays,
   truncateRecurrenceForFollowing,
+  withCount,
 } from "./recurrence-utils";
-import { canReadRule, isRuleDay, samePlaceInPeriod } from "./rule-days";
 import {
   type Calendar,
   CalendarSchema,
@@ -41,6 +37,13 @@ import {
   EventSchema,
   type RecurrenceScope,
 } from "./schema";
+import {
+  isRuleDay,
+  meetsSeveralTimesADay,
+  readRule,
+  ruleDayCount,
+  ruleMeetings,
+} from "./series";
 import {
   canonicalRule,
   changedFields,
@@ -64,7 +67,6 @@ import {
 } from "./series-times";
 import {
   clockOf,
-  clockTurn,
   DATE_ONLY,
   dateValues,
   dayOfStart,
@@ -72,11 +74,9 @@ import {
   keepingDateValues,
   lengthMs,
   matchRecurrenceToStart,
-  meetsSeveralTimesADay,
   momentOf,
   type RecurrenceValue,
   readRecurrenceValue,
-  SUB_DAILY,
   startInstant,
 } from "./until";
 
@@ -136,343 +136,35 @@ function timeOfDayChange(
 }
 
 /**
- * `recurrence` split into its timed skips (EXDATE lines of date-times
- * only, as starts in `zone`) and the rest.
- */
-function takeTimedSkips(
-  recurrence: string[],
-  zone: string
-): { rest: string[]; skips: string[] } {
-  const rest: string[] = [];
-  const skips: string[] = [];
-  for (const line of recurrence) {
-    const values = line.startsWith("EXDATE")
-      ? dateValues([line], "EXDATE", zone)
-      : [];
-    const moments = values.flatMap((value) =>
-      value.instant ? [value.instant] : []
-    );
-    if (values.length > 0 && moments.length === values.length) {
-      skips.push(
-        ...moments.map((moment) =>
-          googleDateTime(moment.toZonedDateTimeISO(zone))
-        )
-      );
-    } else {
-      rest.push(line);
-    }
-  }
-  return { rest, skips };
-}
-
-/**
- * How far a series' start moved by the clock, when less than a day (23:00
- * to the next day's 00:30): each meeting may move by as much. Null for a
- * longer move.
- */
-function shortShift(
-  from: Temporal.Instant | null,
-  to: Temporal.Instant | null,
-  zone: string
-): Temporal.Duration | null {
-  if (!(from && to)) {
-    return null;
-  }
-  const shift = from
-    .toZonedDateTimeISO(zone)
-    .toPlainDateTime()
-    .until(to.toZonedDateTimeISO(zone).toPlainDateTime());
-  return Math.abs(shift.total("hours")) < 24 ? shift : null;
-}
-
-/**
- * A skipped meeting's place once the series' time moves, the first the
- * saved series `meets` at: the clock's turn (`clockTurn`), then its whole
- * `shift` (a move of less than a day); else on its own day at the new
- * time. `matchRecurrenceToStart` moves an UNTIL's last day the same way.
- */
-function placeAtNewTime(params: {
-  change: { from: Temporal.PlainTime; to: Temporal.PlainTime };
-  meets: (slot: string) => boolean;
-  moment: Temporal.Instant;
-  /** Whether the series' start keeps its day. */
-  sameDay: boolean;
-  shift: Temporal.Duration | null;
-  zone: string;
-}): string {
-  const { change, moment, shift, zone } = params;
-  const local = moment.toZonedDateTimeISO(zone).toPlainDateTime();
-  const turn = clockTurn(change.from, change.to, params.sameDay);
-  const at = (time: Temporal.PlainDateTime) =>
-    googleDateTime(time.toZonedDateTime(zone));
-  const tried = [at(local.add(turn)), shift && at(local.add(shift))];
-  return (
-    tried.find((place) => place && params.meets(place)) ??
-    at(local.toPlainDate().toPlainDateTime(change.to))
-  );
-}
-
-/**
- * The saved `rule` lined up with the series' new `start`, with the
- * occurrences deleted on their own (`cancelled`) skipped.
- *
- * When a once-a-day series moves to another time of day, each skip (the
- * rule's own and `cancelled`) follows its meeting. Skips are added after
- * lining up, since lining them up would read them against the old start:
- * - a rule's (or the start's) meeting moves to the new time, so its skip
- *   goes there, but never onto an added (RDATE) meeting that stays;
- * - an added meeting keeps its time, so its skip stays. It also goes to
- *   the new time if a rule or the start met there, or if the save drops
- *   that added day and the saved rule meets there (unless that day's own
- *   meeting, still on, moves there);
- * - a skip where nothing met stays where it is.
- * A move of the start of less than a day (across midnight too) moves each
- * skip by as much; a longer one keeps it on its day at the new time.
- * A skip that would stay at its own time where the saved series now meets
- * (the series moved onto it) goes instead: kept, it would cancel that
- * meeting.
- */
-function lineUpRule(params: {
-  cancelled: string[];
-  master: Event;
-  rule: string[];
-  /** A split's original start (see `ruleForStart`). */
-  splitAt?: string;
-  start: Event["start"];
-}): string[] {
-  const { master, splitAt, start } = params;
-  const zone = seriesZoneOf(master);
-  const before = master.recurrence ?? [];
-  const rules = before.filter((line) => line.startsWith("RRULE:"));
-  // A rule whose days can't be read counts as meeting: a skip where
-  // nothing meets does nothing.
-  const ruleMetAt = (slot: string) =>
-    seriesMeetsAt({
-      recurrence: rules,
-      seriesZone: zone,
-      slot,
-      start: master.start,
-    }) !== false;
-  // Lined up with the new start, as written (a kept BYHOUR=9 becomes the
-  // new start's hour).
-  const savedRules = ruleForStart(
-    params.rule.filter((line) => line.startsWith("RRULE:")),
-    master,
-    start,
-    splitAt
-  ).filter((line) => line.startsWith("RRULE:"));
-  // Whether the saved rules meet at a deleted occurrence's new place: its
-  // date if the series is now all day, the new time if it was at the
-  // series' time (that meeting moved), else where it was.
-  const oldClock = clockOf(master.start, zone);
-  const newClock = clockOf(start, zone);
-  const savedMeetsAt = (slot: string) => {
-    const moment = slotMoment(slot, zone)?.toZonedDateTimeISO(zone);
-    if (!moment) {
-      return false;
-    }
-    let place = slot;
-    if (start.date) {
-      place = moment.toPlainDate().toString();
-    } else if (
-      oldClock &&
-      newClock &&
-      Temporal.PlainTime.compare(moment.toPlainTime(), oldClock) === 0
-    ) {
-      place = googleDateTime(moment.withPlainTime(newClock));
-    }
-    return (
-      seriesMeetsAt({
-        recurrence: savedRules,
-        seriesZone: zone,
-        slot: place,
-        start,
-      }) !== false
-    );
-  };
-  // A skip of an added (RDATE) meeting the save removes goes, unless a
-  // rule (old or saved) or the start meets there: then it's kept, and
-  // lined up onto that day's other meeting.
-  const stillMeets = (slot: string) =>
-    // A date skips the whole day, whatever meets on it.
-    DATE_ONLY.test(slot) ||
-    !addsSlot(before, slot, zone) ||
-    addsSlot(params.rule, slot, zone) ||
-    ruleMetAt(slot) ||
-    savedMeetsAt(slot);
-  const cancelled = params.cancelled.filter(stillMeets);
-  const rule = keepingDateValues(params.rule, "EXDATE", zone, (value) =>
-    stillMeets(
-      value.instant
-        ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
-        : value.day.toString()
-    )
-  );
-  // A split's new start is the meeting just saved: no skip lands on it,
-  // even one of the old part's moved there (a start moved back across
-  // midnight onto a skipped day, or onto a day skipped whole).
-  const startValue = readRecurrenceValue(slotOf(start, zone) ?? "", zone, zone);
-  const keepStart = (written: string[]) =>
-    splitAt && startValue
-      ? keepingDateValues(
-          written,
-          "EXDATE",
-          zone,
-          (value) => skipKey(value) !== skipKey(startValue)
-        )
-      : written;
-  const change = timeOfDayChange(master, start);
-  if (!change || meetsSeveralTimesADay(before, change.from)) {
-    return keepStart(
-      ruleForStart(skipping(rule, cancelled, zone), master, start, splitAt)
-    );
-  }
-  const { rest, skips } = takeTimedSkips(rule, zone);
-  // A skip the series didn't have before the save was written for the new
-  // start (a client lined it up): it stays as written.
-  const hadBefore = new Set(dateValues(before, "EXDATE", zone).map(skipKey));
-  // Slots' skip keys, to match against skips read from rules.
-  const keysOf = (slots: string[]) =>
-    slots.flatMap((slot) => {
-      const value = readRecurrenceValue(slot, zone, zone);
-      return value ? [skipKey(value)] : [];
-    });
-  const isNew = (slot: string) =>
-    keysOf([slot]).some((key) => !hadBefore.has(key));
-  const startedAt = splitAt ? asStart(splitAt) : master.start;
-  const shift = shortShift(
-    momentOf(startedAt, zone),
-    momentOf(start, zone),
-    zone
-  );
-  const fromDay = dayOfStart(startedAt, zone);
-  const sameDay = Boolean(fromDay && dayOfStart(start, zone)?.equals(fromDay));
-  const deleted = [...cancelled, ...skips.filter((slot) => !isNew(slot))];
-  // Whether that day's meeting before the save was skipped or deleted: a
-  // skip at its new time then keeps it so (a client may have moved the
-  // old skip there, onto one where nothing met).
-  const deletedKeysBefore = new Set([...hadBefore, ...keysOf(cancelled)]);
-  const meetingWasDeleted = (moment: Temporal.Instant) => {
-    const day = moment.toZonedDateTimeISO(zone).toPlainDate();
-    const was = day
-      .toZonedDateTime({ plainTime: change.from, timeZone: zone })
-      .toInstant();
-    return deletedKeysBefore.has(skipKey({ day, instant: was }));
-  };
-  // Whether that day's rule meeting, still on, moves to the new time: a
-  // removed added day's skip there would cancel it.
-  const liveRuleMeetingMovesTo = (moment: Temporal.Instant) => {
-    const day = moment.toZonedDateTimeISO(zone).toPlainDate();
-    const was = googleDateTime(
-      day.toZonedDateTime({ plainTime: change.from, timeZone: zone })
-    );
-    return ruleMetAt(was) && !meetingWasDeleted(moment);
-  };
-  // An added meeting the saved rule still adds keeps its time, as does a
-  // skip where nothing met (it skips nothing, so it can't move onto one),
-  // unless the series now meets at that time, where it would cancel one
-  // the user didn't delete.
-  const keepsOwnTime = (
-    slot: string,
-    moment: Temporal.Instant,
-    ruleMet: boolean
-  ) => {
-    const added = addsSlot(before, slot, zone);
-    const atNewClock = moment
-      .toZonedDateTimeISO(zone)
-      .toPlainTime()
-      .equals(change.to);
-    if (added && addsSlot(rule, slot, zone)) {
-      return !(atNewClock && savedMeetsAt(slot));
-    }
-    return !(added || ruleMet || (atNewClock && !meetingWasDeleted(moment)));
-  };
-  const atNewTime: string[] = [];
-  const atOwnTime: string[] = skips.filter(isNew);
-  for (const slot of deleted) {
-    const moment = DATE_ONLY.test(slot) ? null : slotMoment(slot, zone);
-    if (!moment) {
-      atOwnTime.push(slot);
-      continue;
-    }
-    const added = addsSlot(before, slot, zone);
-    const stillAdded = added && addsSlot(rule, slot, zone);
-    const ruleMet =
-      ruleMetAt(slot) ||
-      (added &&
-        !stillAdded &&
-        savedMeetsAt(slot) &&
-        !liveRuleMeetingMovesTo(moment));
-    if (keepsOwnTime(slot, moment, ruleMet)) {
-      atOwnTime.push(slot);
-    }
-    if (ruleMet) {
-      atNewTime.push(
-        placeAtNewTime({
-          change,
-          meets: (place) =>
-            seriesMeetsAt({
-              recurrence: savedRules,
-              seriesZone: zone,
-              slot: place,
-              start,
-            }) === true,
-          moment,
-          sameDay,
-          shift,
-          zone,
-        })
-      );
-    }
-  }
-  const lined = skipping(
-    ruleForStart(rest, master, start, splitAt),
-    atOwnTime,
-    zone
-  );
-  const deletedKeys = new Set(keysOf(deleted));
-  // An added meeting the saved series has, unless it was deleted too.
-  const onAddedMeeting = (at: string) =>
-    addsSlot(lined, at, zone) &&
-    !keysOf([at]).some((key) => deletedKeys.has(key));
-  return keepStart(
-    skipping(
-      lined,
-      atNewTime.filter((at) => !onAddedMeeting(at)),
-      zone
-    )
-  );
-}
-
-/**
- * A refusal naming the occurrences (by original start) a save would cost,
- * marked when the save is one only a series takes.
+ * A refusal naming the occurrences (by original start, earliest first) a
+ * save would cost, marked when the save is one only a series takes.
  */
 function naming(
   reason: NamingRefusal["reason"],
   originalStarts: readonly string[],
   seriesOnly: boolean
 ): NamingRefusal {
-  return seriesOnly
-    ? { originalStarts, reason, seriesOnly: true }
-    : { originalStarts, reason };
+  const named = {
+    originalStarts: originalStarts.toSorted(
+      (a, b) => Date.parse(a) - Date.parse(b)
+    ),
+    reason,
+  };
+  return seriesOnly ? { ...named, seriesOnly: true } : named;
 }
 
 /**
- * `refusal` marked `unsure` when a rule it was read against can't be read
- * here (an exclusion rule, or a day rule with parts not read): what it
- * names may keep its changes, but that can't be told.
+ * `refusal` marked `unsure` when the series has an exclusion rule (EXRULE),
+ * which isn't read here: what it names may keep its changes, but that
+ * can't be told.
  */
 function unsureWhere(
   refusal: NamingRefusal,
   recurrence: string[]
 ): NamingRefusal {
-  const unread = recurrence.some(
-    (line) =>
-      line.startsWith("EXRULE") ||
-      (line.startsWith("RRULE:") && !SUB_DAILY.test(line) && !canReadRule(line))
-  );
-  return unread ? { ...refusal, unsure: true } : refusal;
+  return recurrence.some((line) => line.startsWith("EXRULE"))
+    ? { ...refusal, unsure: true }
+    : refusal;
 }
 
 /**
@@ -512,50 +204,20 @@ function asStart(slot: string): Event["start"] {
   return DATE_ONLY.test(slot) ? { date: slot } : { dateTime: slot };
 }
 
-/**
- * Whether a failed Google write may still have gone through: Google never
- * answered it (a timeout, a dropped connection), or answered with a server
- * error.
- */
-function mayGoThrough(error: GoogleApiError): boolean {
-  return (
-    error.cause instanceof APIConnectionError ||
-    error.cause instanceof InternalServerError
-  );
+/** A meeting the library gives back, as a slot written in `zone`. */
+function slotString(
+  meeting: Temporal.Instant | Temporal.PlainDate,
+  zone: string
+): string {
+  return meeting instanceof Temporal.Instant
+    ? googleDateTime(meeting.toZonedDateTimeISO(zone))
+    : meeting.toString();
 }
 
-/** Google's reasons for turning a request away for now (as a 403). */
-const RATE_LIMITED = /"(?:userR|r)ateLimitExceeded"/;
-
-/**
- * Whether Google turned a write away for now: a rate limit (a 429, or a
- * 403 that names one) or a request timeout.
- */
-function turnedAwayForNow(error: GoogleApiError): boolean {
-  const { cause } = error;
-  if (cause instanceof RateLimitError) {
-    return true;
-  }
-  if (!(cause instanceof APIError)) {
-    return false;
-  }
-  return (
-    cause.status === 408 ||
-    (cause.status === 403 && RATE_LIMITED.test(JSON.stringify(cause.error)))
-  );
+/** A recurrence's rules (RRULE lines). */
+function rulesOf(recurrence: string[]): string[] {
+  return recurrence.filter((line) => line.startsWith("RRULE:"));
 }
-
-/**
- * A split's writes tried again, after a growing wait, on a failure that
- * may clear: one that may still have gone through, or one Google turned
- * away for now.
- */
-const WRITE_RETRIES = {
-  schedule: Schedule.exponential("200 millis"),
-  times: 2,
-  while: (error: GoogleApiError) =>
-    mayGoThrough(error) || turnedAwayForNow(error),
-};
 
 /** A refusal, as the service fails with it. */
 function refused(refusal: SeriesRefusal): GoogleApiError {
@@ -563,24 +225,6 @@ function refused(refusal: SeriesRefusal): GoogleApiError {
     cause: new Error(refusalMessage(refusal)),
     refusal,
   });
-}
-
-/**
- * Refuses "This and following" where a new series can't start: at an
- * added meeting, or in a series with several rules. Null when the split
- * is fine.
- */
-function splitBlockedError(
-  master: Event,
-  originalStart: string
-): GoogleApiError | null {
-  const blocked = followingSplitBlocked({
-    masterRecurrence: master.recurrence,
-    masterStart: master.start,
-    originalStart,
-    seriesZone: seriesZoneOf(master),
-  });
-  return blocked ? refused({ reason: blocked }) : null;
 }
 
 /**
@@ -611,41 +255,6 @@ function repeatZone(
   start: { timeZone?: string }
 ): string {
   return master.start.timeZone ?? start.timeZone ?? "UTC";
-}
-
-/**
- * `rule` rewritten for the series' `start`: UNTIL and EXDATE/RDATE in the
- * start's form, skips at its time, on the series' days in its zone. Run on
- * any rule the series ends up with, so one a client lined up with a moved
- * occurrence can't skip the wrong times.
- */
-function ruleForStart(
-  rule: string[],
-  master: Pick<Event, "recurrence" | "start">,
-  start: Event["start"],
-  /**
-   * A split's original start (the new series' first meeting before the
-   * edit). Times are read from it, not the old start, and a COUNT made
-   * all day counts from its time.
-   */
-  splitAt?: string
-): string[] {
-  const zone = repeatZone(master, start);
-  const splitClock =
-    splitAt && !DATE_ONLY.test(splitAt)
-      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
-      : null;
-  const before = master.recurrence ?? [];
-  const days =
-    start.date && splitClock
-      ? {
-          before,
-          firstDay: Temporal.PlainDate.from(start.date),
-          firstTime: splitClock,
-        }
-      : { before };
-  const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
-  return matchRecurrenceToStart(rule, start, zone, from, days);
 }
 
 /**
@@ -734,14 +343,14 @@ function entireSeriesTimes(params: {
   }
   const end = inSeriesZone(edited.end, master.end);
   const start = inSeriesZone(edited.start, master.start);
-  const rules = (edited.recurrence ?? master.recurrence ?? []).filter((line) =>
-    line.startsWith("RRULE:")
-  );
+  const rules = rulesOf(edited.recurrence ?? master.recurrence ?? []);
   const day = newStartDay(master, start);
   const rulesMeet =
     !day ||
     rules.length === 0 ||
-    rules.some((rule) => isRuleDay(rule, day, day) === true);
+    rules.some(
+      (rule) => (ruleDayCount({ from: day, rule, through: day }) ?? 0) > 0
+    );
   // A day the opened meeting already had on its own isn't a new one.
   const movesDay = !day?.equals(dayOfStart(occurrence.start, zone) ?? day);
   if (opensSeries(occurrence, master) && rulesMeet && movesDay) {
@@ -788,61 +397,311 @@ function timesOnOwnDay(params: {
   );
 }
 
+/** A set hour or minute in a rule (BYHOUR=9), which only other apps write. */
+const SET_TIME_PART = /[:;]BY(?:HOUR|MINUTE)=/;
+/** A rule's end parts, to compare rules by their days alone. */
+const END_PARTS = /;(?:COUNT|UNTIL)=[^;]*/g;
+
+/** A meeting of a series on one day: a rule's, or one added to it. */
+interface DayMeeting {
+  added: boolean;
+  dead: boolean;
+  key: string;
+  /** A rule meeting at an added one's moment. */
+  shared?: boolean;
+}
+
 /**
- * Whether the series' new times give `occurrence`, changed on its own,
- * all it changed: only its times, to those of the new series' meeting on
- * its day (its date, made all day). Google cancels it when the series'
- * start moves, and that meeting takes its place.
+ * A series' meetings read for `losesMeetings`: on a day, its rule's (at
+ * most one, as Google meets a rule once a day) and its added ones, each
+ * live or skipped (in its EXDATEs, or by `deleted` original starts).
  */
-function newTimesKeep(params: {
-  /** The fields the edit changed, which the new series' meeting takes. */
-  changes: Partial<CreateEvent>;
-  master: Event;
-  occurrence: Event;
-  originalStart: string;
-  recurrence: string[];
-  times: { end: Event["end"]; start: Event["start"] };
+function seriesDays(params: {
+  deleted: string[];
+  first: Event["start"];
+  lines: string[];
+  zone: string;
+}) {
+  const { first, lines, zone } = params;
+  const begin = first.date
+    ? Temporal.PlainDate.from(first.date)
+    : startInstant(first, zone)?.toZonedDateTimeISO(zone);
+  const readers = begin
+    ? rulesOf(lines).map((rule) => readRule({ first: begin, rule }))
+    : [];
+  const keyOf = (value: RecurrenceValue) =>
+    value.instant ? `${value.instant.epochMilliseconds}` : `${value.day}`;
+  const skips = dateValues(lines, "EXDATE", zone);
+  const dead = new Set([
+    ...skips.map(keyOf),
+    ...params.deleted.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [keyOf(value)] : [];
+    }),
+  ]);
+  const deadDays = new Set(
+    skips.filter((value) => !value.instant).map((value) => `${value.day}`)
+  );
+  const meeting = (value: RecurrenceValue, isAdded: boolean): DayMeeting => ({
+    added: isAdded,
+    dead: dead.has(keyOf(value)) || deadDays.has(`${value.day}`),
+    key: keyOf(value),
+  });
+  const added = dateValues(lines, "RDATE", zone);
+  return {
+    added,
+    keyOf,
+    on: (day: Temporal.PlainDate): DayMeeting[] => {
+      const lo = day.toZonedDateTime({ timeZone: zone }).toInstant();
+      const hi = day
+        .add({ days: 1 })
+        .toZonedDateTime({ timeZone: zone })
+        .toInstant()
+        .subtract({ nanoseconds: 1 });
+      const ruleMeeting = readers
+        .flatMap((reader) => reader?.meetingsBetween(lo, hi) ?? [])
+        .at(0);
+      const adds = added
+        .filter((value) => value.day.equals(day))
+        .map((value) => meeting(value, true));
+      if (!ruleMeeting) {
+        return adds;
+      }
+      const own = meeting(
+        ruleMeeting instanceof Temporal.Instant
+          ? { day, instant: ruleMeeting }
+          : { day: ruleMeeting, instant: null },
+        false
+      );
+      return [
+        { ...own, shared: adds.some((add) => add.key === own.key) },
+        ...adds,
+      ];
+    },
+    /** Whether the rule has a day there, its time apart. */
+    ruleDay: (day: Temporal.PlainDate) =>
+      begin !== undefined &&
+      rulesOf(lines).some(
+        (rule) =>
+          isRuleDay(
+            rule,
+            begin instanceof Temporal.PlainDate ? begin : begin.toPlainDate(),
+            day
+          ) === true
+      ),
+    dead: (key: string) => dead.has(key),
+  };
+}
+
+/**
+ * Whether one day's meetings lose one through a save: each meeting the
+ * day had before (`was`) against its own after (`is`): the rule's against
+ * the rule's (unless the new one is a live added meeting's too: that one
+ * stays its own), an added one against itself, a removed added one
+ * against a rule meeting that takes its day. Made all day, the day is
+ * skipped only when all it had was. A meeting the save adds is live.
+ */
+function dayLoses(params: {
+  is: DayMeeting[];
+  keepsForm: boolean;
+  was: DayMeeting[];
 }): boolean {
-  const { master, occurrence, originalStart, recurrence, times } = params;
-  const slot = placeOnNewStart(originalStart, master, times.start);
-  if (!slot) {
+  const { is, keepsForm, was } = params;
+  if (!keepsForm) {
+    const allDead = was.length > 0 && was.every((meeting) => meeting.dead);
+    return (
+      is.length > 0 &&
+      was.length > 0 &&
+      is.every((meeting) => meeting.dead) !== allDead
+    );
+  }
+  const left = [...is];
+  const take = (find: (meeting: DayMeeting) => boolean) => {
+    const at = left.findIndex(find);
+    return at < 0 ? undefined : left.splice(at, 1)[0];
+  };
+  const differ = (a: DayMeeting, b: DayMeeting | undefined) =>
+    Boolean(b && a.dead !== b.dead);
+  const oldRule = was.find((meeting) => !meeting.added);
+  const newRule = take((meeting) => !meeting.added);
+  const keeps = (meeting: DayMeeting) =>
+    left.some((add) => add.key === meeting.key && !add.dead);
+  if (oldRule && newRule && !(newRule.shared && keeps(newRule))) {
+    if (differ(oldRule, newRule)) {
+      return true;
+    }
+  } else if (newRule && !oldRule) {
+    left.push(newRule);
+  }
+  for (const add of was.filter((meeting) => meeting.added)) {
+    const same = take((meeting) => meeting.added && meeting.key === add.key);
+    const own =
+      same ??
+      (newRule && !oldRule ? take((meeting) => !meeting.added) : undefined);
+    if (differ(add, own)) {
+      return true;
+    }
+  }
+  return left.some((meeting) => meeting.dead && !meeting.shared);
+}
+
+/**
+ * Whether a save that gives a series made in another app (meetings added
+ * outside its repeat, or a set hour in its rule) a new time of day or form
+ * would lose a meeting (`otherAppRepeat`): on a day with a skip, a deleted
+ * occurrence or an added meeting (from `from`, mapped by the start's move
+ * in days), a meeting still on skipped after the save, a skipped or
+ * deleted one back, a rule meeting with no place (the clocks skip its new
+ * time that day).
+ */
+function losesMeetings(params: {
+  /** The occurrences deleted on their own, by original start. */
+  cancelled: string[];
+  /** The start the save moves from: the series' own, or a split's. */
+  from: Event["start"];
+  master: Event;
+  start: Event["start"];
+  written: string[];
+}): boolean {
+  const { cancelled, from, master, start, written } = params;
+  const own = master.recurrence ?? [];
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const otherApp = [...own, ...written].some(
+    (line) =>
+      line.startsWith("RDATE") ||
+      (line.startsWith("RRULE:") && SET_TIME_PART.test(line))
+  );
+  const fromClock = clockOf(from, zone);
+  const toClock = clockOf(start, newZone);
+  const keepsForm = Boolean(from.date) === Boolean(start.date);
+  const retimed =
+    !keepsForm || Boolean(fromClock && toClock && !fromClock.equals(toClock));
+  // A new rule, or added days the save adds or removes, places them too.
+  const placed = (lines: string[]) =>
+    lines
+      .filter((line) => line.startsWith("RRULE:") || line.startsWith("RDATE"))
+      .map((line) => line.replace(END_PARTS, ""))
+      .sort()
+      .join("\n");
+  const replaced = placed(own) !== placed(written);
+  const fromDay = dayOfStart(from, zone);
+  const toDay = dayOfStart(start, newZone);
+  if (!(otherApp && (retimed || replaced) && fromDay && toDay)) {
     return false;
   }
-  const zone = repeatZone(master, times.start);
-  const seriesZone = seriesZoneOf(master);
-  const meeting = seriesSlotAt(times, slot);
-  // Times of its own only if it was moved off its slot (or given its own
-  // length); one at its slot follows the series to the new time. One
-  // moved to the new meeting's start, at the series' length, keeps its
-  // start there, and its length was the series' to change.
-  const ownTimes = "start" in changesOwnTo(occurrence, master, seriesZone);
-  const ownLength = !sameLength(occurrence, master, seriesZone);
-  const timesAtStake =
-    ownTimes && (ownLength || !sameTime(occurrence.start, meeting.start, zone));
-  const own = Object.keys(ownChanges(occurrence, master, meeting, zone)).filter(
-    (field) => timesAtStake || !(field === "start" || field === "end")
+  const shift = fromDay.until(toDay).days;
+  const counted = rulesOf(written).some((rule) => rule.includes("COUNT="));
+  const before = seriesDays({
+    deleted: cancelled,
+    first: master.start,
+    lines: own,
+    zone,
+  });
+  const after = seriesDays({
+    deleted: [],
+    first: start,
+    lines: written,
+    zone: newZone,
+  });
+  const days = new Map<string, Temporal.PlainDate>();
+  for (const value of [
+    ...dateValues(own, "EXDATE", zone),
+    ...before.added,
+    ...cancelled.flatMap((slot) => {
+      const read = readRecurrenceValue(slot, zone, zone);
+      return read ? [read] : [];
+    }),
+  ]) {
+    if (Temporal.PlainDate.compare(value.day, fromDay) >= 0) {
+      days.set(`${value.day}`, value.day);
+    }
+  }
+  return [...days.values()].some((day) => {
+    const moved = day.add({ days: shift });
+    const was = before.on(day);
+    const is = after.on(moved);
+    // A rule meeting with no place: its day kept, its new time not there
+    // (the clocks skip it); a deleted one too under a COUNT, whose place
+    // it held can't be told.
+    const noPlace =
+      keepsForm &&
+      was.some((meeting) => !meeting.added && (counted || !meeting.dead)) &&
+      !is.some((meeting) => !meeting.added) &&
+      after.ruleDay(moved);
+    return noPlace || dayLoses({ is, keepsForm, was });
+  });
+}
+
+/**
+ * A split's rule lined up with its new start (`ruleForStart`), with no
+ * skip at the meeting just saved there (a start moved onto a skipped day,
+ * made all day, would skip it whole); null when that would lose a meeting
+ * of a series made in another app (`losesMeetings`).
+ */
+function splitRuleForStart(params: {
+  cancelled: string[];
+  master: Event;
+  originalStart: string;
+  recurrence: string[];
+  start: Event["start"];
+}): string[] | null {
+  const { master, start } = params;
+  const zone = repeatZone(master, start);
+  const lined = ruleForStart(
+    params.recurrence,
+    master,
+    start,
+    params.originalStart
   );
-  return (
-    seriesMeetsAt({
-      recurrence,
-      seriesZone: zone,
-      slot,
-      start: times.start,
-    }) === true &&
-    own.every(
-      // A value the edit gives the whole series (a cleared one too) is the
-      // new meeting's too.
-      (field) => {
-        // Object.keys loses the key type: each is a CreateEvent field.
-        const value = params.changes[field as keyof CreateEvent];
-        return (
-          Object.hasOwn(params.changes, field) &&
-          Object.keys(changedFields({ [field]: value }, occurrence)).length ===
-            0
-        );
-      }
-    )
-  );
+  const at = readRecurrenceValue(slotOf(start, zone) ?? "", zone, zone);
+  const written = at
+    ? keepingDateValues(
+        lined,
+        "EXDATE",
+        zone,
+        (value) => skipKey(value) !== skipKey(at)
+      )
+    : lined;
+  return losesMeetings({
+    cancelled: params.cancelled,
+    from: asStart(params.originalStart),
+    master,
+    start,
+    written,
+  })
+    ? null
+    : written;
+}
+
+/**
+ * `rule` rewritten for the series' `start` (`matchRecurrenceToStart`):
+ * UNTIL and EXDATE/RDATE in the start's form, the rule's own skips at its
+ * meetings' new times. A split's are read from its original start
+ * (`splitAt`), and a COUNT made all day counts from its time.
+ */
+function ruleForStart(
+  rule: string[],
+  master: Pick<Event, "recurrence" | "start">,
+  start: Event["start"],
+  splitAt?: string
+): string[] {
+  const zone = repeatZone(master, start);
+  const splitClock =
+    splitAt && !DATE_ONLY.test(splitAt)
+      ? Temporal.Instant.from(splitAt).toZonedDateTimeISO(zone).toPlainTime()
+      : null;
+  const before = master.recurrence ?? [];
+  const days =
+    start.date && splitClock
+      ? {
+          before,
+          firstDay: Temporal.PlainDate.from(start.date),
+          firstTime: splitClock,
+        }
+      : { before };
+  const from = splitClock && splitAt ? { dateTime: splitAt } : master.start;
+  return matchRecurrenceToStart(rule, start, zone, from, days);
 }
 
 /**
@@ -861,52 +720,9 @@ function withSeriesSkips(rule: string[], master: Event): string[] {
     rule,
     dateValues(master.recurrence ?? [], "EXDATE", zone)
       .filter((value) => !skippedDays.has(value.day.toString()))
-      .map((value) =>
-        value.instant
-          ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
-          : value.day.toString()
-      ),
+      .map((value) => slotString(value.instant ?? value.day, zone)),
     zone
   );
-}
-
-/**
- * The rules a save writes: the series' own when it sends none, and a rule
- * sent alone with the series' skips and the added days still on, which a
- * client rebuilding the rule may leave out ("Repeat: None" stays none).
- * An added day deleted (`cancelled`) or skipped shows nothing: left out,
- * it goes.
- */
-function savedRule(
-  saved: string[] | undefined,
-  master: Event,
-  cancelled: string[]
-): string[] {
-  if (!saved) {
-    return master.recurrence ?? [];
-  }
-  if (!repeats(saved)) {
-    return saved;
-  }
-  if (saved.some((line) => line.startsWith("RDATE"))) {
-    return withSeriesSkips(saved, master);
-  }
-  const own = master.recurrence ?? [];
-  const zone = seriesZoneOf(master);
-  const gone = new Set([
-    ...dateValues(own, "EXDATE", zone).map(skipKey),
-    ...cancelled.flatMap((slot) => {
-      const value = readRecurrenceValue(slot, zone, zone);
-      return value ? [skipKey(value)] : [];
-    }),
-  ]);
-  const added = keepingDateValues(
-    own.filter((line) => line.startsWith("RDATE")),
-    "RDATE",
-    zone,
-    (value) => !gone.has(skipKey(value))
-  );
-  return withSeriesSkips([...saved, ...added], master);
 }
 
 /**
@@ -926,34 +742,29 @@ function withOneForm(edited: CreateEvent, occurrence: Event): CreateEvent {
   return { ...edited, end: pick(edited.end), start: pick(edited.start) };
 }
 
-/**
- * Whether the series' own rules (not an added day) meet at `slot`; null
- * when a rule can't be read.
- */
-function ruleMeetingAt(slot: string, master: Event): boolean | null {
-  return seriesMeetsAt({
-    recurrence: (master.recurrence ?? []).filter((line) =>
-      line.startsWith("RRULE:")
-    ),
-    seriesZone: seriesZoneOf(master),
-    slot,
-    start: master.start,
-  });
+/** Whether the series' own rules (not an added day) meet at `slot`. */
+function ruleMeetingAt(slot: string, master: Event): boolean {
+  return (
+    seriesMeetsAt({
+      recurrence: rulesOf(master.recurrence ?? []),
+      seriesZone: seriesZoneOf(master),
+      slot,
+      start: master.start,
+    }) === true
+  );
 }
 
 /**
- * A rule meeting's place once the series starts at `start` (it meets once
- * a day): its own day at the new time, or its date made all day. Null if
- * it doesn't parse.
+ * Where an occurrence's place (`slot`, its original start) is once the
+ * series is written as `plan` says: its own day at the new time, or its
+ * date when the series is made all day (a series that meets once a day).
+ * Null if it doesn't parse.
  */
-function placeOnNewStart(
-  slot: string,
-  master: Event,
-  start: Event["start"]
-): string | null {
+function placeIn(slot: string, plan: SeriesPlan): string | null {
+  const { master, times } = plan;
   const day = dayOfStart(asStart(slot), seriesZoneOf(master));
-  const repeatsIn = repeatZone(master, start);
-  const clock = clockOf(start, repeatsIn);
+  const repeatsIn = repeatZone(master, times.start);
+  const clock = clockOf(times.start, repeatsIn);
   if (!day) {
     return null;
   }
@@ -962,78 +773,6 @@ function placeOnNewStart(
         day.toZonedDateTime({ plainTime: clock, timeZone: repeatsIn })
       )
     : day.toString();
-}
-
-/**
- * Whether the saved series has `place`, or ends before it: a meeting past
- * its new end goes with the rest, not lost.
- */
-function keptOrEnded(params: {
-  master: Event;
-  place: string;
-  recurrence: string[];
-  start: Event["start"];
-}): boolean {
-  const { master, place, start } = params;
-  const seriesZone = repeatZone(master, start);
-  // Read without skips: the save's own skip for it is already there.
-  const rules = params.recurrence.filter((line) => line.startsWith("RRULE:"));
-  const unbounded = rules.map(withoutEnd);
-  const meets = (recurrence: string[]) =>
-    seriesMeetsAt({ recurrence, seriesZone, slot: place, start }) === true;
-  return meets(rules) || meets(unbounded);
-}
-
-/**
- * The rule meetings deleted on their own, or, after a day move, skipped in
- * the rule (EXDATE) by a skip the save sends as it was, whose place after
- * a new start (where `lineUpRule` skips them) isn't one of the saved
- * series': after a first meeting's day move under a rule whose days follow
- * its start (monthly on the start's date, say), the meeting now in its
- * place would come back. A skip the client moved or dropped was placed by
- * it; one on a start that keeps its day stays on its meeting's day.
- */
-function deletedLost(params: {
-  cancelled: string[];
-  master: Event;
-  recurrence: string[];
-  /** The rules the save sends; left out, the series' own. */
-  saved: string[] | undefined;
-  times: { end: Event["end"]; start: Event["start"] };
-}): string[] {
-  const { master, recurrence, times } = params;
-  const zone = seriesZoneOf(master);
-  const own = master.recurrence ?? [];
-  const sent = new Set(
-    dateValues(params.saved ?? own, "EXDATE", zone).map(skipKey)
-  );
-  const day = newStartDay(master, times.start);
-  const movesDay = !day?.equals(dayOfStart(master.start, zone) ?? day);
-  const ruleSkips = dateValues(movesDay ? own : [], "EXDATE", zone)
-    .filter((value) => sent.has(skipKey(value)))
-    .map((value) =>
-      value.instant
-        ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
-        : value.day.toString()
-    );
-  const first = momentOf(times.start, repeatZone(master, times.start));
-  return [...new Set([...params.cancelled, ...ruleSkips])].filter((slot) => {
-    const ruleMet = ruleMeetingAt(slot, master);
-    const place =
-      ruleMet === false ? null : placeOnNewStart(slot, master, times.start);
-    const at =
-      place && momentOf(asStart(place), repeatZone(master, times.start));
-    // Before the new start, the series has no meeting to bring back.
-    if (!(place && at && first) || Temporal.Instant.compare(at, first) < 0) {
-      return false;
-    }
-    // A rule that can't be read can't tell where its meeting went: lost,
-    // as a changed one there is.
-    return (
-      ruleMet === null ||
-      !keptOrEnded({ master, place, recurrence, start: times.start })
-    );
-  });
 }
 
 /**
@@ -1050,13 +789,9 @@ function deletedLost(params: {
 function endedRepeat(params: {
   cancelled: string[];
   changed: { occurrence: Event; originalStart: string }[];
-  changes: Partial<CreateEvent>;
-  edited: CreateEvent;
-  master: Event;
-  opened: Event;
-  times: { end: Event["end"]; start: Event["start"] };
+  plan: SeriesPlan;
 }): { carried: Partial<CreateEvent>; lost: string[] } {
-  const { master, times } = params;
+  const { changes, edited, master, opened, times } = params.plan;
   const zone = seriesZoneOf(master);
   const firstSlot = slotOf(master.start, zone);
   const first = momentOf(master.start, zone);
@@ -1080,17 +815,15 @@ function endedRepeat(params: {
       lost.push(originalStart);
       continue;
     }
-    // All its own changes, its times too even where the save sets times:
-    // own times the save would override are lost (below).
     const { end, start, ...own } = changesOwnTo(occurrence, master, zone);
     const fields = Object.fromEntries(
-      Object.entries(own).filter(([field]) => !(field in params.changes))
+      Object.entries(own).filter(([field]) => !(field in changes))
     );
-    if (occurrence.id === params.opened.id) {
+    if (occurrence.id === opened.id) {
       carried = {
         ...fields,
-        end: inSeriesZone(params.edited.end, master.end),
-        start: inSeriesZone(params.edited.start, master.start),
+        end: inSeriesZone(edited.end, master.end),
+        start: inSeriesZone(edited.start, master.start),
       };
     } else if (!(start && end)) {
       carried = fields;
@@ -1108,19 +841,16 @@ function endedRepeat(params: {
 }
 
 /**
- * `rule` without a skip at the series' `start` moved to another day that
- * the save didn't add (`saved`, the rules it sends): one the series had
+ * `rule` without a skip at the series' new start, moved to another day,
+ * that the save didn't add (in the rules it sends): one the series had
  * there, or one placed there for a deleted meeting, was another meeting's
  * (a Wednesday deleted, the first Monday moved onto it), and the meeting
  * just placed there stays. A skip the save adds there is the user's; on
  * the start's own day, a skip there is the first meeting's.
  */
-function withoutOwnSkipAt(
-  rule: string[],
-  master: Event,
-  start: Event["start"],
-  saved: string[] | undefined
-): string[] {
+function withoutOwnSkipAt(rule: string[], plan: SeriesPlan): string[] {
+  const { master } = plan;
+  const { start } = plan.times;
   const zone = seriesZoneOf(master);
   const day = newStartDay(master, start);
   if (!day || day.equals(dayOfStart(master.start, zone) ?? day)) {
@@ -1132,222 +862,388 @@ function withoutOwnSkipAt(
       ? Boolean(at && Temporal.Instant.compare(value.instant, at) === 0)
       : value.day.toString() === start.date;
   const added =
-    dateValues(saved ?? [], "EXDATE", zone).some(onStart) &&
+    dateValues(plan.edited.recurrence ?? [], "EXDATE", zone).some(onStart) &&
     !dateValues(master.recurrence ?? [], "EXDATE", zone).some(onStart);
   return added
     ? rule
     : keepingDateValues(rule, "EXDATE", zone, (value) => !onStart(value));
 }
 
-/**
- * What an Entire series save writes of `rule` once the occurrences changed
- * or deleted on their own are read, and what it carries of the first
- * meeting when it ends the repeat (`endedRepeat`); or why it's refused.
- */
-function keptAfterEdit(params: {
-  cancelled: string[];
-  changed: { occurrence: Event; originalStart: string }[];
-  changes: Partial<CreateEvent>;
-  edited: CreateEvent;
-  master: Event;
-  movesSlots: boolean;
-  /** Whether the save moves the series' start (`updateEventAll`). */
-  movesStart: boolean;
-  opened: Event;
-  rule: string[];
-  times: { end: Event["end"]; start: Event["start"] };
-}): SeriesRefusal | { carried: Partial<CreateEvent>; recurrence: string[] } {
-  const { cancelled, master, rule, times } = params;
-  if (!repeats(rule)) {
-    const { carried, lost } = endedRepeat(params);
-    return lost.length > 0
-      ? unsureWhere(
-          naming("dropsChangedOccurrences", lost, true),
-          params.master.recurrence ?? []
-        )
-      : { carried, recurrence: [] };
-  }
-  // Rewritten in the new start's form, with a deleted occurrence's skip
-  // lined up where its meeting now is (`lineUpRule`), none of the series'
-  // own on a first meeting moved to another day.
-  // A rule change alone keeps a deleted rule meeting's slot, or drops it:
-  // either way it needs no skip. A deleted added day's may become the
-  // rule's, and stays skipped.
-  const zone = seriesZoneOf(master);
-  const { movesStart } = params;
-  const recurrence = params.movesSlots
-    ? withoutOwnSkipAt(
-        lineUpRule({
-          cancelled: movesStart
-            ? cancelled
-            : cancelled.filter((slot) =>
-                addsSlot(master.recurrence ?? [], slot, zone)
-              ),
-          master,
-          rule,
-          start: times.start,
-        }),
-        master,
-        times.start,
-        params.edited.recurrence
-      )
-    : rule;
-  return (
-    seriesChangeRefusal({
-      ...params,
-      recurrence,
-      saved: params.edited.recurrence,
-    }) ?? { carried: {}, recurrence }
-  );
-}
-
-/**
- * Why an Entire series write would cost the occurrences changed on their
- * own (`changed`) their changes; null if it wouldn't. Google ties each to
- * its original slot: it cancels all of them when the series' start moves
- * (one the new series meets at its own times loses nothing), and each
- * whose slot the new rule drops. A length-only change keeps them but gives
- * each the new length (the opened one takes the edit's, and one that
- * already has it loses nothing, so neither is counted).
- */
-function seriesChangeRefusal(params: {
-  /** The occurrences deleted on their own, by original start. */
-  cancelled: string[];
-  changed: { occurrence: Event; originalStart: string }[];
+/** An Entire series save, worked out once from the edit. */
+interface SeriesPlan {
   /** The fields the edit changed, as the series is written with them. */
   changes: Partial<CreateEvent>;
   /** The form as sent, for what the opened occurrence was given. */
   edited: CreateEvent;
   master: Event;
-  /** Whether the start or the rule changes (else only the length). */
+  /** The start or the rules move, so an occurrence's slot may go. */
   movesSlots: boolean;
-  /** Whether the save moves the series' start. */
+  /** The start moves: Google cancels every occurrence's own changes. */
   movesStart: boolean;
   opened: Event;
+  /** The rules written; skips for deleted occurrences come in `afterSave`. */
   recurrence: string[];
-  /** The rules the save sends; left out, the series' own. */
-  saved: string[] | undefined;
+  /** Only a whole series takes the save: a new repeat. */
+  seriesOnly: boolean;
   times: { end: Event["end"]; start: Event["start"] };
-}): SeriesRefusal | null {
-  const { changed, master, movesSlots, movesStart, opened, recurrence, times } =
-    params;
+}
+
+/** The plan of an Entire series save (`SeriesPlan`), worked out once. */
+function seriesPlan(
+  params: Pick<SeriesPlan, "changes" | "edited" | "master" | "opened" | "times">
+): SeriesPlan {
+  const { edited, master, times } = params;
   const zone = seriesZoneOf(master);
-  const seriesOnly = givesNewRepeat({
-    from: master.start,
-    master,
-    saved: params.saved,
-    start: times.start,
-  });
-  const lost = changed
-    .filter(({ occurrence, originalStart }) => {
-      if (movesStart && occurrence.id === opened.id) {
-        // The edit replaces its time and the fields it changes, but not a
-        // day of its own, which Google would give back to the series,
-        // unless it's the first meeting and the series moves to its day.
-        const ownDay = dayOfStart(occurrence.start, zone);
-        const first = opensSeries(occurrence, master);
-        const newDay = newStartDay(master, times.start);
-        // A first meeting whose day the series takes, or is given, keeps it.
-        const firstDayKept =
-          first &&
-          (ownDay?.equals(newDay ?? ownDay) ||
-            !newDay?.equals(dayOfStart(master.start, zone) ?? newDay));
-        const movedDay = !(
-          firstDayKept ||
-          ownDay?.equals(dayOfStart(asStart(originalStart), zone) ?? ownDay)
-        );
-        // The saved series must still meet in its place (the first
-        // meeting's is the new start, unless the save skips it).
-        const repeatsIn = repeatZone(master, times.start);
-        const startSlot = slotOf(times.start, repeatsIn);
-        const place = first
-          ? startSlot
-          : placeOnNewStart(originalStart, master, times.start);
-        // Read with the saved end and skips: the opened one isn't past an
-        // end the save sets, which would drop it.
-        const meetsThere =
-          place !== null &&
-          seriesMeetsAt({
-            recurrence,
-            seriesZone: repeatsIn,
-            slot: place,
-            start: times.start,
-          });
-        // An exclusion rule may drop even the series' start.
-        const replaced = meetsThere === true;
-        // A field of its own the series takes is kept only when the series
-        // is written with what the form gave it (a guest list merged into
-        // the series' own isn't).
-        const takes = (field: keyof CreateEvent) =>
-          field in params.changes &&
-          Object.keys(
-            changedFields({ [field]: params.changes[field] }, {
-              ...occurrence,
-              ...params.edited,
-            } as Event)
-          ).length === 0;
-        return (
-          movedDay ||
-          !replaced ||
-          Object.keys(changesOwnTo(occurrence, master, zone)).some(
-            (field) =>
-              field !== "start" &&
-              field !== "end" &&
-              // Object.keys loses the key type: each is a CreateEvent field.
-              !takes(field as keyof CreateEvent)
-          )
-        );
-      }
-      if (movesStart) {
-        return !newTimesKeep({
-          changes: params.changes,
-          master,
-          occurrence,
-          originalStart,
-          recurrence,
-          times,
-        });
-      }
-      return (
-        movesSlots &&
-        seriesMeetsAt({
-          recurrence,
-          seriesZone: repeatZone(master, times.start),
-          slot: originalStart,
-          start: times.start,
-        }) !== true
-      );
-    })
-    .map(({ originalStart }) => originalStart);
-  // A new repeat places its meetings anew, a deleted one's place too:
-  // only the series' own rule, moved, can bring one back.
-  if (movesStart && !seriesOnly) {
-    lost.push(...deletedLost(params));
+  const movesStart = !sameTime(times.start, master.start, zone);
+  // Left out keeps the series' pattern; an empty list ends it ("Repeat:
+  // None").
+  const rule = edited.recurrence
+    ? withSeriesSkips(edited.recurrence, master)
+    : (master.recurrence ?? []);
+  // Read for what it means: the series' own skips, written again in
+  // another form, aren't a new rule.
+  const movesSlots =
+    movesStart ||
+    recurrenceValues(rule, zone) !==
+      recurrenceValues(master.recurrence ?? [], zone);
+  return {
+    ...params,
+    movesSlots,
+    movesStart,
+    // Moved, its skips go to their meetings' new times, in the start's
+    // form; a save that keeps its slots writes its values as they were.
+    recurrence:
+      movesSlots && repeats(rule)
+        ? ruleForStart(rule, master, times.start)
+        : rule,
+    seriesOnly: givesNewRepeat({
+      from: master.start,
+      master,
+      saved: edited.recurrence,
+      start: times.start,
+    }),
+  };
+}
+
+/**
+ * An occurrence with something of its own: changed, deleted on its own,
+ * or skipped in the rule (EXDATE) and sent as it was by a save that moves
+ * the first meeting's day.
+ */
+type SeriesException =
+  | { kind: "changed"; occurrence: Event; originalStart: string }
+  | { kind: "deleted"; originalStart: string }
+  | { kind: "ruleSkip"; originalStart: string };
+
+/** What a save does to an occurrence's own changes or deletion. */
+type Fate =
+  /** Google keeps it as it is. */
+  | { kind: "kept" }
+  /** The new meeting in its place has all it changed. */
+  | { kind: "replaced" }
+  /** A deleted one, skipped again where its meeting now is. */
+  | { kind: "skip"; at: string }
+  /** What it changed, or its deletion, would be undone. */
+  | { kind: "lost" }
+  /** A new length would overwrite its own. */
+  | { kind: "resized" };
+
+/** Whether the series written as `plan` meets at `slot`. */
+function plannedMeetsAt(slot: string, plan: SeriesPlan): boolean {
+  return (
+    seriesMeetsAt({
+      recurrence: plan.recurrence,
+      seriesZone: repeatZone(plan.master, plan.times.start),
+      slot,
+      start: plan.times.start,
+    }) === true
+  );
+}
+
+/**
+ * Whether a rule meeting deleted or skipped at `slot` would come back: its
+ * place after the new start isn't one of the written rules' meetings (read
+ * without their end, as one past it goes with the rest), so the meeting
+ * now there in its stead isn't skipped (a first meeting moved under a rule
+ * whose days follow its start, say). A new repeat places every meeting
+ * anew, so nothing of the old one comes back.
+ */
+function comesBack(slot: string, plan: SeriesPlan): boolean {
+  const { master, times } = plan;
+  const repeatsIn = repeatZone(master, times.start);
+  const place = ruleMeetingAt(slot, master) ? placeIn(slot, plan) : null;
+  const at = place && momentOf(asStart(place), repeatsIn);
+  const first = momentOf(times.start, repeatsIn);
+  // Before the new start, the series has no meeting to bring back.
+  if (
+    plan.seriesOnly ||
+    !(place && at && first) ||
+    Temporal.Instant.compare(at, first) < 0
+  ) {
+    return false;
   }
+  return (
+    seriesMeetsAt({
+      recurrence: rulesOf(plan.recurrence).map(withoutEnd),
+      seriesZone: repeatsIn,
+      slot: place,
+      start: times.start,
+    }) !== true
+  );
+}
+
+/**
+ * The fields `occurrence` changed on its own that the new meeting in its
+ * place (`place`) must have for nothing to be lost. The opened one's own
+ * times are the edit's; its own day isn't, as Google gives it back to the
+ * series (null), unless it's the first meeting and the series takes its
+ * day. Another's times are at stake only if it was moved off its slot (or
+ * given its own length): one at its slot follows the series to the new
+ * time, and one moved to the new meeting's start at the series' length
+ * keeps its start there, its length the series' to change.
+ */
+function ownAtStake(params: {
+  occurrence: Event;
+  originalStart: string;
+  place: string;
+  plan: SeriesPlan;
+}): string[] | null {
+  const { occurrence, originalStart, place, plan } = params;
+  const { master, times } = plan;
+  const seriesZone = seriesZoneOf(master);
+  const repeatsIn = repeatZone(master, times.start);
+  if (occurrence.id === plan.opened.id) {
+    const ownDay = dayOfStart(occurrence.start, seriesZone);
+    const newDay = newStartDay(master, times.start);
+    const firstDayKept =
+      opensSeries(occurrence, master) &&
+      (ownDay?.equals(newDay ?? ownDay) ||
+        !newDay?.equals(dayOfStart(master.start, seriesZone) ?? newDay));
+    const movedDay = !(
+      firstDayKept ||
+      ownDay?.equals(dayOfStart(asStart(originalStart), seriesZone) ?? ownDay)
+    );
+    return movedDay
+      ? null
+      : Object.keys(changesOwnTo(occurrence, master, seriesZone)).filter(
+          (field) => field !== "start" && field !== "end"
+        );
+  }
+  const meeting = seriesSlotAt(times, place);
+  const timesAtStake =
+    "start" in changesOwnTo(occurrence, master, seriesZone) &&
+    !(
+      sameLength(occurrence, master, seriesZone) &&
+      sameTime(occurrence.start, meeting.start, repeatsIn)
+    );
+  return Object.keys(ownChanges(occurrence, master, meeting, repeatsIn)).filter(
+    (field) => timesAtStake || !(field === "start" || field === "end")
+  );
+}
+
+/**
+ * What an Entire series save (`plan`) does to `exception`. Google ties
+ * each to its original slot: a new start cancels every changed one (the
+ * new meeting in its place keeps what the save gives it) and brings back
+ * every deleted one (skipped again at its place); a rule without its slot
+ * drops it; a new length overwrites a length of its own.
+ */
+function fateOf(exception: SeriesException, plan: SeriesPlan): Fate {
+  switch (exception.kind) {
+    case "changed":
+      return changedFate(exception.occurrence, exception.originalStart, plan);
+    case "deleted":
+      return deletedFate(exception.originalStart, plan);
+    case "ruleSkip":
+      return comesBack(exception.originalStart, plan)
+        ? { kind: "lost" }
+        : { kind: "kept" };
+    default:
+      return exception satisfies never;
+  }
+}
+
+/** A deleted occurrence's fate (`fateOf`). */
+function deletedFate(slot: string, plan: SeriesPlan): Fate {
+  const { master, times } = plan;
+  if (!plan.movesStart) {
+    return { kind: "kept" };
+  }
+  if (comesBack(slot, plan)) {
+    return { kind: "lost" };
+  }
+  // An added (RDATE) meeting's skip stays where it was, unless the series
+  // changes form.
+  const keepsForm = Boolean(master.start.date) === Boolean(times.start.date);
+  const moves = ruleMeetingAt(slot, master) || !keepsForm;
+  return { at: (moves && placeIn(slot, plan)) || slot, kind: "skip" };
+}
+
+/** A changed occurrence's fate (`fateOf`). */
+function changedFate(
+  occurrence: Event,
+  originalStart: string,
+  plan: SeriesPlan
+): Fate {
+  const { master, times } = plan;
+  const seriesZone = seriesZoneOf(master);
+  const opened = occurrence.id === plan.opened.id;
+  // A length of its own the new length overwrites (the opened one takes
+  // the edit's, and one that already has it loses nothing).
+  const resized = !(
+    opened ||
+    sameLength(times, master, seriesZone) ||
+    sameLength(occurrence, master, seriesZone) ||
+    sameLength(occurrence, times, seriesZone)
+  );
+  const unlessResized = (fate: Fate): Fate =>
+    resized ? { kind: "resized" } : fate;
+  if (!plan.movesStart) {
+    return plan.movesSlots && !plannedMeetsAt(originalStart, plan)
+      ? { kind: "lost" }
+      : unlessResized({ kind: "kept" });
+  }
+  // The first meeting's place is the new start.
+  const place =
+    opened && opensSeries(occurrence, master)
+      ? slotOf(times.start, repeatZone(master, times.start))
+      : placeIn(originalStart, plan);
+  const own =
+    place && plannedMeetsAt(place, plan)
+      ? ownAtStake({ occurrence, originalStart, place, plan })
+      : null;
+  // A value the save gives the whole series (a cleared one too) is the new
+  // meeting's too; for the opened one, as the form showed it.
+  const shown = opened
+    ? ({ ...occurrence, ...plan.edited } as Event)
+    : occurrence;
+  const kept = own?.every(
+    (field) =>
+      Object.hasOwn(plan.changes, field) &&
+      Object.keys(
+        changedFields(
+          // Object.keys loses the key type: each is a CreateEvent field.
+          { [field]: plan.changes[field as keyof CreateEvent] },
+          shown
+        )
+      ).length === 0
+  );
+  return kept ? unlessResized({ kind: "replaced" }) : { kind: "lost" };
+}
+
+/** The refusal a fate asks for, if any. */
+function refusalFor(
+  fate: Fate
+): "dropsChangedOccurrences" | "resizesChangedOccurrences" | null {
+  switch (fate.kind) {
+    case "lost":
+      return "dropsChangedOccurrences";
+    case "resized":
+      return "resizesChangedOccurrences";
+    case "kept":
+    case "replaced":
+    case "skip":
+      return null;
+    default:
+      return fate satisfies never;
+  }
+}
+
+/**
+ * The rule meetings skipped in the rule (EXDATE) that a save moving the
+ * first meeting's day sends as they were: they stay where they are, so a
+ * meeting moved into one's place may come back (`comesBack`).
+ */
+function ruleSkipsKept(plan: SeriesPlan): SeriesException[] {
+  const { master, times } = plan;
+  const zone = seriesZoneOf(master);
+  const own = master.recurrence ?? [];
+  const day = newStartDay(master, times.start);
+  if (day?.equals(dayOfStart(master.start, zone) ?? day)) {
+    return [];
+  }
+  const sent = new Set(
+    dateValues(plan.edited.recurrence ?? own, "EXDATE", zone).map(skipKey)
+  );
+  return dateValues(own, "EXDATE", zone)
+    .filter((value) => sent.has(skipKey(value)))
+    .map((value) => ({
+      kind: "ruleSkip",
+      originalStart: slotString(value.instant ?? value.day, zone),
+    }));
+}
+
+/**
+ * What an Entire series save writes once each occurrence changed or
+ * deleted on its own has its fate (`fateOf`): the rules with a deleted
+ * one's skip at its new place, or a refusal naming those it would lose
+ * or resize. A save that ends the repeat ("Repeat: None") carries the
+ * first meeting's own changes into the event left (`endedRepeat`).
+ */
+function afterSave(params: {
+  cancelled: string[];
+  changed: { occurrence: Event; originalStart: string }[];
+  plan: SeriesPlan;
+}): SeriesRefusal | { carried: Partial<CreateEvent>; recurrence: string[] } {
+  const { cancelled, changed, plan } = params;
+  const own = plan.master.recurrence ?? [];
+  if (!repeats(plan.recurrence)) {
+    const { carried, lost } = endedRepeat(params);
+    return lost.length > 0
+      ? unsureWhere(naming("dropsChangedOccurrences", lost, true), own)
+      : { carried, recurrence: [] };
+  }
+  const deleted: SeriesException[] = [
+    ...cancelled.map(
+      (originalStart): SeriesException => ({ kind: "deleted", originalStart })
+    ),
+    ...ruleSkipsKept(plan),
+  ];
+  // Deleted ones first: their skips are part of what the changed ones are
+  // read against.
+  const deletedFates = deleted.map((exception) => ({
+    exception,
+    fate: fateOf(exception, plan),
+  }));
+  const skips = deletedFates.flatMap(({ fate }) =>
+    fate.kind === "skip" ? [fate.at] : []
+  );
+  const recurrence = plan.movesStart
+    ? withoutOwnSkipAt(
+        skipping(plan.recurrence, skips, seriesZoneOf(plan.master)),
+        plan
+      )
+    : plan.recurrence;
+  const written = { ...plan, recurrence };
+  const fates = [
+    ...changed.map(({ occurrence, originalStart }) => {
+      const exception: SeriesException = {
+        kind: "changed",
+        occurrence,
+        originalStart,
+      };
+      return { exception, fate: fateOf(exception, written) };
+    }),
+    ...deletedFates,
+  ];
+  const named = (reason: ReturnType<typeof refusalFor>) => [
+    ...new Set(
+      fates
+        .filter(({ fate }) => refusalFor(fate) === reason)
+        .map(({ exception }) => exception.originalStart)
+    ),
+  ];
+  const lost = named("dropsChangedOccurrences");
   if (lost.length > 0) {
-    const refusal = naming("dropsChangedOccurrences", lost, seriesOnly);
-    const lines = [...(master.recurrence ?? []), ...recurrence];
-    // A new start cancels them whatever the rule says; only whether one is
-    // replaced (an exclusion rule may drop it) can be unsure then.
     return unsureWhere(
-      refusal,
-      movesStart ? lines.filter((line) => line.startsWith("EXRULE")) : lines
+      naming("dropsChangedOccurrences", lost, plan.seriesOnly),
+      [...own, ...recurrence]
     );
   }
-  if (sameLength(times, master, zone)) {
-    return null;
-  }
-  const resized = changed
-    .filter(
-      ({ occurrence }) =>
-        occurrence.id !== opened.id &&
-        !sameLength(occurrence, master, zone) &&
-        !sameLength(occurrence, times, zone)
-    )
-    .map(({ originalStart }) => originalStart);
+  const resized = named("resizesChangedOccurrences");
   return resized.length > 0
-    ? naming("resizesChangedOccurrences", resized, seriesOnly)
-    : null;
+    ? naming("resizesChangedOccurrences", resized, plan.seriesOnly)
+    : { carried: {}, recurrence };
 }
 
 /**
@@ -1365,7 +1261,7 @@ function movesSeveralADay(params: {
 }): boolean {
   const { edited, master, occurrence, start } = params;
   const zone = seriesZoneOf(master);
-  const from = clockOf(master.start, zone);
+  const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
   const was = clockOf(occurrence.start, zone);
   const now = clockOf(edited.start, zone);
   // Made all day, its times go too.
@@ -1374,21 +1270,18 @@ function movesSeveralADay(params: {
     Boolean(start.date) ||
     Boolean(was && now && !was.equals(now));
   return Boolean(
-    from && moves && meetsSeveralTimesADay(master.recurrence ?? [], from)
+    first &&
+      moves &&
+      meetsSeveralTimesADay({ first, recurrence: master.recurrence ?? [] })
   );
-}
-
-/** A slot's moment (a date's start, in `zone`); null if it doesn't parse. */
-function slotMoment(slot: string, zone: string): Temporal.Instant | null {
-  return momentOf(asStart(slot), zone);
 }
 
 /**
  * `master`'s exceptions in Google's listing, all or those after `after`
  * (an original start): the cancelled ones' original starts, and the moved
  * or edited ones the series still meets in the place of (one Google
- * detached, its slot gone, has no changes at stake; one whose rule can't
- * be read counts).
+ * detached, its slot gone, has no changes at stake; one an exclusion rule
+ * may have dropped counts).
  */
 function sortExceptions(
   events: SeriesListing[],
@@ -1405,10 +1298,10 @@ function sortExceptions(
         ? slotOf(event.originalStartTime, zone)
         : null;
     const moment = originalStart && slotMoment(originalStart, zone);
-    if (!(originalStart && moment)) {
-      continue;
-    }
-    if (from && Temporal.Instant.compare(moment, from) <= 0) {
+    if (
+      !(originalStart && moment) ||
+      (from && Temporal.Instant.compare(moment, from) <= 0)
+    ) {
       continue;
     }
     if (event.status === "cancelled" || !("start" in event)) {
@@ -1446,22 +1339,15 @@ const SeriesListingSchema = z.array(
 );
 type SeriesListing = z.infer<typeof SeriesListingSchema>[number];
 
-/** An occurrence's own changes to put back on a new series, and where. */
-interface CarriedOccurrence {
-  /** Its slot in the new series (its original start there). */
-  at: string;
-  changes: Partial<CreateEvent>;
-}
-
 /**
- * `occurrence`'s own changes (see `ownChanges`) less the fields `edited`
- * sets for its whole series, which the series carries.
+ * `occurrence`'s own changes (see `ownChanges`), from its original start,
+ * less the fields `edited` sets for its whole series, which the series
+ * carries.
  */
 function changesOwnTo(
   occurrence: Event,
   master: Event,
   zone: string,
-  /** Fields the edit sets for its whole series, left out. */
   edited: Partial<CreateEvent> = {}
 ): Partial<CreateEvent> {
   const originalStart = originalStartOf(occurrence, zone);
@@ -1482,6 +1368,82 @@ function changesOwnTo(
   return Object.fromEntries(
     Object.entries(own).filter(([field]) => !(field in edited))
   );
+}
+
+// -- This and following --
+
+/**
+ * Whether a failed Google write may still have gone through: Google never
+ * answered it (a timeout, a dropped connection), or answered with a server
+ * error.
+ */
+function mayGoThrough(error: GoogleApiError): boolean {
+  return (
+    error.cause instanceof APIConnectionError ||
+    error.cause instanceof InternalServerError
+  );
+}
+
+/** Google's reasons for turning a request away for now (as a 403). */
+const RATE_LIMITED = /"(?:userR|r)ateLimitExceeded"/;
+
+/**
+ * Whether Google turned a write away for now: a rate limit (a 429, or a
+ * 403 that names one) or a request timeout.
+ */
+function turnedAwayForNow(error: GoogleApiError): boolean {
+  const { cause } = error;
+  if (cause instanceof RateLimitError) {
+    return true;
+  }
+  if (!(cause instanceof APIError)) {
+    return false;
+  }
+  return (
+    cause.status === 408 ||
+    (cause.status === 403 && RATE_LIMITED.test(JSON.stringify(cause.error)))
+  );
+}
+
+/**
+ * A split's writes tried again, after a growing wait, on a failure that
+ * may clear: one that may still have gone through, or one Google turned
+ * away for now.
+ */
+const WRITE_RETRIES = {
+  schedule: Schedule.exponential("200 millis"),
+  times: 2,
+  while: (error: GoogleApiError) =>
+    mayGoThrough(error) || turnedAwayForNow(error),
+};
+
+/**
+ * Refuses "This and following" where a new series can't start: at an
+ * added meeting, or in a series with several rules. Null when it can.
+ */
+function splitBlockedError(
+  master: Event,
+  originalStart: string
+): GoogleApiError | null {
+  const blocked = followingSplitBlocked({
+    masterRecurrence: master.recurrence,
+    masterStart: master.start,
+    originalStart,
+    seriesZone: seriesZoneOf(master),
+  });
+  return blocked ? refused({ reason: blocked }) : null;
+}
+
+/** A slot's moment (a date's start, in `zone`); null if it doesn't parse. */
+function slotMoment(slot: string, zone: string): Temporal.Instant | null {
+  return momentOf(asStart(slot), zone);
+}
+
+/** An occurrence's own changes to put back on a new series, and where. */
+interface CarriedOccurrence {
+  /** Its slot in the new series (its original start there). */
+  at: string;
+  changes: Partial<CreateEvent>;
 }
 
 /**
@@ -1535,312 +1497,6 @@ function onDay(
 }
 
 /**
- * Whether a meeting of the old series after the split, one not deleted or
- * skipped, lands at `place` in the new series (`carriedSlot`), where a
- * deleted one's skip would cancel it: two rule days folded into one
- * (Mondays and Wednesdays made Wednesdays), or an hourly meeting the
- * split's move carries onto another's place. It's the meeting the split's
- * change of time brings there on `place`'s own day, or the one its whole
- * move brings there (by day, all day).
- */
-function liveMeetingLandsAt(params: {
-  cancelled: string[];
-  master: Event;
-  originalStart: string;
-  place: string;
-  /** The new series' rule, without skips. */
-  recurrence: string[];
-  splitStart: string;
-  start: Event["start"];
-}): boolean {
-  const { master, place, start } = params;
-  const oldZone = seriesZoneOf(master);
-  const newZone = repeatZone(master, start);
-  const opened = asStart(params.originalStart);
-  const split = slotMoment(params.originalStart, oldZone);
-  if (!split) {
-    return false;
-  }
-  const candidates = new Set([
-    ...liveCandidates({ opened, oldZone, newZone, place, start }),
-    ...periodCandidates({ master, newZone, oldZone, opened, place }),
-  ]);
-  return [...candidates].some((slot) => {
-    const at = slotMoment(slot, oldZone);
-    if (
-      !(slot && at) ||
-      Temporal.Instant.compare(at, split) <= 0 ||
-      params.cancelled.includes(slot) ||
-      seriesMeetsAt({
-        recurrence: master.recurrence ?? [],
-        seriesZone: oldZone,
-        slot,
-        start: master.start,
-      }) !== true
-    ) {
-      return false;
-    }
-    const lands = carriedSlot({
-      master,
-      recurrence: params.recurrence,
-      slot: inFormOf(slot, start, newZone) ?? slot,
-      splitStart: params.splitStart,
-      start,
-    });
-    return lands !== null && inFormOf(lands, start, newZone) === place;
-  });
-}
-
-/**
- * The old series' slots a split could carry to `place`: the one its change
- * of time brings there on `place`'s own day, and the one its whole move
- * (from the opened occurrence, `opened`, to `start`) brings there. By day
- * when either is all day.
- */
-function liveCandidates(params: {
-  newZone: string;
-  oldZone: string;
-  opened: Event["start"];
-  place: string;
-  start: Event["start"];
-}): string[] {
-  const { newZone, oldZone, opened, place, start } = params;
-  const wall = (time: Event["start"], zone: string) =>
-    momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime() ?? null;
-  const at = DATE_ONLY.test(place) ? null : wall(asStart(place), newZone);
-  const from = opened.dateTime ? wall(opened, oldZone) : null;
-  const to = start.dateTime ? wall(start, newZone) : null;
-  if (at && from && to) {
-    const change = from.toPlainTime().until(to.toPlainTime());
-    return [
-      at.toPlainDate().toPlainDateTime(at.toPlainTime().subtract(change)),
-      at.subtract(from.until(to)),
-    ].map((time) =>
-      googleDateTime(time.toZonedDateTime(oldZone, { disambiguation: "later" }))
-    );
-  }
-  const day = dayOfStart(asStart(place), newZone);
-  const fromDay = dayOfStart(opened, oldZone);
-  const toDay = dayOfStart(start, newZone);
-  if (!(day && fromDay && toDay)) {
-    return [];
-  }
-  return [day, day.subtract({ days: fromDay.until(toDay).days })].flatMap(
-    (candidate) => {
-      const formed = onDay(opened, candidate, oldZone);
-      const slot = formed && slotOf(formed, oldZone);
-      return slot ? [slot] : [];
-    }
-  );
-}
-
-/** A rule that repeats by month or by year. */
-const BY_PERIOD = /FREQ=(MONTHLY|YEARLY)/;
-
-/**
- * A monthly or yearly series' meetings in `place`'s month (or year), at
- * the opened occurrence's time: any may keep its place in its period onto
- * `place` (`samePlaceInPeriod`). None for other series.
- */
-function periodCandidates(params: {
-  master: Event;
-  newZone: string;
-  oldZone: string;
-  opened: Event["start"];
-  place: string;
-}): string[] {
-  const { master, oldZone, opened } = params;
-  const rule = (master.recurrence ?? []).find((line) =>
-    line.startsWith("RRULE:")
-  );
-  const freq = rule && BY_PERIOD.exec(rule)?.[1];
-  const day = dayOfStart(asStart(params.place), params.newZone);
-  const first = dayOfStart(master.start, oldZone);
-  if (!(rule && freq && day && first)) {
-    return [];
-  }
-  const from =
-    freq === "MONTHLY" ? day.with({ day: 1 }) : day.with({ day: 1, month: 1 });
-  const to =
-    freq === "MONTHLY" ? from.add({ months: 1 }) : from.add({ years: 1 });
-  const slots: string[] = [];
-  for (
-    let candidate = from;
-    Temporal.PlainDate.compare(candidate, to) < 0;
-    candidate = candidate.add({ days: 1 })
-  ) {
-    if (isRuleDay(rule, first, candidate) === true) {
-      const formed = onDay(opened, candidate, oldZone);
-      const slot = formed && slotOf(formed, oldZone);
-      if (slot) {
-        slots.push(slot);
-      }
-    }
-  }
-  return slots;
-}
-
-/**
- * Where a rule's occurrence of `master` at `slot` (an original start)
- * lands in a This and following new series from `splitStart`, starting at
- * `start` with `recurrence`: on its own day with the split's change of time
- * when the new series meets there (a rule day that didn't move), else as
- * many days on as the split moved (`placeInNewSeries`) when it meets
- * there, else, in a monthly or yearly series, at the meeting as many into
- * its month or year (`samePlaceInPeriod`); null when it meets at none, or
- * that can't be told.
- */
-function carriedSlot(params: {
-  master: Event;
-  recurrence: string[];
-  slot: string;
-  splitStart: string;
-  start: Event["start"];
-}): string | null {
-  const { master, recurrence, slot, start } = params;
-  // The new series repeats in its start's zone (an all-day one made timed
-  // takes the new start's).
-  const zone = repeatZone(master, start);
-  // A slot kept as it was meets, though a rule not read here can't say:
-  // the new series repeats by that rule from one of its own meetings.
-  const meets = (at: string) => {
-    const read = seriesMeetsAt({
-      recurrence,
-      seriesZone: zone,
-      slot: at,
-      start,
-    });
-    return read === true || (read === null && at === slot);
-  };
-  const splitDay = dayOfStart(asStart(params.splitStart), zone);
-  const ownDayStart = onDay(start, splitDay, zone);
-  const ownDay =
-    ownDayStart &&
-    placeInNewSeries({
-      newStart: ownDayStart,
-      originalStart: slot,
-      splitStart: params.splitStart,
-      zone,
-    });
-  const moved = placeInNewSeries({
-    newStart: start,
-    originalStart: slot,
-    splitStart: params.splitStart,
-    zone,
-  });
-  // A new time less than a day off by the clock (23:30 to 00:30 the next
-  // day) moves each meeting by as much, across midnight too; a longer move
-  // keeps a rule day's meetings on their own day first. A day on across a
-  // clock change (23 elapsed hours) is a day.
-  const wall = (time: Event["start"]) =>
-    momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
-  const from = wall(asStart(params.splitStart));
-  const to = wall(start);
-  const shortMove = Boolean(
-    from && to && Math.abs(from.until(to).total("hours")) < 24
-  );
-  // A monthly or yearly series moved within its period (the first Monday
-  // made the second Tuesday) keeps each meeting's place in its period
-  // before a fixed shift, which can land on another of its meetings; one
-  // moved into another period shifts each meeting as far.
-  const inPeriod = periodPlace({ master, recurrence, slot, splitDay, start });
-  const byPeriod = inPeriod?.samePeriod ?? false;
-  const period = inPeriod?.place ?? null;
-  let order = [ownDay, moved, period];
-  if (shortMove) {
-    order = [moved, ownDay, period];
-  } else if (byPeriod) {
-    order = [ownDay, period, moved];
-  }
-  return order.find((place) => place && meets(place)) ?? null;
-}
-
-/**
- * Where a monthly or yearly series' meeting at `slot` lands in a split's
- * new series by its place in its period (`samePlaceInPeriod`), and whether
- * the split moves within its period; null for other series, or several
- * rules.
- */
-function periodPlace(params: {
-  master: Event;
-  recurrence: string[];
-  slot: string;
-  splitDay: Temporal.PlainDate | null;
-  start: Event["start"];
-}): { place: string | null; samePeriod: boolean } | null {
-  const { master, splitDay, start } = params;
-  const zone = repeatZone(master, start);
-  const rulesOf = (lines: string[]) =>
-    lines.filter((line) => line.startsWith("RRULE:"));
-  const [oldRule, ...oldOthers] = rulesOf(master.recurrence ?? []);
-  const [newRule, ...newOthers] = rulesOf(params.recurrence);
-  const day = dayOfStart(asStart(params.slot), zone);
-  const oldStart = dayOfStart(master.start, seriesZoneOf(master));
-  const newStart = dayOfStart(start, zone);
-  if (
-    !(oldRule && newRule && day && oldStart && newStart && splitDay) ||
-    oldOthers.length + newOthers.length > 0
-  ) {
-    return null;
-  }
-  const inPeriod = onDay(
-    start,
-    samePlaceInPeriod({
-      day,
-      newRule,
-      newStart,
-      oldRule,
-      oldStart,
-      split: splitDay,
-    }),
-    zone
-  );
-  const yearly = newRule.includes("FREQ=YEARLY");
-  return {
-    place: inPeriod && slotOf(inPeriod, zone),
-    samePeriod:
-      splitDay.year === newStart.year &&
-      (yearly || splitDay.month === newStart.month),
-  };
-}
-
-/**
- * The rule's meeting on the split's own day at the new time, when the new
- * series meets there and starts on a day its rules don't meet (a Monday
- * moved to Sunday, Mondays kept). Google always meets at a series' start,
- * so that start is a meeting of its own, and the moved meeting would be
- * there twice.
- */
-function movedOffRule(params: {
-  master: Event;
-  originalStart: string;
-  recurrence: string[];
-  start: Event["start"];
-}): string[] {
-  const { master, originalStart, recurrence, start } = params;
-  const zone = repeatZone(master, start);
-  const day = dayOfStart(start, zone);
-  const rules = recurrence.filter((line) => line.startsWith("RRULE:"));
-  if (
-    !(day && rules.length > 0) ||
-    rules.some((rule) => isRuleDay(rule, day, day) !== false)
-  ) {
-    return [];
-  }
-  const ownDay = onDay(
-    start,
-    dayOfStart(asStart(originalStart), seriesZoneOf(master)),
-    zone
-  );
-  const place = ownDay && slotOf(ownDay, zone);
-  return place &&
-    place !== slotOf(start, zone) &&
-    seriesMeetsAt({ recurrence, seriesZone: zone, slot: place, start }) === true
-    ? [place]
-    : [];
-}
-
-/**
  * `slot` in `start`'s form: its day for an all-day series, that day at
  * `start`'s time for a timed one.
  */
@@ -1852,453 +1508,13 @@ function inFormOf(
   if (DATE_ONLY.test(slot) === Boolean(start.date)) {
     return slot;
   }
-  const day = dayOfStart(asStart(slot), zone);
-  const formed = onDay(start, day, zone);
+  const formed = onDay(start, dayOfStart(asStart(slot), zone), zone);
   return formed && slotOf(formed, zone);
 }
 
-/**
- * What Google's list of a series' meetings told a kept COUNT: the skips
- * that hold a place and those it left out (`carryCountFromList`), and the
- * meetings' original starts (`listed`).
- */
-type CountFromList = Pick<
-  NonNullable<ReturnType<typeof carryCountFromList>>,
-  "heldPlaces" | "leftOut"
-> & { listed: string[] };
-
-/**
- * Where a split's skipped or deleted rule meetings (`slots`) stay skipped
- * when it moves to other days or meets several times a day: where the new
- * series (`rule`, written for its start) meets in their place, as a
- * changed one is put back, in the new start's form (made all day or
- * timed, by day). None lands on the new start, the meeting just saved,
- * or on an added meeting the new series keeps. `placesLost` lists, by
- * moment, the rule meetings (`ruleMeetingOf`) that would land on the start,
- * have no meeting of the new series in their place, or share another's:
- * each frees no COUNT position. Null when one's can't be told.
- */
-function placeByDay(params: {
-  cancelled: string[];
-  /** What Google's list told the kept COUNT, when it was read for it. */
-  fromList: CountFromList | null;
-  master: Event;
-  originalStart: string;
-  rule: string[];
-  slots: string[];
-  start: Event["start"];
-}): { placesLost: number[] | null; placed: string[]; ruleSkips: string[] } {
-  const { master, originalStart, start } = params;
-  const zone = seriesZoneOf(master);
-  const newZone = repeatZone(master, start);
-  const startSlot = slotOf(start, newZone);
-  // A place already skipped is still its place.
-  const unskipped = params.rule.filter((line) => !line.startsWith("EXDATE"));
-  const splitStart = inFormOf(originalStart, start, newZone) ?? originalStart;
-  const placesLost: number[] = [];
-  // Each place's first rule meeting, by moment: another one there shares
-  // its place, and frees none of its own. Claiming records the first, so
-  // each skip claims its place once, in the order they're placed.
-  const takenBy = new Map<string, number>();
-  const claimsTakenPlace = (formed: string | null, moment: number) => {
-    if (!formed) {
-      return false;
-    }
-    const first = takenBy.get(formed) ?? moment;
-    takenBy.set(formed, first);
-    return first !== moment;
-  };
-  let unknown = false;
-  // The places of the rule meetings' skips that hold a COUNT place, each
-  // once however many skips it has.
-  const ruleSkips = new Set<string>();
-  // A place a meeting of the old series still lands at too (two rule days
-  // folded into one) is that meeting's: a skip there would cancel it.
-  const landsOnLive = (at: string | null, formed: string | null) =>
-    at !== null &&
-    formed !== null &&
-    liveMeetingLandsAt({
-      cancelled: params.cancelled,
-      master,
-      originalStart,
-      place: formed,
-      recurrence: unskipped,
-      splitStart,
-      start,
-    });
-  // Each skip's place, worked out once: then the skips written, and the
-  // account of COUNT places, in that order.
-  const skips = params.slots.map((slot) => {
-    const at = carriedSlot({
-      master,
-      recurrence: unskipped,
-      slot: inFormOf(slot, start, newZone) ?? slot,
-      splitStart,
-      start,
-    });
-    const formed = inFormOf(at ?? slot, start, newZone);
-    return { at, formed, ontoLive: landsOnLive(at, formed), slot };
-  });
-  const placed = skips.flatMap(({ at, formed, ontoLive }) => {
-    const ontoAdded =
-      at !== null && formed !== null && addsSlot(unskipped, formed, newZone);
-    return formed && formed !== startSlot && !ontoAdded && !ontoLive
-      ? [formed]
-      : [];
-  });
-  for (const { at, formed, ontoLive, slot } of skips) {
-    const moment = slotMoment(slot, zone);
-    // A skipped position with no meeting of the new series after its start
-    // in its place (none there, the start itself, or another's) frees none;
-    // a new rule not read here may meet there after all.
-    const uncounted = Boolean(
-      moment && params.fromList?.leftOut.includes(moment.epochMilliseconds)
-    );
-    const meeting = ruleMeetingOf({ ...params, slot });
-    // Only a rule meeting's skip with a place of its own claims it.
-    let shared = false;
-    if (meeting && at && moment) {
-      shared = claimsTakenPlace(formed, moment.epochMilliseconds);
-    }
-    if (
-      (formed === startSlot || at === null || shared || ontoLive) &&
-      moment &&
-      !uncounted
-    ) {
-      const placeUnknown =
-        at === null &&
-        formed !== null &&
-        seriesMeetsAt({
-          recurrence: unskipped,
-          seriesZone: newZone,
-          slot: formed,
-          start,
-        }) === null;
-      unknown ||= meeting === null || placeUnknown;
-      if (meeting) {
-        placesLost.push(moment.epochMilliseconds);
-      }
-    } else if (formed && !uncounted) {
-      ruleSkips.add(formed);
-    }
-  }
-  return {
-    placesLost: unknown ? null : placesLost,
-    placed,
-    ruleSkips: [...ruleSkips],
-  };
-}
-
-/**
- * A kept COUNT (in `recurrence`, the new series' rule) lowered for each
- * rule meeting's skip (`ruleSkips`, by place) its end leaves out: that
- * skip frees no place, so the end comes one meeting sooner, again until
- * every skip left falls within it. Null when whether one does can't be
- * told.
- */
-function countWithinSkips(params: {
-  recurrence: string[];
-  ruleSkips: string[];
-  start: Event["start"];
-  zone: string;
-}): string[] | null {
-  const { recurrence, ruleSkips, start, zone } = params;
-  let trimmed = recurrence;
-  for (let round = 0; round <= ruleSkips.length; round += 1) {
-    const rules = trimmed.filter((line) => line.startsWith("RRULE:"));
-    const meets = ruleSkips.map((slot) =>
-      seriesMeetsAt({ recurrence: rules, seriesZone: zone, slot, start })
-    );
-    if (meets.includes(null)) {
-      return null;
-    }
-    const next = changeCount(
-      recurrence,
-      -meets.filter((meeting) => meeting === false).length
-    );
-    if (countOf(next) === countOf(trimmed)) {
-      return trimmed;
-    }
-    trimmed = next;
-  }
-  return trimmed;
-}
-
-/**
- * Where a split that keeps its days puts its skipped or deleted rule
- * meetings (`slots`): their own day at the new time (`lineUpRule`). One
- * whose new time that day doesn't exist (a clock change skips it) has no
- * meeting there.
- */
-function onOwnDays(params: {
-  master: Event;
-  slots: string[];
-  start: Event["start"];
-}): string[] {
-  const { master, start } = params;
-  // Each place once, however many skips (or a deletion too) it has.
-  const places = new Set<string>();
-  for (const slot of params.slots) {
-    const place = ruleMeetingAt(slot, master)
-      ? placeOnNewStart(slot, master, start)
-      : null;
-    if (place) {
-      places.add(place);
-    }
-  }
-  return [...places];
-}
-
-/**
- * A split's new `rule` with a kept COUNT lowered by the `places` its skips
- * free none of, and again for each placed skip (`ruleSkips`) its end then
- * leaves out (`countWithinSkips`). Null when that can't be told.
- */
-function lowerCount(params: {
-  /** Whether the new part keeps the series' COUNT; else nothing changes. */
-  keeps: boolean;
-  master: Event;
-  places: number;
-  rule: string[];
-  ruleSkips: string[];
-  /** The split's original start (see `ruleForStart`). */
-  splitAt: string;
-  start: Event["start"];
-}): string[] | null {
-  const { master, splitAt, start } = params;
-  if (!params.keeps) {
-    return params.rule;
-  }
-  const lowered = changeCount(params.rule, -params.places);
-  const written = ruleForStart(lowered, master, start, splitAt);
-  const within = countWithinSkips({
-    recurrence: written,
-    ruleSkips: params.ruleSkips,
-    start,
-    zone: repeatZone(master, start),
-  });
-  return (
-    within &&
-    changeCount(lowered, (countOf(within) ?? 0) - (countOf(written) ?? 0))
-  );
-}
-
-/**
- * Whether a split's skip at `slot` is a meeting of the series' rule, which
- * holds a COUNT place: as the rule reads, else (a rule not read here) a
- * deleted one that isn't an added day is, as Google lists only a series'
- * meetings, and so is one on Google's list of them (`fromList`, when it
- * was read). Null when that can't be told: an added day's could be the
- * rule's too, and Google may leave a skip off its list.
- */
-function ruleMeetingOf(params: {
-  cancelled: string[];
-  fromList: CountFromList | null;
-  master: Event;
-  slot: string;
-}): boolean | null {
-  const { master, slot } = params;
-  const zone = seriesZoneOf(master);
-  const read = ruleMeetingAt(slot, master);
-  if (read !== null) {
-    return read;
-  }
-  if (addsSlot(master.recurrence ?? [], slot, zone)) {
-    return null;
-  }
-  const moment = slotMoment(slot, zone);
-  if (
-    params.cancelled.includes(slot) ||
-    (moment && params.fromList?.heldPlaces.includes(moment.epochMilliseconds))
-  ) {
-    return true;
-  }
-  // Google may leave a skipped meeting off its list: only one it lists is
-  // told to be a meeting.
-  return params.fromList?.listed.includes(slot) ? true : null;
-}
-
-/**
- * The deleted added (RDATE) days on a split's new start that are also rule
- * meetings, by moment: each holds a COUNT place the new start takes.
- * `lineUpRule` keeps added days' skips, so they're counted here.
- */
-function addedOntoStart(params: {
-  cancelled: string[];
-  master: Event;
-  start: Event["start"];
-}): number[] | null {
-  const { master, start } = params;
-  const zone = seriesZoneOf(master);
-  const newZone = repeatZone(master, start);
-  const startSlot = slotOf(start, newZone);
-  const onStart = params.cancelled.filter(
-    (slot) => inFormOf(slot, start, newZone) === startSlot
-  );
-  // A rule not read here can't tell an added day from its own meeting.
-  if (onStart.some((slot) => ruleMeetingAt(slot, master) === null)) {
-    return null;
-  }
-  return onStart.flatMap((slot) => {
-    const moment = slotMoment(slot, zone);
-    return moment && ruleMeetingAt(slot, master)
-      ? [moment.epochMilliseconds]
-      : [];
-  });
-}
-
-/**
- * How many places a kept COUNT (`keeps`) loses to skips that free none:
- * one for each rule meeting skipped on the new start, with no place in
- * the new series, or sharing another's (`skips`), or an added day on the
- * new start that is a rule meeting too (`added`); by moment, once however
- * many skips it has. None for a COUNT the user set; null when one's can't
- * be told.
- */
-function countPlacesLost(params: {
-  added: number[] | null;
-  keeps: boolean;
-  skips: number[] | null;
-}): number | null {
-  const { added, skips } = params;
-  if (!params.keeps) {
-    return 0;
-  }
-  return added && skips ? new Set([...skips, ...added]).size : null;
-}
-
-/**
- * Whether a split's new `rule` keeps the series' COUNT, which is then
- * carried on: the series' own rule (or rebuilt for a new day) with its
- * COUNT. A COUNT the user changed, or one sent with a new repeat
- * (`newRepeat`), is the new part's own.
- */
-function keepsCount(params: {
-  master: Event;
-  newRepeat: boolean;
-  rule: string[];
-}): boolean {
-  const count = countOf(params.master.recurrence);
-  return !params.newRepeat && count !== null && countOf(params.rule) === count;
-}
-
-/**
- * A split's new `recurrence`. When the series' own end falls before
- * `start` (a meeting moved past it), its rule is spent: the new
- * part has that meeting and any added (RDATE) ones after it, one event if
- * none. Null when an end the save sets does: refused.
- */
-function withinEnd(params: {
-  /** Whether the save kept the series' own rule (`givesNewRepeat`). */
-  ownRule: boolean;
-  recurrence: string[];
-  /** The rule before it's lined up with `start` (an UNTIL as it was). */
-  rule: string[];
-  start: Event["start"];
-  zone: string;
-}): string[] | null {
-  const { recurrence, zone } = params;
-  if (!endsBeforeStart(params.rule, momentOf(params.start, zone), zone)) {
-    return recurrence;
-  }
-  if (!params.ownRule) {
-    return null;
-  }
-  const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
-  return repeats(added) ? added : [];
-}
-
-/**
- * The occurrences a "This and following" new series carries, and where:
- * the opened one at its start with its own changes (its times only if
- * the edit left them), and later changed ones at their new places.
- */
-function followingOccurrences(params: {
-  /** The fields the edit changed, which the new series carries. */
-  changes: Partial<CreateEvent>;
-  edited: CreateEvent;
-  exceptions: { occurrence: Event; originalStart: string }[];
-  master: Event;
-  opened: Event;
-  originalStart: string;
-  /** The new series' rule. */
-  recurrence: string[];
-  /** The new series' start. */
-  start: Event["start"];
-}) {
-  const { changes, master, originalStart, start } = params;
-  const zone = seriesZoneOf(master);
-  const own = changesOwnTo(params.opened, master, zone, changes);
-  const { end: _end, start: _start, ...ownFields } = own;
-  // A new end alone keeps the opened one's own start, now with that end.
-  const keptStart = sameTime(params.edited.start, params.opened.start, zone);
-  let openedChanges: Partial<CreateEvent> = ownFields;
-  if (keepsTimes(params.edited, params.opened, zone)) {
-    openedChanges = own;
-  } else if (keptStart && own.start) {
-    openedChanges = { ...own, end: params.edited.end };
-  }
-  return [
-    {
-      at: slotOf(start, zone),
-      changes: openedChanges,
-      opened: true as const,
-      originalStart,
-    },
-    ...params.exceptions.map((exception) => {
-      const exceptionOwn = changesOwnTo(
-        exception.occurrence,
-        master,
-        zone,
-        changes
-      );
-      return {
-        at: carriedAt({
-          master,
-          originalStart,
-          own: exceptionOwn,
-          recurrence: params.recurrence,
-          slot: exception.originalStart,
-          start,
-        }),
-        changes: exceptionOwn,
-        originalStart: exception.originalStart,
-      };
-    }),
-  ];
-}
-
-/**
- * Where a changed occurrence at `slot` goes in a split's new series: an
- * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
- * moves with the series, placed by day when the series is made all day or
- * timed. Its own times have no place in a series of the other form: null.
- */
-function carriedAt(params: {
-  master: Event;
-  originalStart: string;
-  own: Partial<CreateEvent>;
-  recurrence: string[];
-  slot: string;
-  start: Event["start"];
-}): string | null {
-  const { master, own, slot, start } = params;
-  const zone = seriesZoneOf(master);
-  if (addsSlot(master.recurrence ?? [], slot, zone)) {
-    return sameForm(slot, start);
-  }
-  if (!sameForm(slot, start) && (own.start || own.end)) {
-    return null;
-  }
-  const newZone = repeatZone(master, start);
-  return carriedSlot({
-    master,
-    recurrence: params.recurrence,
-    slot: inFormOf(slot, start, newZone) ?? slot,
-    splitStart:
-      inFormOf(params.originalStart, start, newZone) ?? params.originalStart,
-    start,
-  });
+/** `slot` when it has `start`'s form (a date, or a date-time); else null. */
+function sameForm(slot: string, start: Event["start"]): string | null {
+  return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
 }
 
 /** Whether an occurrence's original start is `slot` (an original start). */
@@ -2322,15 +1538,662 @@ function sameSlot(
   );
 }
 
-/** `slot` when it has `start`'s form (a date, or a date-time); else null. */
-function sameForm(slot: string, start: Event["start"]): string | null {
-  return DATE_ONLY.test(slot) === Boolean(start.date) ? slot : null;
+/** A This and following split, as where its meetings land is read. */
+interface SplitPlan {
+  master: Event;
+  /** Where the old series is cut: the opened occurrence's original start. */
+  originalStart: string;
+  /** The new series' rules, without skips. */
+  recurrence: string[];
+  /** The new series' start. */
+  start: Event["start"];
+}
+
+const FREQ_PART = /FREQ=([A-Z]+)/;
+const INTERVAL_PART = /INTERVAL=(\d+)/;
+
+/** A rule's frequency and interval, as `FREQ` and `INTERVAL` give them. */
+function cadence(rule: string): string {
+  const freq = FREQ_PART.exec(rule)?.[1] ?? "";
+  return `${freq}/${INTERVAL_PART.exec(rule)?.[1] ?? "1"}`;
+}
+
+/** A day's month, or year, for a rule repeating by one: [first, next). */
+function periodOf(
+  rule: string,
+  day: Temporal.PlainDate
+): [Temporal.PlainDate, Temporal.PlainDate] | null {
+  if (rule.includes("FREQ=MONTHLY")) {
+    const first = day.with({ day: 1 });
+    return [first, first.add({ months: 1 })];
+  }
+  if (rule.includes("FREQ=YEARLY")) {
+    const first = day.with({ day: 1, month: 1 });
+    return [first, first.add({ years: 1 })];
+  }
+  return null;
+}
+
+/**
+ * The days `rule`, repeating from `first`, meets on in [from, to); null
+ * when it can't be read.
+ */
+function ruleDaysIn(
+  rule: string,
+  first: Temporal.PlainDate,
+  from: Temporal.PlainDate,
+  to: Temporal.PlainDate
+): Temporal.PlainDate[] | null {
+  const days = ruleMeetings({
+    first,
+    from,
+    rule: withoutEnd(rule),
+    to: to.subtract({ days: 1 }),
+  });
+  return (
+    days?.flatMap((day) => (day instanceof Temporal.PlainDate ? [day] : [])) ??
+    null
+  );
+}
+
+/**
+ * Where a monthly or yearly series' meeting on `day` lands by its place in
+ * its month or year (the third Monday made the third Tuesday): the new
+ * rule's day as many into the period as `day` is into the old rule's,
+ * each counted from the split, in the period as many on as the split moved
+ * (the 28th moved to the 2nd of the next month puts Dec 28 on Jan 2). Null
+ * for other rules, or none there.
+ */
+function placeInPeriod(
+  day: Temporal.PlainDate,
+  plan: SplitPlan
+): Temporal.PlainDate | null {
+  const { master, start } = plan;
+  const [oldRule, ...oldOthers] = rulesOf(master.recurrence ?? []);
+  const [newRule, ...newOthers] = rulesOf(plan.recurrence);
+  const zone = repeatZone(master, start);
+  const oldStart = dayOfStart(master.start, seriesZoneOf(master));
+  const newStart = dayOfStart(start, zone);
+  const split = dayOfStart(asStart(plan.originalStart), zone);
+  if (
+    !(oldRule && newRule && oldStart && newStart && split) ||
+    oldOthers.length + newOthers.length > 0 ||
+    cadence(oldRule) !== cadence(newRule)
+  ) {
+    return null;
+  }
+  const from = periodOf(oldRule, day);
+  const splitPeriod = periodOf(oldRule, split);
+  const newPeriod = periodOf(newRule, newStart);
+  if (!(from && splitPeriod && newPeriod)) {
+    return null;
+  }
+  const unit = oldRule.includes("FREQ=YEARLY") ? "years" : "months";
+  const shift = splitPeriod[0].until(newPeriod[0], { largestUnit: unit });
+  const to = periodOf(newRule, from[0].add(shift));
+  const later = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
+    Temporal.PlainDate.compare(a, b) < 0 ? b : a;
+  const place = ruleDaysIn(
+    oldRule,
+    oldStart,
+    later(from[0], split),
+    from[1]
+  )?.findIndex((at) => at.equals(day));
+  if (!to || place === undefined || place < 0) {
+    return null;
+  }
+  return (
+    ruleDaysIn(newRule, newStart, later(to[0], newStart), to[1])?.[place] ??
+    null
+  );
+}
+
+/**
+ * Where the old series' meeting at `slot` (an original start) lands in a
+ * split's new series, in its form (made all day or timed, by day). Each
+ * place is tried in turn, and the first the new series meets at is it:
+ * - its own day, its time moved as much as the split's;
+ * - in a monthly or yearly series, the new meeting as many into its month
+ *   or year (`placeInPeriod`);
+ * - as far on as the split moved, days and time.
+ * A move of less than a day by the clock (23:30 to 00:30 the next day)
+ * shifts each meeting by as much first. Null when the new series meets at
+ * none.
+ */
+function landingOf(slot: string, plan: SplitPlan): string | null {
+  const { master, start } = plan;
+  const zone = repeatZone(master, start);
+  const formed = inFormOf(slot, start, zone) ?? slot;
+  const splitStart =
+    inFormOf(plan.originalStart, start, zone) ?? plan.originalStart;
+  const splitDay = dayOfStart(asStart(splitStart), zone);
+  const ownDayStart = onDay(start, splitDay, zone);
+  const ownDay =
+    ownDayStart &&
+    placeInNewSeries({
+      newStart: ownDayStart,
+      originalStart: formed,
+      splitStart,
+      zone,
+    });
+  const moved = placeInNewSeries({
+    newStart: start,
+    originalStart: formed,
+    splitStart,
+    zone,
+  });
+  const day = dayOfStart(asStart(formed), zone);
+  const periodDay = day && placeInPeriod(day, plan);
+  const inPeriod = periodDay && onDay(start, periodDay, zone);
+  const period = inPeriod && slotOf(inPeriod, zone);
+  const wall = (time: Event["start"]) =>
+    momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
+  const from = wall(asStart(splitStart));
+  const to = wall(start);
+  let order = [ownDay, period, moved];
+  if (from && to && Math.abs(from.until(to).total("hours")) < 24) {
+    order = [moved, ownDay, period];
+  }
+  return (
+    order.find(
+      (place) =>
+        place &&
+        seriesMeetsAt({
+          recurrence: plan.recurrence,
+          seriesZone: zone,
+          slot: place,
+          start,
+        }) === true
+    ) ?? null
+  );
+}
+
+/**
+ * Whether a meeting of the old series after the split, not deleted or
+ * skipped, lands at `place` in the new series (`landingOf`), where a
+ * deleted one's skip would cancel it: two rule days folded into one
+ * (Mondays and Wednesdays made Wednesdays), or a meeting the split's move
+ * carries onto another's place. Its old meetings near `place` (in its
+ * month or year, for a series repeating by one) are each placed.
+ */
+function liveMeetingLandsAt(
+  place: string,
+  plan: SplitPlan & { cancelled: string[] }
+): boolean {
+  const { master, start } = plan;
+  const oldZone = seriesZoneOf(master);
+  const zone = repeatZone(master, start);
+  const day = dayOfStart(asStart(place), zone);
+  const split = slotMoment(plan.originalStart, oldZone);
+  const splitDay = dayOfStart(asStart(plan.originalStart), oldZone);
+  const newDay = dayOfStart(start, zone);
+  const first = master.start.date
+    ? dayOfStart(master.start, oldZone)
+    : startInstant(master.start, oldZone)?.toZonedDateTimeISO(oldZone);
+  if (!(day && split && splitDay && newDay && first)) {
+    return false;
+  }
+  // Each meeting lands about as many days off as the split moved (a few
+  // more across months of other lengths), or in its month or year.
+  const reach = Math.abs(splitDay.until(newDay).days) + 4;
+  const earlier = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
+    Temporal.PlainDate.compare(a, b) < 0 ? a : b;
+  const later = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
+    Temporal.PlainDate.compare(a, b) < 0 ? b : a;
+  return rulesOf(master.recurrence ?? []).some((rule) => {
+    const period = periodOf(rule, day);
+    const from = earlier(period?.[0] ?? day, day.subtract({ days: reach }));
+    const to = later(period?.[1] ?? day, day.add({ days: reach }));
+    const meetings =
+      ruleMeetings({
+        first,
+        from: master.start.date
+          ? from
+          : from.toZonedDateTime({ timeZone: oldZone }).toInstant(),
+        rule,
+        to: master.start.date
+          ? to
+          : to.toZonedDateTime({ timeZone: oldZone }).toInstant(),
+      }) ?? [];
+    return meetings.some((meeting) => {
+      const slot = slotString(meeting, oldZone);
+      const at = slotMoment(slot, oldZone);
+      return (
+        at !== null &&
+        Temporal.Instant.compare(at, split) > 0 &&
+        !plan.cancelled.includes(slot) &&
+        seriesMeetsAt({
+          recurrence: master.recurrence ?? [],
+          seriesZone: oldZone,
+          slot,
+          start: master.start,
+        }) === true &&
+        landingOf(slot, plan) === place
+      );
+    });
+  });
+}
+
+/**
+ * The rule's meeting on the split's own day at the new time, when the new
+ * series meets there and starts on a day its rules don't meet (a Monday
+ * moved to Sunday, Mondays kept). Google always meets at a series' start,
+ * so that start is a meeting of its own, and the moved meeting would be
+ * there twice.
+ */
+function movedOffRule(plan: SplitPlan): string[] {
+  const { master, recurrence, start } = plan;
+  const zone = repeatZone(master, start);
+  const day = dayOfStart(start, zone);
+  const rules = rulesOf(recurrence);
+  if (
+    !day ||
+    rules.length === 0 ||
+    rules.some(
+      (rule) => (ruleDayCount({ from: day, rule, through: day }) ?? 1) > 0
+    )
+  ) {
+    return [];
+  }
+  const ownDay = onDay(
+    start,
+    dayOfStart(asStart(plan.originalStart), seriesZoneOf(master)),
+    zone
+  );
+  const place = ownDay && slotOf(ownDay, zone);
+  return place &&
+    place !== slotOf(start, zone) &&
+    seriesMeetsAt({ recurrence, seriesZone: zone, slot: place, start }) === true
+    ? [place]
+    : [];
+}
+
+/**
+ * A split's new rule (`saved`) with its COUNT: one kept from the series
+ * (`keeps`) carries on with the positions left from the split; one the
+ * user set, or sent with a new repeat, is theirs. Either takes one more
+ * place for the moved meeting's skip where the rule meets (`moved`, from
+ * `movedOffRule`; an added day's alone takes none). `spent` when no
+ * position is left: only added days follow. `unknown` when the positions
+ * left can't be told (`countLeft`) from the rule, or from `listed`.
+ */
+function carriedRule(params: {
+  /** Google's list of the series' meetings, once read for the COUNT. */
+  listed?: string[];
+  master: Event;
+  originalStart: string;
+  /** Whether `saved` is the series' own rule, not a new repeat. */
+  ownRule: boolean;
+  saved: string[];
+  start: Event["start"];
+}):
+  | { kind: "unknown" }
+  | { kind: "spent"; recurrence: string[] }
+  | { keeps: boolean; kind: "rule"; moved: string[]; recurrence: string[] } {
+  const { master, originalStart, saved, start } = params;
+  const seriesCount = countOf(master.recurrence);
+  const keeps =
+    params.ownRule && seriesCount !== null && countOf(saved) === seriesCount;
+  const left = keeps
+    ? countLeft({
+        listed: params.listed,
+        originalStart,
+        recurrence: master.recurrence ?? [],
+        seriesStart: master.start,
+        seriesZone: seriesZoneOf(master),
+      })
+    : null;
+  if (keeps && left === null) {
+    return { kind: "unknown" };
+  }
+  if (left === 0) {
+    const added = saved.filter((line) => !line.startsWith("RRULE:"));
+    return { kind: "spent", recurrence: repeats(added) ? added : [] };
+  }
+  const counted = left === null ? saved : withCount(saved, left);
+  const moved = movedOffRule({
+    master,
+    originalStart,
+    recurrence: counted,
+    start,
+  });
+  const places = moved.filter(
+    (place) =>
+      seriesMeetsAt({
+        recurrence: rulesOf(counted),
+        seriesZone: repeatZone(master, start),
+        slot: place,
+        start,
+      }) === true
+  ).length;
+  const count = countOf(counted);
+  return {
+    keeps,
+    kind: "rule",
+    moved,
+    recurrence: count === null ? counted : withCount(counted, count + places),
+  };
+}
+
+/**
+ * Where a split's skips go in its new series (`fromSplit`, the new rule
+ * with the series' skips): occurrences `cancelled` after the split, and
+ * the rule's own skips there, stay skipped where their meetings land
+ * (`landingOf`), as changed ones are put back; an added one keeps its
+ * slot. No skip lands on the new series' start (the meeting just saved),
+ * on an added meeting it keeps, or on a live meeting moved there. With
+ * the rule left without the skips it moves, and a kept COUNT (`keeps`)
+ * lowered for the places they lose.
+ */
+function placeSkips(params: {
+  cancelled: string[];
+  fromSplit: string[];
+  keeps: boolean;
+  master: Event;
+  originalStart: string;
+  start: Event["start"];
+}): { placed: string[]; rule: string[] } {
+  const { fromSplit, master, originalStart, start } = params;
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const isAdded = (slot: string) =>
+    addsSlot(master.recurrence ?? [], slot, zone);
+  const split = slotMoment(originalStart, zone);
+  // A skip the series had moves with its meeting; one it didn't was
+  // lined up by the client and stays as written.
+  const had = new Set(
+    dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
+  );
+  const ownSkip = (value: RecurrenceValue) => {
+    const slot = slotString(value.instant ?? value.day, zone);
+    const at = slotMoment(slot, zone);
+    return (
+      had.has(skipKey(value)) &&
+      !isAdded(slot) &&
+      Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
+    );
+  };
+  const ownSkips = dateValues(fromSplit, "EXDATE", zone)
+    .filter(ownSkip)
+    .map((value) => slotString(value.instant ?? value.day, zone));
+  const rule = keepingDateValues(
+    fromSplit,
+    "EXDATE",
+    zone,
+    (value) => !ownSkip(value)
+  );
+  // Read without skips: a place already skipped is still its place.
+  const plan: SplitPlan = {
+    master,
+    originalStart,
+    recurrence: fromSplit.filter((line) => !line.startsWith("EXDATE")),
+    start,
+  };
+  const startSlot = slotOf(start, newZone);
+  const unskipped = (master.recurrence ?? []).filter(
+    (line) => !line.startsWith("EXDATE")
+  );
+  const skips = [...params.cancelled, ...ownSkips].map((slot) => {
+    const added = isAdded(slot);
+    // One where nothing met has no meeting to follow: it stays where it
+    // is, unless the new series meets there, where it would cancel one.
+    const stale = !(
+      added ||
+      seriesMeetsAt({
+        recurrence: unskipped,
+        seriesZone: zone,
+        slot,
+        start: master.start,
+      }) === true
+    );
+    const at = added || stale ? null : landingOf(slot, plan);
+    const formed = inFormOf(at ?? slot, start, newZone);
+    // On its own place, a live meeting moved there gives way to the skip,
+    // as to a changed one (`carriedAt`).
+    const ontoLive =
+      formed !== null &&
+      ((at !== null &&
+        !onOwnPlace({ place: formed, slot, start, zone: newZone }) &&
+        liveMeetingLandsAt(formed, { ...plan, cancelled: params.cancelled })) ||
+        (stale &&
+          seriesMeetsAt({
+            recurrence: plan.recurrence,
+            seriesZone: newZone,
+            slot: formed,
+            start,
+          }) === true));
+    return { added, at, formed, ontoLive, slot };
+  });
+  const placed = skips.flatMap(({ at, formed, ontoLive }) => {
+    const ontoAdded =
+      at !== null && formed !== null && addsSlot(fromSplit, formed, zone);
+    return formed && formed !== startSlot && !ontoAdded && !ontoLive
+      ? [formed]
+      : [];
+  });
+  if (!params.keeps) {
+    return { placed, rule };
+  }
+  return {
+    placed,
+    rule: countWithinSkips({
+      ...placesOfSkips({ master, skips, startSlot }),
+      recurrence: rule,
+      start,
+      zone: newZone,
+    }),
+  };
+}
+
+/**
+ * What a split's skips (each with where it lands) do to a kept COUNT. A
+ * rule position, skipped or deleted, whose skip has no place of its own
+ * in the new series (none, the new start, another's, or a live meeting's)
+ * is gone, and a place with it (`lost`), once however many skips it has.
+ * One placed holds its place (`ruleSkips`, by where). An added day's skip
+ * stays at its own time, so it holds none.
+ */
+function placesOfSkips(params: {
+  master: Event;
+  skips: {
+    added: boolean;
+    at: string | null;
+    formed: string | null;
+    ontoLive: boolean;
+    slot: string;
+  }[];
+  startSlot: string | null;
+}): { lost: number; ruleSkips: string[] } {
+  const { master, startSlot } = params;
+  const zone = seriesZoneOf(master);
+  const lost = new Set<number>();
+  const ruleSkips = new Set<string>();
+  // The first skip placed at each place holds it; another there shares it.
+  const takenBy = new Map<string, number>();
+  for (const { added, at, formed, ontoLive, slot } of params.skips) {
+    const moment = slotMoment(slot, zone)?.epochMilliseconds;
+    if (moment === undefined || !ruleMeetingAt(slot, master)) {
+      continue;
+    }
+    const onStart = formed === startSlot;
+    const claims = Boolean(at && formed && !onStart);
+    const first = claims && formed ? (takenBy.get(formed) ?? moment) : moment;
+    if (formed && claims) {
+      takenBy.set(formed, first);
+    }
+    if (onStart || (at === null && !added) || first !== moment || ontoLive) {
+      lost.add(moment);
+    } else if (at && formed) {
+      ruleSkips.add(formed);
+    }
+  }
+  return { lost: lost.size, ruleSkips: [...ruleSkips] };
+}
+
+/**
+ * A kept COUNT (in `recurrence`) less the places lost, lowered again for
+ * each placed skip (`ruleSkips`) its end leaves out: that skip frees no
+ * place, so the end comes one meeting sooner, until every skip left falls
+ * within it.
+ */
+function countWithinSkips(params: {
+  lost: number;
+  recurrence: string[];
+  ruleSkips: string[];
+  start: Event["start"];
+  zone: string;
+}): string[] {
+  const { recurrence, ruleSkips, start, zone } = params;
+  const base = (countOf(recurrence) ?? 0) - params.lost;
+  let counted = withCount(recurrence, base);
+  for (let round = 0; round <= ruleSkips.length; round += 1) {
+    const past = ruleSkips.filter(
+      (slot) =>
+        seriesMeetsAt({
+          recurrence: rulesOf(counted),
+          seriesZone: zone,
+          slot,
+          start,
+        }) === false
+    ).length;
+    if (base - past === countOf(counted)) {
+      return counted;
+    }
+    counted = withCount(recurrence, base - past);
+  }
+  return counted;
+}
+
+/**
+ * The occurrences a "This and following" new series carries, and where:
+ * the opened one at its start with its own changes (its times only if
+ * the edit left them), and later changed ones at their new places.
+ */
+function followingOccurrences(params: {
+  /** The occurrences deleted on their own after the split. */
+  cancelled: string[];
+  /** The fields the edit changed, which the new series carries. */
+  changes: Partial<CreateEvent>;
+  edited: CreateEvent;
+  exceptions: { occurrence: Event; originalStart: string }[];
+  opened: Event;
+  plan: SplitPlan;
+}) {
+  const { changes, edited, opened, plan } = params;
+  const { master, start } = plan;
+  const zone = seriesZoneOf(master);
+  const own = changesOwnTo(opened, master, zone, changes);
+  const { end: _end, start: _start, ...ownFields } = own;
+  // A new end alone keeps the opened one's own start, now with that end.
+  let openedChanges: Partial<CreateEvent> = ownFields;
+  if (keepsTimes(edited, opened, zone)) {
+    openedChanges = own;
+  } else if (sameTime(edited.start, opened.start, zone) && own.start) {
+    openedChanges = { ...own, end: edited.end };
+  }
+  return [
+    {
+      at: slotOf(start, zone),
+      changes: openedChanges,
+      opened: true as const,
+      originalStart: plan.originalStart,
+    },
+    ...params.exceptions.map((exception) => {
+      const exceptionOwn = changesOwnTo(
+        exception.occurrence,
+        master,
+        zone,
+        changes
+      );
+      return {
+        at: carriedAt({
+          cancelled: params.cancelled,
+          own: exceptionOwn,
+          plan,
+          slot: exception.originalStart,
+        }),
+        changes: exceptionOwn,
+        originalStart: exception.originalStart,
+      };
+    }),
+  ];
+}
+
+/**
+ * Whether a meeting at `slot` that lands at `place` stays on its own
+ * place: its day, or less than a day off by the clock (as `landingOf`
+ * measures a move), read in the new series' form (`start`'s), so a timed
+ * Monday made an all-day Tuesday is a day off. Another meeting moved
+ * there too gives way to it.
+ */
+function onOwnPlace(params: {
+  place: string;
+  slot: string;
+  start: Event["start"];
+  zone: string;
+}): boolean {
+  const { place, start, zone } = params;
+  const wall = (at: string) =>
+    slotMoment(at, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
+  const from = wall(inFormOf(params.slot, start, zone) ?? params.slot);
+  const to = wall(place);
+  return (
+    from !== undefined &&
+    to !== undefined &&
+    Math.abs(from.until(to).total("hours")) < 24
+  );
+}
+
+/**
+ * Where a changed occurrence at `slot` goes in a split's new series: an
+ * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
+ * lands where its meeting does (`landingOf`). Null when it has no place
+ * of its own: its own times in the other form than the new series', or,
+ * carried off its own place (`onOwnPlace`), a place another old meeting,
+ * not deleted, lands on too (a move past later meetings).
+ */
+function carriedAt(params: {
+  cancelled: string[];
+  own: Partial<CreateEvent>;
+  plan: SplitPlan;
+  slot: string;
+}): string | null {
+  const { own, plan, slot } = params;
+  const { master, start } = plan;
+  if (addsSlot(master.recurrence ?? [], slot, seriesZoneOf(master))) {
+    return sameForm(slot, start);
+  }
+  // Own times in the other form have no place in the new series; ones
+  // already in its form (one occurrence of a timed series made all day,
+  // and the series made all day too) are carried as they are.
+  const ownTimes = own.start ?? own.end;
+  if (
+    !sameForm(slot, start) &&
+    ownTimes &&
+    Boolean(ownTimes.date) !== Boolean(start.date)
+  ) {
+    return null;
+  }
+  const place = landingOf(slot, plan);
+  if (place === null) {
+    return null;
+  }
+  // Carried off its own place, it would overwrite a meeting there.
+  const shared =
+    !onOwnPlace({ place, slot, start, zone: repeatZone(master, start) }) &&
+    liveMeetingLandsAt(place, {
+      ...plan,
+      cancelled: [...params.cancelled, slot],
+    });
+  return shared ? null : place;
 }
 
 /**
  * The occurrences with changes a new series can carry. Google keeps an
  * occurrence's changes only at a slot its series meets at, so any without
- * one are refused by original start, before anything is written.
+ * one, or two that land on one (an added meeting the new series keeps, or
+ * the opened one's, counts), are refused by original start, before
+ * anything is written.
  */
 function placeCarried(params: {
   occurrences: {
@@ -2348,8 +2211,6 @@ function placeCarried(params: {
 }): CarriedOccurrence[] | SeriesRefusal {
   const carried: CarriedOccurrence[] = [];
   const lost = new Set<string>();
-  // Each slot holds one occurrence: two that land on one can't both keep
-  // their changes.
   const placed = new Map<number, string>();
   // The opened one's slot, held though it carries nothing: it isn't named.
   const bare = params.occurrences.find(
@@ -2364,19 +2225,15 @@ function placeCarried(params: {
       continue;
     }
     const meets =
-      at &&
+      at !== null &&
       seriesMeetsAt({
         recurrence: params.recurrence,
         seriesZone: params.zone,
         slot: at,
         start: params.start,
-      });
-    // Kept on its own slot, it meets though a rule not read here can't say
-    // (`carriedSlot`); a lookup on the new series checks it before the cut.
-    const kept = meets === true || (meets === null && at === originalStart);
-    const moment = at && kept ? slotMoment(at, params.zone) : null;
+      }) === true;
+    const moment = at && meets ? slotMoment(at, params.zone) : null;
     const taken = moment && placed.get(moment.epochMilliseconds);
-    // An added (RDATE) meeting the new series keeps holds its slot too.
     const ontoAdded =
       at !== null &&
       at !== originalStart &&
@@ -2393,14 +2250,48 @@ function placeCarried(params: {
     placed.set(moment.epochMilliseconds, originalStart);
     carried.push({ at, changes });
   }
-  // A new rule not read here may meet at a place after all: what's named
-  // may keep its changes, which the words then say.
   return lost.size > 0
-    ? unsureWhere(
-        naming("dropsChangedOccurrences", [...lost], params.seriesOnly),
-        params.recurrence
-      )
+    ? naming("dropsChangedOccurrences", [...lost], params.seriesOnly)
     : carried;
+}
+
+/**
+ * The rules a save writes: the series' own when it sends none, and a rule
+ * sent alone with the series' skips and the added days still on, which a
+ * client rebuilding the rule may leave out ("Repeat: None" stays none).
+ * An added day deleted (`cancelled`) or skipped shows nothing: left out,
+ * it goes.
+ */
+function savedRule(
+  saved: string[] | undefined,
+  master: Event,
+  cancelled: string[]
+): string[] {
+  if (!saved) {
+    return master.recurrence ?? [];
+  }
+  if (!repeats(saved)) {
+    return saved;
+  }
+  if (saved.some((line) => line.startsWith("RDATE"))) {
+    return withSeriesSkips(saved, master);
+  }
+  const own = master.recurrence ?? [];
+  const zone = seriesZoneOf(master);
+  const gone = new Set([
+    ...dateValues(own, "EXDATE", zone).map(skipKey),
+    ...cancelled.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [skipKey(value)] : [];
+    }),
+  ]);
+  const added = keepingDateValues(
+    own.filter((line) => line.startsWith("RDATE")),
+    "RDATE",
+    zone,
+    (value) => !gone.has(skipKey(value))
+  );
+  return withSeriesSkips([...saved, ...added], master);
 }
 
 /**
@@ -2482,9 +2373,13 @@ export interface GoogleCalendarService {
     calendarId: string
   ) => Effect.Effect<void, GoogleApiError>;
   /**
-   * Delete an event. `this` cancels one occurrence, `all` deletes the
-   * series, `following` ends it before the occurrence. Only `following`
-   * needs a series.
+   * Delete an event, supporting recurring scopes.
+   *
+   * - `this`: cancels just the instance/eventId by setting status to "cancelled"
+   * - `all`: deletes the series master
+   * - `following`: truncates the original series at the occurrence date
+   *
+   * Non-recurring events accept `all`; only `following` requires a series.
    */
   readonly deleteEvent: (
     calendarId: string,
@@ -2524,9 +2419,13 @@ export interface GoogleCalendarService {
     timeMax: string
   ) => Effect.Effect<Event[], GoogleApiError | GoogleCalendarZodError>;
   /**
-   * Move an event to another calendar. `this` moves one occurrence, `all`
-   * the series, `following` ends it and starts a new one there. Scopes
-   * other than `this` fail for an event that doesn't repeat.
+   * Move an event between calendars, supporting recurring scopes.
+   *
+   * - `this`: moves just the instance/eventId
+   * - `all`: moves the series master
+   * - `following`: truncates the original series and creates a new series in the destination
+   *
+   * If `scope !== \"this\"` and the event is not recurring, this returns an error.
    */
   readonly moveEvent: (
     calendarId: string,
@@ -2796,7 +2695,7 @@ export function makeGoogleCalendarService(
     timeMax: string
   ) {
     yield* Effect.annotateCurrentSpan("calendarId", calendarId);
-    // Expanded series can span pages: ask for the most, follow tokens.
+    // Expanded recurring events can exceed one page; request the maximum and follow page tokens.
     const items: unknown[] = [];
     let pageToken: string | undefined;
     do {
@@ -2954,31 +2853,9 @@ export function makeGoogleCalendarService(
     });
 
   /**
-   * The original starts of a series' occurrences, as Google lists them,
-   * cancelled ones too (one rescheduled keeps its place). Only for a series
-   * whose every rule ends, so the list does too.
-   */
-  const listOccurrenceStarts = (calendarId: string, master: Event) =>
-    Effect.gen(function* () {
-      const items = yield* allPages((pageToken) =>
-        client.calendars.events.instances(master.id, {
-          calendarId,
-          maxResults: 2500,
-          pageToken,
-          showDeleted: true,
-        })
-      );
-      return items.flatMap((item) => {
-        const start = item.originalStartTime ?? item.start;
-        const slot = start && slotOf(start, seriesZoneOf(master));
-        return slot ? [slot] : [];
-      });
-    });
-
-  /**
-   * `master`'s exceptions, sorted by `sortExceptions`. Listed by iCalUID,
-   * which returns only the master and its exceptions, so an endless
-   * series isn't expanded.
+   * `master`'s exceptions, sorted by `sortExceptions` (those after `after`
+   * when given). Listed by iCalUID, which returns only the master and its
+   * exceptions, so an endless series isn't expanded.
    */
   const exceptionsOf = (calendarId: string, master: Event, after?: string) =>
     Effect.gen(function* () {
@@ -3005,544 +2882,6 @@ export function makeGoogleCalendarService(
         );
       }
       return sortExceptions(parsed.data, master, after);
-    });
-
-  /**
-   * The rule a split's new part repeats with: `edited`, or the series'.
-   * An unchanged COUNT carries on (a five-time series split at its third
-   * runs three more, not five). Occurrences `cancelled` after the split,
-   * and the rule's own skips, stay skipped where their meetings go: placed
-   * by day as changed ones are put back (`placeByDay`) when the split
-   * moves to another day, meets several times a day or takes a new
-   * repeat; else on their own day at the new time (`lineUpRule`). An
-   * added one keeps its slot.
-   * Refuses, before any write, if the COUNT can't be carried or if the
-   * rule ends before `start`.
-   * With whether `edited` gives the series a new repeat (`newRepeat`,
-   * `givesNewRepeat`), which one occurrence can't take.
-   */
-  const newSeriesRecurrence = (params: {
-    calendarId: string;
-    cancelled: string[];
-    edited: string[] | undefined;
-    master: Event;
-    originalStart: string;
-    start: Event["start"];
-  }) =>
-    Effect.gen(function* () {
-      const { calendarId, master, originalStart, start } = params;
-      const zone = seriesZoneOf(master);
-      const isNewRepeat = givesNewRepeat({
-        from: asStart(originalStart),
-        master,
-        saved: params.edited,
-        start,
-      });
-      // Added days before the split stay with the old part.
-      const fromSplit = splitAddedDays(
-        savedRule(params.edited, master, params.cancelled),
-        originalStart,
-        zone,
-        "from"
-      );
-      // The new part's COUNT, when it keeps the series': less the places
-      // before the split (`carriedCount`), plus one for a moved meeting's
-      // skip (`moved`), less one for each skip with no place of its own in
-      // the new series (`countPlacesLost`) and each that falls past its end
-      // (`lowerCount`). A COUNT the user set, or one with a new
-      // repeat, is theirs, plus one for a moved meeting's skip and less
-      // nothing else.
-      const keeps = keepsCount({
-        master,
-        newRepeat: isNewRepeat,
-        rule: fromSplit,
-      });
-      const carried = yield* carriedCount({
-        calendarId,
-        keeps,
-        master,
-        originalStart,
-        rule: fromSplit,
-      });
-      if (!carried) {
-        return yield* Effect.fail(refused({ reason: "countUnknown" }));
-      }
-      const { fromList, rule: counted } = carried;
-      // The rule as written for the new start (a kept BYHOUR moves with
-      // it), which places are read against.
-      const writtenCounted = ruleForStart(
-        counted,
-        master,
-        start,
-        originalStart
-      );
-      const moved = movedOffRule({
-        master,
-        originalStart,
-        recurrence: writtenCounted,
-        start,
-      });
-      // The new series' slots, in the zone it repeats in.
-      const newZone = repeatZone(master, start);
-      // The moved meeting's skip takes one of a COUNT's places when the
-      // rule meets there, an added day or not (an added day's alone takes
-      // none), so the rest are placed against the COUNT it ends up with.
-      const rulePlaces = moved.filter(
-        (place) =>
-          seriesMeetsAt({
-            recurrence: writtenCounted.filter((line) =>
-              line.startsWith("RRULE:")
-            ),
-            seriesZone: newZone,
-            slot: place,
-            start,
-          }) === true
-      );
-      const final = changeCount(counted, rulePlaces.length);
-      // Moved to other days, or in a series that meets several times a day
-      // (whose times don't follow its start), a skipped or deleted rule
-      // meeting after the split stays skipped where the new series meets
-      // in its place, as a changed one is put back (read against the rule
-      // as it's written for the new start, its skips aside: a place already
-      // skipped is still its place). A skip the series didn't have was
-      // lined up by the client and stays as written. Otherwise
-      // `lineUpRule` moves skips to the new time on their own day. The new
-      // series' start is the meeting the user just saved, so no skip lands
-      // on it.
-      const fromDay = dayOfStart(asStart(originalStart), zone);
-      const toDay = dayOfStart(start, newZone);
-      const byPlace =
-        !(fromDay && toDay && fromDay.equals(toDay)) ||
-        meetsSeveralTimesADay(
-          master.recurrence ?? [],
-          clockOf(master.start, zone)
-        ) ||
-        isNewRepeat;
-      const split = slotMoment(originalStart, zone);
-      const had = new Set(
-        dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
-      );
-      const asSlot = (value: RecurrenceValue) =>
-        value.instant
-          ? googleDateTime(value.instant.toZonedDateTimeISO(zone))
-          : value.day.toString();
-      // An added (RDATE) meeting keeps its own slot: `lineUpRule` keeps its
-      // skip there, in the new start's form.
-      const isAdded = (slot: string) =>
-        addsSlot(master.recurrence ?? [], slot, zone);
-      // The rule's own skips after the split, of its own meetings.
-      const ownAfterSplit = (value: RecurrenceValue) => {
-        const slot = asSlot(value);
-        const at = slotMoment(slot, zone);
-        return (
-          had.has(skipKey(value)) &&
-          !isAdded(slot) &&
-          Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
-        );
-      };
-      // Those `placeByDay` places; `lineUpRule` gets the rule without them.
-      const placedByDay = (value: RecurrenceValue) =>
-        byPlace && ownAfterSplit(value);
-      const ownSkipsAfterSplit = dateValues(final, "EXDATE", zone)
-        .filter(ownAfterSplit)
-        .map(asSlot);
-      // A skip whose place is the new start (the meeting just saved there)
-      // is dropped, and holds no place of its own: a carried COUNT is one
-      // less for each rule meeting, however many skips it has.
-      const placement = byPlace
-        ? placeByDay({
-            cancelled: params.cancelled,
-            fromList,
-            master,
-            originalStart,
-            rule: ruleForStart(final, master, start, originalStart),
-            slots: [
-              ...params.cancelled.filter((slot) => !isAdded(slot)),
-              ...ownSkipsAfterSplit,
-            ],
-            start,
-          })
-        : {
-            placed: [],
-            placesLost: [],
-            // Kept on their days, skips go to the new time there.
-            ruleSkips: onOwnDays({
-              master,
-              // An added day's own place only if the rule meets there too.
-              slots: [...params.cancelled, ...ownSkipsAfterSplit],
-              start,
-            }),
-          };
-      const placed = placement.placed;
-      const placesLost = countPlacesLost({
-        added: addedOntoStart({
-          cancelled: params.cancelled.filter(isAdded),
-          master,
-          start,
-        }),
-        keeps,
-        skips: placement.placesLost,
-      });
-      const lowered =
-        placesLost === null
-          ? null
-          : lowerCount({
-              keeps,
-              master,
-              places: placesLost,
-              rule: final,
-              ruleSkips: placement.ruleSkips,
-              splitAt: originalStart,
-              start,
-            });
-      if (!lowered) {
-        return yield* Effect.fail(refused({ reason: "countUnknown" }));
-      }
-      const recurrence = skipping(
-        lineUpRule({
-          // An added meeting's skip on the new start would hide the
-          // meeting just saved there.
-          cancelled: byPlace
-            ? params.cancelled.filter(
-                (slot) =>
-                  isAdded(slot) &&
-                  inFormOf(slot, start, newZone) !== slotOf(start, newZone)
-              )
-            : params.cancelled,
-          master,
-          rule: keepingDateValues(
-            lowered,
-            "EXDATE",
-            zone,
-            (value) => !placedByDay(value)
-          ),
-          splitAt: originalStart,
-          start,
-        }),
-        [...placed, ...moved],
-        zone
-      );
-      const kept = withinEnd({
-        // Its own rule however it's written (parts reordered, its day
-        // rebuilt for a day move): not a new end.
-        ownRule: !isNewRepeat,
-        recurrence,
-        rule: final,
-        start,
-        zone: newZone,
-      });
-      return {
-        newRepeat: isNewRepeat,
-        recurrence:
-          kept ?? (yield* Effect.fail(refused({ reason: "endsBeforeStart" }))),
-      };
-    });
-
-  /**
-   * A split's new `rule` with a kept COUNT set to the occurrences left
-   * after `originalStart`. Unchanged if there is none, or if the user
-   * changed the COUNT: a changed COUNT is the new part's own number of
-   * meetings. Null if what's left can't be known. With what Google's list
-   * of the series' meetings told it (`fromList`) when it was read for it.
-   */
-  const carriedCount = (params: {
-    calendarId: string;
-    /** Whether `rule` keeps the series' COUNT (`keepsCount`). */
-    keeps: boolean;
-    master: Event;
-    originalStart: string;
-    rule: string[];
-  }) =>
-    Effect.gen(function* () {
-      const { calendarId, master, originalStart, rule } = params;
-      if (!params.keeps) {
-        return { fromList: null, rule };
-      }
-      const seriesStart = slotOf(master.start, seriesZoneOf(master));
-      if (!seriesStart) {
-        return null;
-      }
-      const counting = {
-        masterRecurrence: master.recurrence ?? [],
-        originalStart,
-        seriesStart,
-        seriesZone: seriesZoneOf(master),
-      };
-      // A rule that can be read is counted without asking Google.
-      const exact = carryCountExactly(rule, counting);
-      if (exact) {
-        return { fromList: null, rule: exact };
-      }
-      const starts = yield* listOccurrenceStarts(calendarId, master);
-      const counted = carryCountFromList(rule, { ...counting, starts });
-      return (
-        counted && {
-          fromList: {
-            heldPlaces: counted.heldPlaces,
-            leftOut: counted.leftOut,
-            listed: starts,
-          },
-          rule: counted.recurrence,
-        }
-      );
-    });
-
-  /** Writes a carried occurrence's own changes onto its new series' one. */
-  const putBack = (
-    calendarId: string,
-    seriesId: string,
-    carried: CarriedOccurrence
-  ) =>
-    Effect.gen(function* () {
-      const listed = yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.instances(seriesId, {
-            calendarId,
-            maxResults: 1,
-            originalStart: carried.at,
-          }),
-        catch: (cause) => new GoogleApiError({ cause }),
-      });
-      const occurrence = yield* parseEventResponse(listed.items?.[0]);
-      // Only the occurrence at its place takes its changes: any other
-      // answer fails the split before the cut (Google's reference doesn't
-      // say how it reads an all-day series' date there).
-      if (!sameSlot(occurrence.originalStartTime, carried.at)) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Google returned another occurrence"),
-          })
-        );
-      }
-      // Written like a single occurrence's update, so it keeps its place.
-      const payload = {
-        ...sanitizeEventPayload(occurrence),
-        originalStartTime: occurrence.originalStartTime,
-        recurringEventId: occurrence.recurringEventId,
-        ...carried.changes,
-      };
-      // Google changes or removes a meeting link only at version 1; one
-      // the occurrence dropped on its own is a change too.
-      yield* Effect.tryPromise({
-        try: () =>
-          client.calendars.events.update(occurrence.id, {
-            ...payload,
-            calendarId,
-            // A meeting link the occurrence dropped on its own, and its
-            // attachments, are its changes too.
-            ...writeOptions(payload, carried.changes),
-          }),
-        catch: (cause) => {
-          logGoogleEventUpdateFailure({
-            operation: "update",
-            calendarId,
-            eventId: occurrence.id,
-            scope: "following-carry",
-            event: payload,
-            cause,
-          });
-          return new GoogleApiError({ cause });
-        },
-      });
-    });
-
-  /**
-   * What a cut whose request failed did, read back from Google: `cut` (it
-   * went through), `unchanged`, or `unknown` (unreadable, or changed some
-   * other way meanwhile, so which meetings it has isn't known).
-   */
-  const cutOutcome = (
-    calendarId: string,
-    master: Event,
-    cutRecurrence: string[]
-  ) =>
-    Effect.gen(function* () {
-      const current = yield* Effect.exit(getEvent(calendarId, master.id));
-      if (Exit.isFailure(current)) {
-        return "unknown" as const;
-      }
-      const zone = seriesZoneOf(master);
-      const now = recurrenceValues(current.value.recurrence ?? [], zone);
-      if (now === recurrenceValues(master.recurrence ?? [], zone)) {
-        return "unchanged" as const;
-      }
-      return now === recurrenceValues(cutRecurrence, zone)
-        ? ("cut" as const)
-        : ("unknown" as const);
-    });
-
-  /**
-   * Splits `master` at `originalStart` into `newSeries` (in
-   * `destinationCalendarId`), all or nothing. The new series is created
-   * first, under an id chosen here, with `carried` put back on it; then
-   * the old one is cut to end before the split (Google drops its later
-   * occurrences). A failure before the cut deletes the new series. After
-   * a failed cut the old series is read back: cut, the split stands;
-   * unchanged, the new one is deleted and the call fails; unread or
-   * changed some other way, both stay (a meeting shown twice beats one
-   * lost) and the call fails.
-   */
-  const splitSeries = (params: {
-    calendarId: string;
-    carried: CarriedOccurrence[];
-    destinationCalendarId: string;
-    master: Event;
-    newSeries: CreateEvent;
-    originalStart: string;
-  }) =>
-    Effect.gen(function* () {
-      const { calendarId, destinationCalendarId, master, newSeries } = params;
-      yield* Effect.annotateCurrentSpan(
-        "eventType",
-        newSeries.eventType ?? "default"
-      );
-      // Google takes an id of base32hex characters (0-9, a-v).
-      const seriesId = crypto.randomUUID().replaceAll("-", "");
-      // Its failure leaves both series (a meeting shown twice): logged, and
-      // the error that caused the rollback returned.
-      const discardNew = Effect.tryPromise({
-        try: () =>
-          client.calendars.events.delete(seriesId, {
-            calendarId: destinationCalendarId,
-          }),
-        catch: (cause) => {
-          // Not found: the create never went through, so nothing is left.
-          if (cause instanceof NotFoundError) {
-            return new GoogleApiError({ cause });
-          }
-          logGoogleEventUpdateFailure({
-            operation: "delete",
-            calendarId: destinationCalendarId,
-            eventId: seriesId,
-            scope: "following-rollback",
-            event: newSeries,
-            cause,
-          });
-          return new GoogleApiError({ cause });
-        },
-      }).pipe(Effect.ignore);
-
-      // A new part that doesn't repeat ("Repeat: None") is one event, with
-      // no recurrence lines: the one carried (at its start) goes on it.
-      const repeating = repeats(newSeries.recurrence);
-      const startSlot = slotOf(newSeries.start, seriesZoneOf(master));
-      const atStart = params.carried.find(
-        (carried) => carried.at === startSlot
-      );
-      const written = repeating
-        ? newSeries
-        : { ...newSeries, ...atStart?.changes, recurrence: [] };
-      const created = yield* Effect.gen(function* () {
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            client.calendars.events.create(
-              destinationCalendarId,
-              {
-                ...written,
-                id: seriesId,
-                // Its attachments, when it has any, are written on purpose.
-                ...writeOptions(
-                  written,
-                  written.attachments?.length
-                    ? { attachments: written.attachments }
-                    : {}
-                ),
-              },
-              // Retried below: a 409 there means a try whose answer was
-              // lost made it, which is read back, not tried again.
-              { maxRetries: 0 }
-            ),
-          catch: (cause) => new GoogleApiError({ cause }),
-        }).pipe(
-          Effect.retry(WRITE_RETRIES),
-          // Logged once, for the last try; taken is no failure.
-          Effect.tapError((error) =>
-            error.cause instanceof ConflictError
-              ? Effect.void
-              : Effect.sync(() =>
-                  logGoogleEventUpdateFailure({
-                    operation: "create",
-                    calendarId: destinationCalendarId,
-                    event: written,
-                    cause: error.cause,
-                  })
-                )
-          ),
-          // Taken: a try whose answer was lost made it (the id is ours).
-          Effect.catchIf(
-            (error) => error.cause instanceof ConflictError,
-            () => getEvent(destinationCalendarId, seriesId)
-          )
-        );
-        const series = yield* parseEventResponse(response);
-        yield* Effect.forEach(
-          repeating ? params.carried : [],
-          (carried) => putBack(destinationCalendarId, seriesId, carried),
-          { concurrency: 4, discard: true }
-        );
-        return series;
-      }).pipe(Effect.onError(() => discardNew));
-
-      const cutRecurrence = truncateRecurrenceForFollowing(
-        master.recurrence ?? [],
-        params.originalStart,
-        seriesZoneOf(master),
-        master.start.dateTime ?? master.start.date
-      );
-      const cutPayload = sanitizeEventPayload({
-        ...master,
-        recurrence: cutRecurrence,
-      });
-      // A cut is tried again (it writes the same whole event each time, so
-      // an answer to a later try is true). One that may still go through is
-      // remembered: if every try fails, the old series is left as it reads
-      // back rather than the new one deleted.
-      let unanswered = false;
-      const cut = yield* Effect.exit(
-        Effect.tryPromise({
-          try: () =>
-            client.calendars.events.update(
-              master.id,
-              {
-                ...cutPayload,
-                calendarId,
-                ...writeOptions(cutPayload, {}),
-              },
-              { maxRetries: 0 }
-            ),
-          catch: (cause) => new GoogleApiError({ cause }),
-        }).pipe(
-          Effect.tapError((error) =>
-            Effect.sync(() => {
-              unanswered ||= mayGoThrough(error);
-            })
-          ),
-          Effect.retry(WRITE_RETRIES),
-          // Logged once, for the last try.
-          Effect.tapError((error) =>
-            Effect.sync(() =>
-              logGoogleEventUpdateFailure({
-                operation: "update",
-                calendarId,
-                eventId: master.id,
-                scope: "following-truncate",
-                event: cutPayload,
-                cause: error.cause,
-              })
-            )
-          )
-        )
-      );
-      if (Exit.isFailure(cut)) {
-        const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
-        if (outcome === "unchanged" && !unanswered) {
-          yield* discardNew;
-        }
-        if (outcome !== "cut") {
-          return yield* Effect.failCause(cut.cause);
-        }
-      }
-      return created;
     });
 
   /**
@@ -3575,51 +2914,35 @@ export function makeGoogleCalendarService(
   };
 
   /**
-   * The rule an Entire series save writes, once what it would cost the
-   * occurrences changed or deleted on their own is checked: a deleted one
-   * stays deleted as a skip where its meeting now is (`lineUpRule`), as
-   * Google brings it back when the start moves; one changed whose changes
-   * Google would undo is refused before writing (`seriesChangeRefusal`).
-   * A save that ends the repeat carries the first meeting's own changes
-   * into the event left (`endedRepeat`).
+   * What an Entire series save (`plan`) writes of its rules, and carries of
+   * the first meeting, once the occurrences changed or deleted on their
+   * own are read (`afterSave`); refused when one would be lost or resized.
    */
-  const keptOccurrences = (params: {
-    calendarId: string;
-    changes: Partial<CreateEvent>;
-    edited: CreateEvent;
-    master: Event;
-    /** Whether the save moves the series' start. */
-    movesStart: boolean;
-    opened: Event;
-    times: { end: Event["end"]; start: Event["start"] };
-  }) =>
+  const keptOccurrences = (calendarId: string, plan: SeriesPlan) =>
     Effect.gen(function* () {
-      const { master, times } = params;
-      const zone = seriesZoneOf(master);
-      const rule = params.edited.recurrence
-        ? withSeriesSkips(params.edited.recurrence, master)
-        : (master.recurrence ?? []);
-      // Read for what it means: the series' own skips, written again in
-      // another form, aren't a new rule.
-      const movesSlots =
-        params.movesStart ||
-        recurrenceValues(rule, zone) !==
-          recurrenceValues(master.recurrence ?? [], zone);
-      if (!(movesSlots || !sameLength(times, master, zone))) {
-        return { carried: {}, recurrence: rule };
+      const { master, times } = plan;
+      if (
+        !(plan.movesSlots || !sameLength(times, master, seriesZoneOf(master)))
+      ) {
+        return { carried: {}, recurrence: plan.recurrence };
       }
-      const { cancelled, changed } = yield* exceptionsOf(
-        params.calendarId,
-        master
-      );
-      const kept = keptAfterEdit({
-        ...params,
-        cancelled,
-        changed,
-        movesSlots,
-        rule,
-      });
-      return "reason" in kept ? yield* Effect.fail(refused(kept)) : kept;
+      const { cancelled, changed } = yield* exceptionsOf(calendarId, master);
+      const kept = afterSave({ cancelled, changed, plan });
+      if ("reason" in kept) {
+        return yield* Effect.fail(refused(kept));
+      }
+      if (
+        losesMeetings({
+          cancelled,
+          from: master.start,
+          master,
+          start: times.start,
+          written: kept.recurrence,
+        })
+      ) {
+        return yield* Effect.fail(refused({ reason: "otherAppRepeat" }));
+      }
+      return kept;
     });
 
   const updateEventAll = (
@@ -3648,23 +2971,18 @@ export function makeGoogleCalendarService(
         return yield* Effect.fail(refused({ reason: "severalTimesADay" }));
       }
 
-      // Worked out once: which refusal applies, where skips go and whether
-      // the opened occurrence gets its own write all turn on it.
       const movesStart = !sameTime(times.start, master.start, zone);
-      // Left out keeps the series' pattern; an empty list ends it
-      // ("Repeat: None").
-      const { carried, recurrence } = yield* keptOccurrences({
-        calendarId,
+      const plan = seriesPlan({
         // As the series is written: a guest list merged into its own.
         changes: changes.attendees
           ? { ...changes, attendees: event.attendees }
           : changes,
         edited,
         master,
-        movesStart,
         opened: currentEvent,
         times,
       });
+      const { carried, recurrence } = yield* keptOccurrences(calendarId, plan);
 
       const payload: CreateEvent = {
         ...event,
@@ -3748,6 +3066,360 @@ export function makeGoogleCalendarService(
   };
 
   /**
+   * The rule a split's new part repeats with: `edited`, or the series'.
+   * Its added days before the split stay with the old part. A COUNT kept
+   * from the series carries on with the positions left (a five-time series
+   * split at its third runs three more, not five); a COUNT the user set is
+   * theirs. Occurrences `cancelled` after the split, and the rule's own
+   * skips there, stay skipped where their meetings land (`placeSkips`).
+   * Refuses, before any write,
+   * a kept COUNT whose positions left can't be told, or a rule the save
+   * sets that ends before `start`.
+   */
+  const newSeriesRecurrence = (params: {
+    calendarId: string;
+    cancelled: string[];
+    edited: string[] | undefined;
+    master: Event;
+    originalStart: string;
+    start: Event["start"];
+  }) =>
+    Effect.gen(function* () {
+      const { master, originalStart, start } = params;
+      const zone = seriesZoneOf(master);
+      const ownRule = !givesNewRepeat({
+        from: asStart(originalStart),
+        master,
+        saved: params.edited,
+        start,
+      });
+      const saved = splitAddedDays(
+        savedRule(params.edited, master, params.cancelled),
+        originalStart,
+        zone,
+        "from"
+      );
+      const counting = { master, originalStart, ownRule, saved, start };
+      let carried = carriedRule(counting);
+      // A clock change before the split: Google's list tells what it did.
+      if (carried.kind === "unknown") {
+        const listed = yield* listOccurrenceStarts(params.calendarId, master);
+        carried = carriedRule({ ...counting, listed });
+      }
+      if (carried.kind === "unknown") {
+        return yield* Effect.fail(refused({ reason: "countUnknown" }));
+      }
+      if (carried.kind === "spent") {
+        return carried.recurrence;
+      }
+      const { keeps, moved, recurrence: fromSplit } = carried;
+      const newZone = repeatZone(master, start);
+      const { placed, rule } = placeSkips({
+        cancelled: params.cancelled,
+        fromSplit,
+        keeps,
+        master,
+        originalStart,
+        start,
+      });
+      const recurrence = skipping(rule, [...placed, ...moved], zone);
+      if (!endsBeforeStart(recurrence, start, newZone)) {
+        const written = splitRuleForStart({
+          cancelled: params.cancelled,
+          master,
+          originalStart,
+          recurrence,
+          start,
+        });
+        return (
+          written ?? (yield* Effect.fail(refused({ reason: "otherAppRepeat" })))
+        );
+      }
+      // The series' own end before the new start (a meeting moved past
+      // it): its rule is spent, so the new part has that meeting and any
+      // added (RDATE) ones after it; one event if none. An end the save
+      // sets there is refused.
+      if (ownRule) {
+        const added = recurrence.filter((line) => !line.startsWith("RRULE:"));
+        return repeats(added) ? added : [];
+      }
+      return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
+    });
+
+  /** Every meeting of `master` Google lists, by original start, cancelled ones too. */
+  const listOccurrenceStarts = (calendarId: string, master: Event) =>
+    Effect.gen(function* () {
+      const items = yield* allPages((pageToken) =>
+        client.calendars.events.instances(master.id, {
+          calendarId,
+          maxResults: 2500,
+          pageToken,
+          showDeleted: true,
+        })
+      );
+      return items.flatMap((item) => {
+        const start = item.originalStartTime ?? item.start;
+        const slot = start && slotOf(start, seriesZoneOf(master));
+        return slot ? [slot] : [];
+      });
+    });
+
+  /** Writes a carried occurrence's own changes onto its new series' one. */
+  const putBack = (
+    calendarId: string,
+    seriesId: string,
+    carried: CarriedOccurrence
+  ) =>
+    Effect.gen(function* () {
+      const listed = yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.instances(seriesId, {
+            calendarId,
+            maxResults: 1,
+            originalStart: carried.at,
+          }),
+        catch: (cause) => new GoogleApiError({ cause }),
+      });
+      const occurrence = yield* parseEventResponse(listed.items?.[0]);
+      // Only the occurrence at its place takes its changes: any other
+      // answer fails the split before the cut (Google's reference doesn't
+      // say how it reads an all-day series' date there).
+      if (!sameSlot(occurrence.originalStartTime, carried.at)) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Google returned another occurrence"),
+          })
+        );
+      }
+      // Written like a single occurrence's update, so it keeps its place.
+      const payload = {
+        ...sanitizeEventPayload(occurrence),
+        originalStartTime: occurrence.originalStartTime,
+        recurringEventId: occurrence.recurringEventId,
+        ...carried.changes,
+      };
+      yield* Effect.tryPromise({
+        try: () =>
+          client.calendars.events.update(occurrence.id, {
+            ...payload,
+            calendarId,
+            // A meeting link the occurrence dropped on its own, and its
+            // attachments, are its changes too.
+            ...writeOptions(payload, carried.changes),
+          }),
+        catch: (cause) => {
+          logGoogleEventUpdateFailure({
+            operation: "update",
+            calendarId,
+            eventId: occurrence.id,
+            scope: "following-carry",
+            event: payload,
+            cause,
+          });
+          return new GoogleApiError({ cause });
+        },
+      });
+    });
+
+  /**
+   * What a cut whose request failed did, read back from Google: `cut` (it
+   * went through), `unchanged`, or `unknown` (unreadable, or changed some
+   * other way meanwhile, so which meetings it has isn't known).
+   */
+  const cutOutcome = (
+    calendarId: string,
+    master: Event,
+    cutRecurrence: string[]
+  ) =>
+    Effect.gen(function* () {
+      const current = yield* Effect.exit(getEvent(calendarId, master.id));
+      if (Exit.isFailure(current)) {
+        return "unknown" as const;
+      }
+      const zone = seriesZoneOf(master);
+      const now = recurrenceValues(current.value.recurrence ?? [], zone);
+      if (now === recurrenceValues(master.recurrence ?? [], zone)) {
+        return "unchanged" as const;
+      }
+      return now === recurrenceValues(cutRecurrence, zone)
+        ? ("cut" as const)
+        : ("unknown" as const);
+    });
+
+  /**
+   * Splits `master` at `originalStart` into `newSeries` (in
+   * `destinationCalendarId`), all or nothing. The new series is created
+   * first, under an id chosen here, with `carried` put back on it; then
+   * the old one is cut to end before the split (Google drops its later
+   * occurrences). A failure before the cut deletes the new series. After
+   * a failed cut the old series is read back: cut, the split stands;
+   * unchanged after no try that may still go through, the new one is
+   * deleted and the call fails; otherwise both stay (a meeting shown twice
+   * beats one lost) and the call fails.
+   */
+  const splitSeries = (params: {
+    calendarId: string;
+    carried: CarriedOccurrence[];
+    destinationCalendarId: string;
+    master: Event;
+    newSeries: CreateEvent;
+    originalStart: string;
+  }) =>
+    Effect.gen(function* () {
+      const { calendarId, destinationCalendarId, master, newSeries } = params;
+      yield* Effect.annotateCurrentSpan(
+        "eventType",
+        newSeries.eventType ?? "default"
+      );
+      // Google takes an id of base32hex characters (0-9, a-v).
+      const seriesId = crypto.randomUUID().replaceAll("-", "");
+      // Its failure leaves both series (a meeting shown twice): logged, and
+      // the error that caused the rollback returned.
+      const discardNew = Effect.tryPromise({
+        try: () =>
+          client.calendars.events.delete(seriesId, {
+            calendarId: destinationCalendarId,
+          }),
+        catch: (cause) => {
+          // Not found: the create never went through, so nothing is left.
+          if (!(cause instanceof NotFoundError)) {
+            logGoogleEventUpdateFailure({
+              operation: "delete",
+              calendarId: destinationCalendarId,
+              eventId: seriesId,
+              scope: "following-rollback",
+              event: newSeries,
+              cause,
+            });
+          }
+          return new GoogleApiError({ cause });
+        },
+      }).pipe(Effect.ignore);
+
+      // A new part that doesn't repeat ("Repeat: None") is one event, with
+      // no recurrence lines: the one carried (at its start) goes on it.
+      const repeating = repeats(newSeries.recurrence);
+      const startSlot = slotOf(newSeries.start, seriesZoneOf(master));
+      const atStart = params.carried.find(
+        (carried) => carried.at === startSlot
+      );
+      const written = repeating
+        ? newSeries
+        : { ...newSeries, ...atStart?.changes, recurrence: [] };
+      const created = yield* Effect.gen(function* () {
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            client.calendars.events.create(
+              destinationCalendarId,
+              {
+                ...written,
+                id: seriesId,
+                // Its attachments, when it has any, are written on purpose.
+                ...writeOptions(
+                  written,
+                  written.attachments?.length
+                    ? { attachments: written.attachments }
+                    : {}
+                ),
+              },
+              // Retried below: a 409 there means a try whose answer was
+              // lost made it, which is read back, not tried again.
+              { maxRetries: 0 }
+            ),
+          catch: (cause) => new GoogleApiError({ cause }),
+        }).pipe(
+          Effect.retry(WRITE_RETRIES),
+          // Logged once, for the last try; taken is no failure.
+          Effect.tapError((error) =>
+            error.cause instanceof ConflictError
+              ? Effect.void
+              : Effect.sync(() =>
+                  logGoogleEventUpdateFailure({
+                    operation: "create",
+                    calendarId: destinationCalendarId,
+                    event: written,
+                    cause: error.cause,
+                  })
+                )
+          ),
+          // Taken: a try whose answer was lost made it (the id is ours).
+          Effect.catchIf(
+            (error) => error.cause instanceof ConflictError,
+            () => getEvent(destinationCalendarId, seriesId)
+          )
+        );
+        const series = yield* parseEventResponse(response);
+        yield* Effect.forEach(
+          repeating ? params.carried : [],
+          (carried) => putBack(destinationCalendarId, seriesId, carried),
+          { concurrency: 4, discard: true }
+        );
+        return series;
+      }).pipe(Effect.onError(() => discardNew));
+
+      const cutRecurrence = truncateRecurrenceForFollowing({
+        originalStart: params.originalStart,
+        recurrence: master.recurrence ?? [],
+        seriesStart: master.start,
+        seriesZone: seriesZoneOf(master),
+      });
+      const cutPayload = sanitizeEventPayload({
+        ...master,
+        recurrence: cutRecurrence,
+      });
+      // A cut is tried again (it writes the same whole event each time, so
+      // an answer to a later try is true). One that may still go through is
+      // remembered: if every try fails, the old series is left as it reads
+      // back rather than the new one deleted.
+      let unanswered = false;
+      const cut = yield* Effect.exit(
+        Effect.tryPromise({
+          try: () =>
+            client.calendars.events.update(
+              master.id,
+              {
+                ...cutPayload,
+                calendarId,
+                ...writeOptions(cutPayload, {}),
+              },
+              { maxRetries: 0 }
+            ),
+          catch: (cause) => new GoogleApiError({ cause }),
+        }).pipe(
+          Effect.tapError((error) =>
+            Effect.sync(() => {
+              unanswered ||= mayGoThrough(error);
+            })
+          ),
+          Effect.retry(WRITE_RETRIES),
+          // Logged once, for the last try.
+          Effect.tapError((error) =>
+            Effect.sync(() =>
+              logGoogleEventUpdateFailure({
+                operation: "update",
+                calendarId,
+                eventId: master.id,
+                scope: "following-truncate",
+                event: cutPayload,
+                cause: error.cause,
+              })
+            )
+          )
+        )
+      );
+      if (Exit.isFailure(cut)) {
+        const outcome = yield* cutOutcome(calendarId, master, cutRecurrence);
+        if (outcome === "unchanged" && !unanswered) {
+          yield* discardNew;
+        }
+        if (outcome !== "cut") {
+          return yield* Effect.failCause(cut.cause);
+        }
+      }
+      return created;
+    });
+
+  /**
    * Whether "This and following" from `occurrence` is the whole series:
    * nothing of it comes before (it's at or before the series' start, with
    * no meeting added before it). Otherwise it splits there.
@@ -3767,27 +3439,29 @@ export function makeGoogleCalendarService(
   };
 
   /**
-   * Whether a This and following save from `occurrence` is an Entire
-   * series save: it's the whole series (`isWholeSeries`), and either opens
-   * it or keeps its times and repeat (still repeating). From an added
-   * meeting before the series' start, a new time, date or repeat is that
-   * meeting's alone, which the series' own can't take.
+   * The series an occurrence's "This and following" acts on, and where it
+   * splits: refused where a new series can't start (`splitBlockedError`).
    */
-  const wholeSeriesEdit = (
-    edited: CreateEvent,
-    occurrence: Event,
-    master: Event,
-    zone: string
-  ) =>
-    isWholeSeries(occurrence, master) &&
-    (opensSeries(occurrence, master) ||
-      (keepsTimes(edited, occurrence, zone) &&
-        repeats(edited.recurrence ?? master.recurrence) &&
-        !newRepeat({
-          moved: null,
-          own: master.recurrence ?? [],
-          saved: edited.recurrence,
-        })));
+  const followingSplit = (calendarId: string, occurrence: Event) =>
+    Effect.gen(function* () {
+      const master = yield* getMasterRecurrence(calendarId, occurrence);
+      if (!master.recurrence?.length) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Event is not a recurring event"),
+          })
+        );
+      }
+      const originalStart = originalStartOf(occurrence, seriesZoneOf(master));
+      if (!originalStart) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            cause: new Error("Event start is not a date or dateTime"),
+          })
+        );
+      }
+      return { master, originalStart };
+    });
 
   const updateEventFollowing = (
     calendarId: string,
@@ -3797,25 +3471,27 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       // A form toggled to or from all day can send both forms' fields.
       const edited = withOneForm(input, currentEvent);
-      const master = yield* getMasterRecurrence(calendarId, currentEvent);
-      if (!master.recurrence) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event is not a recurring event"),
-          })
-        );
-      }
+      const { master, originalStart } = yield* followingSplit(
+        calendarId,
+        currentEvent
+      );
       const zone = seriesZoneOf(master);
-      if (wholeSeriesEdit(edited, currentEvent, master, zone)) {
+      // From the series' start, or an earlier added meeting with nothing
+      // before it, it's the whole series: an Entire series save when it
+      // opens the series, or keeps its times and repeat (from an added
+      // meeting, a new time, date or repeat is that meeting's alone).
+      const whole =
+        isWholeSeries(currentEvent, master) &&
+        (opensSeries(currentEvent, master) ||
+          (keepsTimes(edited, currentEvent, zone) &&
+            repeats(edited.recurrence ?? master.recurrence) &&
+            !newRepeat({
+              moved: null,
+              own: master.recurrence ?? [],
+              saved: edited.recurrence,
+            })));
+      if (whole) {
         return yield* updateEventAll(calendarId, edited, currentEvent, master);
-      }
-      const originalStart = originalStartOf(currentEvent, zone);
-      if (!originalStart) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event start is not a date or dateTime"),
-          })
-        );
       }
       const blocked = splitBlockedError(master, originalStart);
       if (blocked) {
@@ -3826,32 +3502,32 @@ export function makeGoogleCalendarService(
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
-      const { newRepeat: isNewRepeat, recurrence } = yield* newSeriesRecurrence(
-        {
-          calendarId,
-          cancelled: exceptions.cancelled,
-          edited: edited.recurrence,
-          master,
-          originalStart,
-          start: times.start,
-        }
-      );
+      const recurrence = yield* newSeriesRecurrence({
+        calendarId,
+        cancelled: exceptions.cancelled,
+        edited: edited.recurrence,
+        master,
+        originalStart,
+        start: times.start,
+      });
       const carried = placeCarried({
+        // Each is carried, or the save refused if the new part has no
+        // place for it ("Repeat: None" has none).
         occurrences: followingOccurrences({
+          cancelled: exceptions.cancelled,
           changes,
           edited,
-          // Each is carried, or the save refused if the new part has no
-          // place for it ("Repeat: None" has none: one changed later would
-          // be lost, as an end set before it would lose it).
           exceptions: exceptions.changed,
-          master,
           opened: currentEvent,
-          originalStart,
-          recurrence,
-          start: times.start,
+          plan: { master, originalStart, recurrence, start: times.start },
         }),
         recurrence,
-        seriesOnly: isNewRepeat,
+        seriesOnly: givesNewRepeat({
+          from: asStart(originalStart),
+          master,
+          saved: edited.recurrence,
+          start: times.start,
+        }),
         start: times.start,
         zone: repeatZone(master, times.start),
       });
@@ -3903,7 +3579,7 @@ export function makeGoogleCalendarService(
     Effect.gen(function* () {
       const instance = yield* getEvent(calendarId, eventId);
 
-      // Keep the occurrence's identity and times when cancelling it.
+      // Preserve the occurrence identity and time bounds when cancelling an exception.
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(eventId, {
@@ -3947,59 +3623,10 @@ export function makeGoogleCalendarService(
       }).pipe(Effect.asVoid);
     });
 
-  /**
-   * `master`'s rule with its meetings from `originalStart` on deleted. From
-   * an added meeting, in a rule whose end can't be worked out, Google's
-   * list of the series' meetings says where it ends.
-   */
-  const deletedFrom = (
-    calendarId: string,
-    master: Event,
-    originalStart: string
-  ) =>
-    Effect.gen(function* () {
-      const zone = seriesZoneOf(master);
-      const recurrence = master.recurrence ?? [];
-      const seriesStart = master.start.dateTime ?? master.start.date;
-      const how = followingDelete({
-        masterRecurrence: recurrence,
-        masterStart: master.start,
-        originalStart,
-        seriesZone: zone,
-      });
-      switch (how) {
-        case "cut":
-          return truncateRecurrenceForFollowing(
-            recurrence,
-            originalStart,
-            zone,
-            seriesStart
-          );
-        case "refuse":
-          return yield* Effect.fail(
-            refused({ reason: "deleteFromAddedOccurrence" })
-          );
-        case "list":
-          return deleteFromListed({
-            listed: yield* listOccurrenceStarts(calendarId, master),
-            originalStart,
-            recurrence,
-            seriesStart,
-            seriesZone: zone,
-          });
-        default:
-          return how satisfies never;
-      }
-    });
-
   const deleteEventFollowing = (calendarId: string, eventId: string) =>
     Effect.gen(function* () {
       const instance = yield* getEvent(calendarId, eventId);
-
-      const isRecurring = Boolean(
-        instance.recurringEventId || instance.recurrence?.length
-      );
-      if (!isRecurring) {
+      if (!(instance.recurringEventId || instance.recurrence?.length)) {
         return yield* Effect.fail(
           new GoogleApiError({
             cause: new Error(
@@ -4008,43 +3635,23 @@ export function makeGoogleCalendarService(
           })
         );
       }
-
-      const master = yield* getMasterRecurrence(calendarId, instance);
-      if (!master.recurrence?.length) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event is not a recurring event"),
-          })
-        );
-      }
-
+      const { master, originalStart } = yield* followingSplit(
+        calendarId,
+        instance
+      );
       if (isWholeSeries(instance, master)) {
         return yield* deleteEventAll(calendarId, master.id);
       }
-
-      const originalStartIso = originalStartOf(instance, seriesZoneOf(master));
-
-      if (!originalStartIso) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event start is not a date or dateTime"),
-          })
-        );
-      }
-
-      const truncatedRecurrence = yield* deletedFrom(
-        calendarId,
-        master,
-        originalStartIso
-      );
-
+      const recurrence = truncateRecurrenceForFollowing({
+        originalStart,
+        recurrence: master.recurrence ?? [],
+        seriesStart: master.start,
+        seriesZone: seriesZoneOf(master),
+      });
       yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.update(master.id, {
-            ...sanitizeEventPayload({
-              ...master,
-              recurrence: truncatedRecurrence,
-            }),
+            ...sanitizeEventPayload({ ...master, recurrence }),
             calendarId,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
@@ -4106,8 +3713,10 @@ export function makeGoogleCalendarService(
   );
 
   /**
-   * Moves a series from one of its occurrences on to another calendar: the
-   * old series ends before it, and a new one starts there.
+   * Moves a series from one of its occurrences on to another calendar: a
+   * new series there starts at that occurrence's original slot, with the
+   * series' fields and length, and it and later changed occurrences keep
+   * their changes; the old series ends before it.
    */
   const moveFollowingEvents = Effect.fn("GoogleCalendar.moveFollowingEvents")(
     function* (
@@ -4115,15 +3724,10 @@ export function makeGoogleCalendarService(
       instance: Event,
       destinationCalendarId: string
     ) {
-      const master = yield* getMasterRecurrence(calendarId, instance);
-      if (!master.recurrence?.length) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event is not a recurring event"),
-          })
-        );
-      }
-
+      const { master, originalStart } = yield* followingSplit(
+        calendarId,
+        instance
+      );
       if (isWholeSeries(instance, master)) {
         return yield* moveSingleEvent(
           calendarId,
@@ -4131,27 +3735,14 @@ export function makeGoogleCalendarService(
           destinationCalendarId
         );
       }
-
-      const zone = seriesZoneOf(master);
-      const originalStart = originalStartOf(instance, zone);
-      if (!originalStart) {
-        return yield* Effect.fail(
-          new GoogleApiError({
-            cause: new Error("Event start is not a date or dateTime"),
-          })
-        );
-      }
       const blocked = splitBlockedError(master, originalStart);
       if (blocked) {
         return yield* Effect.fail(blocked);
       }
-
-      // The new series starts at this occurrence's original slot with the
-      // series' fields and length; it and later changed occurrences keep
-      // their changes there.
+      const zone = seriesZoneOf(master);
       const slot = seriesSlotAt(master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
-      const { recurrence } = yield* newSeriesRecurrence({
+      const recurrence = yield* newSeriesRecurrence({
         calendarId,
         cancelled: exceptions.cancelled,
         edited: undefined,
@@ -4161,17 +3752,16 @@ export function makeGoogleCalendarService(
       });
       const carried = placeCarried({
         occurrences: [
-          {
-            at: originalStart,
-            changes: changesOwnTo(instance, master, zone),
-            originalStart,
-          },
-          ...exceptions.changed.map((exception) => ({
-            at: exception.originalStart,
-            changes: changesOwnTo(exception.occurrence, master, zone),
-            originalStart: exception.originalStart,
-          })),
-        ],
+          instance,
+          ...exceptions.changed.map(({ occurrence }) => occurrence),
+        ].map((occurrence) => {
+          const at = originalStartOf(occurrence, zone) ?? originalStart;
+          return {
+            at,
+            changes: changesOwnTo(occurrence, master, zone),
+            originalStart: at,
+          };
+        }),
         recurrence,
         // One occurrence can't move to another calendar.
         seriesOnly: true,
