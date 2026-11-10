@@ -62,7 +62,6 @@ import { savedSeriesRecurrence } from "@kompose/state/series-edit";
 import {
   formatAllDayWhen,
   formatEventWhen,
-  moveEventStart,
 } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
@@ -151,7 +150,9 @@ import type {
 import {
   buildTemporalPayload,
   eventForScope,
+  moveEventFormStart,
   saveFacts,
+  type TemporalFormValues,
 } from "./event-edit-utils";
 import { recurringDeleteAtom } from "./recurring-delete-dialog";
 
@@ -172,18 +173,13 @@ interface EventEditPopoverProps {
   start: Date;
 }
 
-interface EventFormValues {
-  allDay: boolean;
+interface EventFormValues extends TemporalFormValues {
   colorId?: string;
   description: string;
-  endDate: Date | null;
-  endTime: string;
   location: string;
   recurrence: string[];
   selectedAccountId: string;
   selectedCalendarId: string;
-  startDate: Date | null;
-  startTime: string;
   summary: string;
 }
 
@@ -1761,12 +1757,14 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
     colorId: watched.colorId,
     description: watched.description ?? "",
     endDate: watched.endDate,
+    endMoment: watched.endMoment,
     endTime: watched.endTime ?? "",
     location: watched.location ?? "",
     recurrence: watched.recurrence ?? [],
     selectedAccountId: watched.selectedAccountId ?? "",
     selectedCalendarId: watched.selectedCalendarId ?? "",
     startDate: watched.startDate,
+    startMoment: watched.startMoment,
     startTime: watched.startTime ?? "",
     summary: watched.summary ?? "",
   };
@@ -1961,41 +1959,14 @@ function applyMovedStart(
   if (!values.startDate) {
     return;
   }
-  const moved = moveEventStart(
-    formRange(values, values.startDate),
-    next,
-    timeZone
-  );
+  const moved = moveEventFormStart(values, next, timeZone);
   const dirty = { shouldDirty: true };
-  setValue("startDate", temporalToPickerDate(moved.startDate), dirty);
-  setValue("endDate", temporalToPickerDate(moved.endDate), dirty);
-  if (moved.startTime) {
-    setValue(
-      "startTime",
-      moved.startTime.toString({ smallestUnit: "minute" }),
-      dirty
-    );
-  }
-  if (moved.endTime) {
-    setValue(
-      "endTime",
-      moved.endTime.toString({ smallestUnit: "minute" }),
-      dirty
-    );
-  }
-}
-
-/** The form's range as Temporal values, for moveEventStart. */
-function formRange(values: EventFormValues, startDate: Date) {
-  const time = (value: string) =>
-    !values.allDay && value ? Temporal.PlainTime.from(value) : null;
-  const start = pickerDateToTemporal(startDate);
-  return {
-    endDate: values.endDate ? pickerDateToTemporal(values.endDate) : start,
-    endTime: time(values.endTime),
-    startDate: start,
-    startTime: time(values.startTime),
-  };
+  setValue("startDate", moved.startDate, dirty);
+  setValue("endDate", moved.endDate, dirty);
+  setValue("startTime", moved.startTime, dirty);
+  setValue("endTime", moved.endTime, dirty);
+  setValue("startMoment", moved.startMoment, dirty);
+  setValue("endMoment", moved.endMoment, dirty);
 }
 
 /** Whether the form ends before it starts (Save stays off, with a reason). */
@@ -2003,15 +1974,27 @@ function endsBeforeStart(values: Partial<EventFormValues>): boolean {
   if (!(values.startDate && values.endDate)) {
     return false;
   }
-  const range = formRange(values as EventFormValues, values.startDate);
-  if (!(range.startTime && range.endTime)) {
-    return Temporal.PlainDate.compare(range.endDate, range.startDate) < 0;
+  if (values.allDay || !values.startTime || !values.endTime) {
+    return (
+      Temporal.PlainDate.compare(
+        pickerDateToTemporal(values.endDate),
+        pickerDateToTemporal(values.startDate)
+      ) < 0
+    );
   }
-  return (
-    Temporal.PlainDateTime.compare(
-      range.endDate.toPlainDateTime(range.endTime),
-      range.startDate.toPlainDateTime(range.startTime)
-    ) < 0
+  const payload = buildTemporalPayload(
+    values as EventFormValues,
+    (start, end) => ({ start, end })
+  );
+  const startInstant = payload?.startPayload.dateTime;
+  const endInstant = payload?.endPayload.dateTime;
+  return Boolean(
+    startInstant &&
+      endInstant &&
+      Temporal.Instant.compare(
+        Temporal.Instant.from(endInstant),
+        Temporal.Instant.from(startInstant)
+      ) < 0
   );
 }
 
@@ -2179,12 +2162,22 @@ export function EventEditForm({
       colorId: event?.colorId ?? undefined,
       description: event?.description ?? "",
       endDate: initialEndDate ?? null,
+      endMoment: isAllDay
+        ? undefined
+        : Temporal.Instant.fromEpochMilliseconds(initialEndDate.getTime())
+            .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+            .toString(),
       endTime: isAllDay ? "" : formatTimeString(initialEndDate),
       location: event?.location ?? "",
       recurrence: recurrenceSource,
       selectedAccountId: accountId,
       selectedCalendarId: calendarId,
       startDate: initialStartDate ?? null,
+      startMoment: isAllDay
+        ? undefined
+        : Temporal.Instant.fromEpochMilliseconds(initialStartDate.getTime())
+            .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+            .toString(),
       startTime: isAllDay ? "" : formatTimeString(initialStartDate),
       summary: event?.summary ?? "",
     }),
@@ -2218,6 +2211,8 @@ export function EventEditForm({
     setValue("startTime", initialValues.startTime);
     setValue("endDate", initialValues.endDate);
     setValue("endTime", initialValues.endTime);
+    setValue("startMoment", initialValues.startMoment);
+    setValue("endMoment", initialValues.endMoment);
   }, [initialValues, scheduleKey, setValue]);
   // An occurrence's pattern lives on its master, which may load after the
   // editor opened: show it then, unless the user has already changed it.
@@ -2488,6 +2483,8 @@ export function EventEditForm({
       setValue("startTime", nextStartTime, { shouldDirty: true });
       setValue("endTime", nextEnd.endTime, { shouldDirty: true });
       setValue("allDay", false, { shouldDirty: true });
+      setValue("startMoment", undefined, { shouldDirty: true });
+      setValue("endMoment", undefined, { shouldDirty: true });
       setValue("location", "", { shouldDirty: true });
       setValue("colorId", undefined, { shouldDirty: true });
       setValue("recurrence", [], { shouldDirty: true });
