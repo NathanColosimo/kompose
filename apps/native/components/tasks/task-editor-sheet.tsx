@@ -625,10 +625,9 @@ function TaskScheduleChips({
     width: "auto",
   } as const;
 
-  // The date, time and due chips fit their text, in any locale and at any
-  // text size ("Due 20. Sept." in German), and the row wraps when they
-  // don't fit one line. The longest English values ("May 20", "10:00 AM",
-  // "Due May 20") still share one line at 375pt with the default text.
+  // The row wraps when the chips don't fit one line ("Due 20. Sept." in
+  // German, or large text). The longest English values ("May 20",
+  // "10:00 AM", "Due May 20") share one line at 375pt with the default text.
   return (
     <View className="mb-3 flex-row flex-wrap items-center gap-1">
       {/* Picker takes no accessibility props, so this names it. */}

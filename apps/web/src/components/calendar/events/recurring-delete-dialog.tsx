@@ -5,10 +5,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
-import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import {
-  chosenScope,
-  eventDeleteScopeState,
   RECURRENCE_SCOPE_OPTIONS,
   SCOPE_DIALOG_COPY,
 } from "@kompose/state/recurrence-scope-options";
@@ -69,21 +66,9 @@ function DeleteScopeDialog({
 }) {
   const { accountId, calendarId, event } = target;
   const { deleteEvent } = useGoogleEventMutations();
-  const series = useRecurringEventMaster({
-    accountId,
-    calendarId,
-    enabled: open,
-    event,
-  });
-  const [pick, setPick] = useState(target.defaultScope);
-  const state = eventDeleteScopeState({
-    seriesRuleFailed: series.ruleFailed,
-    seriesRuleLoaded: Boolean(event.recurrence?.length || series.ruleReady),
-  });
-  // The delete runs quiet, so a failure is said here.
-  const failed = deleteEvent.isError;
-  // The one asked for, or the nearest available while it's off.
-  const scope = chosenScope(pick, pick, state.disabled);
+  // Every scope is on at once: the server refuses no delete.
+  const [scope, setScope] = useState(target.defaultScope);
+  const { description, title } = SCOPE_DIALOG_COPY.deleteEvent;
 
   // A failure rejects, so the dialog stays open.
   const confirm = async () => {
@@ -100,19 +85,19 @@ function DeleteScopeDialog({
   return (
     <RecurrenceScopeDialog
       confirmLabel="Delete"
+      // The delete runs quiet, so a failure is said here.
       description={
-        failed
-          ? `${DELETE_FAILURE_MESSAGE} ${state.description}`
-          : state.description
+        deleteEvent.isError
+          ? `${DELETE_FAILURE_MESSAGE} ${description}`
+          : description
       }
-      disabledScopes={state.disabled}
       onConfirm={confirm}
       onOpenChange={onOpenChange}
-      onValueChange={setPick}
+      onValueChange={setScope}
       open={open}
       options={RECURRENCE_SCOPE_OPTIONS}
       pendingLabel="Deleting…"
-      title={SCOPE_DIALOG_COPY.deleteEvent.title}
+      title={title}
       value={scope}
     />
   );

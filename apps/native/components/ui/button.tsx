@@ -20,7 +20,6 @@ import { ButtonSpinner, type SpinnerVariant } from "@/components/ui/spinner";
 import { Text, TextClassContext } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
 import { THEME } from "@/lib/theme";
-import type { Colors } from "@/theme/colors";
 import { CORNERS, FONT_SIZE, HEIGHT } from "@/theme/globals";
 
 export type ButtonVariant =
@@ -50,7 +49,7 @@ export interface ButtonProps extends Omit<TouchableOpacityProps, "style"> {
   textStyle?: TextStyle;
 }
 
-type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
+type ThemeColor = Parameters<typeof useColor>[0];
 
 /**
  * Each variant's label (and icon) color, and on filled variants the same

@@ -1,3 +1,4 @@
+import { sameRecurrence } from "@kompose/api/lib/recurrence";
 import type {
   DeleteScope,
   TaskRecurrence,
@@ -17,7 +18,6 @@ import {
   markStatusFailureMessage,
   repeatBlocksSave,
   resolveTaskRecurrenceForEditor,
-  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, Keyboard } from "react-native";
@@ -105,7 +105,7 @@ function scopeDecisionFor(draft: TaskDraft, task: TaskSelectDecoded) {
   const hasChanges =
     hasCoreFieldChanges ||
     JSON.stringify(task.links ?? []) !== JSON.stringify(draft.links) ||
-    !taskRecurrenceEquals(task.recurrence, draft.recurrence) ||
+    !sameRecurrence(task.recurrence, draft.recurrence) ||
     haveTaskTagIdsChanged(previousTagIds, draft.tagIds);
   return {
     decision: getTaskUpdateScopeDecision({
@@ -227,10 +227,7 @@ export function useTaskEditorFlow() {
           links: nextDraft.links,
           // Sent only when it changed: an explicit null ends the repeat, so
           // an untouched occurrence must not send one.
-          recurrence: taskRecurrenceEquals(
-            task.recurrence,
-            nextDraft.recurrence
-          )
+          recurrence: sameRecurrence(task.recurrence, nextDraft.recurrence)
             ? undefined
             : nextDraft.recurrence,
           startDate: nextDraft.startDate,
@@ -279,7 +276,6 @@ export function useTaskEditorFlow() {
     Keyboard.dismiss();
     AccessibilityInfo.announceForAccessibility("Saving…");
     setIsSaving(true);
-    const task = editingTask;
     const session = sessionRef.current;
     saved.then((ok) => {
       if (sessionRef.current !== session) {
@@ -290,11 +286,7 @@ export function useTaskEditorFlow() {
         return;
       }
       setIsSaving(false);
-      if (task) {
-        updateDraft((current) => ({ ...current, status: task.status }));
-      }
-      setPendingSaveDraft(null);
-      setScopeDialog(null);
+      cancelScopeDialog();
     });
   }
 
@@ -349,8 +341,9 @@ export function useTaskEditorFlow() {
   }
 
   /**
-   * Cancel (or a backdrop tap) in a scope dialog: back to the editor
-   * underneath, edits kept, and the done checkbox as it was.
+   * Back to the editor underneath any scope dialog, edits kept and the done
+   * checkbox as saved: on Cancel (or a backdrop tap), and after a failed
+   * save.
    */
   function cancelScopeDialog() {
     if (editingTask) {
