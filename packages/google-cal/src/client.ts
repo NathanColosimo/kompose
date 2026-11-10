@@ -1510,12 +1510,20 @@ function followingOccurrences(params: {
 /**
  * Whether a meeting at `slot` that lands at `place` stays on its own
  * place: its day, or less than a day off by the clock (as `landingOf`
- * measures a move). Another meeting moved there too gives way to it.
+ * measures a move), read in the new series' form (`start`'s), so a timed
+ * Monday made an all-day Tuesday is a day off. Another meeting moved
+ * there too gives way to it.
  */
-function onOwnPlace(slot: string, place: string, zone: string): boolean {
+function onOwnPlace(params: {
+  place: string;
+  slot: string;
+  start: Event["start"];
+  zone: string;
+}): boolean {
+  const { place, start, zone } = params;
   const wall = (at: string) =>
     slotMoment(at, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
-  const from = wall(slot);
+  const from = wall(inFormOf(params.slot, start, zone) ?? params.slot);
   const to = wall(place);
   return (
     from !== undefined &&
@@ -1560,7 +1568,7 @@ function carriedAt(params: {
   }
   // Carried off its own place, it would overwrite a meeting there.
   const shared =
-    !onOwnPlace(slot, place, repeatZone(master, start)) &&
+    !onOwnPlace({ place, slot, start, zone: repeatZone(master, start) }) &&
     liveMeetingLandsAt(place, {
       ...plan,
       cancelled: [...params.cancelled, slot],
@@ -2534,7 +2542,7 @@ export function makeGoogleCalendarService(
           formed !== null &&
           ((at !== null &&
             (addsSlot(fromSplit, formed, zone) ||
-              (!onOwnPlace(slot, formed, newZone) &&
+              (!onOwnPlace({ place: formed, slot, start, zone: newZone }) &&
                 liveMeetingLandsAt(formed, {
                   ...plan,
                   cancelled: params.cancelled,
