@@ -307,7 +307,10 @@ export function untilRuleToDay(
   return readRecurrenceValue(until, timeZone, timeZone)?.day ?? null;
 }
 
-/** A rule's single value for a time part (BYHOUR=10); null for none or a list. */
+/**
+ * A rule's single value for a time part (BYHOUR=10); null for none or a
+ * list.
+ */
 function singlePart(rule: string, part: string): number | null {
   const value = rule
     .slice(rule.indexOf(":") + 1)
@@ -684,8 +687,10 @@ interface DateListMatch {
   cancelsMeeting: (instant: Temporal.Instant) => boolean;
   /** Made all day: whether a timed value becomes a date. */
   keepAsDate: ((name: string, value: RecurrenceValue) => boolean) | null;
-  /** A once-a-day meeting's day at the new time (`meetingDayMover`). */
-  /** Its meeting's new day; null when the meeting has none (moved off its rule's days). */
+  /**
+   * A once-a-day meeting's day at the new time (`meetingDayMover`); null
+   * when it has none (moved off its rule's days).
+   */
   moveDay: (day: Temporal.PlainDate) => Temporal.PlainDate | null;
   /** Whether a skip was on a rule's or the start's meeting before the edit. */
   ownSlot: ((value: RecurrenceValue) => boolean) | null;
@@ -957,10 +962,10 @@ export function matchRecurrenceToStart(
   // Whether a skip was on a meeting of the rules (or the start) before the
   // edit. One the series had is read against its own rules and added days
   // (`days.before`), as a save may change its weekdays too (a dormant one
-  // there stays dormant); one the client placed, against the saved rules. A rule that
-  // can't be read may meet there: a skip where nothing meets does nothing,
-  // one missed brings a meeting back.
-  // An all-day series' rules are read from its first day.
+  // there stays dormant); one the client placed, against the saved rules. A
+  // rule that can't be read may meet there: a skip where nothing meets does
+  // nothing, one missed brings a meeting back. An all-day series' rules are
+  // read from its first day.
   const readFrom = first ?? baseDay;
   const readersOf = (lines: readonly string[]) =>
     readFrom
