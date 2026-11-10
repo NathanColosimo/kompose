@@ -403,7 +403,10 @@ export function repeatChanged(params: {
   );
 }
 
-/** "RRULE:COUNT=5;FREQ=WEEKLY" for either order of its parts. */
+/**
+ * "RRULE:BYDAY=MO,SU;FREQ=WEEKLY" for any order of its parts and of the
+ * values in each, neither of which changes what the rule means.
+ */
 function sortedRuleParts(line: string): string {
   const colon = line.indexOf(":");
   if (colon === -1) {
@@ -412,6 +415,10 @@ function sortedRuleParts(line: string): string {
   const parts = line
     .slice(colon + 1)
     .split(";")
+    .map((part) => {
+      const [name, values = ""] = part.split("=");
+      return `${name}=${values.split(",").sort().join(",")}`;
+    })
     .sort();
   return `${line.slice(0, colon + 1)}${parts.join(";")}`;
 }
