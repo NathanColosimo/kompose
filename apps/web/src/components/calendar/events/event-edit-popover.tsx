@@ -5,11 +5,22 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import {
+  buildGoogleEventRecurrenceRule,
+  type EventRecurrenceFrequency as Frequency,
+  parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
+  type EventRecurrenceEnd as RecurrenceEnd,
+  recurrenceEndDay,
+  recurrenceUntilValue,
+  GOOGLE_EVENT_WEEKDAYS as WEEKDAYS,
+} from "@kompose/state/google-event-recurrence";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -89,57 +100,14 @@ import {
   formatPlainDate,
   formatTimeString,
   pickerDateToTemporal,
+  temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
-import {
-  buildRecurrenceRule,
-  buildTemporalPayload,
-  type Frequency,
-  parseRecurrence,
-  type RecurrenceEnd,
-  WEEKDAYS,
-} from "./event-edit-utils";
-
-// Until-date helpers this editor used before the repeat rules moved to
-// Temporal. The redesigned editor replaces this file later in the stack.
-const UNTIL_RULE_DATE_ONLY = /^(\d{4})(\d{2})(\d{2})$/;
-const UNTIL_RULE_FULL =
-  /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?$/;
-const UNTIL_SEPARATORS = /[-:]/g;
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function untilRuleToDate(raw?: string | null): Date | null {
-  if (!raw) {
-    return null;
-  }
-  const cleaned = raw.replace(UNTIL_SEPARATORS, "");
-  const dateOnly = cleaned.match(UNTIL_RULE_DATE_ONLY);
-  if (dateOnly) {
-    const [, y, m, d] = dateOnly;
-    return new Date(Number(y), Number(m) - 1, Number(d));
-  }
-  const full = cleaned.match(UNTIL_RULE_FULL);
-  if (!full) {
-    return null;
-  }
-  const [, y, m, d, hh, mm, ss, offset] = full;
-  const date = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}${offset ?? "Z"}`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateToUntilRule(date: Date): string | null {
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}00Z`;
-}
+import { buildTemporalPayload } from "./event-edit-utils";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -292,13 +260,16 @@ function RecurrenceEditor({
   visible,
   recurrenceRule,
   onChange,
+  allDay,
 }: {
+  allDay: boolean;
   visible: boolean;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
 }) {
+  const timeZone = useAtomValue(timezoneAtom);
   const parsedRecurrence = useMemo(
-    () => parseRecurrence(recurrenceRule),
+    () => parseGoogleEventRecurrenceRule(recurrenceRule),
     [recurrenceRule]
   );
 
@@ -316,10 +287,13 @@ function RecurrenceEditor({
   const emitChanges = (changes: Partial<RecurrenceEditorValues>) => {
     const nextValues = { ...values, ...changes };
     const end = buildRecurrenceEnd(nextValues);
-    const nextRule = buildRecurrenceRule(
-      nextValues.freq,
-      nextValues.byDay,
-      end
+    const nextRule = buildGoogleEventRecurrenceRule(
+      {
+        ...pickRecurrenceFrequency(parsedRecurrence, nextValues.freq),
+        byDay: nextValues.byDay,
+        end,
+      },
+      recurrenceRule
     );
     const normalizedNext = nextRule ?? null;
     if (normalizedNext === (recurrenceRule ?? null)) {
@@ -328,10 +302,8 @@ function RecurrenceEditor({
     onChange(nextRule);
   };
 
-  const untilDate = useMemo(
-    () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
-    [values.untilRule]
-  );
+  const untilDay = recurrenceEndDay(values.untilRule, timeZone);
+  const untilDate = untilDay ? temporalToPickerDate(untilDay) : undefined;
 
   if (!visible) {
     return null;
@@ -357,7 +329,7 @@ function RecurrenceEditor({
           onValueChange={(v) => {
             const nextFreq = v as Frequency;
             emitChanges({
-              byDay: nextFreq === "WEEKLY" ? values.byDay : [],
+              byDay: pickRecurrenceFrequency(parsedRecurrence, nextFreq).byDay,
               freq: nextFreq,
             });
           }}
@@ -429,8 +401,11 @@ function RecurrenceEditor({
               onClick={() => {
                 const fallback =
                   values.untilRule ||
-                  dateToUntilRule(new Date()) ||
-                  `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
+                  recurrenceUntilValue(
+                    pickerDateToTemporal(new Date()),
+                    allDay,
+                    timeZone
+                  );
                 emitChanges({ endType: "until", untilRule: fallback });
               }}
               size="sm"
@@ -464,10 +439,12 @@ function RecurrenceEditor({
                         emitChanges({ endType: "none", untilRule: "" });
                         return;
                       }
-                      const rule = dateToUntilRule(date);
-                      if (rule) {
-                        emitChanges({ untilRule: rule });
-                      }
+                      const rule = recurrenceUntilValue(
+                        pickerDateToTemporal(date),
+                        allDay,
+                        timeZone
+                      );
+                      emitChanges({ untilRule: rule });
                     }}
                     selected={untilDate ?? undefined}
                   />
@@ -1243,6 +1220,7 @@ function EventAllDayAndRecurrenceRow({
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[360px]">
             <RecurrenceEditor
+              allDay={allDay}
               onChange={onRecurrenceChange}
               recurrenceRule={recurrenceRule}
               visible

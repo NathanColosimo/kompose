@@ -54,7 +54,6 @@ export function useTasks(options: UseTasksOptions = {}) {
   const createTask = useMutation({
     mutationFn: async ({
       failureMessage: _failureMessage,
-      quiet: _quiet,
       ...task
     }: ClientTaskInsertDecoded & HeldSave) => {
       const encoded = clientTaskInsertCodec.encode(task);

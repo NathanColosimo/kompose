@@ -20,7 +20,7 @@ const move = {
  * source calendar's list after it, which the realtime sync refreshed while
  * the move was out.
  */
-async function failedMove(held: { failureMessage?: string; quiet?: boolean }) {
+async function failedMove(held: { failureMessage?: string }) {
   const told: Error[] = [];
   const sent: unknown[] = [];
   const queryClient = new QueryClient();
@@ -55,9 +55,9 @@ async function failedMove(held: { failureMessage?: string; quiet?: boolean }) {
   return { cached: queryClient.getQueryData(queryKey), sent, told };
 }
 
-test("a failed move the editor reports itself shows no toast", async () => {
-  const { told } = await failedMove({ quiet: true });
-  expect(told).toEqual([]);
+test("a failed move reports the server error", async () => {
+  const { told } = await failedMove({});
+  expect(told.map((error) => error.message)).toEqual(["failed"]);
 });
 
 test("a failed move otherwise says what failed, in the editor's words", async () => {
@@ -67,13 +67,13 @@ test("a failed move otherwise says what failed, in the editor's words", async ()
 });
 
 test("the server gets the move alone, not the editor's options", async () => {
-  const { sent } = await failedMove({ failureMessage: "x", quiet: true });
+  const { sent } = await failedMove({ failureMessage: "x" });
   expect(sent).toEqual([move]);
 });
 
 test("a failed move leaves the lists as they've since been refreshed", async () => {
   // Nothing changed them before the move, so nothing is put back.
-  const { cached } = await failedMove({ quiet: true });
+  const { cached } = await failedMove({});
   expect(cached).toEqual([{ id: "event" }, { id: "new" }]);
 });
 

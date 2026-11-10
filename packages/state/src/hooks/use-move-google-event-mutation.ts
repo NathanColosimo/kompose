@@ -23,7 +23,7 @@ export function useMoveGoogleEventMutation() {
 /**
  * A calendar move. Nothing changes in the cache before the server answers;
  * either way, both calendars' events and series are refetched. A failure
- * is reported unless the editor holding the save says it (`quiet`).
+ * is reported through the app's error toast.
  */
 export function moveGoogleEventMutationOptions(
   queryClient: QueryClient,
@@ -33,7 +33,6 @@ export function moveGoogleEventMutationOptions(
     networkMode: HELD_WRITE_NETWORK_MODE,
     mutationFn: async ({
       failureMessage: _failureMessage,
-      quiet: _quiet,
       ...variables
     }: MoveEventInput & HeldSave) => orpc.googleCal.events.move(variables),
     onError: (err: Error, variables: MoveEventInput & HeldSave) => {
