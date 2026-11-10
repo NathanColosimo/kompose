@@ -15,7 +15,7 @@ const TIME_PART = /^BY(?:HOUR|MINUTE|SECOND)=/;
  */
 function googleParts(rule: string, times: boolean): string {
   const parts = rule.replace("RRULE:", "").split(";").filter(Boolean);
-  if (!parts.some((part) => DAILY_OR_LONGER.test(part))) {
+  if (!meetsOnceADay(rule)) {
     return parts.join(";");
   }
   return parts
@@ -149,6 +149,55 @@ export function ruleUntil(params: {
 }): Slot | null {
   const until = expand(params.rule, params.first, true)?.options().until;
   return until ? fromLibrary(until, params.first) : null;
+}
+
+/**
+ * How many of a COUNT `rule`'s positions are at or after `split`, for a
+ * series starting at `first`: its meetings, skipped ones too, the start
+ * counted as the first (RFC 5545, as Google counts them). Null when the
+ * rule can't be read, or when the clocks skip its time on a day before
+ * the split: RFC 5545 drops that meeting, and whether Google does isn't
+ * known, so how many are left can't be told.
+ */
+export function positionsLeft(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+  split: Slot;
+}): number | null {
+  const { first, rule, split } = params;
+  const at = asLibraryTime(split, first);
+  try {
+    const positions = expand(rule, first, true)?.all();
+    if (!positions) {
+      return null;
+    }
+    const before = positions.filter(
+      (position) => Temporal.ZonedDateTime.compare(position, at) < 0
+    ).length;
+    // A timed rule meeting once a day has a position on each of its days
+    // unless the clocks skip its time there.
+    if (first instanceof Temporal.ZonedDateTime && meetsOnceADay(rule)) {
+      const day = at.toPlainDate();
+      const daysBefore = (expand(rule, first.toPlainDate(), true)?.all() ?? [])
+        .map((position) => position.toPlainDate())
+        .filter((position) => Temporal.PlainDate.compare(position, day) < 0);
+      if (daysBefore.length !== before) {
+        return null;
+      }
+    }
+    return positions.length - before;
+  } catch {
+    // The library gives up on a rule too long to expand.
+    return null;
+  }
+}
+
+/** Whether `rule` repeats daily or less often: once a day, as Google reads it. */
+function meetsOnceADay(rule: string): boolean {
+  return rule
+    .replace("RRULE:", "")
+    .split(";")
+    .some((part) => DAILY_OR_LONGER.test(part));
 }
 
 /**

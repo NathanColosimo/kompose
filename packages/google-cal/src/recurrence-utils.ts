@@ -1,6 +1,11 @@
 import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
-import { ruleEndsBefore, ruleMeetsAt, ruleUntil } from "./series";
+import {
+  positionsLeft,
+  ruleEndsBefore,
+  ruleMeetsAt,
+  ruleUntil,
+} from "./series";
 import type { SeriesRefusal } from "./series-edits";
 import {
   DATE_ONLY,
@@ -342,6 +347,48 @@ export function seriesMeetsAt(params: {
 }
 
 const isRule = (line: string) => line.startsWith("RRULE:");
+
+/** A rule's COUNT part, after the colon or a semicolon. */
+const COUNT_PART = /([:;])COUNT=(\d+)/;
+
+/** The COUNT a series' rule ends after; null if it has none. */
+export function countOf(recurrence: string[] | undefined): number | null {
+  const count = COUNT_PART.exec(recurrence?.find(isRule) ?? "")?.[2];
+  return count === undefined ? null : Number(count);
+}
+
+/**
+ * How many of a series' COUNT positions are left from `originalStart` on
+ * (`positionsLeft`); null when that can't be told.
+ */
+export function countLeft(params: {
+  originalStart: string;
+  recurrence: string[];
+  seriesStart: { date?: string | null; dateTime?: string | null };
+  seriesZone: string;
+}): number | null {
+  const { seriesZone } = params;
+  const rule = params.recurrence.find(isRule);
+  const first = asValue(
+    params.seriesStart.dateTime ?? params.seriesStart.date ?? "",
+    seriesZone
+  );
+  const split = asValue(params.originalStart, seriesZone);
+  return rule && first && split
+    ? positionsLeft({
+        first: libraryFirst(first, seriesZone),
+        rule,
+        split: split.instant ?? split.day,
+      })
+    : null;
+}
+
+/** `recurrence` with its rule's COUNT set to `count`; a rule without one is unchanged. */
+export function withCount(recurrence: string[], count: number): string[] {
+  return recurrence.map((line) =>
+    isRule(line) ? line.replace(COUNT_PART, `$1COUNT=${count}`) : line
+  );
+}
 
 // Strip server-managed fields so create/update inputs stay valid.
 export function sanitizeEventPayload(event: Event): CreateEvent {

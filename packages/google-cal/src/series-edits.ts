@@ -16,7 +16,9 @@ import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 /**
  * Why a series write is refused, before anything changes, with no
  * occurrences to name. `endsBeforeStart` stays because no write through
- * Google's API does what was asked. `severalRules`, `addedOccurrence` and
+ * Google's API does what was asked; `countUnknown` because the only write
+ * that keeps the meetings would end the series on a date, not after the
+ * number of times the user set. `severalRules`, `addedOccurrence` and
  * `severalTimesADay` are refused for good: only a series made in another
  * app has several rules or added meetings (Kompose writes one rule and no
  * RDATE), and Kompose doesn't write those shapes.
@@ -31,6 +33,12 @@ const PLAIN_REFUSALS = [
   "addedOccurrence",
   // The save's own repeat ends before the new series' first meeting.
   "endsBeforeStart",
+  // This and following keeping a series' COUNT, when a clock change skips
+  // the series' time on a day before the split: RFC 5545 drops that
+  // meeting, and whether Google counts it isn't known, so the meetings
+  // left can't be told. An UNTIL at the last one would keep them, but the
+  // series would no longer end after the number of times the user set.
+  "countUnknown",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
   "severalTimesADay",
@@ -123,6 +131,8 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "This and following isn't available for an occurrence added to the series on its own: a new series starting here would repeat its rule from this day and time, moving its meetings.";
     case "endsBeforeStart":
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
+    case "countUnknown":
+      return "This and following isn't available for this series: a clock change skips its time on an earlier day, so how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
     case "severalTimesADay":
       return "This series meets at several set times each day, so one new time can't replace them for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
