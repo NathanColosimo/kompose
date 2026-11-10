@@ -47,7 +47,7 @@ export function isListedAlone(task: TaskSelectDecoded): boolean {
 /**
  * Inbox: open tasks with no date. That includes an occurrence of a series
  * moved there alone ("I'll do this one later"); a series' scheduled
- * occurrences always have a date. Leaving those out hid them everywhere.
+ * occurrences always have a date.
  */
 export function isInboxTask(task: TaskSelectDecoded): boolean {
   return task.status !== "done" && task.startDate === null;

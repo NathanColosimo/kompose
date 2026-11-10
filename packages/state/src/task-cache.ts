@@ -1,6 +1,7 @@
 import type {
   TaskSelectDecoded,
   TaskUpdateDecoded,
+  UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
 import {
@@ -47,7 +48,7 @@ export function mergeSavedTasks(
   saved: TaskSelectDecoded[],
   edit: {
     id: string;
-    scope: "following" | "this";
+    scope: UpdateScope;
     /** The fields the save sent. */
     task: TaskUpdateDecoded;
   }

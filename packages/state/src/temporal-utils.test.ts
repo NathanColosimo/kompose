@@ -244,6 +244,38 @@ describe("moveEventStart", () => {
     );
   });
 
+  test("a start the clocks skip comes out as the time it lands on", () => {
+    // Mar 8 2026, New York: 2:00-3:00 doesn't happen. A 2:30-3:30 meeting
+    // moved there starts at 3:30, and says so.
+    const skipped = {
+      endDate: d("2026-03-07"),
+      endTime: t("03:30"),
+      startDate: d("2026-03-07"),
+      startTime: t("02:30"),
+    };
+    const moved = moveEventStart(skipped, { date: d("2026-03-08") }, zone);
+    expect(text(moved)).toBe("2026-03-08 03:30:00 → 2026-03-08 04:30:00");
+    expect(moved.start?.toPlainTime().toString()).toBe("03:30:00");
+  });
+
+  test("an all-day move leaves no moments behind", () => {
+    const trip = {
+      end: Temporal.ZonedDateTime.from(
+        "2026-11-12T10:00:00-05:00[America/New_York]"
+      ),
+      endDate: d("2026-11-14"),
+      endTime: null,
+      start: Temporal.ZonedDateTime.from(
+        "2026-11-12T09:00:00-05:00[America/New_York]"
+      ),
+      startDate: d("2026-11-12"),
+      startTime: null,
+    };
+    const moved = moveEventStart(trip, { date: d("2026-11-20") }, zone);
+    expect(moved.start).toBeUndefined();
+    expect(moved.end).toBeUndefined();
+  });
+
   test("keeps an all-day event's span", () => {
     const trip = {
       endDate: d("2026-11-14"),
@@ -260,6 +292,84 @@ describe("moveEventStart", () => {
     const backwards = { ...meeting, endTime: t("13:00") };
     expect(text(moveEventStart(backwards, { time: t("09:00") }))).toBe(
       "2026-11-12 09:00:00 → 2026-11-12 09:30:00"
+    );
+  });
+
+  test("keeps a zero-length event at zero", () => {
+    const reminder = { ...meeting, endTime: t("14:00") };
+    expect(text(moveEventStart(reminder, { time: t("09:00") }))).toBe(
+      "2026-11-12 09:00:00 → 2026-11-12 09:00:00"
+    );
+  });
+
+  test("in a zone, keeps the real length across a clock change", () => {
+    // Nov 1 2026, New York: 1:00-2:00 happens twice. 0:30 to 2:30 on the
+    // clock is three hours, which a move to Nov 2 keeps.
+    const overTheChange = {
+      endDate: d("2026-11-01"),
+      endTime: t("02:30"),
+      startDate: d("2026-11-01"),
+      startTime: t("00:30"),
+    };
+    expect(
+      text(moveEventStart(overTheChange, { date: d("2026-11-02") }, zone))
+    ).toBe("2026-11-02 00:30:00 → 2026-11-02 03:30:00");
+  });
+
+  test("in a zone, keeps which of the repeated hour's two halves an end is in", () => {
+    // Moved onto Nov 1 0:00, a two-hour meeting ends at 1:00 the second
+    // time (EST). The clock can't tell that 1:00 from the first; the
+    // range's moments can, through a second move too.
+    const hours = (r: ReturnType<typeof moveEventStart>) =>
+      r.start && r.end ? r.start.until(r.end).total("hours") : undefined;
+    const twoHours = {
+      endDate: d("2026-10-31"),
+      endTime: t("02:00"),
+      startDate: d("2026-10-31"),
+      startTime: t("00:00"),
+    };
+    const moved = moveEventStart(twoHours, { date: d("2026-11-01") }, zone);
+    expect(text(moved)).toBe("2026-11-01 00:00:00 → 2026-11-01 01:00:00");
+    expect(moved.end?.offset).toBe("-05:00");
+    expect(hours(moved)).toBe(2);
+    const again = moveEventStart(moved, { time: t("00:30") }, zone);
+    expect(text(again)).toBe("2026-11-01 00:30:00 → 2026-11-01 01:30:00");
+    expect(hours(again)).toBe(2);
+    // A one-hour meeting from 1:30 EDT to 1:30 EST stays one hour.
+    const first = Temporal.ZonedDateTime.from(
+      "2026-11-01T01:30:00-04:00[America/New_York]"
+    );
+    const repeated = {
+      end: first.add({ hours: 1 }),
+      endDate: d("2026-11-01"),
+      endTime: t("01:30"),
+      start: first,
+      startDate: d("2026-11-01"),
+      startTime: t("01:30"),
+    };
+    expect(
+      hours(moveEventStart(repeated, { date: d("2026-11-02") }, zone))
+    ).toBe(1);
+    // Moved to its own day, a start in the repeated hour's second half
+    // stays there.
+    const second = Temporal.ZonedDateTime.from(
+      "2026-11-01T01:30:00-05:00[America/New_York]"
+    );
+    const late = {
+      end: second.add({ hours: 1 }),
+      endDate: d("2026-11-01"),
+      endTime: t("02:30"),
+      start: second,
+      startDate: d("2026-11-01"),
+      startTime: t("01:30"),
+    };
+    const kept = moveEventStart(late, { date: d("2026-11-01") }, zone);
+    expect(kept.start?.offset).toBe("-05:00");
+    expect(text(kept)).toBe("2026-11-01 01:30:00 → 2026-11-01 02:30:00");
+    // Ends edited since (the clock fields no longer match): the clock's.
+    const edited = { ...moved, endTime: t("03:00") };
+    expect(text(moveEventStart(edited, { time: t("00:00") }, zone))).toBe(
+      "2026-11-01 00:00:00 → 2026-11-01 03:00:00"
     );
   });
 });

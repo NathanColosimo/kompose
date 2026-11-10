@@ -74,8 +74,8 @@ export function useTaskSections(options: UseTaskSectionsOptions = {}) {
         };
       }
 
-      // Inbox: uncompleted, no startDate (isInboxTask). This also catches
-      // legacy rows with an orphaned startTime but no startDate.
+      // isInboxTask also catches legacy rows with an orphaned startTime but
+      // no startDate.
       const inbox = tasks
         .filter(isInboxTask)
         .sort((a, b) => Temporal.Instant.compare(b.updatedAt, a.updatedAt));

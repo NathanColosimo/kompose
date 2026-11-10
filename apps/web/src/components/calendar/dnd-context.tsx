@@ -21,14 +21,6 @@ import type {
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
-  eventTimeZone,
-  hasSeveralRules,
-  occurrenceDayMoved,
-  otherTimeZone,
-  seriesRecurrenceForSave,
-} from "@kompose/state/google-event-recurrence";
-import { keepsEventTimes } from "@kompose/state/google-event-times";
-import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
 } from "@kompose/state/hooks/use-google-event-mutations";
@@ -77,7 +69,7 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
-import { seriesSave } from "./events/event-edit-utils";
+import { eventForScope, saveFacts } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -121,37 +113,6 @@ function droppedSubject(
     moved: pending.moved,
     name: pending.occurrence.summary || "(No title)",
     when,
-  };
-}
-
-/**
- * What a recurring event's drop changes, for the scopes its dialog offers:
- * a new day, or a new time on its own day (`retimed`), which can't go to a
- * series of several rules.
- */
-function dropFacts(
-  pending: PendingGoogleUpdate,
-  master: Pick<GoogleEvent, "recurrence"> | null | undefined,
-  timeZone: string
-): Pick<EventSaveChanges, "dateMoved" | "retimed" | "severalRules"> {
-  const { occurrence, update } = pending;
-  const dateMoved = occurrenceDayMoved({
-    editedEnd: update.event.end,
-    editedStart: update.event.start,
-    occurrence,
-    timeZone,
-  });
-  return {
-    dateMoved,
-    retimed: !(
-      dateMoved ||
-      keepsEventTimes(
-        update.event,
-        occurrence,
-        eventTimeZone(occurrence, timeZone)
-      )
-    ),
-    severalRules: hasSeveralRules(master?.recurrence),
   };
 }
 
@@ -780,11 +741,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
         calendarChanged: false,
-        ...dropFacts(pendingGoogleUpdate, pendingMaster.data, timeZone),
+        // A new day, or a new time on its own day, as the editor reads it.
+        ...saveFacts({
+          edited: pendingGoogleUpdate.update.event,
+          event: pendingGoogleUpdate.occurrence,
+          master: pendingMaster.data ?? undefined,
+          timeZone,
+        }),
         patternChanged: false,
         seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,
-        seriesTimeZone: otherTimeZone(pendingGoogleUpdate.occurrence, timeZone),
         splitBlocked: seriesSplitBlock(
           pendingGoogleUpdate.occurrence,
           pendingMaster.data,
@@ -805,27 +771,17 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       return;
     }
     const { occurrence, update } = pendingGoogleUpdate;
-    // For the series, a moved day carries its rule along.
-    const recurrence =
-      googleScope === "this"
-        ? undefined
-        : seriesRecurrenceForSave({
-            editedEnd: update.event.end,
-            editedStart: update.event.start,
-            masterRecurrence: pendingMaster.data?.recurrence,
-            masterStart: pendingMaster.data?.start,
-            occurrence,
-            recurrence: undefined,
-            timeZone,
-          });
     updateGoogleEventMutation.mutate({
       ...update,
       // For the series, only the new time (and a rule following a moved
       // day): an occurrence renamed or rescheduled on its own keeps that.
-      event:
-        googleScope === "this"
-          ? update.event
-          : seriesSave({ ...update.event, recurrence }, occurrence),
+      event: eventForScope({
+        edited: update.event,
+        master: pendingMaster.data ?? undefined,
+        occurrence,
+        scope: googleScope,
+        timeZone,
+      }),
       recurrenceScope: googleScope,
     });
   }, [

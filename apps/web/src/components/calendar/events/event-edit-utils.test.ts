@@ -2,18 +2,8 @@
 
 import { describe, expect, test } from "bun:test";
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import {
-  type EventSaveChanges,
-  eventSaveDescription,
-  eventSaveDisabledScopes,
-} from "@kompose/state/recurrence-scope-options";
-import { ORPCError } from "@orpc/client";
-import {
-  refuse,
-  saveScopeDialog,
-  seriesRefusal,
-  seriesSave,
-} from "./event-edit-utils";
+import { eventSaveDisabledScopes } from "@kompose/state/recurrence-scope-options";
+import { eventForScope, saveFacts } from "./event-edit-utils";
 
 const zone = "America/New_York";
 const at = (dateTime: string) => ({ dateTime, timeZone: zone });
@@ -33,25 +23,50 @@ const occurrence: GoogleEvent = {
   summary: "Sync (offsite)",
 };
 
-describe("seriesSave", () => {
-  test("sends the id, the times as they are and the repeat, and nothing left alone", () => {
-    // The editor's payload starts from the whole occurrence.
-    const sent = seriesSave(
-      { ...occurrence, recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"] },
-      occurrence
-    );
-    expect(sent).toEqual({
-      end: occurrence.end,
-      id: occurrence.id,
-      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"],
-      start: occurrence.start,
-    });
+// The series: Mondays 10:00-10:30 from Nov 2.
+const master = {
+  recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+  start: at("2026-11-02T10:00:00-05:00"),
+};
+// An occurrence on its own slot, as loaded.
+const onSlot: GoogleEvent = {
+  end: at("2026-11-16T10:30:00-05:00"),
+  id: "sync_20261116T150000Z",
+  originalStartTime: at("2026-11-16T10:00:00-05:00"),
+  recurringEventId: "sync",
+  start: at("2026-11-16T10:00:00-05:00"),
+  summary: "Weekly sync",
+};
+const forScope = (
+  edited: GoogleEvent,
+  scope: "all" | "following" | "this",
+  opened = occurrence
+) =>
+  eventForScope({ edited, master, occurrence: opened, scope, timeZone: zone });
+
+describe("eventForScope", () => {
+  test("one occurrence gets the whole edit, as loaded", () => {
+    const edited = { ...occurrence, summary: "Planning" };
+    expect(forScope(edited, "this")).toBe(edited);
   });
 
-  test("sends the fields the user changed, and a cleared one empty", () => {
-    const sent = seriesSave(
+  test("the series gets the times as they are, and nothing left alone", () => {
+    // The editor's payload starts from the whole occurrence. Its own times
+    // go as they are: equal to the occurrence's, they mean unchanged, and
+    // under This and following a moved one stays moved.
+    for (const scope of ["all", "following"] as const) {
+      expect(forScope({ ...occurrence }, scope)).toEqual({
+        end: occurrence.end,
+        id: occurrence.id,
+        start: occurrence.start,
+      });
+    }
+  });
+
+  test("the series gets the fields the user changed, a cleared one empty", () => {
+    const sent = forScope(
       { ...occurrence, colorId: undefined, location: "", summary: "Planning" },
-      occurrence
+      "all"
     );
     expect(sent.summary).toBe("Planning");
     expect(sent.location).toBe("");
@@ -59,65 +74,117 @@ describe("seriesSave", () => {
     expect(sent.colorId).toBe("");
     expect(sent.attendees).toBeUndefined();
     expect(sent.extendedProperties).toBeUndefined();
-    expect("recurrence" in sent).toBe(false);
   });
-});
 
-describe("seriesRefusal", () => {
-  test("reads the server's refusal of a series write, with its words", () => {
-    const refusal = seriesRefusal(
-      new ORPCError("BAD_REQUEST", {
-        data: { reason: "severalTimesADay" },
-        message: "This series meets more than once a day…",
-      })
+  test("a field empty where the occurrence had none isn't sent", () => {
+    // The form writes "" for a field it shows empty.
+    const sent = forScope(
+      { ...onSlot, description: "", location: "" },
+      "all",
+      onSlot
     );
-    expect(refusal).toEqual({
-      message: "This series meets more than once a day…",
-      reason: "severalTimesADay",
-    });
+    // Undefined, which the request leaves out.
+    expect(sent.description).toBeUndefined();
+    expect(sent.location).toBeUndefined();
   });
 
-  test("is null for any other failure", () => {
-    expect(seriesRefusal(new ORPCError("BAD_REQUEST"))).toBeNull();
-    expect(seriesRefusal(new ORPCError("INTERNAL_SERVER_ERROR"))).toBeNull();
-    expect(seriesRefusal(new Error("offline"))).toBeNull();
+  test("a repeat only when the user changed it or the day moved", () => {
+    // Unchanged, on its own day: the series keeps its rule.
+    expect("recurrence" in forScope({ ...onSlot }, "all", onSlot)).toBe(false);
+    // A new time on its own day: still no rule.
+    const later = {
+      ...onSlot,
+      end: at("2026-11-16T11:30:00-05:00"),
+      start: at("2026-11-16T11:00:00-05:00"),
+    };
+    expect("recurrence" in forScope(later, "following", onSlot)).toBe(false);
+    // The user's own repeat goes as it is.
+    const own = ["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"];
+    expect(
+      forScope({ ...onSlot, recurrence: own }, "following", onSlot).recurrence
+    ).toBe(own);
+    // Moved to Tuesday: the series' rule follows the new day.
+    const tuesday = {
+      ...onSlot,
+      end: at("2026-11-17T10:30:00-05:00"),
+      start: at("2026-11-17T10:00:00-05:00"),
+    };
+    expect(forScope(tuesday, "following", onSlot).recurrence?.[0]).toContain(
+      "BYDAY=TU"
+    );
   });
 });
 
-describe("saveScopeDialog", () => {
-  // A new time for one occurrence, its series loaded.
-  const retimed: EventSaveChanges = {
-    calendarChanged: false,
-    dateMoved: false,
-    patternChanged: false,
-    retimed: true,
-    seriesRuleLoaded: true,
+describe("saveFacts", () => {
+  // The series, loaded: Mondays 10:00-10:30 from Nov 2, in New York.
+  const series: GoogleEvent = {
+    end: at("2026-11-02T10:30:00-05:00"),
+    id: "sync",
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+    start: at("2026-11-02T10:00:00-05:00"),
+    summary: "Weekly sync",
   };
-
-  test("is the shared rules and line when nothing was refused", () => {
-    expect(saveScopeDialog(retimed, null)).toEqual({
-      description: eventSaveDescription(retimed),
-      disabled: eventSaveDisabledScopes(retimed),
+  const later = {
+    end: at("2026-11-16T11:30:00-05:00"),
+    start: at("2026-11-16T11:00:00-05:00"),
+  };
+  const facts = (
+    edited: Pick<GoogleEvent, "end" | "recurrence" | "start">,
+    // null: the series hasn't loaded.
+    loadedSeries: GoogleEvent | null = series
+  ) =>
+    saveFacts({
+      edited,
+      event: onSlot,
+      master: loadedSeries ?? undefined,
+      timeZone: zone,
     });
+
+  test("a new time on its own day leaves every scope on", () => {
+    // What it would cost other occurrences is the server's to refuse.
+    const changes = facts(later);
+    expect(changes.retimed).toBe(true);
+    expect(changes.dateMoved).toBe(false);
+    expect(
+      eventSaveDisabledScopes({
+        ...changes,
+        calendarChanged: false,
+        patternChanged: false,
+        seriesRuleLoaded: true,
+      })
+    ).toEqual({});
   });
 
-  test("turns the refused scope off and leads with the server's reason", () => {
-    const message =
-      "This would undo changes made to single occurrences (Nov 24), so it wasn't saved.";
-    const dialog = saveScopeDialog(retimed, refuse(null, "all", message));
-    expect(eventSaveDisabledScopes(retimed).all).toBeFalsy();
-    expect(dialog.disabled.all).toBe(true);
-    expect(dialog.description.startsWith(message)).toBe(true);
+  test("times left as they were move nothing", () => {
+    const changes = facts({ end: onSlot.end, start: onSlot.start });
+    expect(changes.retimed).toBe(false);
+    expect(changes.dateMoved).toBe(false);
   });
 
-  test("keeps every scope refused in a row off, led by the latest reason", () => {
-    const first = refuse(null, "all", "Entire series would undo Nov 24.");
-    const second = refuse(first, "following", "This and following would too.");
-    const dialog = saveScopeDialog(retimed, second);
-    expect(dialog.disabled.all).toBe(true);
-    expect(dialog.disabled.following).toBe(true);
-    expect(dialog.description.startsWith("This and following would too.")).toBe(
-      true
-    );
+  test("a series that meets twice a day can't take a new time as a whole", () => {
+    const twice = {
+      ...series,
+      recurrence: [
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15;BYMINUTE=0",
+      ],
+    };
+    const changes = facts(later, twice);
+    expect(changes.severalRules).toBe(true);
+    expect(changes.movesSeveralADay).toBe(true);
+  });
+
+  test("a series in another zone is named, from its own start", () => {
+    const tokyo = {
+      ...series,
+      start: { ...series.start, timeZone: "Asia/Tokyo" },
+    };
+    expect(facts(later, tokyo).seriesTimeZone).toBe("Asia/Tokyo");
+    expect(facts(later).seriesTimeZone).toBeUndefined();
+  });
+
+  test("before the series loads, a new time might move its start", () => {
+    const changes = facts(later, null);
+    expect(changes.retimed).toBe(true);
   });
 });

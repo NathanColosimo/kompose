@@ -5,13 +5,15 @@ import {
   buildGoogleEventRecurrenceRule,
   dayInZone,
   type EventRecurrencePattern,
+  entireSeriesMovesSeveralADay,
+  entireSeriesStartMoves,
   followStart,
   getPrimaryRecurrenceRule,
   lastWeekdayOf,
   monthlyWeekdayOf,
-  movedMeetingDropped,
   occurrenceDayMoved,
   occurrenceRepeatShown,
+  otherTimeZone,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
   repeatCountingDay,
@@ -19,6 +21,7 @@ import {
   repeatSkipsOccurrence,
   seriesCountingDays,
   seriesRecurrenceForSave,
+  seriesTimeZone,
   setPrimaryRecurrenceRule,
   untilDefaultDay,
 } from "./google-event-recurrence";
@@ -299,10 +302,7 @@ describe("followStart", () => {
         "2026-11-09",
         "2026-11-10"
       )
-    ).toEqual([
-      "RRULE:FREQ=WEEKLY;BYDAY=TU",
-      "EXDATE;TZID=America/New_York:20261117T090000",
-    ]);
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU", "EXDATE:20261117T140000Z"]);
     // A plain weekly rule follows its start without naming it.
     expect(
       followed(
@@ -648,27 +648,6 @@ describe("followStart", () => {
         "2026-11-16"
       )
     ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO"]);
-    // Twice a day, as Google takes it: two rules, at the start's 9:00 and
-    // at 15:00. Moved onto a day with both skipped: the start's own 9:00
-    // meets; the other rule's skipped 15:00 stays skipped.
-    expect(
-      followStart({
-        allDay: false,
-        from: day("2026-11-09"),
-        recurrence: [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO",
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
-          "EXDATE;TZID=America/New_York:20261116T090000,20261116T150000",
-        ],
-        timeZone: "America/New_York",
-        to: day("2026-11-16"),
-        toTime: Temporal.PlainTime.from("09:00"),
-      })
-    ).toEqual([
-      "RRULE:FREQ=WEEKLY;BYDAY=MO",
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
-      "EXDATE;TZID=America/New_York:20261116T150000",
-    ]);
   });
 
   test("moves skips across month and year ends, and BYSETPOS ones", () => {
@@ -800,16 +779,13 @@ describe("seriesRecurrenceForSave", () => {
         from: Temporal.PlainDate.from("2026-11-09"),
         recurrence: [
           "RRULE:FREQ=HOURLY;INTERVAL=4;UNTIL=20261111T045959Z",
-          "EXDATE;TZID=America/New_York:20261117T090000,20261117T130000",
+          "EXDATE;TZID=America/New_York:20261117T090000",
         ],
         timeZone: "America/New_York",
         to: Temporal.PlainDate.from("2026-11-17"),
         toTime: Temporal.PlainTime.from("09:00"),
       })
-    ).toEqual([
-      "RRULE:FREQ=HOURLY;INTERVAL=4;UNTIL=20270218T045959Z",
-      "EXDATE;TZID=America/New_York:20261117T130000",
-    ]);
+    ).toEqual(["RRULE:FREQ=HOURLY;INTERVAL=4;UNTIL=20270218T045959Z"]);
   });
 
   test("moves only the moved rule's skipped times", () => {
@@ -835,7 +811,7 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "09:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T090000,20261116T150000");
+    ).toBe("EXDATE:20261117T140000Z,20261116T200000Z");
     // A rule with no time of its own meets at the start's: moved to
     // Tuesdays at 10:00, its skipped Nov 16 9:00 is Nov 17 at 10:00.
     expect(
@@ -848,48 +824,7 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "10:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
-    // Another rule still meets at the skipped Monday 9:00 (Mondays and
-    // Fridays at 9:00): the skip stays where that rule needs it.
-    expect(
-      followed(
-        [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
-          "RRULE:FREQ=WEEKLY;BYDAY=MO,FR;BYHOUR=9",
-          "EXDATE;TZID=America/New_York:20261116T090000",
-        ],
-        "2026-11-10",
-        "09:00"
-      ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T090000");
-    // That rule ended (UNTIL Nov 23, or after 4 Mondays/Fridays): a later
-    // Monday skip is the moved rule's alone, and moves.
-    for (const end of ["UNTIL=20261124T045959Z", "COUNT=4"]) {
-      expect(
-        followed(
-          [
-            "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
-            `RRULE:FREQ=WEEKLY;BYDAY=MO,FR;BYHOUR=9;${end}`,
-            "EXDATE;TZID=America/New_York:20261130T090000",
-          ],
-          "2026-11-10",
-          "09:00"
-        ).at(-1)
-      ).toBe("EXDATE;TZID=America/New_York:20261201T090000");
-    }
-    // Another rule already meets on Tuesdays at 9:00: the skip doesn't
-    // land on its real meeting.
-    expect(
-      followed(
-        [
-          "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
-          "RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=9",
-          "EXDATE;TZID=America/New_York:20261116T090000",
-        ],
-        "2026-11-10",
-        "09:00"
-      ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T090000");
+    ).toBe("EXDATE:20261117T150000Z");
     // A rule that sets only its minute takes its hour from the start:
     // moved to Tuesdays at 10:00, its skipped Nov 16 9:00 is Nov 17 10:00.
     expect(
@@ -902,10 +837,11 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "10:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
+    ).toBe("EXDATE:20261117T150000Z");
     // Mon/Wed (the start's time) and Mondays 15:00, moved Mon 9:00 -> Tue
-    // 10:00: the Monday skip moves to Tuesday 10:00, and the Wednesday one
-    // stays on its day at the rule's new 10:00.
+    // 10:00: the Monday skip moves to Tuesday 10:00. The Wednesday one
+    // keeps its day; its time follows when the rule is lined up with the
+    // new start (`matchRecurrenceToStart`).
     expect(
       followed(
         [
@@ -916,7 +852,7 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "10:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T100000,20261118T100000");
+    ).toBe("EXDATE:20261117T150000Z,20261118T140000Z");
     // Moved onto a Wednesday whose 9:00 was skipped, at 10:00: retimed,
     // that skip would hide the meeting just placed, so it goes (also for
     // one rule moved to 9:30).
@@ -979,7 +915,7 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "09:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261116T090000,20261124T090000");
+    ).toBe("EXDATE:20261116T140000Z,20261124T140000Z");
     // A skip moved onto one already there is written once.
     expect(
       followed(
@@ -990,7 +926,7 @@ describe("seriesRecurrenceForSave", () => {
         "2026-11-10",
         "10:00"
       ).at(-1)
-    ).toBe("EXDATE;TZID=America/New_York:20261117T100000");
+    ).toBe("EXDATE:20261117T150000Z");
     // BYHOUR=9 and BYHOUR=9;BYMINUTE=0 are one 9:00: moved onto Friday
     // Nov 13 at 10:00, that day's skipped 9:00 is the picked start's.
     expect(
@@ -1031,7 +967,7 @@ describe("seriesRecurrenceForSave", () => {
     ).toEqual([
       "RRULE:FREQ=WEEKLY;BYDAY=TU",
       "RDATE;TZID=America/New_York:20261110T150000",
-      "EXDATE;TZID=America/New_York:20261110T150000",
+      "EXDATE:20261110T200000Z",
     ]);
   });
 
@@ -1205,6 +1141,14 @@ describe("seriesRecurrenceForSave", () => {
       rulesFrom: Temporal.PlainDate.from("2026-11-02"),
       viaOccurrence: true,
     });
+    // One Google wrote without an offset is read in its own zone.
+    expect(
+      seriesCountingDays(
+        { recurringEventId: "series" },
+        { dateTime: "2026-11-02T09:00:00", timeZone: "Asia/Tokyo" },
+        "America/New_York"
+      )?.firstTime
+    ).toEqual(Temporal.PlainTime.from("19:00"));
     // The series itself, or its master not loaded: the start is its own.
     expect(
       seriesCountingDays({}, masterStart, "America/New_York")
@@ -1337,7 +1281,8 @@ describe("seriesRecurrenceForSave", () => {
 
     test("ends a rule at its UNTIL's moment, not its day", () => {
       // 15:00 until Nov 16 12:00 (17:00Z): Nov 16's 15:00 doesn't meet, so
-      // its 9:00, skipped, was its only meeting.
+      // its 9:00, skipped, was its only meeting, and that rule's last day
+      // is Nov 15.
       expect(
         allDay([
           "RRULE:FREQ=DAILY;BYHOUR=9",
@@ -1346,7 +1291,7 @@ describe("seriesRecurrenceForSave", () => {
         ])
       ).toEqual([
         "RRULE:FREQ=DAILY",
-        "RRULE:FREQ=DAILY;UNTIL=20261116",
+        "RRULE:FREQ=DAILY;UNTIL=20261115",
         "EXDATE;VALUE=DATE:20261116",
       ]);
     });
@@ -1524,6 +1469,128 @@ describe("seriesRecurrenceForSave", () => {
   });
 });
 
+describe("a series in another zone than its rescheduled occurrence", () => {
+  // Tuesdays 9:00 in Tokyo. The Nov 10 meeting was rescheduled to Mon
+  // Nov 9 20:00 in New York (Tue 10:00 in Tokyo), and is now moved to
+  // Tue Nov 10 20:00 in New York: Wednesday in Tokyo.
+  const masterStart = {
+    dateTime: "2026-11-03T09:00:00+09:00",
+    timeZone: "Asia/Tokyo",
+  };
+  const occurrence = {
+    end: {
+      dateTime: "2026-11-09T20:30:00-05:00",
+      timeZone: "America/New_York",
+    },
+    originalStartTime: { dateTime: "2026-11-10T09:00:00+09:00" },
+    recurringEventId: "series",
+    start: {
+      dateTime: "2026-11-09T20:00:00-05:00",
+      timeZone: "America/New_York",
+    },
+  };
+  const editedStart = {
+    dateTime: "2026-11-10T20:00:00-05:00",
+    timeZone: "America/New_York",
+  };
+  const editedEnd = {
+    dateTime: "2026-11-10T20:30:00-05:00",
+    timeZone: "America/New_York",
+  };
+
+  test("counts the series' days in the series' zone", () => {
+    expect(
+      occurrenceDayMoved({
+        editedEnd,
+        editedStart,
+        occurrence,
+        seriesStart: masterStart,
+        timeZone: "America/New_York",
+      })
+    ).toBe(true);
+    expect(
+      seriesRecurrenceForSave({
+        editedEnd,
+        editedStart,
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+        masterStart,
+        occurrence,
+        recurrence: undefined,
+        timeZone: "America/New_York",
+      })
+    ).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+  });
+
+  test("before the series loads, reads its zone from the original slot", () => {
+    const fromSlot = {
+      ...occurrence,
+      originalStartTime: {
+        dateTime: "2026-11-10T09:00:00+09:00",
+        timeZone: "Asia/Tokyo",
+      },
+    };
+    // Tue Nov 10 8:00 in New York is still Tuesday in Tokyo: not moved.
+    expect(
+      occurrenceDayMoved({
+        editedEnd: {
+          dateTime: "2026-11-10T08:30:00-05:00",
+          timeZone: "America/New_York",
+        },
+        editedStart: {
+          dateTime: "2026-11-10T08:00:00-05:00",
+          timeZone: "America/New_York",
+        },
+        occurrence: fromSlot,
+        timeZone: "America/New_York",
+      })
+    ).toBe(false);
+    // The series' zone, named where the app's differs.
+    expect(otherTimeZone(fromSlot, "America/New_York")).toBe("Asia/Tokyo");
+    expect(otherTimeZone(occurrence, "America/New_York", masterStart)).toBe(
+      "Asia/Tokyo"
+    );
+    expect(otherTimeZone(fromSlot, "Asia/Tokyo")).toBeUndefined();
+  });
+
+  test("reads the series' zone from its master, its original slot, then the meeting", () => {
+    const newYork = "America/New_York";
+    expect(seriesTimeZone(occurrence, masterStart, "UTC")).toBe("Asia/Tokyo");
+    expect(
+      seriesTimeZone(
+        {
+          ...occurrence,
+          originalStartTime: {
+            ...occurrence.originalStartTime,
+            timeZone: "Europe/Paris",
+          },
+        },
+        null,
+        "UTC"
+      )
+    ).toBe("Europe/Paris");
+    expect(seriesTimeZone(occurrence, null, "UTC")).toBe(newYork);
+    expect(
+      seriesTimeZone(
+        { start: { dateTime: occurrence.start.dateTime } },
+        null,
+        "UTC"
+      )
+    ).toBe("UTC");
+  });
+
+  test("keeps a slot the new repeat still has, on the series' day", () => {
+    const skips = (recurrence: string[]) =>
+      repeatSkipsOccurrence({
+        occurrence,
+        recurrence,
+        seriesStart: masterStart,
+        timeZone: "America/New_York",
+      });
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=TU,WE"])).toBeNull();
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=WE"])).toBe("day");
+  });
+});
+
 describe("occurrenceRepeatShown", () => {
   const weekly = ["RRULE:FREQ=WEEKLY;BYDAY=SU"];
 
@@ -1664,6 +1731,24 @@ describe("repeatSkipsOccurrence", () => {
 
   test("monthly on 'Day N' from a later date: the series would count from the 1st", () => {
     expect(off(["RRULE:FREQ=MONTHLY"])).toBe(true);
+  });
+
+  test("reads starts Google wrote without an offset in their own zone", () => {
+    const local = (dateTime: string) => ({ dateTime, timeZone: zone });
+    const occurrence = {
+      originalStartTime: local("2026-11-15T16:00:00"),
+      recurringEventId: "m1",
+      start: local("2026-11-15T16:00:00"),
+    };
+    const skips = (recurrence: string[]) =>
+      repeatSkipsOccurrence({
+        occurrence,
+        recurrence,
+        seriesStart: local("2026-11-01T16:00:00"),
+        timeZone: zone,
+      });
+    expect(skips(["RRULE:FREQ=WEEKLY;INTERVAL=2"])).toBeNull();
+    expect(skips(["RRULE:FREQ=WEEKLY;BYDAY=TU"])).toBe("day");
   });
 
   test("monthly on a picked weekday of the month applies as shown", () => {
@@ -1831,190 +1916,147 @@ describe("repeatSkipsOccurrence", () => {
   });
 });
 
-describe("movedMeetingDropped", () => {
+describe("an Entire series save through one occurrence", () => {
   const zone = "America/New_York";
-  // Daily from Tue Dec 1 2026 at 9:00.
-  const seriesStart = { dateTime: "2026-12-01T09:00:00-05:00" };
-  const meeting = (original: string, now = original, id = original) => ({
-    id,
-    originalStartTime: { dateTime: original },
+  const at = (dateTime: string) => ({ dateTime, timeZone: zone });
+  // "Standup", daily from Tue Dec 1 2026 at 9:00-9:30.
+  const master = {
+    end: at("2026-12-01T09:30:00-05:00"),
+    id: "series",
+    recurrence: ["RRULE:FREQ=DAILY"],
+    start: at("2026-12-01T09:00:00-05:00"),
+    summary: "Standup",
+  };
+  /** The series' occurrence at `original`, 9:00-9:30. */
+  const meeting = (original: string) => ({
+    end: at(original.replace("T09:00", "T09:30")),
+    id: `series_${original.slice(0, 10)}`,
+    originalStartTime: at(original),
     recurringEventId: "series",
-    start: { dateTime: now },
+    start: at(original),
+    summary: "Standup",
   });
-  // The one being edited, and Mon Dec 7's meeting moved to 2 PM.
-  const edited = meeting("2026-12-03T09:00:00-05:00");
-  const moved = meeting(
-    "2026-12-07T09:00:00-05:00",
-    "2026-12-07T14:00:00-05:00"
-  );
-  // Where the calendar shows it.
-  const dec7 = Temporal.PlainDate.from("2026-12-07");
-  const dropped = (
-    recurrence: string[],
-    loaded: ReturnType<typeof meeting>[] = [edited, moved],
-    occurrence = edited
-  ) =>
-    movedMeetingDropped({
-      loaded,
-      occurrence,
-      recurrence,
-      seriesStart,
-      timeZone: zone,
-    });
+  const opened = meeting("2026-12-03T09:00:00-05:00");
+  const keepTimes = { end: opened.end, start: opened.start };
 
-  test("names a moved meeting whose original slot the new repeat drops", () => {
-    // Weekly on Thursdays: Mon Dec 7 isn't one, so Google cancels it.
-    expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH"])).toEqual(dec7);
-    // A COUNT that ends before it, too.
-    expect(dropped(["RRULE:FREQ=DAILY;COUNT=5"])).toEqual(dec7);
-  });
-
-  test("keeps one whose original slot the new repeat still has", () => {
-    expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=MO,TH"])).toBeNull();
-    expect(dropped(["RRULE:FREQ=DAILY;COUNT=10"])).toBeNull();
-  });
-
-  test("looks only at the series' other moved meetings", () => {
-    // Regular meetings are the repeat's to drop; the edited one is
-    // repeatSkipsOccurrence's; another series' aren't this one's.
-    const regular = meeting("2026-12-08T09:00:00-05:00");
-    const other = { ...moved, id: "other", recurringEventId: "other" };
-    const movedEdited = meeting(
-      "2026-12-04T09:00:00-05:00",
-      "2026-12-04T15:00:00-05:00"
-    );
-    expect(
-      dropped(
-        ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
-        [regular, other, movedEdited],
-        movedEdited
-      )
-    ).toBeNull();
-  });
-
-  test("names the earliest when the new repeat drops several", () => {
-    const later = meeting(
-      "2026-12-14T09:00:00-05:00",
-      "2026-12-15T09:00:00-05:00"
-    );
-    expect(dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH"], [later, moved])).toEqual(
-      dec7
-    );
-  });
-
-  test("in a series with several rules, only the changed rule's", () => {
-    // Daily at 9:00, and Mondays at 15:00 by a second rule: moving that
-    // Monday's 15:00 meeting isn't touched by a new 9:00 rule.
-    const fromSecond = meeting(
-      "2026-12-07T15:00:00-05:00",
-      "2026-12-07T17:00:00-05:00"
-    );
-    const rules = (primary: string) => [
-      primary,
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15",
-    ];
-    expect(
-      dropped(rules("RRULE:FREQ=WEEKLY;BYDAY=TH"), [fromSecond])
-    ).toBeNull();
-    expect(
-      dropped(rules("RRULE:FREQ=WEEKLY;BYDAY=TH"), [fromSecond, moved])
-    ).toEqual(dec7);
-  });
-
-  test("keeps one another rule still meets at, at its slot's time", () => {
-    // Daily becomes Thursdays, but a second rule keeps Mondays at 9:00.
-    expect(
-      dropped(["RRULE:FREQ=WEEKLY;BYDAY=TH", "RRULE:FREQ=WEEKLY;BYDAY=MO"])
-    ).toBeNull();
-  });
-
-  test("only the series' first meeting itself is always kept", () => {
-    // From Mon Nov 30 9:00, daily, plus Mondays at 15:00 by a second rule,
-    // now Tuesdays: Nov 30's moved 15:00 meeting was the second rule's,
-    // on the series' first day but not its first meeting, and is gone.
-    const series = { dateTime: "2026-11-30T09:00:00-05:00" };
-    const firstDayAt3 = meeting(
-      "2026-11-30T15:00:00-05:00",
-      "2026-11-30T17:00:00-05:00"
-    );
-    const rules = ["RRULE:FREQ=WEEKLY;BYDAY=TU;BYHOUR=15", "RRULE:FREQ=DAILY"];
-    expect(
-      movedMeetingDropped({
-        loaded: [firstDayAt3],
-        occurrence: edited,
-        recurrence: rules,
-        seriesStart: series,
+  test("tells a new start from a new length", () => {
+    const moves = (edited: {
+      end: { dateTime: string };
+      start: { dateTime: string };
+    }) =>
+      entireSeriesStartMoves({
+        edited,
+        master,
+        occurrence: opened,
         timeZone: zone,
-      })
-    ).toEqual(Temporal.PlainDate.from("2026-11-30"));
+      });
+    expect(moves(keepTimes)).toBe(false);
     expect(
-      repeatSkipsOccurrence({
-        occurrence: firstDayAt3,
-        recurrence: rules,
-        seriesStart: series,
-        timeZone: zone,
-      })
-    ).toBe("day");
-    // The 9:00 first meeting itself, moved: always the series'.
+      moves({ end: at("2026-12-03T10:00:00-05:00"), start: opened.start })
+    ).toBe(false);
     expect(
-      movedMeetingDropped({
-        loaded: [
-          meeting("2026-11-30T09:00:00-05:00", "2026-11-30T11:00:00-05:00"),
-        ],
-        occurrence: edited,
-        recurrence: rules,
-        seriesStart: series,
-        timeZone: zone,
+      moves({
+        end: at("2026-12-03T10:30:00-05:00"),
+        start: at("2026-12-03T10:00:00-05:00"),
       })
-    ).toBeNull();
+    ).toBe(true); // Before the series loads, any new time might move it.
+    const unloaded = (edited: {
+      end: { dateTime: string };
+      start: { dateTime: string };
+    }) =>
+      entireSeriesStartMoves({
+        edited,
+        master: null,
+        occurrence: opened,
+        timeZone: zone,
+      });
+    expect(unloaded(keepTimes)).toBe(false);
+    expect(
+      unloaded({ end: at("2026-12-03T10:00:00-05:00"), start: opened.start })
+    ).toBe(true);
   });
 
-  test("counts a rule at another time from its own first meeting", () => {
-    // Mondays at 15:00 twice, beside the series' daily 9:00 (from Tue Dec
-    // 1): its meetings are Dec 7 and Dec 14, not the series' Dec 1.
-    const at3 = (original: string) =>
-      meeting(original, original.replace("T15", "T17"));
-    const rules = [
-      "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15;COUNT=2",
-      "RRULE:FREQ=DAILY",
-    ];
-    expect(dropped(rules, [at3("2026-12-14T15:00:00-05:00")])).toBeNull();
-    expect(dropped(rules, [at3("2026-12-21T15:00:00-05:00")])).toEqual(
-      Temporal.PlainDate.from("2026-12-21")
-    );
-  });
-
-  test("names the day the meeting is on now, in the app's zone", () => {
-    // Dec 7's meeting moved to Wed Dec 9 at 20:00 in New York, which is
-    // Thursday Dec 10 in Tokyo, where the app shows it.
-    const series = { timeZone: zone };
-    const toWednesday = {
-      ...moved,
-      originalStartTime: { ...moved.originalStartTime, ...series },
-      start: { dateTime: "2026-12-09T20:00:00-05:00", ...series },
+  test("tells when a new time is refused for a series meeting several times a day", () => {
+    // Daily at 9:00, and at 15:00 by a second rule, from Tue Dec 1.
+    const twice = {
+      ...master,
+      recurrence: ["RRULE:FREQ=DAILY", "RRULE:FREQ=DAILY;BYHOUR=15"],
     };
-    const editedHere = { ...edited, start: { ...edited.start, ...series } };
-    const shown = (timeZone: string) =>
-      movedMeetingDropped({
-        loaded: [toWednesday],
-        occurrence: editedHere,
-        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
-        seriesStart,
-        timeZone,
-      })?.toString();
-    expect(shown(zone)).toBe("2026-12-09");
-    expect(shown("Asia/Tokyo")).toBe("2026-12-10");
-  });
-
-  test("before the series loads, can't tell", () => {
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    const refused = (
+      occurrence: ReturnType<typeof meeting>,
+      edited: {
+        end: { date?: string; dateTime?: string };
+        start: { date?: string; dateTime?: string };
+      }
+    ) =>
+      entireSeriesMovesSeveralADay({
+        edited,
+        master: twice,
+        occurrence,
+        timeZone: zone,
+      });
+    // Through its first meeting: a new day and time, or a new day alone.
     expect(
-      movedMeetingDropped({
-        loaded: [moved],
-        occurrence: edited,
-        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TH"],
+      refused(first, {
+        end: at("2026-12-02T10:30:00-05:00"),
+        start: at("2026-12-02T10:00:00-05:00"),
+      })
+    ).toBe(true);
+    expect(
+      refused(first, {
+        end: at("2026-12-02T09:30:00-05:00"),
+        start: at("2026-12-02T09:00:00-05:00"),
+      })
+    ).toBe(false);
+    // Through a later one: a new time, a new length, or all day.
+    expect(
+      refused(opened, {
+        end: at("2026-12-03T10:30:00-05:00"),
+        start: at("2026-12-03T10:00:00-05:00"),
+      })
+    ).toBe(true);
+    expect(
+      refused(opened, {
+        end: at("2026-12-03T10:00:00-05:00"),
+        start: opened.start,
+      })
+    ).toBe(false);
+    expect(
+      refused(opened, {
+        end: { date: "2026-12-04" },
+        start: { date: "2026-12-03" },
+      })
+    ).toBe(false);
+    // A series meeting once a day takes any new time.
+    expect(
+      entireSeriesMovesSeveralADay({
+        edited: {
+          end: at("2026-12-03T10:30:00-05:00"),
+          start: at("2026-12-03T10:00:00-05:00"),
+        },
+        master,
+        occurrence: opened,
         timeZone: zone,
       })
-    ).toBeNull();
+    ).toBe(false);
+  });
+
+  test("through the series' first meeting, a new time or day is the series'", () => {
+    const first = meeting("2026-12-01T09:00:00-05:00");
+    const moves = (start: string, end: string) =>
+      entireSeriesStartMoves({
+        edited: { end: at(end), start: at(start) },
+        master,
+        occurrence: first,
+        timeZone: zone,
+      });
+    expect(
+      moves("2026-12-01T10:00:00-05:00", "2026-12-01T10:30:00-05:00")
+    ).toBe(true);
+    expect(
+      moves("2026-12-02T09:00:00-05:00", "2026-12-02T09:30:00-05:00")
+    ).toBe(true);
   });
 });
 

@@ -4,7 +4,7 @@ import {
   formatTimeRange,
 } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
@@ -29,8 +29,6 @@ interface BlockContentProps {
   details?: BlockDetail[];
   /** End of the visible part; with `start` it sets how much fits. */
   end: Temporal.ZonedDateTime;
-  /** Shown before the title, such as a task's checkbox. */
-  leading?: ReactNode;
   /** The whole item's end, for the time text. Defaults to `end`. */
   shownEnd?: Temporal.ZonedDateTime;
   /** The whole item's start, for the time text. Defaults to `start`. */
@@ -60,13 +58,6 @@ function titleClampClass(isTall: boolean, hasTwoTitleLines: boolean) {
   return "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal";
 }
 
-/** `leading` (a task's checkbox), left out of narrow blocks for the title. */
-function narrowHidden(leading: ReactNode) {
-  return leading ? (
-    <span className="flex @max-[5.5rem]:hidden shrink-0">{leading}</span>
-  ) : null;
-}
-
 /** An icon with a short value, such as a workout's strain. */
 function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
   return (
@@ -87,7 +78,6 @@ function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
 export function BlockContent({
   details = [],
   end,
-  leading,
   shownEnd,
   shownStart,
   start,
@@ -111,7 +101,6 @@ export function BlockContent({
           isCovered ? "items-start pt-px" : "h-full items-center"
         )}
       >
-        {narrowHidden(leading)}
         {/* One visible line: the time wraps onto a hidden second line when
             it doesn't fit beside the whole title, so the title wins. */}
         <div className="flex h-4 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 overflow-hidden">
@@ -163,7 +152,6 @@ export function BlockContent({
   // hover text, and done is in the editor.
   return (
     <div className="@container flex min-w-0 items-start gap-1.5">
-      {narrowHidden(leading)}
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <span
           className={cn(
