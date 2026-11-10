@@ -20,6 +20,7 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import { useStateConfig } from "@kompose/state/config";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -29,10 +30,12 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   chosenScope,
   type EventSaveChanges,
-  eventSaveDescription,
-  eventSaveDisabledScopes,
+  eventSaveScopeState,
   RECURRENCE_SCOPE_OPTIONS,
+  refuseSave,
+  type SaveRefusals,
   SCOPE_DIALOG_COPY,
+  seriesRefusalOf,
   seriesSplitBlock,
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
@@ -121,6 +124,8 @@ interface PendingGoogleUpdate {
   /** A drop moved it; a resize changed its length. */
   moved: boolean;
   occurrence: GoogleEvent;
+  /** The scopes the server refused for this drop, and why (`refuseSave`). */
+  refused?: SaveRefusals;
   update: UpdateGoogleEventInput;
 }
 
@@ -215,11 +220,20 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [scopeDialog, setScopeDialog] = useState<"google" | "task" | null>(
     null
   );
+  // The dragged occurrence's series loads from the drag's start (the hook
+  // fetches for an occurrence only), so the drop's dialog usually opens
+  // with its choices ready.
   const pendingMaster = useRecurringEventMaster({
-    accountId: pendingGoogleUpdate?.update.accountId ?? "",
-    calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
-    enabled: scopeDialog === "google",
-    event: pendingGoogleUpdate?.occurrence ?? null,
+    accountId:
+      activeGoogleEvent?.accountId ??
+      pendingGoogleUpdate?.update.accountId ??
+      "",
+    calendarId:
+      activeGoogleEvent?.calendarId ??
+      pendingGoogleUpdate?.update.calendarId ??
+      "",
+    enabled: Boolean(activeGoogleEvent) || scopeDialog === "google",
+    event: activeGoogleEvent?.event ?? pendingGoogleUpdate?.occurrence ?? null,
   });
 
   const sensors = useSensors(
@@ -233,6 +247,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const { updateTask } = useTasks();
   const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
+  const { notifyError } = useStateConfig();
 
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
@@ -749,6 +764,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           timeZone,
         }),
         patternChanged: false,
+        refused: pendingGoogleUpdate.refused,
         seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,
         splitBlocked: seriesSplitBlock(
@@ -759,33 +775,58 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       }
     : null;
 
-  // The scope the drop's dialog shows and saves with, worked out each time.
-  const googleScope = chosenScope(
-    googlePick,
-    "this",
-    googleSaveChanges ? eventSaveDisabledScopes(googleSaveChanges) : {}
-  );
+  // The drop's dialog: the scopes it can't use and its line saying why, and
+  // the scope it shows and saves with, all worked out each time.
+  const googleDialog = googleSaveChanges
+    ? eventSaveScopeState(googleSaveChanges)
+    : { description: SCOPE_DIALOG_COPY.saveEvent.description, disabled: {} };
+  const googleScope = chosenScope(googlePick, "this", googleDialog.disabled);
 
-  const confirmGoogleScope = useCallback(() => {
+  // The dialog stays open while this runs, and after it rejects.
+  const confirmGoogleScope = useCallback(async () => {
     if (!pendingGoogleUpdate) {
       return;
     }
     const { occurrence, update } = pendingGoogleUpdate;
-    updateGoogleEventMutation.mutate({
-      ...update,
-      // For the series, only the new time (and a rule following a moved
-      // day): an occurrence renamed or rescheduled on its own keeps that.
-      event: eventForScope({
-        edited: update.event,
-        master: pendingMaster.data ?? undefined,
-        occurrence,
-        scope: googleScope,
-        timeZone,
-      }),
-      recurrenceScope: googleScope,
-    });
+    try {
+      await updateGoogleEventMutation.mutateAsync({
+        ...update,
+        // For the series, only the new time (and a rule following a moved
+        // day): an occurrence renamed or rescheduled on its own keeps that.
+        event: eventForScope({
+          edited: update.event,
+          master: pendingMaster.data ?? undefined,
+          occurrence,
+          scope: googleScope,
+          timeZone,
+        }),
+        // Said below: a refusal in the dialog, anything else as a toast.
+        quiet: true,
+        recurrenceScope: googleScope,
+      });
+    } catch (error) {
+      const refusal = seriesRefusalOf(error);
+      if (refusal) {
+        // The server won't make this write: ask again, as the editor does,
+        // with that scope off and its reason leading the dialog.
+        setPendingGoogleUpdate({
+          ...pendingGoogleUpdate,
+          refused: refuseSave(
+            pendingGoogleUpdate.refused,
+            googleScope,
+            refusal
+          ),
+        });
+        throw error;
+      }
+      // Any other failure closes the dialog and is reported.
+      if (error instanceof Error) {
+        notifyError?.(error);
+      }
+    }
   }, [
     googleScope,
+    notifyError,
     pendingGoogleUpdate,
     pendingMaster.data,
     timeZone,
@@ -831,14 +872,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       </DndContext>
 
       <RecurrenceScopeDialog
-        description={
-          googleSaveChanges
-            ? eventSaveDescription(googleSaveChanges)
-            : SCOPE_DIALOG_COPY.saveEvent.description
-        }
-        disabledScopes={
-          googleSaveChanges ? eventSaveDisabledScopes(googleSaveChanges) : {}
-        }
+        description={googleDialog.description}
+        disabledScopes={googleDialog.disabled}
         onConfirm={confirmGoogleScope}
         onOpenChange={(open) => setScopeDialog(open ? "google" : null)}
         onValueChange={setGooglePick}
