@@ -748,32 +748,28 @@ function matchDateList(
   // meeting was there too, it's also skipped at the new time, where that
   // meeting moves. A skip never moves onto an added meeting: it would
   // cancel it.
-  const moments = values.flatMap((value) => {
-    const kept = value.instant;
-    const day = kept ? how.moveDay(value.day) : value.day;
+  const atTime = (day: Temporal.PlainDate) =>
+    day.toZonedDateTime({ plainTime: time, timeZone: seriesZone }).toInstant();
+  // A timed skip follows its meeting to its new day (`moveDay`).
+  const timedSkip = (value: RecurrenceValue, kept: Temporal.Instant) => {
+    const day = how.moveDay(value.day);
     // Its meeting moved off the rule's days: there's none to skip, so it
     // stays as it is, where nothing meets.
     if (!day) {
-      return kept ? [kept] : [];
+      return [kept];
     }
-    const moment = day
-      .toZonedDateTime({ plainTime: time, timeZone: seriesZone })
-      .toInstant();
-    // A date skipped the whole day: its added meetings too.
-    if (list.name === "EXDATE" && !kept) {
-      return [moment, ...addedOn(value.day)];
+    const moment = atTime(day);
+    if (list.name !== "EXDATE") {
+      return [moment];
     }
     // A skip where nothing met skips nothing: it stays as it is, so it
     // can't land on a meeting.
-    if (list.name === "EXDATE" && kept && ownSlot && !ownSlot(value)) {
+    if (ownSlot && !ownSlot(value)) {
       return how.cancelsMeeting(kept) ? [] : [kept];
     }
     if (
       !(
-        list.name === "EXDATE" &&
-        kept &&
-        (added.has(kept.epochMilliseconds) ||
-          added.has(moment.epochMilliseconds))
+        added.has(kept.epochMilliseconds) || added.has(moment.epochMilliseconds)
       )
     ) {
       return [moment];
@@ -783,6 +779,14 @@ function matchDateList(
       !added.has(moment.epochMilliseconds) &&
       Temporal.Instant.compare(moment, kept) !== 0;
     return moves ? [kept, moment] : [kept];
+  };
+  const moments = values.flatMap((value) => {
+    if (value.instant) {
+      return timedSkip(value, value.instant);
+    }
+    // A date skipped the whole day: its added meetings too.
+    const moment = atTime(value.day);
+    return list.name === "EXDATE" ? [moment, ...addedOn(value.day)] : [moment];
   });
   const same =
     moments.length === values.length &&
