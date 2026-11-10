@@ -759,11 +759,11 @@ function ruleMeetingAt(slot: string, master: Event): boolean {
 
 /**
  * Where an occurrence's place (`slot`, its original start) is once the
- * series is written as `plan` says: moved by the clock's turn, the
- * smaller way round from the old time of day to the new (23:00 to 00:30
- * is an hour and a half on, into the next day; 9:00 to the next day's
- * 8:00 is an hour back, on its own day), as the rule's own skips are
- * moved (`matchRecurrenceToStart`); its date when the series is made all
+ * series is written as `plan` says: moved as far as the start's time of
+ * day, the smaller way round when the start changes day (23:00 to the
+ * next day's 00:30 is an hour and a half on, into the next day; 9:00 to
+ * the next day's 8:00 is an hour back, on its own day), as the rule's
+ * own skips are moved (`matchRecurrenceToStart`); its date when the series is made all
  * day, and its own date at the new time when it's made timed (a series
  * that meets once a day). Null if it doesn't parse.
  */
@@ -795,8 +795,11 @@ function placeIn(slot: string, plan: SeriesPlan): string | null {
     .toPlainTime()
     .until(to.toPlainTime())
     .total("nanoseconds");
-  const turn =
-    ((((change + DAY_NS / 2) % DAY_NS) + DAY_NS) % DAY_NS) - DAY_NS / 2;
+  // A start kept on its day moves by the change itself (9:00 to 23:00 is
+  // fourteen hours on); one moved to another day, the smaller way round.
+  const turn = from.toPlainDate().equals(to.toPlainDate())
+    ? change
+    : ((((change + DAY_NS / 2) % DAY_NS) + DAY_NS) % DAY_NS) - DAY_NS / 2;
   return googleDateTime(
     at.add({ nanoseconds: turn }).toZonedDateTime(repeatsIn)
   );
