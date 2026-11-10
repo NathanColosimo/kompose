@@ -63,8 +63,7 @@ import {
 import {
   chosenScope,
   type EventSaveChanges,
-  eventSaveDescription,
-  eventSaveDisabledScopes,
+  eventSaveScopeState,
   RECURRENCE_SCOPE_OPTIONS,
   refusalReason,
   refuseSave,
@@ -996,11 +995,8 @@ export function EventEditPopover({
         })
       : { dateMoved: false };
   const saveScopeChanges = saveChanges(pendingSave, pendingFacts, seriesStatus);
-  const saveDialog = {
-    // Says why each scope that's off is, led by any refusal.
-    description: eventSaveDescription(saveScopeChanges),
-    disabled: eventSaveDisabledScopes(saveScopeChanges),
-  };
+  // The scopes that are off and the line saying why, led by any refusal.
+  const saveDialog = eventSaveScopeState(saveScopeChanges);
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
@@ -1941,23 +1937,6 @@ function EventAllDayAndRecurrenceRow({
         </SelectContent>
       </Select>
     </div>
-  );
-}
-
-/** The notes field; left out of a read-only event when empty. */
-function EventDescriptionField({
-  onChange,
-  value,
-}: {
-  onChange: (value: string) => void;
-  value: string | undefined;
-}) {
-  return (
-    <Textarea
-      onChange={(e) => onChange(e.target.value)}
-      placeholder="Add details..."
-      value={value}
-    />
   );
 }
 
@@ -2993,11 +2972,12 @@ export function EventEditForm({
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
-      <EventDescriptionField
-        onChange={(value) => {
+      <Textarea
+        onChange={(e) => {
           hasUserEditedRef.current = true;
-          setValue("description", value, { shouldDirty: true });
+          setValue("description", e.target.value, { shouldDirty: true });
         }}
+        placeholder="Add details..."
         value={watchedValues.description}
       />
       <Separator />

@@ -106,7 +106,7 @@ export function buildTemporalPayload(
 }
 
 /**
- * What a save sends for `scope`, as #125's server reads it. One occurrence
+ * What a save sends for `scope`, as the server reads it. One occurrence
  * ("this") gets the whole edit: the occurrence as loaded, with the form's
  * values. For the series ("following", "all") through an occurrence:
  * - its id and its times as they are: the occurrence's own times mean
@@ -163,7 +163,7 @@ export function eventForScope({
 
 /**
  * What a recurring event's save changes, for the scopes its dialog offers
- * (#127's `EventSaveChanges`), as the server will read it: from what the
+ * (packages/state's `EventSaveChanges`), as the server will read it: from what the
  * save sends (its times, and its repeat when it sends one) and the series
  * as loaded (`master`, once it is). What it would cost the series' other
  * occurrences is the server's to refuse. Shared by the editor and drops.
