@@ -5,7 +5,7 @@ import { Plus } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, Alert as RNAlert, ScrollView, View } from "react-native";
 import { ModeToggle } from "@/components/mode-toggle";
-import { ConnectedAgentsSection } from "@/components/settings/connected-agents-card";
+import { ConnectedAgentsSection } from "@/components/settings/connected-agents-section";
 import {
   RowAction,
   SettingsNote,
