@@ -44,7 +44,7 @@ Unified inline editor for Google calendar events. Supports both **create** and *
   - Series saves send only changed details, with the edited times directly. Unchanged occurrence-specific titles, guests, and other details stay out of the series payload.
 - **Cancel**, **Escape**, or **click-outside** discards edits. While saving, the editor remains read-only and holds focus.
 - The scope dialog offers Only this occurrence, This and following, and Entire series. It waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series date.
-- The server applies edited times to the series’ first event for Entire series. This and following ends the old series and starts a new one. The UI does not predict losses to other occurrences or handle typed refusals.
+- The server applies edited times to the series’ first event for Entire series. This and following ends the old series and starts a new one.
 - The repeat editor has daily, weekly, monthly, and yearly frequencies, interval, day choices, and never/date/count ends. End dates are encoded when picked; moves do not adjust them.
 - When used inside `EventCreationPopover`, the form uses the popover header’s Save and Cancel buttons.
 

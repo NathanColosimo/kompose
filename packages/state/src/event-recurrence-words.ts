@@ -64,7 +64,7 @@ const FREQUENCY_WORDS: Record<string, [string, string] | undefined> = {
 };
 
 /** The parts of a series' start the words fall back on. */
-export interface RecurrenceStart {
+interface RecurrenceStart {
   day: number;
   /** 1 Monday to 7 Sunday. */
   dayOfWeek: number;
@@ -304,7 +304,7 @@ export function describeEventRecurrence(params: {
 }
 
 /** One monthly "On" choice: its label and the BYDAY / BYMONTHDAY it sets. */
-export interface MonthlyDayOption {
+interface MonthlyDayOption {
   byDay: string[];
   label: string;
   monthDays: string[];
