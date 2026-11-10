@@ -70,7 +70,7 @@ export interface RecurrenceStart {
 }
 
 /** "2nd Tue" for BYDAY=2TU; null for a plain or unknown code. */
-export function ordinalDayLabel(code: string): string | null {
+function ordinalDayLabel(code: string): string | null {
   const match = ORDINAL_DAY.exec(code);
   const ordinal = match ? ORDINAL_WORDS[match[1] ?? ""] : undefined;
   const day = match ? DAY_NAMES[match[2] ?? ""] : undefined;

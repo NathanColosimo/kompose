@@ -197,7 +197,7 @@ export function isPlainWeekday(code: string): boolean {
 }
 
 /** A BYDAY weekday of the month: "2TU", "-1FR". */
-export function isWeekdayOfMonth(code: string): boolean {
+function isWeekdayOfMonth(code: string): boolean {
   return WEEKDAY_OF_MONTH.test(code);
 }
 
@@ -291,7 +291,7 @@ export function lastWeekdayOf(date: Temporal.PlainDate): string | null {
 }
 
 /** The end date "On date" starts at: three months after the series starts. */
-export function defaultUntilDay(start: Temporal.PlainDate): Temporal.PlainDate {
+function defaultUntilDay(start: Temporal.PlainDate): Temporal.PlainDate {
   return start.add({ months: 3 });
 }
 
