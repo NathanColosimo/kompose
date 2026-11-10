@@ -2,7 +2,7 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import type { EventTime } from "./google-event-times";
 
 /** The fields an editor sends for an event, as it builds them from its form. */
-export interface EditedFields {
+interface EditedFields {
   colorId?: string;
   conferenceData?: GoogleEvent["conferenceData"];
   description?: string;
@@ -41,10 +41,8 @@ export function seriesEditFields(params: {
 }
 
 /**
- * The saved event's series pattern: its own rules (the series itself), or
- * its master's (an occurrence carries none), once loaded. Not the
- * draft's, which may add a repeat to a one-off event that isn't a series
- * yet. What a form's repeat is compared with to tell whether it changed.
+ * The saved event's rules, or its master's for an occurrence. A repeat
+ * added in the draft does not make a one-off event a saved series.
  */
 export function savedSeriesRecurrence(
   event: Pick<GoogleEvent, "recurrence">,

@@ -3,8 +3,6 @@ import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 /** A Google event's start or end, as it sends them. */
 export type EventTime = GoogleEvent["start"];
 
-const NO_TIME: EventTime = {};
-
 /**
  * A Google event's start or end with the edited time, keeping the source's
  * other fields (its time zone) but not the date form it no longer has: an
@@ -15,6 +13,6 @@ export function withEditedTime(
   source: EventTime | undefined,
   edited: EventTime
 ): EventTime {
-  const { date: _date, dateTime: _dateTime, ...rest } = source ?? NO_TIME;
+  const { date: _date, dateTime: _dateTime, ...rest } = source ?? {};
   return { ...rest, ...edited };
 }
