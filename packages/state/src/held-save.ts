@@ -20,10 +20,6 @@ export const TASK_CREATE_FAILURE_MESSAGE =
 export const EVENT_CREATE_FAILURE_MESSAGE =
   "Couldn't create the event. It's still in the editor.";
 
-export function heldSaveError(error: Error, failureMessage?: string): Error {
-  return failureMessage ? new Error(failureMessage, { cause: error }) : error;
-}
-
 /** Report a failed save, unless its editor shows the failure (quiet). */
 export function reportHeldSaveFailure(
   notifyError: ((error: Error) => void) | undefined,
@@ -31,6 +27,8 @@ export function reportHeldSaveFailure(
   { failureMessage, quiet }: HeldSave
 ): void {
   if (!quiet) {
-    notifyError?.(heldSaveError(error, failureMessage));
+    notifyError?.(
+      failureMessage ? new Error(failureMessage, { cause: error }) : error
+    );
   }
 }

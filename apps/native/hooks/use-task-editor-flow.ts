@@ -162,8 +162,8 @@ export function useTaskEditorFlow() {
 
     const decision = getTaskUpdateScopeDecision({
       hasCoreFieldChanges,
-      hasFollowing: editingTask.startDate !== null && draft.startDate !== null,
       isRecurring: editingTask.seriesMasterId !== null,
+      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
       nextRecurrence: draft.recurrence,
       nextTagIds: draft.tagIds,
       previousRecurrence: editingTask.recurrence,
