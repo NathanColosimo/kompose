@@ -255,10 +255,11 @@ describe("This and following", () => {
     ]);
   });
 
-  test("an hourly series moved a day on keeps a live meeting carried onto a deleted one's place", async () => {
-    // Hourly from Nov 9 9:00, Nov 10 11:00 deleted; from Nov 9 10:00 moved
-    // to Nov 10 10:00. Nov 9 11:00 is carried to Nov 10 11:00: no skip
-    // there.
+  test("an hourly series moved a day on keeps a deleted meeting deleted on its own place", async () => {
+    // Hourly from Nov 9 9:00 (a rule only other apps write), Nov 10 11:00
+    // deleted; from Nov 9 10:00 moved to Nov 10 10:00. Nov 10 11:00 stays
+    // on its own place, so it stays deleted; Nov 9 11:00, moved onto it,
+    // gives way.
     const hourly: Event = { ...weekly, recurrence: ["RRULE:FREQ=HOURLY"] };
     const google = fakeGoogle(hourly, [
       {
@@ -276,7 +277,10 @@ describe("This and following", () => {
         )
       )
     ).toBe(true);
-    expect(google.writes()[0]?.body?.recurrence).toEqual(["RRULE:FREQ=HOURLY"]);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=HOURLY",
+      "EXDATE:20261110T160000Z",
+    ]);
   });
 
   describe("Mondays and Wednesdays made Wednesdays from Mon Nov 16", () => {
@@ -321,10 +325,11 @@ describe("This and following", () => {
     });
   });
 
-  test("first Mondays and third Tuesdays made third Tuesdays keep a live meeting a deleted one's place shares", async () => {
-    // From Oct 5; Dec 15 deleted. From Nov 2 moved to Tue Nov 17,
-    // BYDAY=3TU: December's first meeting, Dec 7, is now Dec 15. Dec 15
-    // stays on.
+  test("first Mondays and third Tuesdays made third Tuesdays keep a deleted meeting deleted on its own day", async () => {
+    // From Oct 5 (a rule only other apps write); Dec 15 deleted. From Nov 2
+    // moved to Tue Nov 17, BYDAY=3TU: December's first meeting, Dec 7,
+    // would be Dec 15, but Dec 15 stays on its own day, so it stays
+    // deleted.
     const monthly: Event = {
       ...weekly,
       end: { dateTime: "2026-10-05T09:30:00-04:00", timeZone: zone },
@@ -354,6 +359,7 @@ describe("This and following", () => {
     ).toBe(true);
     expect(google.writes()[0]?.body?.recurrence).toEqual([
       "RRULE:FREQ=MONTHLY;BYDAY=3TU",
+      "EXDATE:20261215T140000Z",
     ]);
   });
 
@@ -603,6 +609,31 @@ describe("This and following", () => {
         },
       });
       expect(google.writes()).toEqual([]);
+    });
+
+    test("keeps a deleted meeting the move leaves on its own day deleted", async () => {
+      // Dec 7 deleted; from Nov 16 moved to Nov 30. Nov 23's meeting moves
+      // onto Dec 7, but Dec 7 keeps its own day: it stays deleted.
+      const google = fakeGoogle(weekly, [
+        {
+          ...occurrenceOf(weekly, "2026-12-07T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit("following", nov16, {
+              end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+              start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+            })
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO",
+        "EXDATE:20261207T140000Z",
+      ]);
     });
 
     test("carries a renamed meeting the move leaves on its own day", async () => {

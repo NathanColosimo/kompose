@@ -1508,12 +1508,29 @@ function followingOccurrences(params: {
 }
 
 /**
+ * Whether a meeting at `slot` that lands at `place` stays on its own
+ * place: its day, or less than a day off by the clock (as `landingOf`
+ * measures a move). Another meeting moved there too gives way to it.
+ */
+function onOwnPlace(slot: string, place: string, zone: string): boolean {
+  const wall = (at: string) =>
+    slotMoment(at, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
+  const from = wall(slot);
+  const to = wall(place);
+  return (
+    from !== undefined &&
+    to !== undefined &&
+    Math.abs(from.until(to).total("hours")) < 24
+  );
+}
+
+/**
  * Where a changed occurrence at `slot` goes in a split's new series: an
  * added (RDATE) meeting keeps its slot, as its RDATE does; a rule meeting
  * lands where its meeting does (`landingOf`). Null when it has no place
  * of its own: its own times in the other form than the new series', or,
- * carried off its own day, a place another old meeting, not deleted,
- * lands on too (a move past later meetings), which it would overwrite.
+ * carried off its own place (`onOwnPlace`), a place another old meeting,
+ * not deleted, lands on too (a move past later meetings).
  */
 function carriedAt(params: {
   cancelled: string[];
@@ -1541,20 +1558,9 @@ function carriedAt(params: {
   if (place === null) {
     return null;
   }
-  // On its own place (its day, or less than a day off by the clock, as
-  // `landingOf` measures a move), another meeting moved there too is the
-  // one that gives way; carried further, it would overwrite one.
-  const zone = repeatZone(master, start);
-  const wall = (at: string) =>
-    slotMoment(at, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
-  const from = wall(slot);
-  const to = wall(place);
-  const ownPlace =
-    from !== undefined &&
-    to !== undefined &&
-    Math.abs(from.until(to).total("hours")) < 24;
+  // Carried off its own place, it would overwrite a meeting there.
   const shared =
-    !ownPlace &&
+    !onOwnPlace(slot, place, repeatZone(master, start)) &&
     liveMeetingLandsAt(place, {
       ...plan,
       cancelled: [...params.cancelled, slot],
@@ -2522,14 +2528,17 @@ export function makeGoogleCalendarService(
         const stale = !(isAdded(slot) || met(slot));
         const at = isAdded(slot) || stale ? null : landingOf(slot, plan);
         const formed = inFormOf(at ?? slot, start, newZone);
+        // On its own place, a live meeting moved there gives way to the
+        // skip, as to a changed one (`carriedAt`).
         const blocked =
           formed !== null &&
           ((at !== null &&
             (addsSlot(fromSplit, formed, zone) ||
-              liveMeetingLandsAt(formed, {
-                ...plan,
-                cancelled: params.cancelled,
-              }))) ||
+              (!onOwnPlace(slot, formed, newZone) &&
+                liveMeetingLandsAt(formed, {
+                  ...plan,
+                  cancelled: params.cancelled,
+                })))) ||
             (stale &&
               seriesMeetsAt({
                 recurrence: plan.recurrence,
