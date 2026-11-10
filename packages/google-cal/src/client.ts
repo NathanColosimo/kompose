@@ -1715,9 +1715,9 @@ function placeInPeriod(
 }
 
 /**
- * Where the old series' meeting at `slot` (an original start) lands in a
- * split's new series, in its form (made all day or timed, by day). Each
- * place is tried in turn, and the first the new series meets at is it:
+ * Where a split's move puts the old series' meeting at `slot` (an original
+ * start) in the new series, in its form (made all day or timed, by day).
+ * Each place is tried in turn, and the first the new series meets at is it:
  * - its own day, its time turned as the split's start turned round the
  *   clock (`clockTurn`: 23:30 to the next day's 00:30 is a day on);
  * - in a monthly or yearly series, the new meeting as many into its month
@@ -1725,7 +1725,7 @@ function placeInPeriod(
  * - as far on as the split moved, days and time.
  * Null when the new series meets at none.
  */
-function landingOf(slot: string, plan: SplitPlan): string | null {
+function movedPlaceOf(slot: string, plan: SplitPlan): string | null {
   const { master, start } = plan;
   const zone = repeatZone(master, start);
   const formed = inFormOf(slot, start, zone) ?? slot;
@@ -1786,17 +1786,11 @@ function landingOf(slot: string, plan: SplitPlan): string | null {
 }
 
 /**
- * Whether a meeting of the old series after the split, not deleted or
- * skipped, lands at `place` in the new series (`landingOf`), where a
- * deleted one's skip would cancel it: two rule days folded into one
- * (Mondays and Wednesdays made Wednesdays), or a meeting the split's move
- * carries onto another's place. Its old meetings near `place` (in its
- * month or year, for a series repeating by one) are each placed.
+ * The old series' rule slots after the split, skipped or not, that the
+ * split's move puts at `place` (`movedPlaceOf`). Its slots near `place`
+ * (in its month or year, for a series repeating by one) are each placed.
  */
-function liveMeetingLandsAt(
-  place: string,
-  plan: SplitPlan & { cancelled: string[] }
-): boolean {
+function slotsMovedTo(place: string, plan: SplitPlan): string[] {
   const { master, start } = plan;
   const oldZone = seriesZoneOf(master);
   const zone = repeatZone(master, start);
@@ -1808,7 +1802,7 @@ function liveMeetingLandsAt(
     ? dayOfStart(master.start, oldZone)
     : startInstant(master.start, oldZone)?.toZonedDateTimeISO(oldZone);
   if (!(day && split && splitDay && newDay && first)) {
-    return false;
+    return [];
   }
   // Each meeting lands about as many days off as the split moved (a few
   // more across months of other lengths), or in its month or year.
@@ -1817,7 +1811,7 @@ function liveMeetingLandsAt(
     Temporal.PlainDate.compare(a, b) < 0 ? a : b;
   const later = (a: Temporal.PlainDate, b: Temporal.PlainDate) =>
     Temporal.PlainDate.compare(a, b) < 0 ? b : a;
-  return rulesOf(master.recurrence ?? []).some((rule) => {
+  return rulesOf(master.recurrence ?? []).flatMap((rule) => {
     const period = periodOf(rule, day);
     const from = earlier(period?.[0] ?? day, day.subtract({ days: reach }));
     const to = later(period?.[1] ?? day, day.add({ days: reach }));
@@ -1832,23 +1826,67 @@ function liveMeetingLandsAt(
           ? to
           : to.toZonedDateTime({ timeZone: oldZone }).toInstant(),
       }) ?? [];
-    return meetings.some((meeting) => {
-      const slot = slotString(meeting, oldZone);
-      const at = slotMoment(slot, oldZone);
-      return (
-        at !== null &&
-        Temporal.Instant.compare(at, split) > 0 &&
-        !plan.cancelled.includes(slot) &&
-        seriesMeetsAt({
-          recurrence: master.recurrence ?? [],
-          seriesZone: oldZone,
-          slot,
-          start: master.start,
-        }) === true &&
-        landingOf(slot, plan) === place
-      );
-    });
+    return meetings
+      .map((meeting) => slotString(meeting, oldZone))
+      .filter((slot) => {
+        const at = slotMoment(slot, oldZone);
+        return (
+          at !== null &&
+          Temporal.Instant.compare(at, split) > 0 &&
+          movedPlaceOf(slot, plan) === place
+        );
+      });
   });
+}
+
+/**
+ * Where the old series' meeting at `slot` (an original start) lands in a
+ * split's new series: where the split's move puts it (`movedPlaceOf`).
+ * When the new series doesn't meet there, its own day at the new time, if
+ * the new series meets then and no old meeting is moved there: Mondays at
+ * 23:30 moved to Tuesday 00:30 with Mondays kept meet Mondays at 00:30.
+ * Null when it has neither.
+ */
+function landingOf(slot: string, plan: SplitPlan): string | null {
+  const moved = movedPlaceOf(slot, plan);
+  if (moved !== null) {
+    return moved;
+  }
+  const { master, recurrence, start } = plan;
+  const zone = repeatZone(master, start);
+  const formed = inFormOf(slot, start, zone) ?? slot;
+  const ownDay = onDay(start, dayOfStart(asStart(formed), zone), zone);
+  const place = ownDay && slotOf(ownDay, zone);
+  return place &&
+    seriesMeetsAt({ recurrence, seriesZone: zone, slot: place, start }) ===
+      true &&
+    slotsMovedTo(place, plan).length === 0
+    ? place
+    : null;
+}
+
+/**
+ * Whether a meeting of the old series after the split, not deleted or
+ * skipped, is moved to `place` in the new series (`slotsMovedTo`), where a
+ * deleted one's skip would cancel it: two rule days folded into one
+ * (Mondays and Wednesdays made Wednesdays), or a meeting the split's move
+ * carries onto another's place.
+ */
+function liveMeetingLandsAt(
+  place: string,
+  plan: SplitPlan & { cancelled: string[] }
+): boolean {
+  const { master } = plan;
+  return slotsMovedTo(place, plan).some(
+    (slot) =>
+      !plan.cancelled.includes(slot) &&
+      seriesMeetsAt({
+        recurrence: master.recurrence ?? [],
+        seriesZone: seriesZoneOf(master),
+        slot,
+        start: master.start,
+      }) === true
+  );
 }
 
 /**

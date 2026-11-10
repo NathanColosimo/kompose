@@ -654,6 +654,89 @@ describe("This and following", () => {
         "EXDATE:20261120T130000Z"
       );
     });
+
+    describe("Mondays at 23:30 moved past midnight, Mondays kept", () => {
+      // From Mon Nov 16 moved to Tue Nov 17 00:30 without ticking Tuesday:
+      // the new series meets Mondays at 00:30, so a later Monday has no
+      // meeting an hour on and lands on its own day.
+      const late: Event = {
+        ...weekly,
+        end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+        start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+      };
+      const moveFromNov16 = () =>
+        edit("following", occurrenceOf(late, "2026-11-16T23:30:00-05:00"), {
+          end: { dateTime: "2026-11-17T00:59:00-05:00", timeZone: zone },
+          start: { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone },
+        });
+
+      test("keeps a later deleted Monday deleted", async () => {
+        const google = fakeGoogle(late, [
+          {
+            ...occurrenceOf(late, "2026-11-30T23:30:00-05:00"),
+            status: "cancelled",
+          },
+        ]);
+        expect(Exit.isSuccess(await run(moveFromNov16()))).toBe(true);
+        expect(google.writes()[0]?.body?.recurrence).toEqual([
+          "RRULE:FREQ=WEEKLY;BYDAY=MO",
+          "EXDATE:20261130T053000Z",
+        ]);
+      });
+
+      test("keeps a later renamed Monday renamed", async () => {
+        const google = fakeGoogle(late, [
+          {
+            ...occurrenceOf(late, "2026-12-07T23:30:00-05:00"),
+            summary: "Own",
+          },
+        ]);
+        expect(Exit.isSuccess(await run(moveFromNov16()))).toBe(true);
+        const [created, carried] = google.writes();
+        expect(carried?.url.pathname).toEndWith(
+          `/events/${String(created?.body?.id)}_20261207T053000Z`
+        );
+        expect(carried?.body?.summary).toBe("Own");
+      });
+
+      test("a deleted Tuesday doesn't cancel the Monday moved onto its day", async () => {
+        // Mondays and Tuesdays: Mon Nov 23's meeting moves to Tue Nov 24
+        // 00:30, so Tue Nov 24's skip can't go there.
+        const both: Event = {
+          ...late,
+          recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+        };
+        const google = fakeGoogle(both, [
+          {
+            ...occurrenceOf(both, "2026-11-24T23:30:00-05:00"),
+            status: "cancelled",
+          },
+        ]);
+        expect(
+          Exit.isSuccess(
+            await run(
+              edit(
+                "following",
+                occurrenceOf(both, "2026-11-16T23:30:00-05:00"),
+                {
+                  end: {
+                    dateTime: "2026-11-17T00:59:00-05:00",
+                    timeZone: zone,
+                  },
+                  start: {
+                    dateTime: "2026-11-17T00:30:00-05:00",
+                    timeZone: zone,
+                  },
+                }
+              )
+            )
+          )
+        ).toBe(true);
+        expect(
+          JSON.stringify(google.writes()[0]?.body?.recurrence)
+        ).not.toContain("20261124T053000Z");
+      });
+    });
   });
 
   describe("a move past later meetings", () => {

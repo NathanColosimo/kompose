@@ -93,12 +93,36 @@ export interface RuleReader {
   meetsAt: (slot: Slot) => boolean;
 }
 
+/** The rules read last (`readRule`), by start and rule, oldest first. */
+const readRules = new Map<string, RuleReader | null>();
+const READ_RULES_KEPT = 16;
+
 /**
  * `rule`, repeating from the series' start (`first`), read once: the start
  * is always a meeting (Google meets at it, rule or not). Asking about it
- * many times stays cheap. Null when the rule can't be read.
+ * many times stays cheap, and the last few rules read are kept, since one
+ * save asks about the same rule once for each skip and changed meeting.
+ * Null when the rule can't be read.
  */
 export function readRule(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+}): RuleReader | null {
+  const key = `${dtstartLine(params.first)}\n${params.rule}`;
+  const kept = readRules.get(key);
+  if (kept !== undefined) {
+    return kept;
+  }
+  const reader = newReader(params);
+  const oldest = readRules.keys().next();
+  if (readRules.size >= READ_RULES_KEPT && !oldest.done) {
+    readRules.delete(oldest.value);
+  }
+  readRules.set(key, reader);
+  return reader;
+}
+
+function newReader(params: {
   first: Temporal.PlainDate | Temporal.ZonedDateTime;
   rule: string;
 }): RuleReader | null {

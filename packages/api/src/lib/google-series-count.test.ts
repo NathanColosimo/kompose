@@ -1560,3 +1560,37 @@ describe("a COUNT the user changed", () => {
     ]);
   });
 });
+
+describe("a COUNT through a move past midnight that keeps its weekday", () => {
+  test("keeps a later deleted meeting's place on its own day", async () => {
+    // Mondays at 23:30 five times from Nov 9, Nov 30 deleted on its own;
+    // from Nov 16 moved to Tue Nov 17 00:30, Mondays kept. Four are left:
+    // Nov 17, then Mondays at 00:30, Nov 30 still skipped.
+    const late: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5"],
+      start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(late, [
+      {
+        ...occurrenceOf(late, "2026-11-30T23:30:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(late, "2026-11-16T23:30:00-05:00"), {
+            end: { dateTime: "2026-11-17T00:59:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=4",
+      "EXDATE:20261130T053000Z",
+    ]);
+  });
+});
