@@ -1510,6 +1510,35 @@ describe("a COUNT through a pause", () => {
   });
 });
 
+describe("a COUNT through a monthly day rebuilt for a shorter one", () => {
+  test("carries the meetings left", async () => {
+    // All day, monthly on the 31st five times from Jan 31 (Jan, Mar, May,
+    // Jul, Aug 31); from May 31 moved to May 30, the editor sending the
+    // 30th with the same COUNT: May, Jul and Aug are left.
+    const series: Event = {
+      ...weekly,
+      end: { date: "2026-02-01" },
+      recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=31;COUNT=5"],
+      start: { date: "2026-01-31" },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-05-31"), {
+            end: { date: "2026-05-31" },
+            recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=30;COUNT=5"],
+            start: { date: "2026-05-30" },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=MONTHLY;BYMONTHDAY=30;COUNT=3",
+    ]);
+  });
+});
+
 describe("a COUNT the user changed", () => {
   test("is written as they set it", async () => {
     const five: Event = {
