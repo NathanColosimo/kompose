@@ -630,7 +630,7 @@ function buildOccurrenceRowsFromTask(params: {
     seriesMasterId: params.seriesMasterId,
     startDate: date.toString(),
     startTime: input.startTime ?? task.startTime,
-    status: input.status ?? task.status,
+    status: "todo",
     title: input.title ?? task.title,
     userId: params.userId,
   }));
@@ -789,13 +789,23 @@ const updateFollowing = Effect.fn("updateFollowing")(function* (
     return yield* dbUpdate(userId, task.id, { ...input, isException: true });
   }
 
-  // If recurrence pattern is changing, regenerate future occurrences
-  if (recurrenceChanged) {
-    return yield* regenerateOccurrences(userId, task, input);
+  // Completion belongs to the selected occurrence, even when its edits
+  // apply to the series. A regenerated first row replaces that occurrence.
+  const { status, ...seriesInput } = input;
+  const updatedTasks = recurrenceChanged
+    ? yield* regenerateOccurrences(userId, task, seriesInput)
+    : yield* updateSeriesWithScaledDates(userId, task, seriesInput);
+  const selected =
+    updatedTasks.find((row) => row.id === task.id) ??
+    (task.isException ? task : updatedTasks[0]);
+  const selectedStatus = status ?? task.status;
+  if (selected && selected.status !== selectedStatus) {
+    yield* dbUpdate(userId, selected.id, { status: selectedStatus });
+    if (!updatedTasks.some((row) => row.id === selected.id)) {
+      updatedTasks.push(selected);
+    }
   }
-
-  // No recurrence change: update this and following with scaled date/time offsets.
-  return yield* updateSeriesWithScaledDates(userId, task, input);
+  return updatedTasks;
 });
 
 // ============================================================================

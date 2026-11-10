@@ -12,12 +12,18 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
+import { Temporal } from "temporal-polyfill";
 import { uuidv7 } from "uuidv7";
 import { type StateConfig, useStateConfig } from "../config";
 import {
   getGoogleEventsByCalendarQueryKey,
   invalidateGoogleEventQueries,
 } from "../google-calendar-query-keys";
+import {
+  parseGoogleEventRecurrenceRule,
+  recurrenceEndDay,
+  recurrenceUntilValue,
+} from "../google-event-recurrence";
 import {
   HELD_WRITE_NETWORK_MODE,
   type HeldSave,
@@ -111,6 +117,33 @@ interface CreateContext {
   optimisticId: string | undefined;
 }
 
+/** All-day toggles change UNTIL's date form along with the event's start. */
+function eventWithRecurrenceEnd<T extends Pick<Event, "recurrence" | "start">>(
+  event: T
+): T {
+  if (!(event.recurrence && event.start)) {
+    return event;
+  }
+  const allDay = Boolean(event.start.date);
+  const timeZone = event.start.timeZone ?? Temporal.Now.timeZoneId();
+  return {
+    ...event,
+    recurrence: event.recurrence.map((rule) => {
+      const { end } = parseGoogleEventRecurrenceRule(rule);
+      if (end.type !== "until" || (end.date.length === 8) === allDay) {
+        return rule;
+      }
+      const day = recurrenceEndDay(end.date, timeZone);
+      return day
+        ? rule.replace(
+            `UNTIL=${end.date}`,
+            `UNTIL=${recurrenceUntilValue(day, allDay, timeZone)}`
+          )
+        : rule;
+    }),
+  };
+}
+
 /**
  * A create: a one-off event shows in the cached lists at once, under a
  * stand-in id the server's copy replaces. Failures use the app's error toast.
@@ -124,7 +157,11 @@ export function createGoogleEventMutationOptions(
     mutationFn: async ({
       failureMessage: _failureMessage,
       ...variables
-    }: CreateEventInput & HeldSave) => orpc.googleCal.events.create(variables),
+    }: CreateEventInput & HeldSave) =>
+      orpc.googleCal.events.create({
+        ...variables,
+        event: eventWithRecurrenceEnd(variables.event),
+      }),
     onMutate: async (variables: CreateEventInput & HeldSave) => {
       if (variables.event.recurrence?.length) {
         return { optimisticId: undefined };
@@ -203,7 +240,7 @@ export function updateGoogleEventMutationOptions(
         accountId: variables.accountId,
         calendarId: variables.calendarId,
         eventId: variables.eventId,
-        event: sanitizeEventPayload(variables.event),
+        event: eventWithRecurrenceEnd(sanitizeEventPayload(variables.event)),
         scope: variables.recurrenceScope ?? "this",
       }),
     onMutate: async (variables: UpdateGoogleEventVariables) => {

@@ -33,6 +33,7 @@ import {
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
 } from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
@@ -874,14 +875,8 @@ export default function CalendarTab() {
         event: {
           ...draft.sourceEvent,
           ...eventPayload,
-          end: {
-            ...draft.sourceEvent.end,
-            ...eventPayload.end,
-          },
-          start: {
-            ...draft.sourceEvent.start,
-            ...eventPayload.start,
-          },
+          end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
+          start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
         },
         eventId: draft.eventId,
         recurrenceScope: scope,

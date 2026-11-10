@@ -1955,12 +1955,17 @@ function ReadOnlyEventDetails({
 function applyMovedStart(
   values: EventFormValues,
   setValue: UseFormSetValue<EventFormValues>,
-  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime }
+  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime },
+  timeZone: string
 ) {
   if (!values.startDate) {
     return;
   }
-  const moved = moveEventStart(formRange(values, values.startDate), next);
+  const moved = moveEventStart(
+    formRange(values, values.startDate),
+    next,
+    timeZone
+  );
   const dirty = { shouldDirty: true };
   setValue("startDate", temporalToPickerDate(moved.startDate), dirty);
   setValue("endDate", temporalToPickerDate(moved.endDate), dirty);
@@ -2335,7 +2340,7 @@ export function EventEditForm({
   }) => {
     hasUserEditedRef.current = true;
     const before = getValues();
-    applyMovedStart(before, setValue, next);
+    applyMovedStart(before, setValue, next, timeZone);
   };
 
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
