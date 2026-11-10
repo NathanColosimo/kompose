@@ -203,11 +203,12 @@ type ScopeFacts = ReturnType<typeof saveFacts>;
  * loads.
  */
 function saveChanges(
-  pendingSave: Pick<PendingSave, "patternChanged"> | null,
+  pendingSave: Pick<PendingSave, "calendarChanged" | "patternChanged"> | null,
   facts: ScopeFacts,
   series: Pick<EventSaveChanges, "seriesRuleFailed" | "seriesRuleLoaded">
 ): EventSaveChanges {
   return {
+    calendarMoved: Boolean(pendingSave?.calendarChanged),
     patternChanged: pendingSave?.patternChanged ?? false,
     ...facts,
     ...series,
@@ -1042,9 +1043,7 @@ export function EventEditPopover({
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
-            defaultScope: request.calendarChanged
-              ? "all"
-              : request.defaultScope,
+            defaultScope: request.defaultScope,
             hasDataEdits: request.hasDataEdits,
             patternChanged: request.patternChanged,
             variables: request.variables,
