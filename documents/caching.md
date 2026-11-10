@@ -103,7 +103,7 @@ Local mutations use targeted invalidation since we know exactly what changed:
 
 Concurrent invalidations use `Effect.all([...], { concurrency: "unbounded", discard: true })`.
 
-For `events.update`, `events.move` and `events.delete`, `invalidateEvent` clears the event written through and, for an occurrence, its series (`recurringEventId`): a series write ("Entire series", "This and following") rewrites or ends the master. These invalidations and the realtime publish run whether the write succeeded or not (`writeAndRefresh` in `refresh.ts`, via `Effect.ensuring`), since a series write can change Google and still fail part way.
+For `events.update`, `events.move` and `events.delete`, `invalidateEvent` clears the event written through and, for an occurrence, its series (`recurringEventId`): a series write ("Entire series", "This and following") rewrites or ends the master. These invalidations and the realtime publish run whether the write succeeded or not (`invalidateGoogleCalendarEvents` in `refresh.ts`, via `Effect.ensuring`), since a series write can change Google and still fail part way.
 
 ---
 

@@ -2,6 +2,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { RRuleTemporal } from "rrule-temporal";
 import { Temporal } from "temporal-polyfill";
 
 export type EventRecurrenceFrequency =
@@ -27,25 +28,10 @@ export const GOOGLE_EVENT_WEEKDAYS: Array<{ value: string; label: string }> = [
   { label: "Sun", value: "SU" },
 ];
 
-const VALID_FREQUENCIES = new Set<EventRecurrenceFrequency>([
-  "DAILY",
-  "WEEKLY",
-  "MONTHLY",
-  "YEARLY",
-]);
-
-function resolveEnd(
-  until: string | null,
-  count: number | null
-): EventRecurrenceEnd {
-  if (until !== null) {
-    return { date: until, type: "until" };
-  }
-  if (count !== null) {
-    return { count, type: "count" };
-  }
-  return { type: "none" };
-}
+const RULE_REFERENCE =
+  Temporal.PlainDate.from("2000-01-01").toZonedDateTime("UTC");
+const UNTIL_PART = /(?:^|;)UNTIL=([^;]+)/;
+const SERIALIZED_UNTIL = /UNTIL=[^;]+/;
 
 /** What the repeat editors set on a rule; the rest of it is kept as is. */
 export interface EventRecurrencePattern {
@@ -72,107 +58,40 @@ export function parseGoogleEventRecurrenceRule(
     };
   }
 
-  const body = rule.replace("RRULE:", "");
-  const parts = body.split(";");
-
-  let freq: EventRecurrenceFrequency = "custom";
-  let byDay: string[] = [];
-  let until: string | null = null;
-  let count: number | null = null;
-  let interval = 1;
-  let monthDays: string[] = [];
-
-  for (const part of parts) {
-    const [key, value] = part.split("=");
-    if (!value) {
-      continue;
+  try {
+    const options = new RRuleTemporal({
+      rruleString: rule,
+      dtstart: RULE_REFERENCE,
+      temporal: Temporal,
+    }).options();
+    let freq: EventRecurrenceFrequency = "custom";
+    if (["DAILY", "WEEKLY", "MONTHLY", "YEARLY"].includes(options.freq)) {
+      // These are the four frequencies the editors offer.
+      freq = options.freq as EventRecurrenceFrequency;
     }
-
-    switch (key) {
-      case "FREQ":
-        if (VALID_FREQUENCIES.has(value as EventRecurrenceFrequency)) {
-          freq = value as EventRecurrenceFrequency;
-        }
-        break;
-      case "BYDAY":
-        byDay = value.split(",");
-        break;
-      case "BYMONTHDAY":
-        monthDays = value.split(",");
-        break;
-      case "UNTIL":
-        until = value;
-        break;
-      case "COUNT": {
-        const parsed = Number.parseInt(value, 10);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          count = parsed;
-        }
-        break;
-      }
-      case "INTERVAL": {
-        const parsed = Number.parseInt(value, 10);
-        if (Number.isFinite(parsed) && parsed > 0) {
-          interval = parsed;
-        }
-        break;
-      }
-      default:
-        break;
+    const until = UNTIL_PART.exec(rule.slice(6))?.[1];
+    let end: EventRecurrenceEnd = { type: "none" };
+    if (until) {
+      end = { type: "until", date: until };
+    } else if (options.count) {
+      end = { type: "count", count: options.count };
     }
+    return {
+      byDay: options.byDay ?? [],
+      end,
+      freq,
+      interval: options.interval ?? 1,
+      monthDays: (options.byMonthDay ?? []).map(String),
+    };
+  } catch {
+    return {
+      byDay: [],
+      end: { type: "none" },
+      freq: "custom",
+      interval: 1,
+      monthDays: [],
+    };
   }
-
-  return { byDay, end: resolveEnd(until, count), freq, interval, monthDays };
-}
-
-/** The rule parts the repeat editors set; the rest of a rule is kept. */
-const EDITED_PARTS = new Set([
-  "FREQ",
-  "INTERVAL",
-  "BYDAY",
-  "BYMONTHDAY",
-  "UNTIL",
-  "COUNT",
-]);
-/** Parts tied to a frequency, dropped when the frequency changes. */
-const FREQUENCY_PARTS = new Set([
-  "BYMONTH",
-  "BYSETPOS",
-  "BYYEARDAY",
-  "BYWEEKNO",
-]);
-
-/**
- * The parts of `baseRule` an edit keeps: everything the editors don't set
- * (WKST, BYMONTH...); parts tied to the frequency go when it changes, and
- * BYSETPOS, which picks among the days BYDAY / BYMONTHDAY name, goes when
- * those change (an end-only edit keeps it).
- */
-function keptRuleParts(
-  baseRule: string | undefined,
-  { byDay, freq, monthDays }: EventRecurrencePattern
-): string[] {
-  if (!baseRule?.startsWith("RRULE:")) {
-    return [];
-  }
-  const base = parseGoogleEventRecurrenceRule(baseRule);
-  const sameDays =
-    byDay.join() === base.byDay.join() &&
-    monthDays.join() === base.monthDays.join();
-  const parts = baseRule.replace("RRULE:", "").split(";");
-  const baseFreq = parts
-    .find((part) => part.startsWith("FREQ="))
-    ?.slice("FREQ=".length);
-  return parts.filter((part) => {
-    const key = part.split("=")[0] ?? "";
-    if (!part || EDITED_PARTS.has(key)) {
-      return false;
-    }
-    if (key === "BYSETPOS" && !sameDays) {
-      return false;
-    }
-    return baseFreq === freq || !FREQUENCY_PARTS.has(key);
-  });
 }
 
 const PLAIN_WEEKDAY = /^[A-Z]{2}$/;
@@ -220,27 +139,48 @@ export function buildGoogleEventRecurrenceRule(
     return baseRule ?? null;
   }
 
-  const parts: string[] = [`FREQ=${freq}`];
-  if (interval > 1) {
-    parts.push(`INTERVAL=${interval}`);
-  }
-  parts.push(...keptRuleParts(baseRule, pattern));
-  // Both can stand together ("the 2nd Tue, if it's the 8th to the 10th");
-  // a day choice in the editors sets the one it means and clears the other.
-  if (monthDays.length > 0) {
-    parts.push(`BYMONTHDAY=${monthDays.join(",")}`);
-  }
-  if (byDay.length > 0) {
-    parts.push(`BYDAY=${weekOrdered(byDay).join(",")}`);
-  }
-
-  if (end.type === "until") {
-    parts.push(`UNTIL=${end.date}`);
-  } else if (end.type === "count") {
-    parts.push(`COUNT=${end.count}`);
-  }
-
-  return `RRULE:${parts.join(";")}`;
+  const base = baseRule
+    ? new RRuleTemporal({
+        rruleString: baseRule,
+        dtstart: RULE_REFERENCE,
+        temporal: Temporal,
+      })
+    : undefined;
+  const previous = base?.options();
+  const frequencyChanged = previous?.freq !== freq;
+  const daysChanged =
+    byDay.join() !== (previous?.byDay ?? []).join() ||
+    monthDays.join() !== (previous?.byMonthDay ?? []).join();
+  const until =
+    end.type === "until"
+      ? new RRuleTemporal({
+          rruleString: `RRULE:FREQ=DAILY;UNTIL=${end.date}`,
+          dtstart: RULE_REFERENCE,
+          temporal: Temporal,
+        }).options().until
+      : undefined;
+  const rule = new RRuleTemporal({
+    ...previous,
+    dtstart: previous?.dtstart ?? RULE_REFERENCE,
+    temporal: Temporal,
+    freq,
+    interval,
+    byDay: weekOrdered(byDay),
+    byMonthDay: monthDays.map(Number),
+    byMonth: frequencyChanged ? undefined : previous?.byMonth,
+    byYearDay: frequencyChanged ? undefined : previous?.byYearDay,
+    byWeekNo: frequencyChanged ? undefined : previous?.byWeekNo,
+    bySetPos: frequencyChanged || daysChanged ? undefined : previous?.bySetPos,
+    count: end.type === "count" ? end.count : undefined,
+    until,
+  })
+    .toString()
+    .split("\n")
+    .find((line) => line.startsWith("RRULE:"));
+  // Google uses date-only UNTIL for all-day events; the library serializes UTC.
+  return rule && end.type === "until"
+    ? rule.replace(SERIALIZED_UNTIL, `UNTIL=${end.date}`)
+    : (rule ?? null);
 }
 
 /** RRULE weekday codes by dayOfWeek (1 Monday to 7 Sunday). */

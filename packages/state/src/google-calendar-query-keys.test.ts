@@ -9,10 +9,7 @@ import {
   getGoogleEventsByCalendarQueryKey,
   invalidateGoogleEventQueries,
 } from "./google-calendar-query-keys";
-import {
-  seriesRefreshing,
-  seriesRuleReady,
-} from "./hooks/use-recurring-event-master";
+import { seriesRuleReady } from "./hooks/use-recurring-event-master";
 
 test("a write to a calendar's events leaves none of its series fresh", async () => {
   // A series saved every two weeks, then reopened: its loaded master must
@@ -52,15 +49,12 @@ test("a stale series isn't ready until its new rule is in", async () => {
     staleTime: 5 * 60 * 1000,
   });
   const stop = observer.subscribe(() => undefined);
-  expect(seriesRefreshing(observer.getCurrentResult())).toBe(false);
 
   const invalidated = invalidateGoogleEventQueries(queryClient, [work]);
-  expect(seriesRefreshing(observer.getCurrentResult())).toBe(true);
   expect(seriesRuleReady(observer.getCurrentResult())).toBe(false);
 
   answer({ recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2"] });
   await invalidated;
-  expect(seriesRefreshing(observer.getCurrentResult())).toBe(false);
   expect(seriesRuleReady(observer.getCurrentResult())).toBe(true);
   expect(observer.getCurrentResult().data).toEqual({
     recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2"],

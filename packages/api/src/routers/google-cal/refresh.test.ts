@@ -33,7 +33,7 @@ mock.module("@kompose/redis", () => ({
 }));
 
 const { GoogleCalendarCacheService } = await import("./cache");
-const { writeAndRefresh } = await import("./refresh");
+const { invalidateGoogleCalendarEvents } = await import("./refresh");
 
 const user = "user-1";
 const account = "account-1";
@@ -68,12 +68,16 @@ const cachedAfter = <A, E>(
     }
 
     const exit = yield* Effect.exit(
-      writeAndRefresh(write, {
-        accountId: account,
-        eventId: occurrence,
-        userId: user,
-        ...params,
-      })
+      write.pipe(
+        Effect.ensuring(
+          invalidateGoogleCalendarEvents({
+            accountId: account,
+            eventId: occurrence,
+            userId: user,
+            ...params,
+          })
+        )
+      )
     );
 
     const lists: string[] = [];
@@ -104,7 +108,7 @@ const cachedAfter = <A, E>(
     return { events, exit, lists, told };
   }).pipe(Effect.provide(GoogleCalendarCacheService.layer), Effect.runPromise);
 
-describe("writeAndRefresh", () => {
+describe("invalidateGoogleCalendarEvents", () => {
   beforeEach(() => {
     store.clear();
     published.length = 0;
