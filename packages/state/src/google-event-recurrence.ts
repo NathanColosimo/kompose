@@ -7,6 +7,7 @@ import { meetsSeveralTimesADay } from "@kompose/google-cal/series";
 import { keepsTimes, sameTime } from "@kompose/google-cal/series-edits";
 import { seriesTimesForEdit } from "@kompose/google-cal/series-times";
 import {
+  clockOf,
   dayOfStart,
   matchRecurrenceToStart,
   moveSkippedDays,
@@ -442,20 +443,6 @@ export function followStart(params: {
 }
 
 /**
- * The wall time a timed Google start is at in `timeZone` (one without an
- * offset read in its own zone, as Google does).
- */
-function timeOfStart(
-  start: StartTime,
-  timeZone: string
-): Temporal.PlainTime | null {
-  return (
-    startInstant(start, timeZone)?.toZonedDateTimeISO(timeZone).toPlainTime() ??
-    null
-  );
-}
-
-/**
  * The zone an event's own times are in: a recurring one's days are
  * counted, and its edits written, there (a Tokyo 9:00 meeting is on
  * Tokyo's Tuesday wherever it's viewed from, and Google repeats it in that
@@ -654,7 +641,7 @@ export function entireSeriesMovesSeveralADay(params: {
   const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
   const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
   const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
-  const to = timeOfStart(start, zone);
+  const to = clockOf(start, zone);
   return Boolean(
     first &&
       to &&
@@ -874,12 +861,12 @@ export function seriesRecurrenceForSave(params: {
     from,
     recurrence: masterRecurrence,
     timeZone,
-    fromTime: timeOfStart(
+    fromTime: clockOf(
       occurrence.originalStartTime ?? occurrence.start,
       timeZone
     ),
     to,
-    toTime: timeOfStart(editedStart, timeZone),
+    toTime: clockOf(editedStart, timeZone),
   });
   const matched = matchRecurrenceToStart(
     followed,
@@ -892,7 +879,7 @@ export function seriesRecurrenceForSave(params: {
     {
       firstDay: to,
       firstTime: params.masterStart
-        ? timeOfStart(params.masterStart, timeZone)
+        ? clockOf(params.masterStart, timeZone)
         : null,
       rulesFrom: to,
       viaOccurrence: true,
@@ -926,7 +913,7 @@ export function seriesCountingDays(
   return firstDay && masterStart
     ? {
         firstDay,
-        firstTime: timeOfStart(masterStart, timeZone),
+        firstTime: clockOf(masterStart, timeZone),
         rulesFrom: firstDay,
         viaOccurrence: true,
       }
