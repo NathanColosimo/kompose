@@ -480,6 +480,32 @@ function placeIn(slot: string, plan: SeriesPlan): string | null {
 }
 
 /**
+ * The first meeting's own fields (`own`, its times aside) the event left
+ * by "Repeat: None" keeps: those the save doesn't set, and guests of its
+ * own with the save's guest change applied to them, not the series' list,
+ * as the event left is this meeting.
+ */
+function firstMeetingFields(params: {
+  occurrence: Event;
+  own: Partial<CreateEvent>;
+  plan: SeriesPlan;
+}): Partial<CreateEvent> {
+  const { occurrence, own } = params;
+  const { changes, edited, opened } = params.plan;
+  const fields: Partial<CreateEvent> = Object.fromEntries(
+    Object.entries(own).filter(([field]) => !(field in changes))
+  );
+  if (own.attendees && changes.attendees) {
+    fields.attendees = seriesAttendees({
+      edited: edited.attendees ?? [],
+      occurrence: opened.attendees,
+      series: occurrence.attendees,
+    });
+  }
+  return fields;
+}
+
+/**
  * What an Entire series save that ends the repeat ("Repeat: None") keeps:
  * the series becomes its first meeting alone, and Google drops every
  * occurrence's own changes with the repeat. The first meeting's own
@@ -521,9 +547,7 @@ function endedRepeat(params: {
       continue;
     }
     const { end, start, ...own } = changesOwnTo(occurrence, master, zone);
-    const fields = Object.fromEntries(
-      Object.entries(own).filter(([field]) => !(field in changes))
-    );
+    const fields = firstMeetingFields({ occurrence, own, plan: params.plan });
     if (occurrence.id === opened.id) {
       carried = {
         ...fields,
