@@ -7,6 +7,7 @@ import {
 } from "@kompose/state/atoms/current-date";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "react-hotkeys-hook";
+import { pageIsHeld } from "@/components/ui/held-fieldset";
 import { useRequestCreateEvent } from "@/hooks/use-request-create-event";
 import { goToTodayAtom } from "@/state/calendar-navigation";
 import {
@@ -28,6 +29,7 @@ import {
 function isForAnotherControl(e: KeyboardEvent): boolean {
   return (
     e.defaultPrevented ||
+    pageIsHeld() ||
     (e.target instanceof Element &&
       e.target.closest('[role="dialog"]') !== null)
   );
@@ -63,7 +65,9 @@ export function CalendarHotkeys() {
       e.preventDefault(); // Prevent browser's default cmd+k behavior
       setCommandBarOpen(true);
     },
-    { enableOnFormTags: true }, // Allow opening even when in form fields
+    // In form fields too, but not under a saving editor: a task picked in
+    // the command bar moves the calendar.
+    { enableOnFormTags: true, ignoreEventWhen: pageIsHeld },
     [setCommandBarOpen]
   );
 

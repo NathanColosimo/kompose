@@ -126,6 +126,10 @@ export function EventCreationPopover() {
     }
 
     const request = eventCloseSaveRequestRef.current?.() ?? { type: "none" };
+    if (request.type === "invalid") {
+      // The form says why ("Ends before it starts.").
+      return;
+    }
 
     actions.closePopover();
 
