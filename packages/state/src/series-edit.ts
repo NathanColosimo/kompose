@@ -1,5 +1,5 @@
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
-import { changedFields, keepsTimes } from "@kompose/google-cal/series-edits";
+import { changedFields, sameTime } from "@kompose/google-cal/series-edits";
 import { dayOfStart } from "@kompose/google-cal/until";
 import type { Temporal } from "temporal-polyfill";
 import {
@@ -155,11 +155,13 @@ export function seriesRepeatForEdit(params: {
           timeZone,
         })
       : undefined;
-  // The server keeps the series' slot for an edit that keeps both times;
-  // otherwise a save for the series starts at the edited start.
-  const timesKept = occurrence && keepsTimes(edited, occurrence, timeZone);
+  // The server keeps the series' slot for an edit that keeps the start (a
+  // new end alone is a new length); otherwise a save for the series starts
+  // at the edited start.
+  const startKept =
+    occurrence && sameTime(editedStart, occurrence.start, timeZone);
   const startDay = dayOfStart(
-    (timesKept && occurrence.originalStartTime) || editedStart,
+    (startKept && occurrence.originalStartTime) || editedStart,
     timeZone
   );
   // The series' own rule on the meeting's own day: its days count from its
