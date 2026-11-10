@@ -261,15 +261,6 @@ export function weekdayCodeOf(date: { dayOfWeek: number }): string {
   return WEEKDAY_CODES[date.dayOfWeek - 1] ?? "MO";
 }
 
-/**
- * The weekday of the month `date` falls on, as BYDAY: "2TU" for the 2nd
- * Tuesday; a 5th is "-1TU", the last (not every month has a 5th).
- */
-export function monthlyWeekdayOf(date: Temporal.PlainDate): string {
-  const nth = Math.ceil(date.day / 7);
-  return `${nth >= 5 ? -1 : nth}${weekdayCodeOf(date)}`;
-}
-
 /** "-1FR" when `date` is the last Friday of its month; otherwise null. */
 export function lastWeekdayOf(date: Temporal.PlainDate): string | null {
   return date.day + 7 > date.daysInMonth ? `-1${weekdayCodeOf(date)}` : null;
@@ -404,10 +395,25 @@ export function repeatChanged(params: {
   /** The series' recurrence (the event's own, or its master's). */
   source: string[];
 }): boolean {
+  const normalized = (lines: string[]) =>
+    JSON.stringify(lines.map(sortedRuleParts));
   return (
     params.edited &&
-    JSON.stringify(params.recurrence ?? []) !== JSON.stringify(params.source)
+    normalized(params.recurrence ?? []) !== normalized(params.source)
   );
+}
+
+/** "RRULE:COUNT=5;FREQ=WEEKLY" for either order of its parts. */
+function sortedRuleParts(line: string): string {
+  const colon = line.indexOf(":");
+  if (colon === -1) {
+    return line;
+  }
+  const parts = line
+    .slice(colon + 1)
+    .split(";")
+    .sort();
+  return `${line.slice(0, colon + 1)}${parts.join(";")}`;
 }
 
 const RECURRENCE_DATE = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/;

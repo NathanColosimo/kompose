@@ -5,10 +5,10 @@ import {
   type EventRecurrencePattern,
   getPrimaryRecurrenceRule,
   lastWeekdayOf,
-  monthlyWeekdayOf,
   occurrenceRepeatShown,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
+  repeatChanged,
   setPrimaryRecurrenceRule,
   untilDefaultDay,
 } from "./google-event-recurrence";
@@ -190,11 +190,8 @@ describe("buildGoogleEventRecurrenceRule", () => {
 const day = (iso: string) => Temporal.PlainDate.from(iso);
 
 describe("weekdays of the month", () => {
-  test("name the start's, a 5th as the last", () => {
-    expect(monthlyWeekdayOf(day("2026-11-10"))).toBe("2TU");
-    expect(monthlyWeekdayOf(day("2026-12-29"))).toBe("-1TU");
+  test("name the last", () => {
     // Nov 27, 2026 is the 4th Friday and the last.
-    expect(monthlyWeekdayOf(day("2026-11-27"))).toBe("4FR");
     expect(lastWeekdayOf(day("2026-11-27"))).toBe("-1FR");
     expect(lastWeekdayOf(day("2026-11-20"))).toBeNull();
   });
@@ -262,5 +259,30 @@ describe("untilDefaultDay", () => {
     expect(
       untilDefaultDay(Temporal.PlainDate.from("2024-01-07"), zone).toString()
     ).toBe(Temporal.Now.plainDateISO(zone).add({ months: 3 }).toString());
+  });
+});
+
+describe("repeatChanged", () => {
+  const source = ["RRULE:FREQ=WEEKLY;COUNT=10;BYDAY=MO"];
+  test("a repeat set back to the series' own reads as unchanged", () => {
+    const pattern = parseGoogleEventRecurrenceRule(source[0]);
+    const withCount = (count: number) => [
+      buildGoogleEventRecurrenceRule(
+        { ...pattern, end: { count, type: "count" } },
+        source[0]
+      ) ?? "",
+    ];
+    // Changed to 5 and back to 10: the rule is rebuilt with its parts reordered.
+    expect(withCount(10)).not.toEqual(source);
+    expect(
+      repeatChanged({ edited: true, recurrence: withCount(10), source })
+    ).toBe(false);
+    expect(
+      repeatChanged({
+        edited: true,
+        recurrence: withCount(5),
+        source,
+      })
+    ).toBe(true);
   });
 });
