@@ -61,7 +61,6 @@ export function useRecurringEventMaster(params: {
       });
     },
     // The editors show a failed load beside Repeat, with a retry.
-    meta: { quietError: true },
     queryKey,
     staleTime: 5 * 60 * 1000,
   });

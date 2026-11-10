@@ -8,17 +8,6 @@ import { type StateConfig, stateConfigAtom } from "./config";
 import { type SubscribeToResume, useTodayTick } from "./hooks/use-today-tick";
 import { type StorageAdapter, setStorageAdapter } from "./storage";
 
-// Typed query meta, read by each app's query error handler: a misspelled
-// key fails to compile instead of bringing its toast back.
-declare module "@tanstack/react-query" {
-  interface Register {
-    queryMeta: {
-      /** The query shows its own failure: the app's error toast skips it. */
-      quietError?: boolean;
-    };
-  }
-}
-
 interface StateProviderProps {
   children: ReactNode;
   config: StateConfig;

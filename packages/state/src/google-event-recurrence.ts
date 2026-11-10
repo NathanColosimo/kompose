@@ -386,3 +386,20 @@ export function recurrenceEndDay(
     return null;
   }
 }
+
+const DATE_SEPARATORS = /[-:]/g;
+/** Encode the end date picked in the repeat editor. */
+export function recurrenceUntilValue(
+  day: Temporal.PlainDate,
+  allDay: boolean,
+  timeZone: string
+): string {
+  if (allDay) {
+    return day.toString().replace(DATE_SEPARATORS, "");
+  }
+  return day
+    .toZonedDateTime({ plainTime: "23:59:59", timeZone })
+    .toInstant()
+    .toString({ smallestUnit: "second" })
+    .replace(DATE_SEPARATORS, "");
+}
