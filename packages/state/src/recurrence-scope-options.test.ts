@@ -7,7 +7,6 @@ import {
   eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
-  eventSaveScopeState,
   opensSeries,
   RECURRENCE_SCOPE_OPTIONS,
   refusalReason,
@@ -870,69 +869,24 @@ describe("the server's refusal of a series write", () => {
     }
   });
 
-  test("gives a save dialog its scopes and line from one place, refusals included", () => {
+  test("never offers a refused scope in its line", () => {
     // Refused This and following for a new repeat: the line says where
-    // the repeat can still go, and never offers what was refused.
+    // the repeat can still go.
     const unknown = { reason: "countUnknown" } as const;
-    const state = eventSaveScopeState({
+    const changes = {
       ...none,
       patternChanged: true,
       refused: refuseSave(null, "following", unknown),
-    });
-    expect(state.disabled).toEqual({ following: true, this: true });
-    expect(state.description).toBe(
+    };
+    expect(off(changes)).toEqual(["following", "this"]);
+    expect(eventSaveDescription(changes)).toBe(
       `${refusalReason(unknown)} A new repeat applies to the entire series.`
     );
-    // An app's own record of refusals (a message and the scopes) does too.
-    const own = eventSaveScopeState({
-      ...none,
-      patternChanged: true,
-      refused: { message: refusalReason(unknown), scopes: { following: true } },
-    });
-    expect(own).toEqual(state);
-    // From the first meeting, a refused This and following is Entire
-    // series too, from an app's own record as from refuseSave's.
-    const first = { ...none, opensSeries: true, patternChanged: true };
-    const typed = eventSaveScopeState({
-      ...first,
-      refused: refuseSave(null, "following", drops),
-    });
-    const record = eventSaveScopeState({
-      ...first,
-      refused: { message: refusalReason(drops), scopes: { following: true } },
-    });
-    expect(record.disabled).toEqual(typed.disabled);
-    expect(record.disabled).toEqual({ all: true, following: true, this: true });
-    // Still after a refusal of its own is added to that record.
-    expect(
-      eventSaveScopeState({
-        ...first,
-        refused: refuseSave(
-          { message: refusalReason(drops), scopes: { following: true } },
-          "this",
-          { reason: "severalRules" }
-        ),
-      }).disabled.all
-    ).toBe(true);
-    // Later refusals keep an app's own record's reason, through more
-    // than one.
-    const ownRecord = {
-      message: "Own reason.",
-      scopes: { all: true as const },
-    };
-    expect(refuseSave(ownRecord, "following", unknown).message).toBe(
-      `${refusalReason(unknown)} Own reason.`
-    );
-    const otherApp = { reason: "otherAppRepeat" } as const;
-    expect(
-      refuseSave(refuseSave(ownRecord, "following", unknown), "this", otherApp)
-        .message
-    ).toBe(`${refusalReason(otherApp)} ${refusalReason(unknown)} Own reason.`);
   });
 
   test("says when the refusals leave no scope at all", () => {
     // Even Only this refused: nothing the dialog offers can save it.
-    const state = eventSaveScopeState({
+    const changes = {
       ...none,
       refused: refuseSave(
         refuseSave(refuseSave(null, "all", drops), "following", {
@@ -941,9 +895,11 @@ describe("the server's refusal of a series write", () => {
         "this",
         { reason: "severalRules" }
       ),
-    });
-    expect(state.disabled).toEqual({ all: true, following: true, this: true });
-    expect(state.description).toEndWith(SCOPE_DIALOG_COPY.noScopeLeft);
+    };
+    expect(off(changes)).toEqual(["all", "following", "this"]);
+    expect(eventSaveDescription(changes)).toEndWith(
+      SCOPE_DIALOG_COPY.noScopeLeft
+    );
   });
 
   test("keeps every scope refused for the save off, with each reason, latest first", () => {

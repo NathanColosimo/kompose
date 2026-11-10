@@ -260,21 +260,18 @@ export type FollowingBlock = NonNullable<
   ReturnType<typeof followingSplitBlocked>
 >;
 
-/** The scopes the server refused for one pending save, and why. */
+/**
+ * The scopes the server refused for one pending save, and why, as
+ * `refuseSave` builds them.
+ */
 export interface SaveRefusals {
   /**
-   * Each refusal's reason, latest first (`refusalReason`); the dialog
-   * says where else the save can go, from the scopes left.
+   * Each refusal's reason once, latest first (`refusalReason`); the
+   * dialog says where else the save can go, from the scopes left.
    */
   message: string;
-  /**
-   * Each refusal, latest first, with the scope it was for. `refuseSave`
-   * keeps them; an app's own record of a message and scopes can leave
-   * them out: its scopes still count (from the series' first meeting, a
-   * refused This and following is taken as the whole series'), but the
-   * steps that name the meetings refused can't be given.
-   */
-  refusals?: readonly { refusal: SeriesRefusal; scope: RecurrenceScope }[];
+  /** Each refusal, latest first, with the scope it was for. */
+  refusals: readonly { refusal: SeriesRefusal; scope: RecurrenceScope }[];
   scopes: Partial<Record<RecurrenceScope, true>>;
 }
 
@@ -284,16 +281,12 @@ export function refuseSave(
   scope: RecurrenceScope,
   refusal: SeriesRefusal
 ): SaveRefusals {
-  const reason = refusalReason(refusal);
+  const refusals = [{ refusal, scope }, ...(refused?.refusals ?? [])];
   return {
-    // The new reason first, then every earlier one (an app's own record's
-    // too, which has no refusals list to rebuild it from), each once: one
-    // given before moves to the front.
     message: sentences(
-      reason,
-      refused?.message.replace(reason, "").replace(/\s+/g, " ").trim()
+      ...new Set(refusals.map((given) => refusalReason(given.refusal)))
     ),
-    refusals: [{ refusal, scope }, ...(refused?.refusals ?? [])],
+    refusals,
     scopes: { ...refused?.scopes, [scope]: true },
   };
 }
@@ -600,7 +593,7 @@ function noScopeStepFor(changes: EventSaveChanges): string | null {
  * saves.
  */
 function noScopeStep(changes: EventSaveChanges): string {
-  const named = changes.refused?.refusals?.find(({ refusal }) =>
+  const named = changes.refused?.refusals.find(({ refusal }) =>
     isNamingReason(refusal.reason)
   );
   if (named) {
@@ -931,21 +924,6 @@ function severalRulesTimeLine(changes: EventSaveChanges): string {
 }
 
 /**
- * A recurring save dialog's state: the scopes it can't use and its line
- * saying why, both from the same changes, refusals included
- * (`changes.refused`), so the line never offers a scope that's off.
- */
-export function eventSaveScopeState(changes: EventSaveChanges): {
-  description: string;
-  disabled: Partial<Record<RecurrenceScope, boolean>>;
-} {
-  return {
-    description: eventSaveDescription(changes),
-    disabled: eventSaveDisabledScopes(changes),
-  };
-}
-
-/**
  * The scope dialog's line for a save: the server's reasons for scopes it
  * refused, why each scope the save itself rules out is off, and, where no
  * scope is left, what to do (`noScopeStepFor`). Where the save rules out
@@ -975,7 +953,7 @@ function followingOffWhy(changes: EventSaveChanges): string | null {
   if (!block) {
     return null;
   }
-  return changes.refused?.refusals?.some(
+  return changes.refused?.refusals.some(
     ({ refusal }) => refusal.reason === block
   )
     ? null
