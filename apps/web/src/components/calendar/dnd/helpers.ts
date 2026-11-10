@@ -9,8 +9,7 @@ export const MINUTES_STEP = 15;
 /**
  * A draggable's listeners, for presses that start on the element itself.
  * React bubbles a portal's events to its React parents, so a press inside
- * an editor opened from the element, or on the page shield under a saving
- * one, would otherwise start dragging it.
+ * an editor opened from the element would otherwise start dragging it.
  */
 export function ownPresses(
   listeners: DraggableSyntheticListeners
