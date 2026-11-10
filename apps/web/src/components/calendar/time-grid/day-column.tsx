@@ -11,7 +11,14 @@ import type { DayColumnDropData } from "../dnd/types";
 import { getHoursRange, SLOT_MINUTES } from "./slot-utils";
 import { TimeSlot } from "./time-slot";
 
+/**
+ * The free strip at a column's right edge, in pixels: blocks stop short of
+ * it, so a slot is always free to start a new event even on a busy day.
+ */
+export const COLUMN_FREE_STRIP = 12;
+
 interface DayColumnProps {
+  /** The column's blocks. */
   children?: React.ReactNode;
   date: Temporal.PlainDate;
   onSlotDragMove?: (dateTime: Temporal.ZonedDateTime) => void;
@@ -19,6 +26,8 @@ interface DayColumnProps {
   onSlotLeave?: () => void;
   onSlotMouseDown?: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotMouseUp?: () => void;
+  /** Drawn above every block, such as the new-event preview. */
+  overlay?: React.ReactNode;
   timeZone: string;
   width: string;
 }
@@ -33,6 +42,7 @@ export const DayColumn = memo(function DayColumnInner({
   onSlotMouseDown,
   onSlotDragMove,
   onSlotMouseUp,
+  overlay,
 }: DayColumnProps) {
   const hours = getHoursRange();
 
@@ -60,8 +70,26 @@ export const DayColumn = memo(function DayColumnInner({
         </div>
       ))}
       <DayColumnDropTarget date={date} timeZone={timeZone} />
-      <div className="pointer-events-none absolute inset-0">{children}</div>
-      <CurrentTimeIndicator date={date} />
+      {/* Blocks stop short of the right edge (COLUMN_FREE_STRIP). Their
+          stacking order stays
+          inside this layer (isolate), so a busy day's blocks never rise
+          above the overlay, the now line, or the grid's header. */}
+      {/* The now line runs under the blocks, so it never strikes through a
+          title; its dot stays on top at the column's edge. */}
+      <CurrentTimeIndicator date={date} part="line" />
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0 isolate"
+        style={{ right: COLUMN_FREE_STRIP }}
+      >
+        {children}
+      </div>
+      <div
+        className="pointer-events-none absolute inset-y-0 left-0"
+        style={{ right: COLUMN_FREE_STRIP }}
+      >
+        {overlay}
+      </div>
+      <CurrentTimeIndicator date={date} part="dot" />
     </div>
   );
 });
@@ -105,7 +133,13 @@ function DayColumnDropTarget({
 }
 
 /** The now line, in the displayed time zone; it moves columns at midnight. */
-function CurrentTimeIndicator({ date }: { date: Temporal.PlainDate }) {
+function CurrentTimeIndicator({
+  date,
+  part,
+}: {
+  date: Temporal.PlainDate;
+  part: "dot" | "line";
+}) {
   const now = useAtomValue(nowZonedDateTimeAtom);
   if (!now.toPlainDate().equals(date)) {
     return null;
@@ -114,11 +148,14 @@ function CurrentTimeIndicator({ date }: { date: Temporal.PlainDate }) {
 
   return (
     <div
-      className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+      className="pointer-events-none absolute right-0 left-0 flex items-center"
       style={{ top: `${topPosition}px`, transform: "translateY(-50%)" }}
     >
-      <div className="size-2.5 shrink-0 rounded-full bg-red-500" />
-      <div className="h-0.5 flex-1 bg-red-500" />
+      {part === "dot" ? (
+        <div className="size-2.5 shrink-0 rounded-full bg-red-500" />
+      ) : (
+        <div className="h-0.5 flex-1 bg-red-500" />
+      )}
     </div>
   );
 }

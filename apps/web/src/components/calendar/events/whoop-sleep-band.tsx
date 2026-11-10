@@ -1,9 +1,10 @@
 "use client";
 
+import { formatDuration, formatTimeRange } from "@kompose/state/temporal-utils";
+import { Moon } from "lucide-react";
 import { memo } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
-  formatTime,
   isoStringToZonedDateTime,
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
@@ -19,16 +20,6 @@ interface WhoopSleepBandProps {
   timeZone: string;
   /** Total actual sleep time (light + deep + REM) for the label */
   totalSleepMilliseconds: number;
-}
-
-function formatSleepDuration(ms: number): string {
-  const totalMinutes = Math.round(ms / 60_000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) {
-    return `${minutes}m`;
-  }
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 /** Sleep stays behind collision-positioned events. See documents/whoop.md. */
@@ -85,7 +76,6 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
     sleepEnd.since(sleepStart).total({ unit: "minutes" })
   );
   const isLargerSegment = isNap || durationMinutes >= totalInBedMinutes / 2;
-  const label = isNap ? "Nap" : "Sleep";
 
   return (
     <div
@@ -97,22 +87,23 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
       }}
     >
       {isLargerSegment ? (
-        <div className="flex h-full items-center justify-center overflow-hidden">
-          <div className="flex flex-col items-center gap-0.5 rounded-md bg-background/70 px-2.5 py-1.5 backdrop-blur-sm dark:bg-background/60">
-            <span className="font-medium text-[10px] text-whoop-sleep-foreground/80 dark:text-whoop-sleep-foreground/80">
-              {label}
-            </span>
-            <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
-              {formatTime(sleepStart)} – {formatTime(sleepEnd)}
-            </span>
-            <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
-              {formatSleepDuration(totalInBedMinutes * 60_000)} in bed
-            </span>
-            {totalSleepMilliseconds > 0 ? (
-              <span className="text-[9px] text-whoop-sleep-foreground/70 dark:text-whoop-sleep-foreground/60">
-                {formatSleepDuration(totalSleepMilliseconds)} asleep
+        <div className="@container flex h-full items-center justify-center overflow-hidden p-1.5">
+          <div className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-background/75 px-2 py-1 text-[11px] text-whoop-sleep-foreground leading-[14px] backdrop-blur-sm">
+            <Moon aria-hidden className="size-3 shrink-0" />
+            <span className="truncate">
+              <span className="font-medium">
+                {formatDuration(
+                  totalSleepMilliseconds > 0
+                    ? Math.round(totalSleepMilliseconds / 60_000)
+                    : totalInBedMinutes
+                )}
+              </span>{" "}
+              {isNap ? "nap" : "asleep"}
+              <span className="@max-[13rem]:hidden">
+                {" "}
+                · {formatTimeRange(sleepStart, sleepEnd)}
               </span>
-            ) : null}
+            </span>
           </div>
         </div>
       ) : null}

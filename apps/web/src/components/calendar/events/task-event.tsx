@@ -3,16 +3,40 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
 import { Checkbox } from "../../ui/checkbox";
 import { PIXELS_PER_HOUR } from "../constants";
-import { calculateEventPosition } from "../event-position";
+import { taskItemKey, useIsItemMoving } from "../dnd/moving-item";
+import {
+  BLOCK_RAISE_CLASS,
+  blockHorizontalStyle,
+  blockStackStyle,
+  calculateEventPosition,
+  GRIP_PROPS,
+} from "../event-position";
+import { BlockContent, type BlockDetail } from "./block-content";
+
+/** The task's first tag, plus a count of the rest. */
+function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const [first, ...rest] = task.tags;
+  if (!first) {
+    return [];
+  }
+  return [
+    {
+      icon: tagIconMap[first.icon],
+      label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
+    },
+  ];
+}
 
 type ScheduledTask = TaskSelectDecoded & {
   startDate: Temporal.PlainDate;
@@ -20,19 +44,17 @@ type ScheduledTask = TaskSelectDecoded & {
 };
 
 interface TaskEventProps {
-  columnIndex?: number;
-  columnSpan?: number;
   /** Whether this segment contains the task's actual start time */
   isFirstSegment: boolean;
   /** Whether this segment contains the task's actual end time */
   isLastSegment: boolean;
+  /** Placement among overlapping items on its day. */
+  layout?: ItemLayout;
   /** Clipped end time for this visible day segment */
   segmentEnd: Temporal.ZonedDateTime;
   /** Clipped start time for this visible day segment */
   segmentStart: Temporal.ZonedDateTime;
   task: ScheduledTask;
-  totalColumns?: number;
-  zIndex?: number;
 }
 
 export const TaskEvent = memo(function TaskEventInner({
@@ -41,19 +63,27 @@ export const TaskEvent = memo(function TaskEventInner({
   segmentEnd,
   isFirstSegment,
   isLastSegment,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
+  layout,
 }: TaskEventProps) {
-  const timeZone = useAtomValue(timezoneAtom);
-
+  const taskStart = task.startDate.toZonedDateTime({
+    plainTime: task.startTime,
+    timeZone: segmentStart.timeZoneId,
+  });
+  // One per drawn day: dnd-kit keeps one node per id, so an overnight
+  // task's two parts need their own.
+  const dragId = `event-${task.id}-${segmentStart.toPlainDate()}`;
+  const isMoving = useIsItemMoving(taskItemKey(task.id));
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    attributes: { roleDescription: "task" },
     data: {
+      // Moving an overnight task's second-day part shifts the whole task.
+      grabOffsetMinutes: segmentStart
+        .since(taskStart)
+        .total({ unit: "minutes" }),
       task,
       type: "task",
     },
-    id: `event-${task.id}-${segmentStart.toString()}`,
+    id: dragId,
   });
 
   const {
@@ -66,7 +96,7 @@ export const TaskEvent = memo(function TaskEventInner({
       task,
       type: "task-resize",
     },
-    id: `event-${task.id}-resize-start`,
+    id: `${dragId}-resize-start`,
   });
 
   const {
@@ -79,7 +109,7 @@ export const TaskEvent = memo(function TaskEventInner({
       task,
       type: "task-resize",
     },
-    id: `event-${task.id}-resize-end`,
+    id: `${dragId}-resize-end`,
   });
 
   const { updateTask } = useTasks();
@@ -97,100 +127,118 @@ export const TaskEvent = memo(function TaskEventInner({
     [task.id, task.status, updateTask]
   );
 
-  const durationMinutes = task.durationMinutes;
   const segmentDurationMinutes = Math.round(
     segmentEnd.since(segmentStart).total({ unit: "minutes" })
   );
-  const taskStart = task.startDate.toZonedDateTime({
-    plainTime: task.startTime,
-    timeZone,
-  });
-  const taskEnd = taskStart.add({ minutes: durationMinutes });
-
   const { top, height } = calculateEventPosition(
     segmentStart,
     segmentDurationMinutes
   );
   const isDone = task.status === "done";
-  const isShortTask = segmentDurationMinutes <= 15;
-
-  // columnSpan lets items expand into adjacent empty columns
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidth = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
+  // Under 30 minutes visible, the block is one centered line.
+  const isShort =
+    Math.min(
+      segmentDurationMinutes,
+      layout?.uncoveredMinutes ?? segmentDurationMinutes
+    ) < 30;
   const style: React.CSSProperties = {
+    ...blockHorizontalStyle(layout),
     height,
-    left: `calc(${leftPercent}% + 2px)`,
     position: "absolute",
     top,
-    width: `calc(${columnWidth}% - 4px)`,
-    zIndex,
+    ...blockStackStyle(layout?.zIndex),
   };
 
   return (
-    <TaskEditPopover align="start" side="right" surface="calendar" task={task}>
+    // The block drags (pointer only); its checkbox and the button that
+    // opens the editor sit side by side, so neither control holds the
+    // other. The button's ::after stretches over the block, so a click
+    // anywhere opens it, and it reaches the block's right edge, where the
+    // editor opens.
+    <div
+      className={cn(
+        "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
+        BLOCK_RAISE_CLASS,
+        // The editor's trigger is the inner button, so raise on its state.
+        "has-[:focus-visible]:z-50 has-[[data-state=open]]:z-50",
+        isDragging || isMoving ? "opacity-0" : "",
+        isDone ? "opacity-60" : ""
+      )}
+      ref={setNodeRef}
+      style={style}
+      title={`${task.title} · ${formatTimeRange(
+        taskStart,
+        taskStart.add({ minutes: task.durationMinutes })
+      )}`}
+      {...listeners}
+    >
       <div
         className={cn(
-          "group pointer-events-auto cursor-grab rounded-md bg-background p-px shadow-sm transition-shadow",
-          "relative",
-          "hover:shadow-md",
-          isDragging ? "opacity-0" : "",
-          isDone ? "opacity-60" : ""
+          "@container relative flex h-full gap-1.5 overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
+          isShort ? "items-center py-0" : "items-start py-1"
         )}
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
       >
-        <div className="h-full rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30">
-          <div
-            className={cn(
-              "flex h-full gap-1",
-              isShortTask ? "items-center" : "items-start"
-            )}
+        {/* Narrow blocks give the checkbox's room to the title; the editor
+            has Done too. */}
+        <span
+          className={cn(
+            "relative z-10 flex @max-[5.5rem]:hidden shrink-0",
+            isShort ? null : "mt-px"
+          )}
+        >
+          <Checkbox
+            aria-label={`Done: ${task.title}`}
+            checked={isDone}
+            className="size-3.5 cursor-pointer border-foreground/60"
+            onClick={handleStatusToggle}
+          />
+        </span>
+        <TaskEditPopover
+          align="start"
+          side="right"
+          surface="calendar"
+          task={task}
+        >
+          <button
+            // A column, so its text starts at the top as in any block (a
+            // button centers its content); a short block centers its own.
+            // dnd-kit's drag instructions (set on DndContext).
+            aria-describedby={attributes["aria-describedby"]}
+            className="flex h-full min-w-0 flex-1 cursor-grab flex-col text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+            type="button"
           >
-            <Checkbox
-              checked={isDone}
-              className="size-3.5 shrink-0 cursor-pointer"
-              onClick={handleStatusToggle}
+            <BlockContent
+              details={taskTagDetails(task)}
+              end={segmentEnd}
+              shownEnd={taskStart.add({ minutes: task.durationMinutes })}
+              shownStart={taskStart}
+              start={segmentStart}
+              struck={isDone}
+              title={task.title}
+              uncoveredMinutes={layout?.uncoveredMinutes}
             />
-            <div className="min-w-0 flex-1">
-              <div
-                className={cn(
-                  "truncate font-medium text-xs",
-                  isDone ? "line-through opacity-80" : ""
-                )}
-              >
-                {task.title}
-              </div>
-              {/* Hide time for short events (<30min) to prevent overflow */}
-              {segmentDurationMinutes >= 30 && (
-                <div className="truncate text-[10px] opacity-80">
-                  {formatTime(taskStart)} - {formatTime(taskEnd)}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        {isFirstSegment ? (
-          <div
-            className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-            ref={setStartHandleRef}
-            {...startAttributes}
-            {...startListeners}
-          />
-        ) : null}
-        {isLastSegment ? (
-          <div
-            className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-            ref={setEndHandleRef}
-            {...endAttributes}
-            {...endListeners}
-          />
-        ) : null}
+          </button>
+        </TaskEditPopover>
       </div>
-    </TaskEditPopover>
+      {isFirstSegment ? (
+        <div
+          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
+          {...GRIP_PROPS}
+        />
+      ) : null}
+      {isLastSegment ? (
+        <div
+          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+          {...GRIP_PROPS}
+        />
+      ) : null}
+    </div>
   );
 });
 
@@ -211,16 +259,19 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
     >
       <div
         className={cn(
-          "rounded-[5px] border border-black/20 bg-primary/90 p-1 text-primary-foreground dark:border-white/30",
-          isShortTask ? "flex h-full items-center px-1.5 py-0" : ""
+          "rounded-[5px] border border-foreground/20 bg-card px-1.5 text-card-foreground dark:border-foreground/12",
+          isShortTask ? "h-full py-0" : "py-1"
         )}
       >
-        <div className="truncate font-medium text-xs">{task.title}</div>
-        {startZdt && !isShortTask ? (
-          <div className="truncate text-[10px] opacity-80">
-            {formatTime(startZdt)}
-          </div>
-        ) : null}
+        {startZdt ? (
+          <BlockContent
+            end={startZdt.add({ minutes: task.durationMinutes })}
+            start={startZdt}
+            title={task.title}
+          />
+        ) : (
+          <div className="truncate font-medium text-xs">{task.title}</div>
+        )}
       </div>
     </div>
   );

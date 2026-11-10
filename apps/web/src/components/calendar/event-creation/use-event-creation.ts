@@ -1,9 +1,13 @@
 "use client";
 
 import {
+  googleAccountsDataAtom,
   googleCalendarsDataAtom,
+  googleCalendarsLoadingAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
+import { eventCreationBlockedReason } from "@kompose/state/event-creation";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
 import { useAtomValue } from "jotai";
 import {
   createContext,
@@ -21,6 +25,8 @@ import { MINUTES_STEP } from "../dnd/helpers";
 
 export const DEFAULT_EVENT_DURATION_MINUTES = 30;
 
+type CreateAtResult = "created" | "waiting";
+
 interface EventCreationState {
   accountId: string | null;
   calendarId: string | null;
@@ -36,6 +42,12 @@ interface EventCreationState {
 interface EventCreationActions {
   cancelCreation: () => void;
   closePopover: () => void;
+  /**
+   * Open the new-event popover for a 30-minute range at `start`. "waiting"
+   * while the calendars load. With no calendar to write to it still opens,
+   * for a task; its Event tab says why (eventUnavailableReason).
+   */
+  createAt: (start: Temporal.ZonedDateTime) => CreateAtResult;
   onSlotDragMove: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotHover: (dateTime: Temporal.ZonedDateTime) => void;
   onSlotLeave: () => void;
@@ -46,6 +58,8 @@ interface EventCreationActions {
 
 interface EventCreationContextValue {
   actions: EventCreationActions;
+  /** Why the chooser can't make an event (no writable calendar shown). */
+  eventUnavailableReason: string | null;
   /** Computed start/end for popover (with minimum duration applied) */
   popoverTimes: {
     start: Temporal.ZonedDateTime;
@@ -83,17 +97,28 @@ export function useEventCreation(): EventCreationContextValue {
 export function useEventCreationState(): EventCreationContextValue {
   const visibleCalendars = useAtomValue(resolvedVisibleCalendarIdsAtom);
   const allCalendars = useAtomValue(googleCalendarsDataAtom);
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const isLoadingCalendars = useAtomValue(googleCalendarsLoadingAtom);
 
   const [state, setState] = useState<EventCreationState>(initialState);
 
   const defaultCalendar = useMemo(() => {
-    if (visibleCalendars.length === 0) {
+    // New events go to a calendar the user can write to: the primary one if
+    // it's shown, else the first shown writable one.
+    const writable = visibleCalendars.filter((v) =>
+      canWriteCalendar(
+        allCalendars.find(
+          (c) => c.accountId === v.accountId && c.calendar.id === v.calendarId
+        )?.calendar.accessRole
+      )
+    );
+    if (writable.length === 0) {
       return null;
     }
     const primaryCalendar = allCalendars.find(
       (c) =>
         c.calendar.primary &&
-        visibleCalendars.some(
+        writable.some(
           (v) => v.accountId === c.accountId && v.calendarId === c.calendar.id
         )
     );
@@ -103,19 +128,27 @@ export function useEventCreationState(): EventCreationContextValue {
         calendarId: primaryCalendar.calendar.id,
       };
     }
-    return visibleCalendars[0];
+    return writable[0];
   }, [visibleCalendars, allCalendars]);
 
-  const onSlotHover = useCallback((dateTime: Temporal.ZonedDateTime) => {
-    setState((prev) => {
-      // Don't update hover if we're in creation mode. Mouse moves within the
-      // same 15-minute slot snap to the same time; keep state so nothing re-renders.
-      if (prev.isCreating || prev.hoverDateTime?.equals(dateTime)) {
-        return prev;
+  // While the calendars load, a press waits, so the grid doesn't invite one.
+  const waitingForCalendars = !defaultCalendar && isLoadingCalendars;
+  const onSlotHover = useCallback(
+    (dateTime: Temporal.ZonedDateTime) => {
+      if (waitingForCalendars) {
+        return;
       }
-      return { ...prev, hoverDateTime: dateTime };
-    });
-  }, []);
+      setState((prev) => {
+        // Don't update hover if we're in creation mode. Mouse moves within the
+        // same 15-minute slot snap to the same time; keep state so nothing re-renders.
+        if (prev.isCreating || prev.hoverDateTime?.equals(dateTime)) {
+          return prev;
+        }
+        return { ...prev, hoverDateTime: dateTime };
+      });
+    },
+    [waitingForCalendars]
+  );
 
   const onSlotLeave = useCallback(() => {
     setState((prev) => {
@@ -142,26 +175,28 @@ export function useEventCreationState(): EventCreationContextValue {
         return prev;
       }
 
-      // Add MINUTES_STEP to get the bottom of the slot
-      const slotEnd = dateTime.add({ minutes: MINUTES_STEP });
-
-      const isForward =
-        Temporal.ZonedDateTime.compare(slotEnd, dragStartDateTime) > 0;
-
-      if (isForward) {
-        // Dragging forward: original start stays, end moves
+      // The range covers every slot dragged over, including the pressed one.
+      const order = Temporal.ZonedDateTime.compare(dateTime, dragStartDateTime);
+      if (order === 0) {
+        // Still on the pressed slot: what a click would create.
         return {
           ...prev,
-          endDateTime: slotEnd,
+          endDateTime: dragStartDateTime.add({
+            minutes: DEFAULT_EVENT_DURATION_MINUTES,
+          }),
           startDateTime: dragStartDateTime,
         };
       }
-      // Dragging backward: start moves, original drag range stays anchored.
+      if (order > 0) {
+        return {
+          ...prev,
+          endDateTime: dateTime.add({ minutes: MINUTES_STEP }),
+          startDateTime: dragStartDateTime,
+        };
+      }
       return {
         ...prev,
-        endDateTime: dragStartDateTime.add({
-          minutes: DEFAULT_EVENT_DURATION_MINUTES,
-        }),
+        endDateTime: dragStartDateTime.add({ minutes: MINUTES_STEP }),
         startDateTime: dateTime,
       };
     });
@@ -181,30 +216,31 @@ export function useEventCreationState(): EventCreationContextValue {
     });
   }, []);
 
-  // Center the initial range on the cursor. The move and up listeners go on
-  // the document so the drag continues while the cursor crosses existing events.
+  // Start at the pressed slot. The move and up listeners go on the document
+  // so the drag continues while the cursor crosses existing events.
   const onSlotMouseDown = useCallback(
     (dateTime: Temporal.ZonedDateTime) => {
-      if (!defaultCalendar) {
+      // While the calendars load, a press waits (the calendar to create in
+      // isn't known yet). Without one to write to, the chooser still opens
+      // for a task; its Event tab says why there's no event.
+      if (!defaultCalendar && isLoadingCalendars) {
         return;
       }
       documentListenerCleanupRef.current?.();
 
-      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
-      const centeredStart = dateTime.subtract({ minutes: halfDuration });
-      startDateTimeRef.current = centeredStart;
+      startDateTimeRef.current = dateTime;
 
       setState((prev) => ({
         ...prev,
-        accountId: defaultCalendar.accountId,
-        calendarId: defaultCalendar.calendarId,
-        endDateTime: centeredStart.add({
+        accountId: defaultCalendar?.accountId ?? null,
+        calendarId: defaultCalendar?.calendarId ?? null,
+        endDateTime: dateTime.add({
           minutes: DEFAULT_EVENT_DURATION_MINUTES,
         }),
         hoverDateTime: null,
         isCreating: true,
         showPopover: false,
-        startDateTime: centeredStart,
+        startDateTime: dateTime,
       }));
 
       const handleDocumentMouseMove = (e: MouseEvent) => {
@@ -233,7 +269,7 @@ export function useEventCreationState(): EventCreationContextValue {
         );
         const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
         const snappedMinutes =
-          Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+          Math.floor(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
         const clampedMinutes = Math.min(
           Math.max(snappedMinutes, 0),
           24 * 60 - MINUTES_STEP
@@ -267,7 +303,29 @@ export function useEventCreationState(): EventCreationContextValue {
         documentListenerCleanupRef.current = null;
       };
     },
-    [defaultCalendar, onSlotDragMove, onSlotMouseUp]
+    [defaultCalendar, isLoadingCalendars, onSlotDragMove, onSlotMouseUp]
+  );
+
+  const createAt = useCallback(
+    (start: Temporal.ZonedDateTime): CreateAtResult => {
+      if (!defaultCalendar && isLoadingCalendars) {
+        return "waiting";
+      }
+      documentListenerCleanupRef.current?.();
+      startDateTimeRef.current = start;
+      setState((prev) => ({
+        ...prev,
+        accountId: defaultCalendar?.accountId ?? null,
+        calendarId: defaultCalendar?.calendarId ?? null,
+        endDateTime: start.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        hoverDateTime: null,
+        isCreating: false,
+        showPopover: true,
+        startDateTime: start,
+      }));
+      return "created";
+    },
+    [defaultCalendar, isLoadingCalendars]
   );
 
   const cancelCreation = useCallback(() => {
@@ -288,6 +346,7 @@ export function useEventCreationState(): EventCreationContextValue {
     () => ({
       cancelCreation,
       closePopover,
+      createAt,
       onSlotDragMove,
       onSlotHover,
       onSlotLeave,
@@ -303,6 +362,7 @@ export function useEventCreationState(): EventCreationContextValue {
       onSlotMouseUp,
       cancelCreation,
       closePopover,
+      createAt,
       setPreviewElement,
     ]
   );
@@ -322,12 +382,35 @@ export function useEventCreationState(): EventCreationContextValue {
     return { end, start };
   }, [state.startDateTime, state.endDateTime]);
 
+  // Why the chooser can't make an event (it can still make a task).
+  const eventUnavailableReason = defaultCalendar
+    ? null
+    : eventCreationBlockedReason({
+        hasGoogleAccount: googleAccounts.length > 0,
+        loading: isLoadingCalendars,
+      });
+
+  // A chooser opened before the calendars loaded takes the default calendar
+  // once it's known, rather than keeping none.
+  const resolvedState = useMemo(
+    () =>
+      state.calendarId || !defaultCalendar
+        ? state
+        : {
+            ...state,
+            accountId: defaultCalendar.accountId,
+            calendarId: defaultCalendar.calendarId,
+          },
+    [state, defaultCalendar]
+  );
+
   return useMemo(
     () => ({
       actions,
+      eventUnavailableReason,
       popoverTimes,
-      state,
+      state: resolvedState,
     }),
-    [state, actions, popoverTimes]
+    [resolvedState, actions, eventUnavailableReason, popoverTimes]
   );
 }

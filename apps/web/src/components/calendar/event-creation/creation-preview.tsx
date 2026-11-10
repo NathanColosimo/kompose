@@ -1,5 +1,6 @@
 "use client";
 
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { minutesFromMidnight } from "@/lib/temporal-utils";
@@ -51,10 +52,10 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       if (!hoverDate.equals(columnDate)) {
         return null;
       }
-      const halfDuration = DEFAULT_EVENT_DURATION_MINUTES / 2;
+      // The hover preview is what a click creates: from the hovered slot.
       return {
-        end: hoverDateTime.add({ minutes: halfDuration }),
-        start: hoverDateTime.subtract({ minutes: halfDuration }),
+        end: hoverDateTime.add({ minutes: DEFAULT_EVENT_DURATION_MINUTES }),
+        start: hoverDateTime,
         type: "hover" as const,
       };
     }
@@ -113,7 +114,14 @@ export const CreationPreview = memo(function CreationPreviewComponent({
         height: `${height}px`,
         top: `${top}px`,
       }}
-    />
+    >
+      {/* What a drag will create, as it grows: "1:00 – 2:30 PM". */}
+      {type === "creating" ? (
+        <span className="block truncate px-1.5 text-[11px] text-foreground/80 tabular-nums leading-[18px]">
+          {formatTimeRange(start, end)}
+        </span>
+      ) : null}
+    </div>
   );
 });
 

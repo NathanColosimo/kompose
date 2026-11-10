@@ -15,8 +15,10 @@ import {
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
+import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { CalendarRange, ChevronDown, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -61,6 +63,7 @@ export function GoogleAccountsDropdown({
   );
 
   const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
+  const accountsQuery = useGoogleAccounts();
   const accountProfilesById = useMemo(
     () =>
       new Map(
@@ -123,21 +126,31 @@ export function GoogleAccountsDropdown({
   const totalCount = googleCalendars.length;
 
   if (googleAccounts.length === 0) {
+    // Only offer to connect once the account list has actually loaded empty.
+    if (!accountsQuery.isSuccess) {
+      return null;
+    }
     return (
-      <span className="text-muted-foreground text-sm">
-        No Google accounts linked
-      </span>
+      <Button asChild size="lg" variant="outline">
+        <Link href="/dashboard/settings">Connect Google Calendar</Link>
+      </Button>
     );
   }
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button className="gap-2" size="lg" variant="outline">
-          <span className="text-sm">
-            Calendars ({visibleCount}/{totalCount})
-          </span>
-          <ChevronDown className="size-4" />
+        <Button className="gap-1.5" size="lg" variant="ghost">
+          {/* A narrow toolbar (below @md) shows an icon, so the button
+              doesn't wrap it; the name stays for screen readers. */}
+          <CalendarRange aria-hidden className="@md:hidden size-4" />
+          <span className="sr-only @md:not-sr-only">Calendars</span>
+          {visibleCount < totalCount ? (
+            <span className="text-muted-foreground tabular-nums">
+              {visibleCount}/{totalCount}
+            </span>
+          ) : null}
+          <ChevronDown className="size-3.5 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">

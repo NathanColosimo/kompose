@@ -15,24 +15,36 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
-import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
+import {
+  type UpdateGoogleEventInput,
+  useGoogleEventMutations,
+} from "@kompose/state/hooks/use-google-event-mutations";
+import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import {
+  chosenScope,
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
+  SCOPE_DIALOG_COPY,
+  TASK_UPDATE_SCOPE_OPTIONS,
+} from "@kompose/state/recurrence-scope-options";
+import { formatEventWhen } from "@kompose/state/temporal-utils";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
-import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { isSameDay, minutesFromMidnight } from "@/lib/temporal-utils";
+  RecurrenceScopeDialog,
+  type ScopeDialogSubject,
+} from "@/components/recurrence-scope-dialog";
+import { SIDEBAR_TASK_LIST_DROPPABLE_ID } from "@/components/sidebar/sidebar-left";
+import { minutesFromMidnight } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "./constants";
 import {
   calendarCollisionDetection,
@@ -45,20 +57,70 @@ import {
   buildGoogleResizeUpdate,
   buildTaskMoveUpdate,
   buildTaskResizeUpdate,
+  type TaskDropUpdate,
 } from "./dnd/drop-handlers";
 import {
-  clampResizeEnd,
-  clampResizeStart,
+  clipToDay,
   durationInMinutes,
+  edgeDay,
   MINUTES_STEP,
+  resizedRange,
 } from "./dnd/helpers";
+import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
+import { eventForScope, saveFacts } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
+import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
 
+/** A recurring task's drop, waiting for its scope. */
 interface PendingTaskUpdate {
-  id: string;
-  task: object;
+  subject: ScopeDialogSubject;
+  update: TaskDropUpdate;
+}
+
+/** "Standup → Mon, Nov 9 · 9 – 9:15 AM": a dropped task and its new time. */
+function taskDropSubject(
+  title: string,
+  update: TaskDropUpdate,
+  moved: boolean,
+  timeZone: string
+): ScopeDialogSubject {
+  const { durationMinutes, startDate, startTime } = update.task;
+  const start = startDate.toZonedDateTime({ plainTime: startTime, timeZone });
+  return {
+    moved,
+    name: title || "(No title)",
+    when: formatEventWhen(start, start.add({ minutes: durationMinutes })),
+  };
+}
+
+/** "Retro → Mon, Nov 9 · 4 – 4:45 PM": a dropped occurrence and its new time. */
+function droppedSubject(
+  pending: PendingGoogleUpdate,
+  timeZone: string
+): ScopeDialogSubject | undefined {
+  const { end, start } = pending.update.event;
+  if (!(start?.dateTime && end?.dateTime)) {
+    return;
+  }
+  const when = formatEventWhen(
+    Temporal.Instant.from(start.dateTime).toZonedDateTimeISO(timeZone),
+    Temporal.Instant.from(end.dateTime).toZonedDateTimeISO(timeZone)
+  );
+  return {
+    moved: pending.moved,
+    name: pending.occurrence.summary || "(No title)",
+    when,
+  };
+}
+
+/** A recurring event's dropped move or resize, waiting for its scope. */
+interface PendingGoogleUpdate {
+  /** A drop moved it; a resize changed its length. */
+  moved: boolean;
+  occurrence: GoogleEvent;
+  update: UpdateGoogleEventInput;
 }
 
 interface SidebarDropData {
@@ -117,7 +179,7 @@ function dragReducer(state: DragState, action: DragAction): DragState {
     case "reset":
       return initialDragState;
     default:
-      return state;
+      return action satisfies never;
   }
 }
 
@@ -135,10 +197,38 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   // Drop target the preview was last computed for; skips unchanged moves.
   const lastDropTargetKeyRef = useRef<string | null>(null);
   const setDropSlot = useSetAtom(dropSlotAtom);
+  const setMovingItemKey = useSetAtom(movingItemKeyAtom);
 
+  // A recurring task's or event's move or resize waits for its scope, as
+  // in the editors. Each stays after its dialog closes, so the dialog's
+  // words don't change as it fades; the next drop replaces it.
   const [pendingUpdate, setPendingUpdate] = useState<PendingTaskUpdate | null>(
     null
   );
+  const [taskScope, setTaskScope] = useState<UpdateScope>("this");
+  // For an event, a new day applies to this occurrence or from it on.
+  const [pendingGoogleUpdate, setPendingGoogleUpdate] =
+    useState<PendingGoogleUpdate | null>(null);
+  /** The user's own pick in the drop's scope dialog; null until they pick. */
+  const [googlePick, setGooglePick] = useState<RecurrenceScope | null>(null);
+  const [scopeDialog, setScopeDialog] = useState<"google" | "task" | null>(
+    null
+  );
+  // The dragged occurrence's series loads from the drag's start (the hook
+  // fetches for an occurrence only), so the drop's dialog usually opens
+  // with its choices ready.
+  const pendingMaster = useRecurringEventMaster({
+    accountId:
+      activeGoogleEvent?.accountId ??
+      pendingGoogleUpdate?.update.accountId ??
+      "",
+    calendarId:
+      activeGoogleEvent?.calendarId ??
+      pendingGoogleUpdate?.update.calendarId ??
+      "",
+    enabled: Boolean(activeGoogleEvent) || scopeDialog === "google",
+    event: activeGoogleEvent?.event ?? pendingGoogleUpdate?.occurrence ?? null,
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -161,26 +251,34 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const resetDragState = useCallback(() => {
     dispatch({ type: "reset" });
     setDropSlot(null);
+    setMovingItemKey(null);
     lastDropTargetKeyRef.current = null;
     pendingPreviewRef.current = null;
     if (previewFrameRef.current !== null) {
       cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     }
-  }, [setDropSlot]);
+  }, [setDropSlot, setMovingItemKey]);
 
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
 
-      if (task.seriesMasterId) {
-        setPendingUpdate({ id: update.id, task: update.task });
+      // A dated series occurrence asks this-or-following; one moved to the
+      // inbox has nothing following it.
+      if (task.seriesMasterId && task.startDate) {
+        setPendingUpdate({
+          subject: taskDropSubject(task.title, update, true, timeZone),
+          update,
+        });
+        setTaskScope("this");
+        setScopeDialog("task");
         return;
       }
 
       updateTask.mutate(update);
     },
-    [updateTask]
+    [updateTask, timeZone]
   );
 
   /** Today keeps a date without a time; other sidebar drops return the task to Inbox. */
@@ -235,8 +333,13 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         return;
       }
 
-      if (payload.task.seriesMasterId) {
-        setPendingUpdate({ id: update.id, task: update.task });
+      if (payload.task.seriesMasterId && payload.task.startDate) {
+        setPendingUpdate({
+          subject: taskDropSubject(payload.task.title, update, false, timeZone),
+          update,
+        });
+        setTaskScope("this");
+        setScopeDialog("task");
         return;
       }
 
@@ -251,6 +354,12 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       start: Temporal.ZonedDateTime
     ) => {
       const update = buildGoogleMoveUpdate(data, start);
+      if (data.event.recurringEventId) {
+        setGooglePick(null);
+        setPendingGoogleUpdate({ moved: true, occurrence: data.event, update });
+        setScopeDialog("google");
+        return;
+      }
       updateGoogleEventMutation.mutate(update);
     },
     [updateGoogleEventMutation]
@@ -268,33 +377,53 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (!update) {
         return;
       }
+      if (data.event.recurringEventId) {
+        setGooglePick(null);
+        setPendingGoogleUpdate({
+          moved: false,
+          occurrence: data.event,
+          update,
+        });
+        setScopeDialog("google");
+        return;
+      }
 
       updateGoogleEventMutation.mutate(update);
     },
     [updateGoogleEventMutation]
   );
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    const { active } = event;
-    const data = active.data.current as DragData | undefined;
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
+      const { active } = event;
+      const data = active.data.current as DragData | undefined;
+      setMovingItemKey(data ? movingItemKey(data) : null);
 
-    if ((data?.type === "task" || data?.type === "task-resize") && data.task) {
-      dispatch({
-        resizing: data.type === "task-resize",
-        task: data.task,
-        type: "start-task",
-      });
-      return;
-    }
+      if (
+        (data?.type === "task" || data?.type === "task-resize") &&
+        data.task
+      ) {
+        dispatch({
+          resizing: data.type === "task-resize",
+          task: data.task,
+          type: "start-task",
+        });
+        return;
+      }
 
-    if (data?.type === "google-event" || data?.type === "google-event-resize") {
-      dispatch({
-        data,
-        resizing: data.type === "google-event-resize",
-        type: "start-google-event",
-      });
-    }
-  }, []);
+      if (
+        data?.type === "google-event" ||
+        data?.type === "google-event-resize"
+      ) {
+        dispatch({
+          data,
+          resizing: data.type === "google-event-resize",
+          type: "start-google-event",
+        });
+      }
+    },
+    [setMovingItemKey]
+  );
 
   const handleSidebarDrop = useCallback(
     (data: DragData, sidebarData?: SidebarDropData) => {
@@ -318,7 +447,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
       switch (data.type) {
         case "task":
-          handleTaskMoveDrop(data.task, targetDateTime);
+          handleTaskMoveDrop(
+            data.task,
+            targetDateTime.subtract({ minutes: data.grabOffsetMinutes ?? 0 })
+          );
           return;
         case "task-resize":
           handleTaskResizeDrop({
@@ -328,7 +460,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           });
           return;
         case "google-event":
-          handleGoogleEventDrop(data, targetDateTime);
+          handleGoogleEventDrop(
+            data,
+            targetDateTime.subtract({ minutes: data.grabOffsetMinutes ?? 0 })
+          );
           return;
         case "google-event-resize":
           handleGoogleEventResizeDrop({
@@ -384,16 +519,18 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const buildPreviewRect = useCallback(
     ({
-      start,
-      end,
       columnRect,
+      day,
       minimum = MINUTES_STEP,
+      range,
     }: {
-      start: Temporal.ZonedDateTime;
-      end: Temporal.ZonedDateTime;
       columnRect: ClientRect;
+      /** The target column's day; the preview shows the part on that day. */
+      day: Temporal.PlainDate;
       minimum?: number;
+      range: { end: Temporal.ZonedDateTime; start: Temporal.ZonedDateTime };
     }): PreviewRect => {
+      const { end, start } = clipToDay(range, day);
       const startMinutes = minutesFromMidnight(start);
       const duration = durationInMinutes(start, end, minimum);
       // Ensure 15-minute blocks render at slot height (20px).
@@ -403,7 +540,8 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         height,
         left: columnRect.left,
         top: columnRect.top + (startMinutes / 60) * PIXELS_PER_HOUR,
-        width: columnRect.width,
+        // As wide as the blocks, not over the column's free strip.
+        width: columnRect.width - COLUMN_FREE_STRIP,
       };
     },
     []
@@ -415,12 +553,16 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ) => {
-      const duration = data.task.durationMinutes;
-      const end = targetDateTime.add({ minutes: duration });
+      const start = targetDateTime.subtract({
+        minutes: data.grabOffsetMinutes ?? 0,
+      });
       return buildPreviewRect({
         columnRect,
-        end,
-        start: targetDateTime,
+        day: targetDateTime.toPlainDate(),
+        range: {
+          end: start.add({ minutes: data.task.durationMinutes }),
+          start,
+        },
       });
     },
     [buildPreviewRect]
@@ -435,39 +577,24 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       if (!(data.task.startDate && data.task.startTime)) {
         return null;
       }
-
-      const originalStart: Temporal.ZonedDateTime =
-        data.task.startDate.toZonedDateTime({
-          plainTime: data.task.startTime,
-          timeZone,
-        });
-      const originalEnd: Temporal.ZonedDateTime = originalStart.add({
-        minutes: data.task.durationMinutes,
+      const start = data.task.startDate.toZonedDateTime({
+        plainTime: data.task.startTime,
+        timeZone,
       });
-
-      if (!isSameDay(originalStart, targetDateTime)) {
-        return null;
-      }
-
-      if (data.direction === "start") {
-        const newStart = clampResizeStart(
-          targetDateTime,
-          originalStart,
-          originalEnd
-        );
-        return buildPreviewRect({
-          columnRect,
-          end: originalEnd,
-          start: newStart,
-        });
-      }
-
-      const newEnd = clampResizeEnd(targetDateTime, originalStart);
-      return buildPreviewRect({
-        columnRect,
-        end: newEnd,
-        start: originalStart,
+      const range = resizedRange({
+        direction: data.direction,
+        end: start.add({ minutes: data.task.durationMinutes }),
+        start,
+        target: targetDateTime,
       });
+      return range
+        ? buildPreviewRect({
+            columnRect,
+            // The hovered column: an end at midnight is the day before's.
+            day: edgeDay(data.direction, range.start, range.end),
+            range,
+          })
+        : null;
     },
     [buildPreviewRect, timeZone]
   );
@@ -478,13 +605,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ) => {
-      const eventDurationMinutes = durationInMinutes(data.start, data.end, 1);
-      const end = targetDateTime.add({ minutes: eventDurationMinutes });
+      const start = targetDateTime.subtract({
+        minutes: data.grabOffsetMinutes ?? 0,
+      });
+      const duration = durationInMinutes(data.start, data.end, 1);
       return buildPreviewRect({
         columnRect,
-        end,
+        day: targetDateTime.toPlainDate(),
         minimum: 1,
-        start: targetDateTime,
+        range: { end: start.add({ minutes: duration }), start },
       });
     },
     [buildPreviewRect]
@@ -496,34 +625,20 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       targetDateTime: Temporal.ZonedDateTime,
       columnRect: ClientRect
     ): PreviewRect | null => {
-      const originalStart = data.start;
-      const originalEnd = data.end;
-
-      if (!isSameDay(originalStart, targetDateTime)) {
-        return null;
-      }
-
-      if (data.direction === "start") {
-        const newStart = clampResizeStart(
-          targetDateTime,
-          originalStart,
-          originalEnd
-        );
-        return buildPreviewRect({
-          columnRect,
-          end: originalEnd,
-          minimum: 1,
-          start: newStart,
-        });
-      }
-
-      const newEnd = clampResizeEnd(targetDateTime, originalStart);
-      return buildPreviewRect({
-        columnRect,
-        end: newEnd,
-        minimum: 1,
-        start: originalStart,
+      const range = resizedRange({
+        direction: data.direction,
+        end: data.end,
+        start: data.start,
+        target: targetDateTime,
       });
+      return range
+        ? buildPreviewRect({
+            columnRect,
+            day: edgeDay(data.direction, range.start, range.end),
+            minimum: 1,
+            range,
+          })
+        : null;
     },
     [buildPreviewRect]
   );
@@ -625,28 +740,67 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     [clearPreview, computePreviewForDrag, setDropSlot]
   );
 
-  const handleScopeSelect = useCallback(
-    (scope: UpdateScope) => {
-      if (!pendingUpdate) {
-        return;
-      }
-      updateTask.mutate({
-        id: pendingUpdate.id,
-        scope,
-        task: pendingUpdate.task,
-      });
-      setPendingUpdate(null);
-    },
-    [pendingUpdate, updateTask]
-  );
+  const confirmTaskScope = useCallback(() => {
+    if (pendingUpdate) {
+      updateTask.mutate({ ...pendingUpdate.update, scope: taskScope });
+    }
+  }, [pendingUpdate, taskScope, updateTask]);
 
-  const handleScopeDialogClose = useCallback(() => {
-    setPendingUpdate(null);
-  }, []);
+  const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
+    ? {
+        // A new day, or a new time on its own day, as the editor reads it.
+        ...saveFacts({
+          edited: pendingGoogleUpdate.update.event,
+          event: pendingGoogleUpdate.occurrence,
+          timeZone,
+        }),
+        calendarMoved: false,
+        patternChanged: false,
+        seriesRuleFailed: pendingMaster.ruleFailed,
+        seriesRuleLoaded: pendingMaster.ruleReady,
+      }
+    : null;
+
+  // The drop's dialog: the scopes it can't use and its line saying why, and
+  // the scope it shows and saves with, all worked out each time.
+  const googleDialog = googleSaveChanges
+    ? {
+        description: eventSaveDescription(googleSaveChanges),
+        disabled: eventSaveDisabledScopes(googleSaveChanges),
+      }
+    : { description: SCOPE_DIALOG_COPY.saveEvent.description, disabled: {} };
+  const googleScope = chosenScope(googlePick, "this", googleDialog.disabled);
+
+  // The dialog stays open while this runs, and after it rejects.
+  const confirmGoogleScope = useCallback(async () => {
+    if (!pendingGoogleUpdate) {
+      return;
+    }
+    const { occurrence, update } = pendingGoogleUpdate;
+    await updateGoogleEventMutation.mutateAsync({
+      ...update,
+      // Send only the edited details for a series.
+      event: eventForScope({
+        edited: update.event,
+        occurrence,
+        scope: googleScope,
+      }),
+      // The dialog reports failures beside Save.
+      quiet: true,
+      recurrenceScope: googleScope,
+    });
+  }, [googleScope, pendingGoogleUpdate, updateGoogleEventMutation]);
 
   return (
     <>
       <DndContext
+        // Dragging is pointer-only (PointerSensor), so the default "press
+        // space to pick up" instructions would be wrong.
+        accessibility={{
+          screenReaderInstructions: {
+            draggable: "Press Enter to open. Drag with a pointer to move.",
+          },
+        }}
         autoScroll={false}
         collisionDetection={calendarCollisionDetection}
         onDragCancel={handleDragCancel}
@@ -675,28 +829,34 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         ) : null}
       </DndContext>
 
-      <AlertDialog
-        onOpenChange={(open) => !open && handleScopeDialogClose()}
-        open={pendingUpdate !== null}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Update recurring task</AlertDialogTitle>
-            <AlertDialogDescription>
-              This is a recurring task. Which occurrences do you want to update?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleScopeSelect("this")}>
-              Only this occurrence
-            </AlertDialogAction>
-            <AlertDialogAction onClick={() => handleScopeSelect("following")}>
-              This and following
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <RecurrenceScopeDialog
+        description={googleDialog.description}
+        disabledScopes={googleDialog.disabled}
+        onConfirm={confirmGoogleScope}
+        onOpenChange={(open) => setScopeDialog(open ? "google" : null)}
+        onValueChange={setGooglePick}
+        open={scopeDialog === "google"}
+        options={RECURRENCE_SCOPE_OPTIONS}
+        subject={
+          pendingGoogleUpdate
+            ? droppedSubject(pendingGoogleUpdate, timeZone)
+            : undefined
+        }
+        title={SCOPE_DIALOG_COPY.saveEvent.title}
+        value={googleScope}
+      />
+
+      <RecurrenceScopeDialog
+        description={SCOPE_DIALOG_COPY.saveTask.description}
+        onConfirm={confirmTaskScope}
+        onOpenChange={(open) => setScopeDialog(open ? "task" : null)}
+        onValueChange={setTaskScope}
+        open={scopeDialog === "task"}
+        options={TASK_UPDATE_SCOPE_OPTIONS}
+        subject={pendingUpdate?.subject}
+        title={SCOPE_DIALOG_COPY.saveTask.title}
+        value={taskScope}
+      />
     </>
   );
 }

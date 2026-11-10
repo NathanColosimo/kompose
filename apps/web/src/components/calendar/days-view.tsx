@@ -1,7 +1,10 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import {
+  currentDateAtom,
+  timezoneAtom,
+} from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -10,14 +13,19 @@ import {
   type GoogleEventWithSource,
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
-import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
+import {
+  shouldShowWhoopRow,
+  whoopAccountIdAtom,
+  whoopSummariesByDayAtom,
+} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { calendarEventEditBlockReason } from "@kompose/state/google-event-editability";
 import { startOfDayZoned } from "@kompose/state/temporal-utils";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   memo,
   useEffect,
@@ -28,33 +36,49 @@ import {
 } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   clampZonedDateTime,
   getDayBoundsZoned,
   isoStringToZonedDateTime,
   minutesFromMidnight,
   zonedDateTimeToDate,
 } from "@/lib/temporal-utils";
-import { scrollToNowRequestedAtom } from "@/state/calendar-navigation";
+import { cn } from "@/lib/utils";
+import {
+  CREATE_EVENT_REQUEST_TTL_MS,
+  createEventRequestedAtom,
+  scrollToNowRequestedAtom,
+} from "@/state/calendar-navigation";
 import { effectiveVisibleDaysAtom } from "@/state/sidebar";
 import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
 import {
+  DEFAULT_EVENT_DURATION_MINUTES,
   EventCreationContext,
   useEventCreation,
   useEventCreationState,
 } from "./event-creation/use-event-creation";
+import { eventColor } from "./events/block-content";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
+import { RecurringDeleteDialog } from "./events/recurring-delete-dialog";
 import { TaskEvent } from "./events/task-event";
 import { WhoopSleepBand } from "./events/whoop-sleep-band";
 import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
+import { keyboardCreateStart } from "./keyboard-create-start";
 import { DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
 import { TimeGutter } from "./time-grid/time-gutter";
 
-/** Default scroll position on mount (8am) */
-const DEFAULT_SCROLL_HOUR = 8;
+/** Default scroll position on mount (7am), to show mornings' sleep and workouts. */
+const DEFAULT_SCROLL_HOUR = 7;
+/** Pixels above the default hour line, enough to show its whole label. */
+const HOUR_LABEL_CLEARANCE = 12;
 const MAX_ALL_DAY_EVENTS = 2;
 const EMPTY_GOOGLE_EVENTS: GoogleEventWithSource[] = [];
 
@@ -77,6 +101,26 @@ interface PositionedTaskSegment {
 }
 
 type AllDayGoogleEvent = GoogleEventWithSource & { date: Temporal.PlainDate };
+
+/**
+ * Start and end, in minutes from midnight, of an item's part on one day. An
+ * end at midnight is the day's end (1440), as on a middle day of a
+ * multi-day event, which runs midnight to midnight.
+ */
+function dayPartMinutes(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime
+): { endMinutes: number; startMinutes: number } {
+  const startMinutes = minutesFromMidnight(start);
+  const endMinutes = minutesFromMidnight(end);
+  return {
+    endMinutes:
+      endMinutes === 0 && Temporal.ZonedDateTime.compare(end, start) > 0
+        ? 1440
+        : endMinutes,
+    startMinutes,
+  };
+}
 
 /**
  * Clamp a positioned event to a single day's boundaries (midnight to midnight).
@@ -148,7 +192,19 @@ function buildGoogleEventMaps({
   for (const sourceEvent of googleEvents) {
     const date = allDayEventDate(sourceEvent);
     if (date) {
-      allDay.get(date.toString())?.push({ ...sourceEvent, date });
+      // All-day end dates are exclusive; a trip from the 11th to the 13th
+      // shows on the 11th and 12th.
+      const endDate = sourceEvent.event.end.date
+        ? Temporal.PlainDate.from(sourceEvent.event.end.date)
+        : date.add({ days: 1 });
+      for (const day of days) {
+        if (
+          Temporal.PlainDate.compare(day, date) >= 0 &&
+          Temporal.PlainDate.compare(day, endDate) < 0
+        ) {
+          allDay.get(day.toString())?.push({ ...sourceEvent, date });
+        }
+      }
       continue;
     }
     const positioned = toPositionedGoogleEvent(sourceEvent, timeZone);
@@ -182,6 +238,16 @@ function toPositionedGoogleEvent(
   } catch {
     return null;
   }
+}
+
+/** A short name for the zone on `day`, such as "EST" or "GMT+1". */
+function timeZoneLabel(timeZone: string, day: Temporal.PlainDate): string {
+  const noon = day.toZonedDateTime({ plainTime: "12:00", timeZone });
+  return (
+    new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: "short" })
+      .formatToParts(noon.epochMilliseconds)
+      .find((part) => part.type === "timeZoneName")?.value ?? ""
+  );
 }
 
 function isScheduledTask(task: TaskSelectDecoded): task is ScheduledTask {
@@ -285,10 +351,13 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   // Event creation context for click-and-drag
   const { actions } = useEventCreation();
 
-  // Scroll vertically to 8am on mount for a sensible default view
+  // Scroll vertically to 7am on mount for a sensible default view. Hour
+  // labels sit centered on their line, so stop a little above it to show
+  // the whole "7 AM" label.
   useLayoutEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR;
+      scrollRef.current.scrollTop =
+        DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR - HOUR_LABEL_CLEARANCE;
     }
   }, []);
 
@@ -303,6 +372,56 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     grid.scrollTop = Math.max(0, position - grid.clientHeight / 2);
     setScrollToNowRequested(false);
   }, [scrollToNowRequested, setScrollToNowRequested, timeZone]);
+
+  // Keyboard and command-bar path to a new event; slots are mouse-only.
+  const [createEventRequested, setCreateEventRequested] = useAtom(
+    createEventRequestedAtom
+  );
+  const setCurrentDate = useSetAtom(currentDateAtom);
+  useLayoutEffect(() => {
+    const grid = scrollRef.current;
+    const firstDay = visibleDays[0];
+    if (!(grid && createEventRequested !== null && firstDay)) {
+      return;
+    }
+    // One left waiting (calendars never loaded) can't open an editor on
+    // some later visit.
+    if (Date.now() - createEventRequested > CREATE_EVENT_REQUEST_TTL_MS) {
+      setCreateEventRequested(null);
+      return;
+    }
+    const start = keyboardCreateStart({
+      length: Temporal.Duration.from({
+        minutes: DEFAULT_EVENT_DURATION_MINUTES,
+      }),
+      now: Temporal.Now.zonedDateTimeISO(timeZone),
+      visibleDays,
+    });
+    const startDay = start.toPlainDate();
+    if (!visibleDays.some((day) => day.equals(startDay))) {
+      // Show that day first; the request stays and runs once it's visible.
+      setCurrentDate(startDay);
+      return;
+    }
+    const result = actions.createAt(start);
+    if (result === "waiting") {
+      // Opened from another page: the calendars are still loading. The
+      // request stays and runs again once they have.
+      return;
+    }
+    setCreateEventRequested(null);
+    grid.scrollTop = Math.max(
+      0,
+      (start.hour + start.minute / 60) * PIXELS_PER_HOUR - grid.clientHeight / 3
+    );
+  }, [
+    actions,
+    createEventRequested,
+    setCreateEventRequested,
+    setCurrentDate,
+    timeZone,
+    visibleDays,
+  ]);
 
   // Track header height (dates + all-day row) to align the gutter corner
   useLayoutEffect(() => {
@@ -362,15 +481,18 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     [visibleDays, googleEvents, timeZone]
   );
 
-  const hasAllDayEvents = useMemo(
-    () =>
-      Array.from(allDayEventsByDay.values()).some(
-        (eventsForDay) => eventsForDay.length > 0
-      ),
-    [allDayEventsByDay]
-  );
-
   const hasGoogleEvents = googleEvents.length > 0;
+  const firstDay = visibleDays[0];
+  const zoneLabel = useMemo(
+    () => (firstDay ? timeZoneLabel(timeZone, firstDay) : ""),
+    [timeZone, firstDay]
+  );
+  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
+  const showWhoopRow = shouldShowWhoopRow(
+    whoopAccountId,
+    visibleDays.map((day) => day.toString()),
+    whoopSummaries
+  );
 
   // Collect all sleep blocks across visible WHOOP summaries so each
   // day column can render bands for sleeps that cross midnight.
@@ -442,30 +564,16 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
       // Convert task segments to PositionedItems. Segments are already
       // clamped to day boundaries, matching the rendered task blocks.
-      const taskItems: PositionedItem[] = dayTaskSegments.map((segment) => {
-        const startMinutes = minutesFromMidnight(segment.start);
-        const rawEndMinutes = minutesFromMidnight(segment.end);
-        const endMinutes =
-          rawEndMinutes === 0 &&
-          Temporal.ZonedDateTime.compare(segment.end, segment.start) > 0
-            ? 1440
-            : rawEndMinutes;
-        return {
-          endMinutes,
-          id: `task-${segment.task.id}`,
-          startMinutes,
-          type: "task" as const,
-        };
-      });
+      const taskItems: PositionedItem[] = dayTaskSegments.map((segment) => ({
+        ...dayPartMinutes(segment.start, segment.end),
+        id: `task-${segment.task.id}`,
+        type: "task" as const,
+      }));
 
       // Convert google events to PositionedItems.
-      // Events are already clamped to day boundaries by buildGoogleEventMaps,
-      // so endMinutes=0 means the event extends to midnight (1440).
+      // Events are already clamped to day boundaries by buildGoogleEventMaps.
       const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
-        const startMinutes = minutesFromMidnight(ge.start);
-        const rawEndMinutes = minutesFromMidnight(ge.end);
-        const endMinutes =
-          rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
+        const { endMinutes, startMinutes } = dayPartMinutes(ge.start, ge.end);
         return {
           endMinutes:
             endMinutes > startMinutes ? endMinutes : startMinutes + 30,
@@ -489,20 +597,24 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         }
         const clampedStart = clampZonedDateTime(wStart, dayStart, dayEnd);
         const clampedEnd = clampZonedDateTime(wEnd, dayStart, dayEnd);
-        const startMin = minutesFromMidnight(clampedStart);
-        const rawEndMin = minutesFromMidnight(clampedEnd);
-        const endMin = rawEndMin === 0 && startMin > 0 ? 1440 : rawEndMin;
+        const { endMinutes, startMinutes } = dayPartMinutes(
+          clampedStart,
+          clampedEnd
+        );
         return {
-          endMinutes: Math.max(endMin, startMin + 15),
+          endMinutes: Math.max(endMinutes, startMinutes + 15),
           id: `whoop-workout-${workout.id}`,
-          startMinutes: startMin,
+          startMinutes,
           type: "whoop-workout" as const,
         };
       });
 
       // Calculate layout for all items on this day
       const allItems = [...taskItems, ...googleItems, ...whoopItems];
-      const layout = calculateCollisionLayout(allItems);
+      // Blocks are at least 20px tall, a 15-minute slot (event-position.ts).
+      const layout = calculateCollisionLayout(allItems, {
+        minDrawnMinutes: 15,
+      });
       layoutsByDay.set(dayKey, layout);
     }
 
@@ -516,8 +628,26 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     <div className="flex h-full">
       {/* Fixed time gutter column */}
       <div className="flex w-16 shrink-0 flex-col border-r bg-background">
-        {/* Empty corner cell above time gutter - height matches header block */}
-        <div className="shrink-0 border-b" style={{ height: headerHeight }} />
+        {/* Corner above the gutter: the time zone, and a label for the
+            all-day row. Its height matches the header block. */}
+        <div
+          className="flex shrink-0 flex-col border-b text-[10px] text-muted-foreground"
+          style={{ height: headerHeight }}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-end pr-2",
+              showWhoopRow ? "h-[3.75rem]" : "h-12"
+            )}
+            title={timeZone}
+          >
+            {zoneLabel}
+          </span>
+          {/* The all-day row always shows, so paging doesn't move the grid. */}
+          <span className="flex flex-1 items-start justify-end border-t pt-1.5 pr-2">
+            All day
+          </span>
+        </div>
         {/* Time gutter - scrolls vertically with the body */}
         <div className="min-h-0 flex-1 overflow-hidden">
           <TimeGutterSynced scrollRef={scrollRef} />
@@ -541,6 +671,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   <DayHeader
                     date={day}
                     key={dayKey}
+                    showWhoopRow={showWhoopRow}
                     whoopSummary={whoopSummaries.get(dayKey)}
                     width={dayColumnWidth}
                   />
@@ -548,37 +679,37 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
               })}
             </div>
 
-            {hasAllDayEvents ? (
-              <div className="flex border-border border-t bg-background/80">
-                {visibleDays.map((day) => {
-                  const dayKey = day.toString();
-                  const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
+            <div className="flex border-border border-t bg-background/80">
+              {visibleDays.map((day) => {
+                const dayKey = day.toString();
+                const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
-                  return (
-                    <div
-                      className="flex min-h-[32px] flex-col items-start gap-1 overflow-hidden border-border border-r px-2 pt-1 pb-1 last:border-r-0"
-                      key={`${dayKey}-all-day`}
-                      style={{ width: dayColumnWidth }}
-                    >
-                      {dayAllDay
-                        .slice(0, MAX_ALL_DAY_EVENTS)
-                        .map((item: AllDayGoogleEvent) => (
-                          <AllDayEventChip
-                            item={item}
-                            key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
-                            timeZone={timeZone}
-                          />
-                        ))}
-                      {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
-                        <span className="block w-full truncate rounded-sm bg-muted px-1.5 py-0.5 font-medium text-[11px] text-muted-foreground">
-                          …
-                        </span>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : null}
+                return (
+                  <div
+                    className="flex min-h-7 flex-col items-start gap-1 overflow-hidden border-border border-r px-2 py-1 last:border-r-0"
+                    key={`${dayKey}-all-day`}
+                    style={{ width: dayColumnWidth }}
+                  >
+                    {dayAllDay
+                      .slice(0, MAX_ALL_DAY_EVENTS)
+                      .map((item: AllDayGoogleEvent) => (
+                        <AllDayEventChip
+                          item={item}
+                          key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
+                          timeZone={timeZone}
+                        />
+                      ))}
+                    {dayAllDay.length > MAX_ALL_DAY_EVENTS ? (
+                      <AllDayOverflow
+                        day={day}
+                        items={dayAllDay}
+                        timeZone={timeZone}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -603,6 +734,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   onSlotLeave={actions.onSlotLeave}
                   onSlotMouseDown={actions.onSlotMouseDown}
                   onSlotMouseUp={actions.onSlotMouseUp}
+                  overlay={<CreationPreview columnDate={day} />}
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
@@ -620,77 +752,88 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                       totalSleepMilliseconds={sleep.totalSleepMilliseconds}
                     />
                   ))}
-                  {/* Creation preview for this column */}
-                  <CreationPreview columnDate={day} />
-                  {hasGoogleEvents
-                    ? dayGoogleEvents.map(
-                        ({
-                          event,
-                          start,
-                          end,
-                          calendarId,
-                          accountId,
-                        }: PositionedGoogleEvent) => {
-                          const layoutKey = `google-${accountId}-${calendarId}-${event.id}`;
-                          const layout = dayLayouts?.get(layoutKey);
-                          return (
-                            <GoogleCalendarEvent
-                              accountId={accountId}
-                              calendarId={calendarId}
-                              columnIndex={layout?.columnIndex}
-                              columnSpan={layout?.columnSpan}
-                              end={end}
-                              event={event}
-                              key={`${accountId}-${calendarId}-${event.id}-${start.toString()}`}
-                              start={start}
-                              totalColumns={layout?.totalColumns}
-                              zIndex={layout?.zIndex}
+                  {/* One list in start order (the layout's z order), so
+                      Tab moves through the day's events and tasks in time
+                      order. WHOOP workouts come from all collected workouts
+                      so cross-midnight ones appear in both day columns. */}
+                  {[
+                    ...(hasGoogleEvents
+                      ? dayGoogleEvents.map(
+                          ({
+                            event,
+                            start,
+                            end,
+                            calendarId,
+                            accountId,
+                          }: PositionedGoogleEvent) => {
+                            const layoutKey = `google-${accountId}-${calendarId}-${event.id}`;
+                            const layout = dayLayouts?.get(layoutKey);
+                            return {
+                              node: (
+                                <GoogleCalendarEvent
+                                  accountId={accountId}
+                                  calendarId={calendarId}
+                                  end={end}
+                                  event={event}
+                                  // Keyed by identity, not times: a time change keeps the
+                                  // block (and an open editor's draft) mounted.
+                                  key={layoutKey}
+                                  layout={layout}
+                                  start={start}
+                                />
+                              ),
+                              order: layout?.zIndex ?? 0,
+                            };
+                          }
+                        )
+                      : []),
+                    ...dayTaskSegments.map((segment) => {
+                      const layoutKey = `task-${segment.task.id}`;
+                      const layout = dayLayouts?.get(layoutKey);
+                      return {
+                        node: (
+                          <TaskEvent
+                            isFirstSegment={segment.isFirstSegment}
+                            isLastSegment={segment.isLastSegment}
+                            key={layoutKey}
+                            layout={layout}
+                            segmentEnd={segment.end}
+                            segmentStart={segment.start}
+                            task={segment.task}
+                          />
+                        ),
+                        order: layout?.zIndex ?? 0,
+                      };
+                    }),
+                    ...allWorkouts.flatMap((workout) => {
+                      const layout = dayLayouts?.get(
+                        `whoop-workout-${workout.id}`
+                      );
+                      if (!layout) {
+                        return [];
+                      }
+                      return [
+                        {
+                          node: (
+                            <WhoopWorkoutEvent
+                              columnDate={day}
+                              end={workout.end}
+                              id={workout.id}
+                              key={workout.id}
+                              layout={layout}
+                              sportName={workout.sportName}
+                              start={workout.start}
+                              strainScore={workout.strainScore}
+                              timeZone={timeZone}
                             />
-                          );
-                        }
-                      )
-                    : null}
-                  {dayTaskSegments.map((segment) => {
-                    const layoutKey = `task-${segment.task.id}`;
-                    const layout = dayLayouts?.get(layoutKey);
-                    return (
-                      <TaskEvent
-                        columnIndex={layout?.columnIndex}
-                        columnSpan={layout?.columnSpan}
-                        isFirstSegment={segment.isFirstSegment}
-                        isLastSegment={segment.isLastSegment}
-                        key={`${segment.task.id}-${segment.start.toString()}`}
-                        segmentEnd={segment.end}
-                        segmentStart={segment.start}
-                        task={segment.task}
-                        totalColumns={layout?.totalColumns}
-                        zIndex={layout?.zIndex}
-                      />
-                    );
-                  })}
-                  {/* WHOOP workout event blocks — rendered from all
-                      collected workouts so cross-midnight workouts
-                      appear in both day columns. */}
-                  {allWorkouts.map((workout) => {
-                    const layoutKey = `whoop-workout-${workout.id}`;
-                    const layout = dayLayouts?.get(layoutKey);
-                    if (!layout) {
-                      return null;
-                    }
-                    return (
-                      <WhoopWorkoutEvent
-                        columnDate={day}
-                        end={workout.end}
-                        id={workout.id}
-                        key={workout.id}
-                        layout={layout}
-                        sportName={workout.sportName}
-                        start={workout.start}
-                        strainScore={workout.strainScore}
-                        timeZone={timeZone}
-                      />
-                    );
-                  })}
+                          ),
+                          order: layout.zIndex,
+                        },
+                      ];
+                    }),
+                  ]
+                    .sort((a, b) => a.order - b.order)
+                    .map(({ node }) => node)}
                 </DayColumn>
               );
             })}
@@ -699,6 +842,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
         {/* Event creation popover - shows after click-and-drag */}
         <EventCreationPopover />
+        <RecurringDeleteDialog />
       </div>
     </div>
   );
@@ -741,6 +885,46 @@ function TimeGutterSynced({
 
 DaysView.displayName = "DaysView";
 
+/** "+N more" for a day's all-day row: opens the day's full list. */
+function AllDayOverflow({
+  day,
+  items,
+  timeZone,
+}: {
+  day: Temporal.PlainDate;
+  items: AllDayGoogleEvent[];
+  timeZone: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className="rounded-sm px-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          type="button"
+        >
+          +{items.length - MAX_ALL_DAY_EVENTS} more
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 gap-1.5 p-2">
+        <p className="px-1 font-medium text-muted-foreground text-xs">
+          {day.toLocaleString(undefined, {
+            day: "numeric",
+            month: "long",
+            weekday: "long",
+          })}
+        </p>
+        {items.map((item) => (
+          <AllDayEventChip
+            item={item}
+            key={`${item.accountId}-${item.calendarId}-${item.event.id}`}
+            timeZone={timeZone}
+          />
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function AllDayEventChip({
   item,
   timeZone,
@@ -757,19 +941,22 @@ function AllDayEventChip({
     (c) => c.accountId === item.accountId && c.calendar.id === item.calendarId
   );
 
-  const { background: backgroundColor, foreground: foregroundColor } =
-    resolveGoogleEventColors({
-      calendarBackgroundColor: calendar?.calendar.backgroundColor,
-      calendarForegroundColor: calendar?.calendar.foregroundColor,
-      colorId: item.event.colorId,
-      palette: normalizedPalette?.event,
-    });
+  const { background: backgroundColor } = resolveGoogleEventColors({
+    calendarBackgroundColor: calendar?.calendar.backgroundColor,
+    calendarForegroundColor: calendar?.calendar.foregroundColor,
+    colorId: item.event.colorId,
+    palette: normalizedPalette?.event,
+  });
 
-  const endDate =
-    item.event.end.date && item.event.end.date !== item.date.toString()
-      ? Temporal.PlainDate.from(item.event.end.date)
-      : item.date.add({ days: 1 });
-  const startZdt = startOfDayZoned(item.date, timeZone);
+  // The whole event's dates, not the drawn day, so opening a multi-day
+  // event from a later day can't save it shorter.
+  const startDate = item.event.start.date
+    ? Temporal.PlainDate.from(item.event.start.date)
+    : item.date;
+  const endDate = item.event.end.date
+    ? Temporal.PlainDate.from(item.event.end.date)
+    : startDate.add({ days: 1 });
+  const startZdt = startOfDayZoned(startDate, timeZone);
   const endZdt = startOfDayZoned(endDate, timeZone);
 
   return (
@@ -778,29 +965,25 @@ function AllDayEventChip({
       calendarId={item.calendarId}
       end={zonedDateTimeToDate(endZdt)}
       event={item.event}
+      readOnly={
+        calendarEventEditBlockReason(
+          item.event,
+          calendar?.calendar.accessRole
+        ) !== null
+      }
+      readOnlyReason={calendarEventEditBlockReason(
+        item.event,
+        calendar?.calendar.accessRole
+      )}
       start={zonedDateTimeToDate(startZdt)}
     >
       <button
-        className="block w-full max-w-full rounded-sm bg-background p-px text-left"
-        style={{
-          ...(foregroundColor && { color: foregroundColor }),
-        }}
-        title={item.event.summary ?? "Google event"}
+        className="event-surface block w-full max-w-full truncate rounded-[4px] py-0.5 pr-1.5 pl-2 text-left font-medium text-[11px] leading-4"
+        style={eventColor(backgroundColor)}
+        title={item.event.summary || "(No title)"}
         type="button"
       >
-        <span
-          className={`block w-full max-w-full truncate rounded-[3px] border border-black/20 px-1.5 py-0.5 font-medium text-[11px] dark:border-white/30 ${
-            backgroundColor ? "" : "bg-primary/10 text-primary"
-          }`}
-          style={{
-            ...(backgroundColor && {
-              backgroundColor,
-            }),
-            ...(foregroundColor && { color: foregroundColor }),
-          }}
-        >
-          {item.event.summary ?? "Google event"}
-        </span>
+        {item.event.summary || "(No title)"}
       </button>
     </EventEditPopover>
   );

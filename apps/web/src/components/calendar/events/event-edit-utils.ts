@@ -1,38 +1,11 @@
-import {
-  buildGoogleEventRecurrenceRule,
-  type EventRecurrenceEnd,
-  type EventRecurrenceFrequency,
-  GOOGLE_EVENT_WEEKDAYS,
-  parseGoogleEventRecurrenceRule,
-} from "@kompose/state/google-event-recurrence";
-
+import type {
+  Event as GoogleEvent,
+  RecurrenceScope,
+} from "@kompose/google-cal/schema";
+import type { EventSaveChanges } from "@kompose/state/recurrence-scope-options";
+import { seriesEditFields } from "@kompose/state/series-edit";
+import { Temporal } from "temporal-polyfill";
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
-
-export type Frequency = EventRecurrenceFrequency;
-export type RecurrenceEnd = EventRecurrenceEnd;
-export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
-
-export function parseRecurrence(rule?: string): {
-  freq: Frequency;
-  byDay: string[];
-  end: RecurrenceEnd;
-} {
-  return parseGoogleEventRecurrenceRule(rule);
-}
-
-export function buildRecurrenceRule(
-  freq: Frequency,
-  byDay: string[],
-  end: RecurrenceEnd
-): string | null {
-  return buildGoogleEventRecurrenceRule({
-    byDay,
-    end,
-    freq,
-    interval: 1,
-    monthDays: [],
-  });
-}
 
 interface TemporalFormValues {
   allDay: boolean;
@@ -110,4 +83,50 @@ export function buildTemporalPayload(
     endPayload,
     startPayload,
   };
+}
+
+/** An occurrence gets the full edit; a series gets only the changed details. */
+export function eventForScope({
+  edited,
+  occurrence,
+  scope,
+}: {
+  edited: GoogleEvent;
+  occurrence: GoogleEvent | undefined;
+  scope: RecurrenceScope;
+}): GoogleEvent {
+  if (scope === "this" || !occurrence?.recurringEventId) {
+    return edited;
+  }
+  return {
+    ...seriesEditFields({
+      edited: { ...edited, summary: edited.summary ?? "" },
+      occurrence,
+    }),
+    id: edited.id,
+    ...(edited.recurrence === undefined
+      ? {}
+      : { recurrence: edited.recurrence }),
+  };
+}
+
+/** A day move would be lost when Entire series keeps the first event's date. */
+export function saveFacts({
+  edited,
+  event,
+  timeZone,
+}: {
+  edited: Pick<GoogleEvent, "start">;
+  event: GoogleEvent;
+  timeZone: string;
+}): Pick<EventSaveChanges, "dateMoved"> {
+  const day = (start: GoogleEvent["start"]) =>
+    start.date ??
+    (start.dateTime
+      ? Temporal.Instant.from(start.dateTime)
+          .toZonedDateTimeISO(timeZone)
+          .toPlainDate()
+          .toString()
+      : undefined);
+  return { dateMoved: day(edited.start) !== day(event.start) };
 }

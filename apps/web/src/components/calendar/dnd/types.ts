@@ -21,6 +21,11 @@ export type DragData =
   | {
       type: "task";
       task: TaskSelectDecoded;
+      /**
+       * Minutes from the item's start to the top of the dragged block: zero,
+       * except on the second day of an overnight item.
+       */
+      grabOffsetMinutes?: number;
     }
   | {
       type: "task-resize";
@@ -32,8 +37,14 @@ export type DragData =
       event: GoogleEvent;
       accountId: string;
       calendarId: string;
+      /** The whole event's times, not the drawn day's part. */
       start: Temporal.ZonedDateTime;
       end: Temporal.ZonedDateTime;
+      /**
+       * Minutes from the item's start to the top of the dragged block: zero,
+       * except on the second day of an overnight item.
+       */
+      grabOffsetMinutes?: number;
     }
   | {
       type: "google-event-resize";

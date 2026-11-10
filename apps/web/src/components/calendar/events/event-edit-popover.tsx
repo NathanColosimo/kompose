@@ -5,11 +5,38 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
+import {
+  describeEventRecurrence,
+  monthlyDayOptions,
+} from "@kompose/state/event-recurrence-words";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
+import {
+  buildGoogleEventRecurrenceRule,
+  type EventRecurrencePattern,
+  type EventRecurrenceFrequency as Frequency,
+  GOOGLE_EVENT_WEEKDAYS,
+  getPrimaryRecurrenceRule,
+  parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
+  recurrenceEndDay,
+  recurrenceUntilValue,
+  repeatChanged,
+  setPrimaryRecurrenceRule,
+  untilDefaultDay,
+  weekdayCodeOf,
+  weekOrdered,
+} from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
+import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  SAVE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -23,7 +50,21 @@ import {
   extractMeetingLink,
   type MeetingLink,
 } from "@kompose/state/meeting";
-import { useAtomValue } from "jotai";
+import {
+  chosenScope,
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
+  SCOPE_DIALOG_COPY,
+} from "@kompose/state/recurrence-scope-options";
+import { savedSeriesRecurrence } from "@kompose/state/series-edit";
+import {
+  formatAllDayWhen,
+  formatEventWhen,
+  moveEventStart,
+} from "@kompose/state/temporal-utils";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   CalendarIcon,
   Check,
@@ -31,7 +72,6 @@ import {
   MapPin,
   Palette,
   Repeat,
-  Timer,
   Trash2,
   Video,
 } from "lucide-react";
@@ -39,15 +79,26 @@ import {
   type ReactElement,
   type ReactNode,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useMemo,
   useReducer,
   useRef,
   useState,
+  useTransition,
 } from "react";
-import { Controller, useForm, useWatch } from "react-hook-form";
+import {
+  Controller,
+  type UseFormSetValue,
+  useForm,
+  useWatch,
+} from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
-import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
+import { Temporal } from "temporal-polyfill";
+import {
+  RecurrenceScopeDialog,
+  type ScopeDialogSubject,
+} from "@/components/recurrence-scope-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +119,11 @@ import {
   ComboboxItem,
   ComboboxList,
 } from "@/components/ui/combobox";
+import {
+  HeldFieldset,
+  SaveFailure,
+  SavingLabel,
+} from "@/components/ui/held-fieldset";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -89,57 +145,20 @@ import {
   formatPlainDate,
   formatTimeString,
   pickerDateToTemporal,
+  temporalToPickerDate,
 } from "@/lib/temporal-utils";
+import { useIsMobile } from "@/lib/use-mobile";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
 import {
-  buildRecurrenceRule,
   buildTemporalPayload,
-  type Frequency,
-  parseRecurrence,
-  type RecurrenceEnd,
-  WEEKDAYS,
+  eventForScope,
+  saveFacts,
 } from "./event-edit-utils";
-
-// Until-date helpers this editor used before the repeat rules moved to
-// Temporal. The redesigned editor replaces this file later in the stack.
-const UNTIL_RULE_DATE_ONLY = /^(\d{4})(\d{2})(\d{2})$/;
-const UNTIL_RULE_FULL =
-  /^(\d{4})(\d{2})(\d{2})T?(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?$/;
-const UNTIL_SEPARATORS = /[-:]/g;
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function untilRuleToDate(raw?: string | null): Date | null {
-  if (!raw) {
-    return null;
-  }
-  const cleaned = raw.replace(UNTIL_SEPARATORS, "");
-  const dateOnly = cleaned.match(UNTIL_RULE_DATE_ONLY);
-  if (dateOnly) {
-    const [, y, m, d] = dateOnly;
-    return new Date(Number(y), Number(m) - 1, Number(d));
-  }
-  const full = cleaned.match(UNTIL_RULE_FULL);
-  if (!full) {
-    return null;
-  }
-  const [, y, m, d, hh, mm, ss, offset] = full;
-  const date = new Date(`${y}-${m}-${d}T${hh}:${mm}:${ss}${offset ?? "Z"}`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function dateToUntilRule(date: Date): string | null {
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}00Z`;
-}
+import { recurringDeleteAtom } from "./recurring-delete-dialog";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -173,32 +192,14 @@ interface EventFormValues {
   summary: string;
 }
 
-interface RecurrenceEditorValues {
-  byDay: string[];
-  count: number;
-  endType: RecurrenceEnd["type"];
-  freq: Frequency;
-  /** Stored as RRULE UNTIL value (e.g. `YYYYMMDDT...Z`). Empty means unset. */
-  untilRule: string;
-}
-
-function buildRecurrenceEnd(values: RecurrenceEditorValues): RecurrenceEnd {
-  if (values.endType === "until" && values.untilRule) {
-    return { date: values.untilRule, type: "until" };
-  }
-  if (values.endType === "count" && values.count > 0) {
-    return { count: values.count, type: "count" };
-  }
-  return { type: "none" };
-}
-
 export type CloseSaveRequest =
   | { type: "none" }
+  /** The form can't be saved as is (it ends before it starts): stay open. */
+  | { type: "invalid" }
   | {
       type: "save";
       /**
-       * Mutation payload that represents the user’s edits.
-       * We keep recurrence scope out of the form and ask for it after close.
+       * The form's edits; the scope is chosen in a dialog over the editor.
        */
       variables: UpdateGoogleEventInput;
       isRecurring: boolean;
@@ -206,47 +207,32 @@ export type CloseSaveRequest =
       /** Whether event data (non-calendar fields) were actually edited. */
       hasDataEdits: boolean;
       calendarChanged?: { destinationCalendarId: string };
+      /** The repeat pattern changed: it can't apply to one occurrence. */
+      patternChanged: boolean;
     }
   | {
       type: "create";
       payload: CreateEventInput;
     };
 
-function parseTimeString(
-  value: string
-): { hours: number; minutes: number } | null {
-  const [hours, minutes] = value.split(":").map(Number);
-  if (Number.isNaN(hours) || Number.isNaN(minutes)) {
-    return null;
-  }
-  return { hours, minutes };
-}
-
 function buildSharedEndFields(
   startDate: Date | null,
   startTime: string,
   durationMinutes: number
 ): Pick<EventFormValues, "endDate" | "endTime"> {
-  const normalizedDuration =
+  if (!(startDate && startTime)) {
+    return { endDate: startDate, endTime: startTime };
+  }
+  const minutes =
     Number.isFinite(durationMinutes) && durationMinutes > 0
       ? Math.round(durationMinutes)
       : 30;
-  const parsedStartTime = parseTimeString(startTime);
-
-  if (!(startDate && parsedStartTime)) {
-    return {
-      endDate: startDate,
-      endTime: startTime,
-    };
-  }
-
-  const nextEndDate = new Date(startDate);
-  nextEndDate.setHours(parsedStartTime.hours, parsedStartTime.minutes, 0, 0);
-  nextEndDate.setMinutes(nextEndDate.getMinutes() + normalizedDuration);
-
+  const end = pickerDateToTemporal(startDate)
+    .toPlainDateTime(startTime)
+    .add({ minutes });
   return {
-    endDate: nextEndDate,
-    endTime: formatTimeString(nextEndDate),
+    endDate: temporalToPickerDate(end.toPlainDate()),
+    endTime: end.toPlainTime().toString({ smallestUnit: "minute" }),
   };
 }
 
@@ -254,31 +240,19 @@ function getSharedFieldsFromEventValues(
   values: EventFormValues
 ): CalendarCreateSharedFields {
   const startDate = values.startDate ?? values.endDate ?? null;
-  const parsedStartTime = parseTimeString(values.startTime);
-  const parsedEndTime = parseTimeString(values.endTime);
   let durationMinutes = 30;
-
-  if (startDate && parsedStartTime && parsedEndTime) {
-    const startDateTime = new Date(startDate);
-    startDateTime.setHours(
-      parsedStartTime.hours,
-      parsedStartTime.minutes,
-      0,
-      0
+  if (startDate && values.startTime && values.endTime) {
+    const start = pickerDateToTemporal(startDate).toPlainDateTime(
+      values.startTime
     );
-
-    const endBaseDate = values.endDate ?? startDate;
-    const endDateTime = new Date(endBaseDate);
-    endDateTime.setHours(parsedEndTime.hours, parsedEndTime.minutes, 0, 0);
-
-    const computedDuration = Math.round(
-      (endDateTime.getTime() - startDateTime.getTime()) / 60_000
-    );
-    if (computedDuration > 0) {
-      durationMinutes = computedDuration;
+    const end = pickerDateToTemporal(
+      values.endDate ?? startDate
+    ).toPlainDateTime(values.endTime);
+    const minutes = Math.round(start.until(end).total("minutes"));
+    if (minutes > 0) {
+      durationMinutes = minutes;
     }
   }
-
   return {
     description: values.description,
     durationMinutes,
@@ -288,101 +262,192 @@ function getSharedFieldsFromEventValues(
   };
 }
 
+/**
+ * A whole number typed freely: the draft can be empty or half-typed while
+ * the field has focus; only a valid number is passed on, and leaving the
+ * field shows the last one.
+ */
+function CountField({
+  label,
+  max,
+  onValue,
+  value,
+}: {
+  label: string;
+  max: number;
+  onValue: (value: number) => void;
+  value: number;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <Input
+      aria-label={label}
+      className="h-8 w-14 px-2 text-center text-xs"
+      inputMode="numeric"
+      onBlur={() => setDraft(null)}
+      onChange={(e) => {
+        const next = e.target.value.replace(NON_DIGITS, "");
+        setDraft(next);
+        const parsed = Number.parseInt(next, 10);
+        if (parsed >= 1 && parsed <= max) {
+          onValue(parsed);
+        }
+      }}
+      value={draft ?? String(value)}
+    />
+  );
+}
+
+const NON_DIGITS = /\D/g;
+
+const UNIT_WORDS: Record<
+  Exclude<Frequency, "none" | "custom">,
+  [string, string]
+> = {
+  DAILY: ["day", "days"],
+  MONTHLY: ["month", "months"],
+  WEEKLY: ["week", "weeks"],
+  YEARLY: ["year", "years"],
+};
+
 function RecurrenceEditor({
-  visible,
+  allDay,
+  endFrom,
   recurrenceRule,
   onChange,
+  start,
+  timeZone,
 }: {
-  visible: boolean;
+  /** An all-day series ends on a date; a timed one after that day. */
+  allDay: boolean;
+  /**
+   * The day an end date defaults from and can't be before: the event's own
+   * (an occurrence's, not its series' first, which can be years back).
+   */
+  endFrom: Temporal.PlainDate;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
+  /** The series' start: its weekday and day of the month are the defaults. */
+  start: Temporal.PlainDate;
+  /** The series' zone, where its end day is counted. */
+  timeZone: string;
 }) {
-  const parsedRecurrence = useMemo(
-    () => parseRecurrence(recurrenceRule),
+  const pattern = useMemo(
+    () => parseGoogleEventRecurrenceRule(recurrenceRule),
     [recurrenceRule]
   );
 
-  const values = useMemo<RecurrenceEditorValues>(() => {
-    const endType = parsedRecurrence.end.type;
-    return {
-      byDay: parsedRecurrence.byDay,
-      count: endType === "count" ? parsedRecurrence.end.count : 5,
-      endType,
-      freq: parsedRecurrence.freq,
-      untilRule: endType === "until" ? parsedRecurrence.end.date : "",
-    };
-  }, [parsedRecurrence.byDay, parsedRecurrence.end, parsedRecurrence.freq]);
-
-  const emitChanges = (changes: Partial<RecurrenceEditorValues>) => {
-    const nextValues = { ...values, ...changes };
-    const end = buildRecurrenceEnd(nextValues);
-    const nextRule = buildRecurrenceRule(
-      nextValues.freq,
-      nextValues.byDay,
-      end
-    );
-    const normalizedNext = nextRule ?? null;
-    if (normalizedNext === (recurrenceRule ?? null)) {
-      return;
+  const emit = (next: EventRecurrencePattern) => {
+    const nextRule = buildGoogleEventRecurrenceRule(next, recurrenceRule);
+    if (nextRule !== (recurrenceRule ?? null)) {
+      onChange(nextRule);
     }
-    onChange(nextRule);
   };
 
-  const untilDate = useMemo(
-    () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
-    [values.untilRule]
-  );
-
-  if (!visible) {
-    return null;
-  }
+  const summary = recurrenceRule
+    ? describeEventRecurrence({ rules: [recurrenceRule], start, timeZone })
+    : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
-          <Repeat className="size-4" />
-          <span>Recurrence</span>
-        </div>
-        {recurrenceRule ? (
-          <span className="max-w-[160px] truncate text-[10px] text-muted-foreground">
-            {recurrenceRule}
-          </span>
-        ) : null}
+      {/* The rule in words, wrapping, so a long one reads in full. */}
+      <div className="flex items-start gap-2 text-xs">
+        <Repeat className="mt-px size-3.5 shrink-0 text-muted-foreground" />
+        <span className={summary ? "" : "text-muted-foreground"}>
+          {summary ?? "Doesn't repeat"}
+        </span>
       </div>
 
-      <div className="flex items-center gap-2">
-        <Label className="text-xs">Repeat</Label>
+      <div className="flex items-center gap-2 text-xs">
         <Select
-          onValueChange={(v) => {
-            const nextFreq = v as Frequency;
-            emitChanges({
-              byDay: nextFreq === "WEEKLY" ? values.byDay : [],
-              freq: nextFreq,
-            });
-          }}
-          value={values.freq}
+          onValueChange={(v) =>
+            emit(pickRecurrenceFrequency(pattern, v as Frequency))
+          }
+          value={pattern.freq}
         >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
+          <SelectTrigger aria-label="Repeat" className="h-8 w-[110px] text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            {pattern.freq === "custom" ? (
+              <SelectItem disabled value="custom">
+                Custom
+              </SelectItem>
+            ) : null}
             <SelectItem value="none">None</SelectItem>
             <SelectItem value="DAILY">Daily</SelectItem>
             <SelectItem value="WEEKLY">Weekly</SelectItem>
             <SelectItem value="MONTHLY">Monthly</SelectItem>
+            <SelectItem value="YEARLY">Yearly</SelectItem>
           </SelectContent>
         </Select>
+        {pattern.freq === "none" || pattern.freq === "custom" ? null : (
+          <>
+            <span className="text-muted-foreground">every</span>
+            <CountField
+              label="Repeat every"
+              max={99}
+              onValue={(interval) => emit({ ...pattern, interval })}
+              value={pattern.interval}
+            />
+            <span className="text-muted-foreground">
+              {UNIT_WORDS[pattern.freq][pattern.interval === 1 ? 0 : 1]}
+            </span>
+          </>
+        )}
       </div>
 
-      {values.freq === "WEEKLY" && (
+      <RepeatDays
+        emit={emit}
+        pattern={pattern}
+        rule={recurrenceRule}
+        start={start}
+      />
+      {/* A series that doesn't repeat has no end to pick. */}
+      {pattern.freq === "none" || pattern.freq === "custom" ? null : (
+        <RepeatEnds
+          allDay={allDay}
+          emit={emit}
+          endFrom={endFrom}
+          pattern={pattern}
+          start={start}
+          timeZone={timeZone}
+        />
+      )}
+    </div>
+  );
+}
+
+interface RepeatPartProps {
+  emit: (next: EventRecurrencePattern) => void;
+  pattern: EventRecurrencePattern;
+  start: Temporal.PlainDate;
+}
+
+const MON_TO_FRI = ["MO", "TU", "WE", "TH", "FR"];
+
+/** Which days a weekly or monthly series repeats on. */
+function RepeatDays({
+  emit,
+  pattern,
+  rule,
+  start,
+}: RepeatPartProps & { rule: string | undefined }) {
+  // Weekly with no days picked repeats on the start's weekday: show it lit.
+  const shownDays =
+    pattern.byDay.length > 0 ? pattern.byDay : [weekdayCodeOf(start)];
+  return (
+    <>
+      {pattern.freq === "WEEKLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
-          <div className="flex gap-1">
-            {WEEKDAYS.map((day) => {
-              const active = values.byDay.includes(day.value);
+          <div className="flex flex-wrap gap-1">
+            {GOOGLE_EVENT_WEEKDAYS.map((day) => {
+              const active = shownDays.includes(day.value);
               return (
                 <Button
+                  aria-label={day.label}
+                  aria-pressed={active}
                   className={cn(
                     "size-8 rounded-full p-0 text-xs",
                     active &&
@@ -390,11 +455,10 @@ function RecurrenceEditor({
                   )}
                   key={day.value}
                   onClick={() => {
-                    const current = values.byDay;
-                    const next = active
-                      ? current.filter((d) => d !== day.value)
-                      : [...current, day.value];
-                    emitChanges({ byDay: next });
+                    const byDay = active
+                      ? shownDays.filter((d) => d !== day.value)
+                      : weekOrdered([...shownDays, day.value]);
+                    emit({ ...pattern, byDay });
                   }}
                   size="icon"
                   type="button"
@@ -404,153 +468,216 @@ function RecurrenceEditor({
                 </Button>
               );
             })}
+            {/* Every weekday in one click, as Google Calendar offers. */}
+            <Button
+              className="ml-auto h-8 rounded-full px-2.5 text-xs"
+              onClick={() => emit({ ...pattern, byDay: MON_TO_FRI })}
+              type="button"
+              variant="outline"
+            >
+              Mon–Fri
+            </Button>
           </div>
         </div>
       )}
 
-      <div className="space-y-2">
-        <span className="text-muted-foreground text-xs">Ends</span>
+      {pattern.freq === "MONTHLY" && (
         <div className="space-y-2">
+          <span className="text-muted-foreground text-xs">On</span>
+          {/* The start's day, its weekday of the month, and in its last
+              week the last one; a rule set another way first. */}
+          <div className="grid grid-cols-2 gap-1.5">
+            {monthlyDayOptions(pattern, rule, start).map((option) => (
+              <Button
+                aria-pressed={option.selected}
+                className="h-8 text-xs"
+                key={`${option.byDay}|${option.monthDays}`}
+                onClick={() =>
+                  emit({
+                    ...pattern,
+                    byDay: option.byDay,
+                    monthDays: option.monthDays,
+                  })
+                }
+                size="sm"
+                type="button"
+                variant={option.selected ? "default" : "outline"}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** When the series ends: never, on a date, or after a number of times. */
+function RepeatEnds({
+  allDay,
+  emit,
+  endFrom,
+  pattern,
+  timeZone,
+}: RepeatPartProps & {
+  allDay: boolean;
+  endFrom: Temporal.PlainDate;
+  timeZone: string;
+}) {
+  const [untilOpen, setUntilOpen] = useState(false);
+  const untilDay =
+    pattern.end.type === "until"
+      ? recurrenceEndDay(pattern.end.date, timeZone)
+      : null;
+  const untilDate = untilDay ? temporalToPickerDate(untilDay) : undefined;
+  return (
+    <div className="space-y-2">
+      <span className="text-muted-foreground text-xs">Ends</span>
+      {/* Three equal options in one row, as on the phone; the date or
+              count for the picked one goes below. */}
+      <div className="grid grid-cols-3 gap-1.5">
+        {RECURRENCE_ENDS.map((option) => (
           <Button
-            className="h-8 w-full justify-start text-xs"
+            aria-pressed={pattern.end.type === option.value}
+            className="h-8 text-xs"
+            key={option.value}
             onClick={() => {
-              emitChanges({ endType: "none", untilRule: "" });
+              if (option.value === pattern.end.type) {
+                setUntilOpen(option.value === "until");
+                return;
+              }
+              if (option.value === "none") {
+                emit({ ...pattern, end: { type: "none" } });
+              } else if (option.value === "until") {
+                // Three months on, opened to change at once.
+                emit({
+                  ...pattern,
+                  end: {
+                    date: recurrenceUntilValue(
+                      untilDefaultDay(endFrom, timeZone),
+                      allDay,
+                      timeZone
+                    ),
+                    type: "until",
+                  },
+                });
+                setUntilOpen(true);
+              } else {
+                emit({ ...pattern, end: { count: 10, type: "count" } });
+              }
             }}
             size="sm"
             type="button"
-            variant={values.endType === "none" ? "default" : "outline"}
+            variant={pattern.end.type === option.value ? "default" : "outline"}
           >
-            Never
+            {option.label}
           </Button>
-
-          <div className="flex items-center gap-2">
-            <Button
-              className="h-8 shrink-0 text-xs"
-              onClick={() => {
-                const fallback =
-                  values.untilRule ||
-                  dateToUntilRule(new Date()) ||
-                  `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
-                emitChanges({ endType: "until", untilRule: fallback });
-              }}
-              size="sm"
-              type="button"
-              variant={values.endType === "until" ? "default" : "outline"}
-            >
-              On
-            </Button>
-            {values.endType === "until" && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    className="h-7 gap-1.5 px-2 text-xs"
-                    variant="outline"
-                  >
-                    <CalendarIcon className="size-3" />
-                    {untilDate
-                      ? formatPlainDate(pickerDateToTemporal(untilDate), {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : "Select date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    onSelect={(date) => {
-                      if (!date) {
-                        emitChanges({ endType: "none", untilRule: "" });
-                        return;
-                      }
-                      const rule = dateToUntilRule(date);
-                      if (rule) {
-                        emitChanges({ untilRule: rule });
-                      }
-                    }}
-                    selected={untilDate ?? undefined}
-                  />
-                </PopoverContent>
-              </Popover>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              className="h-8 shrink-0 text-xs"
-              onClick={() => {
-                const nextCount =
-                  Number.isFinite(values.count) && values.count > 0
-                    ? values.count
-                    : 5;
-                emitChanges({ count: nextCount, endType: "count" });
-              }}
-              size="sm"
-              type="button"
-              variant={values.endType === "count" ? "default" : "outline"}
-            >
-              After
-            </Button>
-            {values.endType === "count" && (
-              <>
-                <Input
-                  className="h-7 w-16 px-2 text-xs"
-                  min={1}
-                  onChange={(e) => {
-                    const parsed = Number.parseInt(e.target.value, 10);
-                    if (Number.isFinite(parsed) && parsed > 0) {
-                      emitChanges({ count: parsed });
-                    }
-                  }}
-                  type="number"
-                  value={values.count}
-                />
-                <span className="text-muted-foreground text-xs">times</span>
-              </>
-            )}
-          </div>
-        </div>
+        ))}
       </div>
+
+      {pattern.end.type === "until" ? (
+        <Popover onOpenChange={setUntilOpen} open={untilOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              className="h-8 gap-1.5 px-2 text-xs"
+              type="button"
+              variant="outline"
+            >
+              <CalendarIcon className="size-3.5" />
+              {untilDay
+                ? formatPlainDate(untilDay, {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : "Pick a date"}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto p-0">
+            <Calendar
+              defaultMonth={untilDate}
+              // A series can't end before it starts (from here).
+              disabled={{ before: temporalToPickerDate(endFrom) }}
+              mode="single"
+              onSelect={(date) => {
+                if (date) {
+                  emit({
+                    ...pattern,
+                    end: {
+                      date: recurrenceUntilValue(
+                        pickerDateToTemporal(date),
+                        allDay,
+                        timeZone
+                      ),
+                      type: "until",
+                    },
+                  });
+                  setUntilOpen(false);
+                }
+              }}
+              selected={untilDate}
+            />
+          </PopoverContent>
+        </Popover>
+      ) : null}
+
+      {pattern.end.type === "count" ? (
+        <div className="flex items-center gap-2 text-xs">
+          <CountField
+            label="Occurrences"
+            max={MAX_OCCURRENCES}
+            onValue={(count) =>
+              emit({ ...pattern, end: { count, type: "count" } })
+            }
+            value={pattern.end.count}
+          />
+          <span className="text-muted-foreground">
+            {pattern.end.count === 1 ? "time" : "times"}
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
 
+/** Google Calendar's editor takes at most this many occurrences. */
+const MAX_OCCURRENCES = 730;
+
+const RECURRENCE_ENDS = [
+  { label: "Never", value: "none" },
+  { label: "On date", value: "until" },
+  { label: "After", value: "count" },
+] as const;
+
+/** A recurring event's save, waiting for its scope. */
+type PendingSave = Omit<
+  Extract<CloseSaveRequest, { type: "save" }>,
+  "isRecurring" | "type"
+>;
+
 interface EventEditDialogState {
-  deleteDialogOpen: boolean;
-  deleteScope: RecurrenceScope;
-  pendingSave: {
-    variables: UpdateGoogleEventInput;
-    defaultScope: RecurrenceScope;
-    hasDataEdits: boolean;
-    calendarChanged?: { destinationCalendarId: string };
-  } | null;
+  pendingSave: PendingSave | null;
   scopeDialogOpen: boolean;
-  selectedScope: RecurrenceScope;
+  /** The user's own pick in the scope dialog; null until they pick. */
+  selectedScope: RecurrenceScope | null;
   simpleDeleteConfirmOpen: boolean;
 }
 
 type EventEditDialogAction =
-  | { type: "open-recurring-delete"; scope: RecurrenceScope }
-  | { type: "set-delete-dialog-open"; value: boolean }
-  | { type: "set-delete-scope"; value: RecurrenceScope }
   | { type: "open-simple-delete" }
   | { type: "set-simple-delete-open"; value: boolean }
   | {
       type: "open-scope-dialog";
       pendingSave: EventEditDialogState["pendingSave"];
-      scope: RecurrenceScope;
     }
   | { type: "set-scope-dialog-open"; value: boolean }
-  | { type: "set-selected-scope"; value: RecurrenceScope }
-  | { type: "clear-pending-save" };
+  | { type: "set-selected-scope"; value: RecurrenceScope };
 
 const eventEditDialogInitialState: EventEditDialogState = {
-  deleteDialogOpen: false,
-  deleteScope: "this",
   pendingSave: null,
   scopeDialogOpen: false,
-  selectedScope: "this",
+  selectedScope: null,
   simpleDeleteConfirmOpen: false,
 };
 
@@ -559,12 +686,6 @@ function eventEditDialogReducer(
   action: EventEditDialogAction
 ): EventEditDialogState {
   switch (action.type) {
-    case "open-recurring-delete":
-      return { ...state, deleteDialogOpen: true, deleteScope: action.scope };
-    case "set-delete-dialog-open":
-      return { ...state, deleteDialogOpen: action.value };
-    case "set-delete-scope":
-      return { ...state, deleteScope: action.value };
     case "open-simple-delete":
       return { ...state, simpleDeleteConfirmOpen: true };
     case "set-simple-delete-open":
@@ -574,16 +695,35 @@ function eventEditDialogReducer(
         ...state,
         pendingSave: action.pendingSave,
         scopeDialogOpen: true,
-        selectedScope: action.scope,
+        selectedScope: null,
       };
     case "set-scope-dialog-open":
       return { ...state, scopeDialogOpen: action.value };
     case "set-selected-scope":
       return { ...state, selectedScope: action.value };
-    case "clear-pending-save":
-      return { ...state, pendingSave: null };
     default:
-      return state;
+      return action satisfies never;
+  }
+}
+
+/** The element with focus, if it's one focus can return to. */
+function focusedElement(): HTMLElement | null {
+  return document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+}
+
+function heldFailure(error: unknown, fallback: string): string {
+  return error instanceof SavedNotMovedError ? error.message : fallback;
+}
+
+/** The edits saved, but the move to another calendar that followed didn't. */
+class SavedNotMovedError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "Saved your changes, but couldn't move the event to the other calendar. Save to try again.",
+      { cause }
+    );
   }
 }
 
@@ -620,58 +760,162 @@ export function EventEditPopover({
   );
 
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
+  const setRecurringDelete = useSetAtom(recurringDeleteAtom);
   const moveEvent = useMoveGoogleEventMutation();
-
   const [dialogState, dispatchDialog] = useReducer(
     eventEditDialogReducer,
     eventEditDialogInitialState
   );
   const {
-    deleteDialogOpen,
-    deleteScope,
     simpleDeleteConfirmOpen,
     scopeDialogOpen,
     pendingSave,
     selectedScope,
   } = dialogState;
 
+  // The form and scope dialog share the series query.
+  const seriesMaster = useRecurringEventMaster({
+    accountId,
+    calendarId,
+    enabled: open,
+    event: event ?? null,
+  });
+  const seriesRuleLoaded = Boolean(
+    event?.recurrence?.length || seriesMaster.ruleReady
+  );
+  const timeZone = useAtomValue(timezoneAtom);
+  const seriesStatus = {
+    seriesRuleFailed: seriesMaster.ruleFailed,
+    seriesRuleLoaded,
+  };
+
   const buildCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
 
-  const commitPendingSave = useCallback(async () => {
+  // The editor stays open ("Saving…") until a save succeeds, so a failed
+  // save keeps the edits. Escape and outside clicks wait too.
+  const [isSaving, startSaving] = useTransition();
+  const savingRef = useRef(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const narrowWindow = useIsMobile();
+  /** The editor's focused field when the scope dialog opened. */
+  const focusBeforeScopeRef = useRef<HTMLElement | null>(null);
+  /** Why the last save failed, shown beside Save until the next one. */
+  const [saveFailure, setSaveFailure] = useState<string | null>(null);
+  // A failure belongs to the save it came from: reopening starts clean.
+  useEffect(() => {
+    if (!open) {
+      setSaveFailure(null);
+    }
+  }, [open]);
+  const holdForSave = useCallback(
+    (save: Promise<unknown>, failureMessage: string) => {
+      savingRef.current = true;
+      // The fields remount read-only (HeldFieldset), which would drop focus
+      // to the page, where the calendar's keys could navigate away from the
+      // save; the editor itself holds it instead.
+      contentRef.current?.focus();
+      setSaveFailure(null);
+      startSaving(async () => {
+        try {
+          await save;
+          setOpen(false);
+        } catch (error) {
+          setSaveFailure(heldFailure(error, failureMessage));
+        } finally {
+          savingRef.current = false;
+        }
+      });
+    },
+    [setOpen]
+  );
+
+  /** Write the edits, then the calendar move, both with `scope`. */
+  const saveEdits = useCallback(
+    async (
+      edits: Pick<
+        PendingSave,
+        "calendarChanged" | "hasDataEdits" | "variables"
+      >,
+      scope: RecurrenceScope
+    ) => {
+      if (edits.hasDataEdits) {
+        await updateEvent.mutateAsync({
+          ...edits.variables,
+          // Leave unchanged occurrence details out of series updates.
+          event: eventForScope({
+            edited: edits.variables.event,
+            occurrence: event,
+            scope,
+          }),
+          failureMessage: SAVE_FAILURE_MESSAGE,
+          optimistic: false,
+          // The editor says what failed, beside Save.
+          quiet: true,
+          recurrenceScope: scope,
+        });
+      }
+      if (edits.calendarChanged && event) {
+        const move = moveEvent.mutateAsync({
+          accountId,
+          calendarId,
+          destinationCalendarId: edits.calendarChanged.destinationCalendarId,
+          eventId: event.id,
+          failureMessage: SAVE_FAILURE_MESSAGE,
+          // The editor says what failed, beside Save.
+          quiet: true,
+          scope,
+        });
+        // The edits are in by now: a failed move mustn't say they aren't.
+        await (edits.hasDataEdits
+          ? move.catch((cause: unknown) => {
+              throw new SavedNotMovedError(cause);
+            })
+          : move);
+      }
+    },
+    [accountId, calendarId, event, moveEvent, updateEvent]
+  );
+
+  // The scope the save dialog shows and saves with, worked out each time
+  // from the pending edit and the series as loaded now.
+  const pendingFacts =
+    pendingSave && event
+      ? saveFacts({
+          edited: pendingSave.variables.event,
+          event,
+          timeZone,
+        })
+      : { dateMoved: false };
+  const saveScopeChanges: EventSaveChanges = {
+    calendarMoved: Boolean(pendingSave?.calendarChanged),
+    patternChanged: pendingSave?.patternChanged ?? false,
+    ...pendingFacts,
+    ...seriesStatus,
+  };
+  const saveDialog = {
+    // Explain the choices disabled by the edit or a pending series load.
+    description: eventSaveDescription(saveScopeChanges),
+    disabled: eventSaveDisabledScopes(saveScopeChanges),
+  };
+  const saveScope = chosenScope(
+    selectedScope,
+    pendingSave?.defaultScope ?? "this",
+    saveDialog.disabled
+  );
+  const commitPendingSave = useCallback(() => {
     if (!pendingSave) {
       return;
     }
-    const { variables, hasDataEdits, calendarChanged } = pendingSave;
-    if (hasDataEdits) {
-      await updateEvent.mutateAsync({
-        ...variables,
-        recurrenceScope: selectedScope,
-      });
-    }
-    if (calendarChanged && event) {
-      await moveEvent.mutateAsync({
-        accountId,
-        calendarId,
-        destinationCalendarId: calendarChanged.destinationCalendarId,
-        eventId: event.id,
-        scope: selectedScope,
-      });
-    }
-    dispatchDialog({ type: "clear-pending-save" });
-  }, [
-    accountId,
-    calendarId,
-    event,
-    moveEvent,
-    pendingSave,
-    selectedScope,
-    updateEvent,
-  ]);
+    const save = saveEdits(pendingSave, saveScope);
+    // The save stays pending until the next one replaces it, so the
+    // dialog's words don't change as it fades.
+    holdForSave(save, SAVE_FAILURE_MESSAGE);
+  }, [holdForSave, pendingSave, saveEdits, saveScope]);
 
   const handleDelete = useCallback(() => {
-    if (readOnly) {
+    if (savingRef.current) {
       return;
     }
     if (!event) {
@@ -680,11 +924,16 @@ export function EventEditPopover({
     setOpen(false);
     if (event.recurringEventId || event.recurrence?.length) {
       const defaultScope = event.recurringEventId ? "this" : "all";
-      dispatchDialog({ scope: defaultScope, type: "open-recurring-delete" });
+      // Asked outside this block, which a delete takes off the calendar.
+      setRecurringDelete((before) => ({
+        id: (before?.id ?? 0) + 1,
+        open: true,
+        target: { accountId, calendarId, defaultScope, event },
+      }));
     } else {
       dispatchDialog({ type: "open-simple-delete" });
     }
-  }, [event, readOnly, setOpen]);
+  }, [accountId, calendarId, event, setOpen, setRecurringDelete]);
 
   const confirmSimpleDelete = useCallback(() => {
     if (!event) {
@@ -699,95 +948,74 @@ export function EventEditPopover({
     dispatchDialog({ type: "set-simple-delete-open", value: false });
   }, [accountId, calendarId, deleteEvent, event]);
 
-  const commitDelete = useCallback(async () => {
-    if (!event) {
-      return;
-    }
-    await deleteEvent.mutateAsync({
-      accountId,
-      calendarId,
-      eventId: event.id,
-      scope: deleteScope,
-    });
-  }, [accountId, calendarId, deleteEvent, deleteScope, event]);
-
   const handleCancel = useCallback(() => {
-    setOpen(false);
+    if (!savingRef.current) {
+      setOpen(false);
+    }
   }, [setOpen]);
 
   const handleSave = useCallback(() => {
-    if (readOnly) {
-      setOpen(false);
+    if (savingRef.current) {
       return;
     }
     const request = buildCloseSaveRequestRef.current?.() ?? { type: "none" };
-    setOpen(false);
-
+    if (request.type === "invalid") {
+      // The form says why (it, or its repeat, ends before it starts).
+      return;
+    }
     if (request.type === "none") {
+      setOpen(false);
       return;
     }
 
     if (request.type === "create") {
-      createEvent.mutate(request.payload);
+      holdForSave(
+        createEvent.mutateAsync({
+          ...request.payload,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+          quiet: true,
+        }),
+        EVENT_CREATE_FAILURE_MESSAGE
+      );
       return;
     }
 
     if (request.type === "save") {
+      // A recurring event asks for the scope over the editor, which stays
+      // open: Cancel goes back to it with the edits.
       if (request.isRecurring) {
-        const forceAll = Boolean(request.calendarChanged);
-        const scope = forceAll ? "all" : request.defaultScope;
+        // Where the user was (the title, Save), for a Cancel to return to.
+        focusBeforeScopeRef.current = focusedElement();
+        // The preferred scope is kept as is: the dialog shows the nearest
+        // one available, and returns to it once it's on.
         dispatchDialog({
           pendingSave: {
             calendarChanged: request.calendarChanged,
-            defaultScope: scope,
+            defaultScope: request.defaultScope,
             hasDataEdits: request.hasDataEdits,
+            patternChanged: request.patternChanged,
             variables: request.variables,
           },
-          scope,
           type: "open-scope-dialog",
         });
         return;
       }
 
-      const saveAndMove = async () => {
-        if (request.hasDataEdits) {
-          await updateEvent.mutateAsync({
-            ...request.variables,
-            recurrenceScope: "this",
-          });
-        }
-        if (request.calendarChanged && event) {
-          await moveEvent.mutateAsync({
-            accountId,
-            calendarId,
-            destinationCalendarId:
-              request.calendarChanged.destinationCalendarId,
-            eventId: event.id,
-            scope: "this",
-          });
-        }
-      };
-      saveAndMove().catch(() => null);
+      holdForSave(saveEdits(request, "this"), SAVE_FAILURE_MESSAGE);
     }
-  }, [
-    accountId,
-    calendarId,
-    createEvent,
-    event,
-    moveEvent,
-    readOnly,
-    setOpen,
-    updateEvent,
-  ]);
+  }, [createEvent, holdForSave, saveEdits, setOpen]);
 
+  const dialogOver = scopeDialogOpen || simpleDeleteConfirmOpen;
   useHotkeys(
     "mod+enter",
     (e) => {
       e.preventDefault();
       handleSave();
     },
-    { enabled: open && !readOnly, enableOnFormTags: true },
-    [handleSave, open, readOnly]
+    // Not behind a dialog over the editor (the scope or delete question):
+    // there Cmd+Enter would re-ask and drop the choice made in it.
+    { enabled: open && !readOnly && !dialogOver, enableOnFormTags: true },
+    [dialogOver, handleSave, open, readOnly]
   );
 
   return (
@@ -802,29 +1030,47 @@ export function EventEditPopover({
       >
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent
-          align={align}
-          className="w-[420px] space-y-3 p-4"
+          align={narrowWindow ? "center" : align}
+          className="max-h-(--radix-popover-content-available-height) w-[420px] max-w-[calc(100vw-1rem)] space-y-3 overflow-y-auto p-4"
+          // Fits the space Radix measured and the window's width, scrolling
+          // long notes rather than running off screen.
+          collisionPadding={8}
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             handleCancel();
           }}
+          // Clicks in the scope dialog over the editor land outside it.
           onInteractOutside={(e) => {
             e.preventDefault();
-            handleCancel();
+            if (!scopeDialogOpen) {
+              handleCancel();
+            }
           }}
+          // Editing, focus goes to the editor itself rather than its title
+          // (selected, a keystroke would replace it): Tab starts inside,
+          // and the calendar's shortcuts stay out of the dialog.
           onOpenAutoFocus={(e) => {
             if (mode === "edit") {
               e.preventDefault();
+              if (e.currentTarget instanceof HTMLElement) {
+                e.currentTarget.focus();
+              }
             }
           }}
-          side={side}
+          ref={contentRef}
+          // Beside its event there's no room for it on a narrow window, and
+          // Radix only shifts a side placement up or down: below the event,
+          // it shifts sideways to fit.
+          side={narrowWindow ? "bottom" : side}
         >
           <EventEditForm
             accountId={accountId}
             calendarId={calendarId}
             closeSaveRequestRef={buildCloseSaveRequestRef}
+            dialogOver={dialogOver}
             end={end}
             event={event}
+            isSaving={isSaving}
             key={event?.id ?? "create-event"}
             mode={mode}
             onCancel={handleCancel}
@@ -833,24 +1079,42 @@ export function EventEditPopover({
             open={open}
             readOnly={readOnly}
             readOnlyReason={readOnlyReason}
+            saveFailure={saveFailure}
             start={start}
           />
         </PopoverContent>
       </Popover>
 
-      {/* Post-close recurrence scope prompt (covers both save and move for recurring events). */}
+      {/* Recurrence scope prompt over the editor (covers both save and move for recurring events). */}
       <RecurrenceScopeDialog
-        description={
-          pendingSave?.calendarChanged
-            ? "Moving to a different calendar applies to all events in the series."
-            : "Choose how broadly to apply your changes."
-        }
-        disabledScopes={
-          pendingSave?.calendarChanged
-            ? { following: true, this: true }
-            : undefined
-        }
-        onCancel={() => dispatchDialog({ type: "clear-pending-save" })}
+        // Says why each scope that's off is.
+        description={saveDialog.description}
+        disabledScopes={saveDialog.disabled}
+        // The dialog has no trigger to return focus to, and a save remounts
+        // the field it came from, so focus would fall to the page, where the
+        // calendar's keys could navigate away from the editor. On Cancel it
+        // goes back where the user was; during a save (or after it failed),
+        // to the editor; once the editor has closed, it stays where that
+        // put it (the event).
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          const content = contentRef.current;
+          // Already in the editor: a fast failure's message took it as the
+          // dialog faded, and keeps it.
+          if (!(open && content) || content.contains(document.activeElement)) {
+            return;
+          }
+          const before = focusBeforeScopeRef.current;
+          if (
+            !savingRef.current &&
+            before?.isConnected &&
+            content.contains(before)
+          ) {
+            before.focus();
+          } else {
+            content.focus();
+          }
+        }}
         onConfirm={commitPendingSave}
         onOpenChange={(value) =>
           dispatchDialog({ type: "set-scope-dialog-open", value })
@@ -859,27 +1123,15 @@ export function EventEditPopover({
           dispatchDialog({ type: "set-selected-scope", value })
         }
         open={scopeDialogOpen}
-        title="Save recurring event changes"
-        value={selectedScope}
-      />
-
-      {/* Delete scope dialog for recurring events */}
-      <RecurrenceScopeDialog
-        confirmLabel="Delete"
-        description="Choose how broadly to apply the deletion."
-        onCancel={() =>
-          dispatchDialog({ type: "set-delete-dialog-open", value: false })
-        }
-        onConfirm={commitDelete}
-        onOpenChange={(value) =>
-          dispatchDialog({ type: "set-delete-dialog-open", value })
-        }
-        onValueChange={(value) =>
-          dispatchDialog({ type: "set-delete-scope", value })
-        }
-        open={deleteDialogOpen}
-        title="Delete recurring event"
-        value={deleteScope}
+        options={RECURRENCE_SCOPE_OPTIONS}
+        subject={savedSubject(
+          pendingSave,
+          event,
+          Boolean(pendingFacts.dateMoved),
+          timeZone
+        )}
+        title={SCOPE_DIALOG_COPY.saveEvent.title}
+        value={saveScope}
       />
 
       {/* Simple delete confirmation for non-recurring events */}
@@ -939,8 +1191,7 @@ function buildCreatePayload(
         description: values.description?.trim() || undefined,
         end: temporalPayload.endPayload,
         location: values.location?.trim() || undefined,
-        recurrence:
-          values.recurrence?.length > 0 ? values.recurrence : undefined,
+        recurrence: values.recurrence?.length ? values.recurrence : undefined,
         start: temporalPayload.startPayload,
         summary: trimmedTitle,
       },
@@ -963,13 +1214,16 @@ function buildEditPayload(
     event: GoogleEvent | undefined;
     hasEdits: boolean;
     masterRecurrence: string[] | null | undefined;
+    /** The user used the Repeat control. */
+    recurrenceEdited: boolean;
+    /** The zone the editor shows days in. */
+    timeZone: string;
   }
 ): CloseSaveRequest {
   const calendarChanged = values.selectedCalendarId !== ctx.calendarId;
   if (!(ctx.hasEdits || calendarChanged)) {
     return { type: "none" };
   }
-
   const temporalPayload = buildTemporalPayload(
     values,
     ctx.clampToStartIfNeeded,
@@ -979,7 +1233,7 @@ function buildEditPayload(
         ctx.event?.recurringEventId ||
         ctx.event?.recurrence?.length ||
         ctx.masterRecurrence?.length
-          ? ctx.calendarTimeZone
+          ? (ctx.calendarTimeZone ?? ctx.timeZone)
           : undefined,
     }
   );
@@ -992,9 +1246,17 @@ function buildEditPayload(
       ctx.event?.recurrence?.length ||
       ctx.masterRecurrence?.length
   );
-  const defaultScope: RecurrenceScope = ctx.event?.recurringEventId
-    ? "this"
-    : "all";
+  const patternChanged = repeatChanged({
+    edited: ctx.recurrenceEdited,
+    recurrence: values.recurrence,
+    source: ctx.event
+      ? savedSeriesRecurrence(ctx.event, ctx.masterRecurrence)
+      : [],
+  });
+  let defaultScope: RecurrenceScope = "all";
+  if (ctx.event?.recurringEventId) {
+    defaultScope = patternChanged ? "following" : "this";
+  }
 
   const variables: UpdateGoogleEventInput = {
     accountId: ctx.accountId,
@@ -1004,17 +1266,11 @@ function buildEditPayload(
       colorId: values.colorId ?? undefined,
       conferenceData: ctx.conferenceData ?? undefined,
       description: values.description ?? "",
-      end: {
-        ...ctx.event?.end,
-        ...temporalPayload.endPayload,
-      },
+      end: withEditedTime(ctx.event?.end, temporalPayload.endPayload),
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
-      recurrence: values.recurrence ?? ctx.event?.recurrence,
-      start: {
-        ...ctx.event?.start,
-        ...temporalPayload.startPayload,
-      },
+      recurrence: patternChanged ? values.recurrence : undefined,
+      start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
       summary: values.summary.trim(),
     },
     eventId: ctx.event?.id ?? "",
@@ -1027,6 +1283,7 @@ function buildEditPayload(
     defaultScope,
     hasDataEdits: ctx.hasEdits,
     isRecurring,
+    patternChanged,
     type: "save",
     variables,
   };
@@ -1035,12 +1292,10 @@ function buildEditPayload(
 function MeetingSection({
   meetingLink,
   isConferencePending,
-  readOnly = false,
   onCreateMeeting,
 }: {
   meetingLink: MeetingLink | null;
   isConferencePending: boolean;
-  readOnly?: boolean;
   onCreateMeeting: () => void;
 }) {
   if (meetingLink) {
@@ -1078,7 +1333,6 @@ function MeetingSection({
         Meeting
       </Label>
       <Button
-        disabled={readOnly}
         onClick={onCreateMeeting}
         size="sm"
         type="button"
@@ -1096,7 +1350,6 @@ function EventColorAndTitleRow({
   selectedColorId,
   calendarFallbackColor,
   isCreateMode,
-  readOnly = false,
   summary,
   onSelectColor,
   onSummaryChange,
@@ -1105,7 +1358,6 @@ function EventColorAndTitleRow({
   selectedColorId: string | undefined;
   calendarFallbackColor: string | undefined;
   isCreateMode: boolean;
-  readOnly?: boolean;
   summary: string;
   onSelectColor: (colorKey: string | undefined) => void;
   onSummaryChange: (value: string) => void;
@@ -1123,10 +1375,8 @@ function EventColorAndTitleRow({
             aria-label="Pick color"
             className={cn(
               "size-8 rounded-full border-2 shadow-sm transition",
-              readOnly ? "cursor-default" : "",
               selectedColorId ? "border-transparent" : "border-muted"
             )}
-            disabled={readOnly}
             style={{ background: displayColor }}
             type="button"
           />
@@ -1142,7 +1392,6 @@ function EventColorAndTitleRow({
                     "size-7 rounded-full border-2 transition",
                     isSelected ? "ring-2 ring-primary ring-offset-2" : ""
                   )}
-                  disabled={readOnly}
                   key={colorKey}
                   onClick={(e) => {
                     e.preventDefault();
@@ -1158,7 +1407,6 @@ function EventColorAndTitleRow({
             })}
             <Button
               className="size-7 p-0 text-[10px]"
-              disabled={readOnly}
               onClick={() => onSelectColor(undefined)}
               type="button"
               variant="ghost"
@@ -1173,19 +1421,189 @@ function EventColorAndTitleRow({
         className="flex-1"
         onChange={(e) => onSummaryChange(e.target.value)}
         placeholder={isCreateMode ? "Event title (required)" : "Event title"}
-        readOnly={readOnly}
         value={summary}
       />
     </div>
   );
 }
 
+const REPEATS_PREFIX = /^Repeats /;
+const FIRST_LETTER = /^./;
+const WEEKLY_ON = /^Weekly on /;
+
+/** "Repeats weekly on Mon" as the Repeat button says it: "Weekly on Mon". */
+function repeatRuleLabel(
+  recurrenceRule: string | undefined,
+  seriesStart: Temporal.PlainDate | null
+): string | null {
+  const repeats = recurrenceRule
+    ? describeEventRecurrence({
+        rules: [recurrenceRule],
+        start: seriesStart ?? undefined,
+      })
+    : null;
+  return repeats
+    ? repeats
+        .replace(REPEATS_PREFIX, "")
+        .replace(FIRST_LETTER, (c) => c.toUpperCase())
+    : null;
+}
+
+function RepeatChipText({ rule }: { rule: string }) {
+  return (
+    <span className="min-w-0 truncate">
+      {rule
+        .replace(WEEKLY_ON, "")
+        .replace(FIRST_LETTER, (c) => c.toUpperCase())}
+    </span>
+  );
+}
+
+/**
+ * In place of the repeat chip when the series' rule didn't load: its repeat
+ * can't be edited from a copy that may be old, so say so and offer to load
+ * it again.
+ */
+function RepeatRetryButton({
+  besideRule,
+  onRetry,
+}: {
+  /** A known (older) rule is shown beside it, so the icon is already there. */
+  besideRule: boolean;
+  onRetry?: () => void;
+}) {
+  const reason = besideRule
+    ? "The series' repeat didn't refresh. Retry"
+    : "The series' repeat didn't load. Retry";
+  return (
+    <Button
+      aria-label={reason}
+      // Gives way first, like the repeat chip: the calendar beside it stays.
+      className="h-8 min-w-0 shrink gap-1.5 px-2 text-xs"
+      onClick={onRetry}
+      size="sm"
+      title={reason}
+      variant="outline"
+    >
+      {besideRule ? null : <Repeat className="size-4 shrink-0" />}
+      <span className="truncate">Retry repeat</span>
+    </Button>
+  );
+}
+
+/** The repeat chip, which opens the repeat editor. */
+function RepeatControl({
+  allDay,
+  disabled,
+  loading,
+  onRecurrenceChange,
+  recurrenceRule,
+  ruleLabel,
+  seriesStart,
+  seriesTimeZone,
+  endFrom,
+}: {
+  allDay: boolean;
+  disabled: boolean;
+  /** The event's own day, for an end date's default and minimum. */
+  endFrom: Temporal.PlainDate | null;
+  /**
+   * The occurrence's series rule hasn't loaded yet: it repeats, but how
+   * isn't known, so it mustn't read as "doesn't repeat".
+   */
+  loading: boolean;
+  onRecurrenceChange: (rule: string | null) => void;
+  recurrenceRule: string | undefined;
+  ruleLabel: string | null | undefined;
+  seriesStart: Temporal.PlainDate | null;
+  seriesTimeZone: string;
+}) {
+  const waiting = loading && !ruleLabel;
+  const ruleText = waiting ? "Loading repeat…" : ruleLabel;
+  const repeatLabel = ruleText;
+  // While the series' rule isn't usable (it's being fetched again), an
+  // open editor closes and its changes are dropped: one then would keep
+  // the old rule.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+  return (
+    <Popover onOpenChange={setOpen} open={open && !disabled}>
+      <PopoverTrigger asChild>
+        {/* Says how the event repeats, so the editor shows it's a series. */}
+        <Button
+          aria-label={
+            waiting ? "Loading repeat…" : `Repeat: ${repeatLabel ?? "None"}`
+          }
+          className={cn(
+            // The rule gives way first: the calendar beside it stays readable.
+            repeatLabel ? "h-8 min-w-0 shrink gap-1.5 px-2 text-xs" : "size-8"
+          )}
+          disabled={disabled}
+          size={repeatLabel ? "sm" : "icon"}
+          title={repeatLabel ?? "Repeat"}
+          variant={repeatLabel ? "secondary" : "outline"}
+        >
+          <Repeat className="size-4 shrink-0" />
+          {ruleLabel ? <RepeatChipText rule={ruleLabel} /> : null}
+          {waiting ? <span className="truncate">{ruleText}</span> : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[360px] max-w-[calc(100vw-1rem)]"
+        collisionPadding={8}
+      >
+        <RecurrenceEditor
+          allDay={allDay}
+          endFrom={
+            endFrom ?? seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)
+          }
+          onChange={(rule) => {
+            if (!disabled) {
+              onRecurrenceChange(rule);
+            }
+          }}
+          recurrenceRule={recurrenceRule}
+          start={seriesStart ?? Temporal.Now.plainDateISO(seriesTimeZone)}
+          timeZone={seriesTimeZone}
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** What the repeat row's live region says: why it waits, or that it failed. */
+function repeatAnnouncement(
+  waitReason: string | undefined,
+  failed: boolean,
+  ruleKnown: boolean
+): string {
+  if (waitReason) {
+    return waitReason;
+  }
+  if (!failed) {
+    return "";
+  }
+  return ruleKnown
+    ? "The series' repeat didn't refresh"
+    : "The series' repeat didn't load";
+}
+
 function EventAllDayAndRecurrenceRow({
   allDay,
   onToggleAllDay,
-  canEditRecurrence,
-  readOnly = false,
+  recurrenceLoading,
+  recurrenceFailed = false,
+  recurrenceWaitReason,
+  onRetryRecurrence,
   recurrenceRule,
+  seriesStart,
+  seriesTimeZone,
+  endFrom,
   onRecurrenceChange,
   calendarOptions,
   calendarValue,
@@ -1193,9 +1611,23 @@ function EventAllDayAndRecurrenceRow({
 }: {
   allDay: boolean;
   onToggleAllDay: () => void;
-  canEditRecurrence: boolean;
-  readOnly?: boolean;
+  /** The occurrence's pattern isn't usable yet (loading, or it failed). */
+  recurrenceLoading: boolean;
+  /** Loading the occurrence's pattern failed: offer to try again. */
+  recurrenceFailed?: boolean;
+  /** Why the repeat waits (offline), for its tooltip. */
+  recurrenceWaitReason?: string;
+  onRetryRecurrence?: () => void;
   recurrenceRule: string | undefined;
+  /**
+   * The series' start day in its own zone, for the rule's words and the
+   * editor's defaults.
+   */
+  seriesStart: Temporal.PlainDate | null;
+  /** The series' zone (the app's for a new one), where its days count. */
+  seriesTimeZone: string;
+  /** The event's own day in the series' zone, for an end date's minimum. */
+  endFrom: Temporal.PlainDate | null;
   onRecurrenceChange: (rule: string | null) => void;
   calendarOptions: {
     accountId: string;
@@ -1206,17 +1638,33 @@ function EventAllDayAndRecurrenceRow({
   calendarValue: string;
   onCalendarChange: (value: string) => void;
 }) {
+  const ruleLabel = repeatRuleLabel(recurrenceRule, seriesStart);
+  const waitShown = Boolean(recurrenceWaitReason) && !ruleLabel;
+  const retryShown = !recurrenceWaitReason && recurrenceFailed;
+  // What the live region says: why the repeat waits, or that it didn't
+  // load. Filled after mount: a live region that mounts already filled
+  // often isn't announced (an editor opened offline).
+  const announcement = repeatAnnouncement(
+    recurrenceWaitReason,
+    retryShown,
+    Boolean(ruleLabel)
+  );
+  const [announced, setAnnounced] = useState("");
+  useEffect(() => {
+    setAnnounced(announcement);
+  }, [announcement]);
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button
+        aria-pressed={allDay}
         className="gap-2 text-xs"
-        disabled={readOnly}
         onClick={onToggleAllDay}
         size="sm"
         type="button"
         variant="outline"
       >
         <div
+          aria-hidden
           className={cn(
             "flex size-4 items-center justify-center rounded border transition-colors",
             allDay
@@ -1228,37 +1676,51 @@ function EventAllDayAndRecurrenceRow({
         </div>
         All day
       </Button>
-      {canEditRecurrence ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              className="size-8"
-              disabled={readOnly}
-              size="icon"
-              variant="outline"
-            >
-              <Repeat className="size-4" />
-              <span className="sr-only">Edit recurrence</span>
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-[360px]">
-            <RecurrenceEditor
-              onChange={onRecurrenceChange}
-              recurrenceRule={recurrenceRule}
-              visible
-            />
-          </PopoverContent>
-        </Popover>
-      ) : null}
-      <Select
-        disabled={readOnly}
-        onValueChange={onCalendarChange}
-        value={calendarValue}
+      {/* A known rule stays, dimmed, while it can't be used; with none
+          known, the wait or the retry stands in for the chip. */}
+      {waitShown || (retryShown && !ruleLabel) ? null : (
+        <RepeatControl
+          allDay={allDay}
+          disabled={recurrenceLoading}
+          endFrom={endFrom}
+          loading={recurrenceLoading}
+          onRecurrenceChange={onRecurrenceChange}
+          recurrenceRule={recurrenceRule}
+          ruleLabel={ruleLabel}
+          seriesStart={seriesStart}
+          seriesTimeZone={seriesTimeZone}
+        />
+      )}
+      {/* Offline: why the repeat waits ("Offline", the full reason for
+          screen readers), in a live region that stays mounted and fills
+          after it mounts, so it's announced. A retry would only wait too.
+          A failed load is announced there as well. */}
+      <span
+        className={
+          recurrenceWaitReason
+            ? "flex h-8 min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-xs"
+            : "sr-only"
+        }
+        role="status"
       >
-        <SelectTrigger
-          className="ml-auto h-8 w-auto min-w-0 gap-1.5 px-2 text-xs"
-          disabled={readOnly}
-        >
+        {recurrenceWaitReason ? (
+          <>
+            {waitShown ? (
+              <Repeat aria-hidden className="size-4 shrink-0" />
+            ) : null}
+            <span aria-hidden>Offline</span>
+          </>
+        ) : null}
+        <span className="sr-only">{announced}</span>
+      </span>
+      {retryShown ? (
+        <RepeatRetryButton
+          besideRule={Boolean(ruleLabel)}
+          onRetry={onRetryRecurrence}
+        />
+      ) : null}
+      <Select onValueChange={onCalendarChange} value={calendarValue}>
+        <SelectTrigger className="ml-auto h-8 w-auto min-w-28 max-w-44 shrink-0 gap-1.5 px-2 text-xs">
           <SelectValue placeholder="Calendar" />
         </SelectTrigger>
         <SelectContent>
@@ -1290,7 +1752,6 @@ function EventLocationCombobox({
   isSearching,
   mapsUrl,
   locationPopoverOpen,
-  readOnly = false,
   onInputValueChange,
   onOpenChange,
   onValueChange,
@@ -1306,7 +1767,6 @@ function EventLocationCombobox({
   isSearching: boolean;
   mapsUrl: string | null;
   locationPopoverOpen: boolean;
-  readOnly?: boolean;
   onInputValueChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
   onValueChange: (value: string | null) => void;
@@ -1318,7 +1778,6 @@ function EventLocationCombobox({
         Location
       </Label>
       <Combobox
-        disabled={readOnly}
         inputValue={location}
         onInputValueChange={onInputValueChange}
         onOpenChange={onOpenChange}
@@ -1329,7 +1788,6 @@ function EventLocationCombobox({
           <div className="flex-1">
             <ComboboxInput
               className="w-full"
-              disabled={readOnly}
               onFocus={onFocusInput}
               placeholder="Where?"
               showClear={Boolean(location)}
@@ -1390,15 +1848,262 @@ function resolveWatchedDefaults(watched: Partial<EventFormValues>) {
   };
 }
 
+/**
+ * What a recurring save moves, as the scope dialog's line ("Retro → Mon,
+ * Nov 9 · 4:00 – 4:45 PM"), when it changes the occurrence's times; the
+ * same line a drop on the grid shows.
+ */
+function savedSubject(
+  pendingSave: PendingSave | null,
+  event: GoogleEvent | undefined,
+  /** It moved to another day (rather than took a new time on its own). */
+  moved: boolean,
+  timeZone: string
+): ScopeDialogSubject | undefined {
+  const edited = pendingSave?.variables.event;
+  if (!(edited && event)) {
+    return;
+  }
+  const at = (time: GoogleEvent["start"] | undefined) =>
+    time?.dateTime ? Date.parse(time.dateTime) : time?.date;
+  if (
+    at(edited.start) === at(event.start) &&
+    at(edited.end) === at(event.end)
+  ) {
+    return;
+  }
+  const start = new Date(
+    edited.start?.dateTime ?? `${edited.start?.date}T00:00`
+  );
+  const end = new Date(edited.end?.dateTime ?? `${edited.end?.date}T00:00`);
+  return {
+    moved,
+    name: edited.summary || "(No title)",
+    when: describeEventWhen(edited, start, end, timeZone),
+  };
+}
+
+/** When a read-only event happens, in words: "Thu, Nov 12 · All day". */
+function describeEventWhen(
+  event: GoogleEvent | undefined,
+  start: Date,
+  end: Date,
+  timeZone: string
+): string {
+  if (event?.start?.date) {
+    const first = Temporal.PlainDate.from(event.start.date);
+    // Google's all-day end date is exclusive.
+    const last = event.end?.date
+      ? Temporal.PlainDate.from(event.end.date).subtract({ days: 1 })
+      : first;
+    return formatAllDayWhen(first, last);
+  }
+  const toZoned = (date: Date) =>
+    Temporal.Instant.fromEpochMilliseconds(date.getTime()).toZonedDateTimeISO(
+      timeZone
+    );
+  return formatEventWhen(toZoned(start), toZoned(end));
+}
+
+/**
+ * A locked, Gmail, or birthday event, shown as information rather than a
+ * disabled form: why it can't be edited, then what people open it for (the
+ * time, joining the call, the place on a map, the notes to copy).
+ */
+function ReadOnlyEventDetails({
+  calendarColor,
+  calendarLabel,
+  description,
+  end,
+  event,
+  location,
+  mapsUrl,
+  meetingLink,
+  onClose,
+  reason,
+  recurrence,
+  repeatDay,
+  seriesTimeZone,
+  start,
+  summary,
+}: {
+  calendarColor: string | undefined;
+  calendarLabel: string | undefined;
+  description: string | undefined;
+  end: Date;
+  event: GoogleEvent | undefined;
+  location: string | undefined;
+  mapsUrl: string | null;
+  meetingLink: MeetingLink | null;
+  onClose?: () => void;
+  reason: string | null | undefined;
+  /** The series' RRULEs (the event's own, or its master's). */
+  recurrence: string[];
+  /** The displayed start day, used for implicit repeat days. */
+  repeatDay: Temporal.PlainDate | null;
+  /** The series' zone, where its end day is counted. */
+  seriesTimeZone: string;
+  start: Date;
+  summary: string | undefined;
+}) {
+  const timeZone = useAtomValue(timezoneAtom);
+  const repeats = describeEventRecurrence({
+    eventType: event?.eventType,
+    recurringEventId: event?.recurringEventId,
+    rules: recurrence,
+    start: repeatDay ?? pickerDateToTemporal(start),
+    timeZone: seriesTimeZone,
+  });
+  // Google keeps birthdays on the primary calendar; name what they are.
+  const calendarName =
+    event?.eventType === "birthday" ? "Birthdays" : calendarLabel;
+  const place = location?.trim();
+  const notes = description?.trim();
+  return (
+    <div className="space-y-3 text-sm">
+      {reason ? (
+        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
+          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <p className="text-muted-foreground">{reason}</p>
+        </div>
+      ) : null}
+      <div className="space-y-1">
+        <p className="font-medium text-base">{summary || "(No title)"}</p>
+        <p className="text-muted-foreground">
+          {describeEventWhen(event, start, end, timeZone)}
+        </p>
+        {repeats ? <p className="text-muted-foreground">{repeats}</p> : null}
+        {calendarName ? (
+          <p className="flex items-center gap-1.5 text-muted-foreground">
+            <span
+              aria-hidden
+              className="size-2 rounded-full"
+              style={{ backgroundColor: calendarColor ?? "currentColor" }}
+            />
+            {calendarName}
+          </p>
+        ) : null}
+      </div>
+      {meetingLink ? (
+        <Button asChild size="sm" type="button" variant="outline">
+          <a href={meetingLink.url} rel="noreferrer" target="_blank">
+            <Video className="size-3" />
+            Join {meetingLink.label}
+          </a>
+        </Button>
+      ) : null}
+      {place ? (
+        <p className="flex items-start gap-1.5">
+          <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          {mapsUrl ? (
+            <a
+              className="underline underline-offset-2"
+              href={mapsUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {place}
+            </a>
+          ) : (
+            place
+          )}
+        </p>
+      ) : null}
+      {notes ? <p className="whitespace-pre-wrap">{notes}</p> : null}
+      {/* Close stays in view while long notes scroll (the popover's p-4
+          is offset so nothing shows beneath it). */}
+      {onClose ? (
+        <div className="sticky -bottom-4 -mx-4 -mb-4 flex justify-end bg-popover px-4 pt-2 pb-4">
+          <Button onClick={onClose} size="sm" type="button" variant="ghost">
+            Close
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Moves the form's start, keeping the event's length (shared with iOS): a
+ * 2–4 PM meeting moved to 3 PM ends at 5 PM, onto the next day past
+ * midnight.
+ */
+function applyMovedStart(
+  values: EventFormValues,
+  setValue: UseFormSetValue<EventFormValues>,
+  next: { date?: Temporal.PlainDate; time?: Temporal.PlainTime }
+) {
+  if (!values.startDate) {
+    return;
+  }
+  const moved = moveEventStart(formRange(values, values.startDate), next);
+  const dirty = { shouldDirty: true };
+  setValue("startDate", temporalToPickerDate(moved.startDate), dirty);
+  setValue("endDate", temporalToPickerDate(moved.endDate), dirty);
+  if (moved.startTime) {
+    setValue(
+      "startTime",
+      moved.startTime.toString({ smallestUnit: "minute" }),
+      dirty
+    );
+  }
+  if (moved.endTime) {
+    setValue(
+      "endTime",
+      moved.endTime.toString({ smallestUnit: "minute" }),
+      dirty
+    );
+  }
+}
+
+/** The form's range as Temporal values, for moveEventStart. */
+function formRange(values: EventFormValues, startDate: Date) {
+  const time = (value: string) =>
+    !values.allDay && value ? Temporal.PlainTime.from(value) : null;
+  const start = pickerDateToTemporal(startDate);
+  return {
+    endDate: values.endDate ? pickerDateToTemporal(values.endDate) : start,
+    endTime: time(values.endTime),
+    startDate: start,
+    startTime: time(values.startTime),
+  };
+}
+
+/** Whether the form ends before it starts (Save stays off, with a reason). */
+function endsBeforeStart(values: Partial<EventFormValues>): boolean {
+  if (!(values.startDate && values.endDate)) {
+    return false;
+  }
+  const range = formRange(values as EventFormValues, values.startDate);
+  if (!(range.startTime && range.endTime)) {
+    return Temporal.PlainDate.compare(range.endDate, range.startDate) < 0;
+  }
+  return (
+    Temporal.PlainDateTime.compare(
+      range.endDate.toPlainDateTime(range.endTime),
+      range.startDate.toPlainDateTime(range.startTime)
+    ) < 0
+  );
+}
+
+function EndsBeforeStartNote({ values }: { values: Partial<EventFormValues> }) {
+  return endsBeforeStart(values) ? (
+    <p className="text-destructive text-xs">Ends before it starts.</p>
+  ) : null;
+}
+
 function EventFormActionRow({
   isCreateMode,
-  readOnly = false,
+  saveDisabled = false,
+  saving = false,
   onDelete,
   onCancel,
   onSave,
 }: {
   isCreateMode: boolean;
-  readOnly?: boolean;
+  saveDisabled?: boolean;
+  /** Saving: the row waits, and Save says so. */
+  saving?: boolean;
   onDelete: () => void;
   onCancel: () => void;
   onSave: () => void;
@@ -1407,7 +2112,7 @@ function EventFormActionRow({
     <>
       <Separator />
       <div className="flex items-center gap-2">
-        {isCreateMode || readOnly ? null : (
+        {isCreateMode ? null : (
           <Button
             className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
             onClick={onDelete}
@@ -1421,13 +2126,16 @@ function EventFormActionRow({
         )}
         <div className="ml-auto flex gap-2">
           <Button onClick={onCancel} size="sm" type="button" variant="ghost">
-            {readOnly ? "Close" : "Cancel"}
+            Cancel
           </Button>
-          {readOnly ? null : (
-            <Button onClick={onSave} size="sm" type="button">
-              Save
-            </Button>
-          )}
+          <Button
+            disabled={saveDisabled}
+            onClick={onSave}
+            size="sm"
+            type="button"
+          >
+            <SavingLabel saving={saving}>Save</SavingLabel>
+          </Button>
         </div>
       </div>
     </>
@@ -1442,10 +2150,13 @@ export function EventEditForm({
   end,
   mode,
   closeSaveRequestRef,
+  isSaving = false,
+  saveFailure = null,
   onSave,
   onCancel,
   onDelete,
   open,
+  dialogOver = false,
   readOnly = false,
   readOnlyReason,
   headerContent,
@@ -1458,12 +2169,18 @@ export function EventEditForm({
   end: Date;
   mode: "create" | "edit";
   closeSaveRequestRef: React.Ref<() => CloseSaveRequest>;
+  /** A save is running: the fields are read-only and Save says "Saving…". */
+  isSaving?: boolean;
+  /** Why the last save failed, shown beside Save. */
+  saveFailure?: string | null;
   /** Trigger the save flow (builds close-save request and processes it). */
   onSave: () => void;
   /** Close without saving. When provided, the form shows its own Save/Cancel buttons. */
   onCancel?: () => void;
   onDelete: () => void;
   open: boolean;
+  /** A dialog is open over the editor, which then takes no shortcuts. */
+  dialogOver?: boolean;
   readOnly?: boolean;
   readOnlyReason?: string | null;
   headerContent?: ReactNode;
@@ -1483,11 +2200,16 @@ export function EventEditForm({
       e.preventDefault();
       onDelete();
     },
-    { enabled: open && !isCreateMode && !readOnly },
-    [onDelete, open, isCreateMode, readOnly]
+    // Not behind a dialog over the editor (the scope or delete question).
+    { enabled: open && !isCreateMode && !readOnly && !dialogOver },
+    [dialogOver, onDelete, open, isCreateMode, readOnly]
   );
   // Closing the popover alone discards edits; the wrapper owns saves and dialogs.
   const hasUserEditedRef = useRef(false);
+  /** The user used the Repeat control; only then is the repeat saved. */
+  const recurrenceEditedRef = useRef(false);
+  // Days in the zone the app shows (and saves) times in.
+  const timeZone = useAtomValue(timezoneAtom);
 
   const masterQuery = useRecurringEventMaster({
     accountId,
@@ -1495,11 +2217,16 @@ export function EventEditForm({
     enabled: open,
     event: event ?? (null as GoogleEvent | null),
   });
+  // Use the event zone for displaying the repeat end date.
+  const seriesTimeZone = event?.start.timeZone ?? timeZone;
 
   const isAllDay = Boolean(event?.start?.date);
+  // All-day dates go to the pickers as local dates. (new Date("2026-11-12")
+  // is UTC midnight, which is the day before west of UTC, and saving would
+  // then move the event a day earlier.)
   const initialStartDate = useMemo(() => {
     if (isAllDay && event?.start?.date) {
-      return new Date(event.start.date);
+      return temporalToPickerDate(Temporal.PlainDate.from(event.start.date));
     }
     return start;
   }, [event?.start?.date, isAllDay, start]);
@@ -1507,12 +2234,8 @@ export function EventEditForm({
   const initialEndDate = useMemo(() => {
     if (isAllDay && event?.end?.date) {
       // Google all-day events use exclusive end date, subtract 1 day for display
-      const endPlainDate = pickerDateToTemporal(new Date(event.end.date));
-      const adjustedDate = endPlainDate.subtract({ days: 1 });
-      return new Date(
-        adjustedDate.year,
-        adjustedDate.month - 1,
-        adjustedDate.day
+      return temporalToPickerDate(
+        Temporal.PlainDate.from(event.end.date).subtract({ days: 1 })
       );
     }
     return end;
@@ -1520,10 +2243,8 @@ export function EventEditForm({
 
   const recurrenceSource = useMemo(
     () =>
-      event?.recurrence?.length
-        ? event.recurrence
-        : (masterQuery.data?.recurrence ?? []),
-    [event?.recurrence, masterQuery.data?.recurrence]
+      event ? savedSeriesRecurrence(event, masterQuery.data?.recurrence) : [],
+    [event, masterQuery.data?.recurrence]
   );
 
   const initialValues = useMemo<EventFormValues>(
@@ -1558,6 +2279,27 @@ export function EventEditForm({
   const { control, setValue, getValues } = useForm<EventFormValues>({
     defaultValues: initialValues,
   });
+  // A move or resize while the editor is open updates its times, keeping
+  // any other unsaved edits, so Save can't write the old times back.
+  const scheduleKey = `${initialStartDate?.getTime()}|${initialEndDate?.getTime()}`;
+  const lastScheduleKeyRef = useRef(scheduleKey);
+  useEffect(() => {
+    if (scheduleKey === lastScheduleKeyRef.current) {
+      return;
+    }
+    lastScheduleKeyRef.current = scheduleKey;
+    setValue("startDate", initialValues.startDate);
+    setValue("startTime", initialValues.startTime);
+    setValue("endDate", initialValues.endDate);
+    setValue("endTime", initialValues.endTime);
+  }, [initialValues, scheduleKey, setValue]);
+  // An occurrence's pattern lives on its master, which may load after the
+  // editor opened: show it then, unless the user has already changed it.
+  useEffect(() => {
+    if (!recurrenceEditedRef.current) {
+      setValue("recurrence", recurrenceSource);
+    }
+  }, [recurrenceSource, setValue]);
   const [pendingConference, setPendingConference] = useState<
     GoogleEvent["conferenceData"] | null
   >(null);
@@ -1597,7 +2339,9 @@ export function EventEditForm({
   );
   const canCreateMeeting = !(meetingLink || isConferencePending);
   const mapsUrl = locationQuery ? getMapsSearchUrl(locationQuery) : null;
-  const locationPopoverOpen = locationOpen && locationQuery.length >= 2;
+  // Closed while a save runs: its suggestions render outside the fieldset.
+  const locationPopoverOpen =
+    locationOpen && !isSaving && locationQuery.length >= 2;
 
   const effectiveAccountId = watchedValues.selectedAccountId ?? accountId;
   const effectiveCalendarId = watchedValues.selectedCalendarId ?? calendarId;
@@ -1620,8 +2364,7 @@ export function EventEditForm({
         }>
       >((acc, c) => {
         if (
-          (c.calendar.accessRole === "writer" ||
-            c.calendar.accessRole === "owner") &&
+          canWriteCalendar(c.calendar.accessRole) &&
           (isCreateMode || c.accountId === accountId)
         ) {
           acc.push({
@@ -1665,10 +2408,16 @@ export function EventEditForm({
     []
   );
 
+  const moveStart = (next: {
+    date?: Temporal.PlainDate;
+    time?: Temporal.PlainTime;
+  }) => {
+    hasUserEditedRef.current = true;
+    const before = getValues();
+    applyMovedStart(before, setValue, next);
+  };
+
   const handleTimeChange = (field: "startTime" | "endTime", value: string) => {
-    if (readOnly) {
-      return;
-    }
     if (!value) {
       hasUserEditedRef.current = true;
       setValue(field, "", { shouldDirty: true });
@@ -1679,6 +2428,10 @@ export function EventEditForm({
       return;
     }
 
+    if (field === "startTime" && getValues("startDate")) {
+      moveStart({ time: new Temporal.PlainTime(hours, minutes) });
+      return;
+    }
     hasUserEditedRef.current = true;
     setValue(
       field,
@@ -1691,9 +2444,6 @@ export function EventEditForm({
 
   const handleLocationInputChange = useCallback(
     (value: string) => {
-      if (readOnly) {
-        return;
-      }
       hasUserEditedRef.current = true;
       setValue("location", value, { shouldDirty: true });
       if (value.trim().length >= 2) {
@@ -1702,14 +2452,11 @@ export function EventEditForm({
         setLocationOpen(false);
       }
     },
-    [readOnly, setValue]
+    [setValue]
   );
 
   const handleLocationValueChange = useCallback(
     (value: string | null) => {
-      if (readOnly) {
-        return;
-      }
       if (!value) {
         return;
       }
@@ -1717,15 +2464,11 @@ export function EventEditForm({
       setValue("location", value, { shouldDirty: true });
       setLocationOpen(false);
     },
-    [readOnly, setValue]
+    [setValue]
   );
 
   const handleLocationOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (readOnly) {
-        setLocationOpen(false);
-        return;
-      }
       if (!nextOpen) {
         setLocationOpen(false);
         return;
@@ -1734,13 +2477,10 @@ export function EventEditForm({
         setLocationOpen(true);
       }
     },
-    [locationQuery.length, readOnly]
+    [locationQuery.length]
   );
 
   const handleCreateMeeting = useCallback(() => {
-    if (readOnly) {
-      return;
-    }
     if (!canCreateMeeting) {
       return;
     }
@@ -1751,12 +2491,14 @@ export function EventEditForm({
     if (!isCreateMode) {
       onSave();
     }
-  }, [canCreateMeeting, isCreateMode, onSave, readOnly]);
+  }, [canCreateMeeting, isCreateMode, onSave]);
 
   const buildCloseSaveRequest = useCallback(
     (values: EventFormValues): CloseSaveRequest => {
-      if (readOnly) {
-        return { type: "none" };
+      // Every save path (Save, Cmd+Enter, Add Meet, the create popover)
+      // comes through here, so none can write an end before the start.
+      if (endsBeforeStart(values)) {
+        return { type: "invalid" };
       }
       const resolvedConference =
         pendingConferenceRef.current ?? pendingConference;
@@ -1777,9 +2519,12 @@ export function EventEditForm({
         event,
         hasEdits: hasUserEditedRef.current,
         masterRecurrence: masterQuery.data?.recurrence,
+        recurrenceEdited: recurrenceEditedRef.current,
+        timeZone,
       });
     },
     [
+      timeZone,
       accountId,
       calendarId,
       clampToStartIfNeeded,
@@ -1788,7 +2533,6 @@ export function EventEditForm({
       calendar?.calendar.timeZone,
       masterQuery.data,
       pendingConference,
-      readOnly,
     ]
   );
 
@@ -1836,27 +2580,45 @@ export function EventEditForm({
     [applySharedFields, getSharedFields]
   );
 
+  const formStartDay = watchedValues.startDate
+    ? pickerDateToTemporal(watchedValues.startDate)
+    : null;
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
-  const recurrenceRule = watchedValues.recurrence?.[0];
-  const canEditRecurrence =
-    isCreateMode ||
-    Boolean(
-      event?.recurrence?.length ||
-        event?.recurringEventId ||
-        masterQuery.data?.recurrence?.length
+  const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
+  // Any editable event can repeat, a one-off one included. While an
+  // occurrence's pattern loads, the control waits: a change made before it
+  // arrives would be compared against nothing.
+  const recurrenceLoading = masterQuery.ruleUnavailable;
+
+  if (readOnly) {
+    const source = calendars.find(
+      (c) => c.accountId === accountId && c.calendar.id === calendarId
     );
+    return (
+      <ReadOnlyEventDetails
+        calendarColor={source?.calendar.backgroundColor ?? undefined}
+        calendarLabel={source?.calendar.summary}
+        description={watchedValues.description}
+        end={end}
+        event={event}
+        location={watchedValues.location}
+        mapsUrl={mapsUrl}
+        meetingLink={meetingLink}
+        onClose={onCancel}
+        reason={readOnlyReason}
+        recurrence={recurrenceSource}
+        repeatDay={formStartDay}
+        seriesTimeZone={seriesTimeZone}
+        start={start}
+        summary={watchedValues.summary}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-3">
+    <HeldFieldset className="min-w-0 space-y-3" saving={isSaving}>
       {headerContent ? <div>{headerContent}</div> : null}
-      {readOnly && readOnlyReason ? (
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-          <p className="text-muted-foreground">{readOnlyReason}</p>
-        </div>
-      ) : null}
-
       <EventColorAndTitleRow
         calendarFallbackColor={calendarFallbackColor}
         colorEntries={colorEntries}
@@ -1869,28 +2631,23 @@ export function EventEditForm({
           hasUserEditedRef.current = true;
           setValue("summary", value, { shouldDirty: true });
         }}
-        readOnly={readOnly}
         selectedColorId={watchedValues.colorId}
         summary={watchedValues.summary}
       />
-
       <Textarea
         onChange={(e) => {
           hasUserEditedRef.current = true;
           setValue("description", e.target.value, { shouldDirty: true });
         }}
         placeholder="Add details..."
-        readOnly={readOnly}
         value={watchedValues.description}
       />
-
       <Separator />
-
       <EventAllDayAndRecurrenceRow
         allDay={watchedValues.allDay}
         calendarOptions={calendarPickerOptions}
         calendarValue={`${effectiveAccountId}::${effectiveCalendarId}`}
-        canEditRecurrence={canEditRecurrence}
+        endFrom={formStartDay}
         onCalendarChange={(val) => {
           const opt = calendarPickerOptions.find(
             (c) => `${c.accountId}::${c.calendarId}` === val
@@ -1907,16 +2664,28 @@ export function EventEditForm({
         }}
         onRecurrenceChange={(rule) => {
           hasUserEditedRef.current = true;
-          setValue("recurrence", rule ? [rule] : [], { shouldDirty: true });
+          recurrenceEditedRef.current = true;
+          // Keep recurrence lines the repeat editor does not edit.
+          setValue(
+            "recurrence",
+            setPrimaryRecurrenceRule(getValues("recurrence"), rule),
+            { shouldDirty: true }
+          );
         }}
+        onRetryRecurrence={masterQuery.retry}
         onToggleAllDay={() => {
           hasUserEditedRef.current = true;
           setValue("allDay", !watchedValues.allDay, { shouldDirty: true });
         }}
-        readOnly={readOnly}
+        recurrenceFailed={masterQuery.ruleFailed}
+        recurrenceLoading={recurrenceLoading}
         recurrenceRule={recurrenceRule}
+        recurrenceWaitReason={
+          masterQuery.rulePaused ? "Repeat loads when you're online" : undefined
+        }
+        seriesStart={formStartDay}
+        seriesTimeZone={seriesTimeZone}
       />
-
       <div className="grid grid-cols-2 gap-2">
         <Controller
           control={control}
@@ -1929,7 +2698,6 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
-                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="size-4" />
@@ -1943,9 +2711,14 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
-                  disabled={readOnly}
+                  // Opens on the event's month, not today's.
+                  defaultMonth={field.value ?? undefined}
                   mode="single"
                   onSelect={(date) => {
+                    if (date && getValues("startDate")) {
+                      moveStart({ date: pickerDateToTemporal(date) });
+                      return;
+                    }
                     const next = date ?? null;
                     const clamped = clampToStartIfNeeded(
                       next,
@@ -1973,7 +2746,6 @@ export function EventEditForm({
                     "justify-start gap-2 text-left font-medium text-xs",
                     !field.value && "text-muted-foreground"
                   )}
-                  disabled={readOnly}
                   variant="outline"
                 >
                   <CalendarIcon className="size-4" />
@@ -1987,7 +2759,8 @@ export function EventEditForm({
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
-                  disabled={readOnly}
+                  // Opens on the event's month, not today's.
+                  defaultMonth={field.value ?? undefined}
                   mode="single"
                   onSelect={(date) => {
                     const next = date ?? null;
@@ -2006,32 +2779,26 @@ export function EventEditForm({
           )}
         />
       </div>
-
       {watchedValues.allDay ? null : (
         <div className="grid grid-cols-2 gap-2">
           <TimePicker
-            disabled={readOnly}
             onChange={(v) => handleTimeChange("startTime", v)}
             placeholder="Start time"
             value={startTimeValue}
           />
           <TimePicker
-            disabled={readOnly}
-            icon={<Timer className="size-4 shrink-0" />}
             onChange={(v) => handleTimeChange("endTime", v)}
             placeholder="End time"
             value={endTimeValue}
           />
         </div>
       )}
-
+      <EndsBeforeStartNote values={watchedValues} />
       <MeetingSection
         isConferencePending={isConferencePending}
         meetingLink={meetingLink}
         onCreateMeeting={handleCreateMeeting}
-        readOnly={readOnly}
       />
-
       <EventLocationCombobox
         isSearching={isLocationSearching}
         location={watchedValues.location}
@@ -2045,19 +2812,19 @@ export function EventEditForm({
         onInputValueChange={handleLocationInputChange}
         onOpenChange={handleLocationOpenChange}
         onValueChange={handleLocationValueChange}
-        readOnly={readOnly}
         suggestions={locationSuggestions}
       />
-
+      <SaveFailure message={saveFailure} />
       {onCancel ? (
         <EventFormActionRow
           isCreateMode={isCreateMode}
           onCancel={onCancel}
           onDelete={onDelete}
           onSave={onSave}
-          readOnly={readOnly}
+          saveDisabled={endsBeforeStart(watchedValues)}
+          saving={isSaving}
         />
       ) : null}
-    </div>
+    </HeldFieldset>
   );
 }

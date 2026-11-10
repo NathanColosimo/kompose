@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { onlineManager } from "@tanstack/react-query";
+import {
+  type ReactNode,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 /**
@@ -7,6 +14,13 @@ import { cn } from "@/lib/utils";
  * picker, whose options render in a portal outside the fieldset and would
  * still take a click. Keep form values above this (react-hook-form), so the
  * remount loses nothing.
+ *
+ * The page under the editor takes no click or key while the save runs
+ * either: one that changed the view (another list, another week) would
+ * unmount the editor, and its edits would be gone if the save then failed.
+ * Tab still moves focus, so it can come back to the editor. Not while
+ * offline, though: a save that waits for the connection (a task's does)
+ * would hold the whole page until it's back.
  */
 export function HeldFieldset({
   children,
@@ -17,6 +31,32 @@ export function HeldFieldset({
   className?: string;
   saving: boolean;
 }) {
+  const online = useSyncExternalStore(
+    (onChange) => onlineManager.subscribe(onChange),
+    () => onlineManager.isOnline(),
+    () => true
+  );
+  const held = saving && online;
+  useEffect(() => {
+    if (!held) {
+      return;
+    }
+    // Enter or Space on a button under the editor, reached with Tab, would
+    // press it. Keys inside the editor and its dialogs go through.
+    const blockKeyUnderEditor = (event: KeyboardEvent) => {
+      const inEditor =
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]') !== null;
+      if (event.key === "Tab" || inEditor) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    document.addEventListener("keydown", blockKeyUnderEditor, true);
+    return () =>
+      document.removeEventListener("keydown", blockKeyUnderEditor, true);
+  }, [held]);
   return (
     <fieldset
       className={className}
@@ -24,7 +64,54 @@ export function HeldFieldset({
       key={saving ? "saving" : "editing"}
     >
       {children}
+      {held
+        ? createPortal(
+            // Under popovers and dialogs (z-50), over everything else.
+            <div aria-hidden className="fixed inset-0 z-40" data-page-held />,
+            document.body
+          )
+        : null}
     </fieldset>
+  );
+}
+
+/**
+ * Whether an editor is holding the page for its save (`HeldFieldset`): the
+ * shortcuts that change the view wait too, as its clicks do.
+ */
+export function pageIsHeld(): boolean {
+  return document.querySelector("[data-page-held]") !== null;
+}
+
+/**
+ * A Save button's label, or "Saving…" while its save runs. Both share one
+ * cell, so the button keeps the wider one's width and nothing beside it
+ * shifts.
+ */
+export function SavingLabel({
+  children,
+  saving,
+  savingLabel = "Saving…",
+}: {
+  children: ReactNode;
+  saving: boolean;
+  /** What it says while saving: "Deleting…" for a delete. */
+  savingLabel?: string;
+}) {
+  return (
+    <span className="grid justify-items-center">
+      <span
+        className={cn(
+          "col-start-1 row-start-1 flex items-center gap-1.5",
+          saving && "invisible"
+        )}
+      >
+        {children}
+      </span>
+      <span className={cn("col-start-1 row-start-1", !saving && "invisible")}>
+        {savingLabel}
+      </span>
+    </span>
   );
 }
 
