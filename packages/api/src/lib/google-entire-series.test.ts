@@ -174,6 +174,26 @@ describe("Entire series", () => {
     });
   });
 
+  test("an edit to the first occurrence moves the date of a series whose end comes first in its rule", async () => {
+    // As below, the rule written with its UNTIL first, as another app may.
+    const ending: Event = {
+      ...weekly,
+      recurrence: ["RRULE:UNTIL=20261231T235959Z;FREQ=WEEKLY;BYDAY=MO"],
+    };
+    const google = fakeGoogle(ending);
+    const exit = await run(
+      edit("all", occurrenceOf(ending, "2026-11-09T09:00:00-05:00"), {
+        end: { dateTime: "2026-11-10T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:UNTIL=20261231T235959Z;FREQ=WEEKLY;BYDAY=TU"],
+        start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+      })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(google.writes()[0]?.body).toMatchObject({
+      start: { dateTime: "2026-11-10T09:00:00-05:00", timeZone: zone },
+    });
+  });
+
   test("an edit to the first occurrence moves the date of a series with an end date", async () => {
     // Mondays until Dec 31 (an UNTIL with a time, as Google writes it);
     // its first meeting, Mon Nov 9, moved to Tue Nov 10 with the rule.
@@ -2691,6 +2711,37 @@ describe("newRepeat", () => {
       data: { reason: "dropsChangedOccurrences", seriesOnly: true },
     });
     expect(google.writes()).toEqual([]);
+  });
+
+  test("a monthly day rebuilt for a shorter one isn't a new repeat", () => {
+    // Monthly on the 31st five times, moved from May 31 to May 30: the
+    // editor rebuilds it as the 30th, which meets more often in a year.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-05-31"),
+      to: Temporal.PlainDate.from("2026-05-30"),
+    };
+    expect(
+      newRepeat({
+        moved,
+        own: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=31;COUNT=5"],
+        saved: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=30;COUNT=5"],
+      })
+    ).toBe(false);
+  });
+
+  test("a monthly day given a second day is a new repeat, whatever its end", () => {
+    // The 9th made the 9th and 10th, three times either way.
+    const moved = {
+      from: Temporal.PlainDate.from("2026-11-09"),
+      to: Temporal.PlainDate.from("2026-11-10"),
+    };
+    expect(
+      newRepeat({
+        moved,
+        own: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=9;COUNT=3"],
+        saved: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=9,10;COUNT=3"],
+      })
+    ).toBe(true);
   });
 
   test("a weekly rule moved to a new day keeps its other days", () => {

@@ -560,6 +560,29 @@ describe("This and following", () => {
     });
   });
 
+  test("a series with an end date moved to a day its rule doesn't meet skips the moved meeting's old slot", async () => {
+    // Mondays until Dec 31 (an UNTIL with a time, as Google writes it);
+    // from Mon Nov 16 moved to Sun Nov 15: Nov 16 isn't there twice.
+    const ending: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261231T235959Z"],
+    };
+    const google = fakeGoogle(ending);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(ending, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-15T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-15T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toContain(
+      "EXDATE:20261116T140000Z"
+    );
+  });
+
   describe("a move past later meetings", () => {
     // A changed meeting the move passes lands where a later meeting does:
     // carrying it would overwrite that one, so the save is refused.
