@@ -241,3 +241,40 @@ export function keepingDateValues(
       : [];
   });
 }
+
+/** A day, in nanoseconds: the most a clock's turn can go round. */
+const DAY_NS = 86_400_000_000_000;
+
+/**
+ * How far a once-a-day series' meetings move when its start moves `from`
+ * one wall-clock time `to` another: by the change in its time of day, or,
+ * when the start changes day and going round the clock that way is
+ * shorter, the other way round, toward the day it moved to. 9:00 to
+ * 23:00 the same day is fourteen hours on; 23:00 to the next day's 00:30
+ * an hour and a half on; 9:00 to the next day's 8:00 an hour back, and to
+ * its 22:00 thirteen hours on.
+ */
+export function clockTurn(params: {
+  from: Temporal.PlainDateTime;
+  to: Temporal.PlainDateTime;
+}): Temporal.Duration {
+  const { from, to } = params;
+  // In whole nanoseconds: a time with seconds (9:00:30) turns by a part of
+  // a minute, which a duration in minutes can't hold.
+  const change = from
+    .toPlainTime()
+    .until(to.toPlainTime())
+    .total("nanoseconds");
+  // Toward the day it moved to: one turn of the clock at most.
+  const toward = Math.sign(
+    Temporal.PlainDate.compare(to.toPlainDate(), from.toPlainDate())
+  );
+  const around = change + toward * DAY_NS;
+  const turn =
+    toward !== 0 &&
+    Math.sign(around) === toward &&
+    Math.abs(around) < Math.abs(change)
+      ? around
+      : change;
+  return Temporal.Duration.from({ nanoseconds: turn });
+}
