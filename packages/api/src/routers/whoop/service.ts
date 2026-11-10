@@ -10,7 +10,7 @@ import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import { getLinkedAccessToken } from "../../lib/linked-account";
 import { WhoopCacheService } from "./cache";
-import type { WhoopDaySummary, WhoopProfile } from "./contract";
+import type { WhoopDaySummary } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
 import { WhoopInvalidRangeError } from "./errors";
 
@@ -473,32 +473,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
         }
       );
 
-      const getProfile = Effect.fn("WhoopService.getProfile")(
-        function* (params: { accountId: string; userId: string }) {
-          yield* Effect.annotateCurrentSpan("accountId", params.accountId);
-          yield* Effect.annotateCurrentSpan("userId", params.userId);
-
-          const accessToken = yield* getLinkedAccessToken({
-            providerId: "whoop",
-            accountId: params.accountId,
-            userId: params.userId,
-          });
-
-          const client = createWhoopClient(accessToken);
-          const profile = yield* client.getProfileBasic();
-
-          return {
-            email: profile.email,
-            firstName: profile.first_name,
-            lastName: profile.last_name,
-          } satisfies WhoopProfile;
-        }
-      );
-
-      return {
-        getProfile,
-        listDaySummaries,
-      };
+      return { listDaySummaries };
     }),
   }
 ) {

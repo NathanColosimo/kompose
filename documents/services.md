@@ -11,7 +11,7 @@ appRouter
 ├── sync        → SSE realtime event stream
 ├── tags        → Tag CRUD
 ├── tasks       → Task CRUD (with recurrence)
-└── whoop       → WHOOP day summaries + profile
+└── whoop       → WHOOP day summaries
 ```
 
 Supporting systems sit alongside routers:
@@ -367,9 +367,9 @@ No client-side OTel SDK. Network latency is measured via `x-request-start` heade
 
 | File | Purpose |
 |------|---------|
-| `routers/whoop/contract.ts` | oRPC contract (day summaries, profile) |
+| `routers/whoop/contract.ts` | oRPC contract (day summaries) |
 | `routers/whoop/router.ts` | oRPC handler implementations |
-| `routers/whoop/service.ts` | `WhoopService` (Effect.Service) — day summary aggregation, profile fetch |
+| `routers/whoop/service.ts` | `WhoopService` (Effect.Service) — day summary aggregation |
 | `routers/whoop/cache.ts` | `WhoopCacheService` — Redis caching for per-day raw data |
 | `routers/whoop/errors.ts` | `Schema.TaggedError` error types |
 
@@ -378,7 +378,6 @@ The actual WHOOP API client lives in `packages/whoop/src/client.ts` — the serv
 ### Router operations
 
 **Days:** `list` — aggregated day summaries (recovery, strain, sleep, workouts) for a date range
-**Profile:** `get` — basic profile info (name, email) for a linked WHOOP account
 
 ### WhoopService
 
@@ -387,7 +386,6 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 | Method | Purpose |
 |--------|---------|
 | `listDaySummaries` | Fetch cycles, recoveries, sleeps, workouts for a date range; group by day; cache per-day payloads |
-| `getProfile` | Fetch basic profile info (first name, last name, email) from WHOOP API |
 
 ### Caching
 

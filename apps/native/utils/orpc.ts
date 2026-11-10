@@ -7,6 +7,7 @@ import {
   GOOGLE_COLORS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
 } from "@kompose/state/google-calendar-query-keys";
+import { PLUGIN_CONNECTIONS_QUERY_KEY } from "@kompose/state/hooks/use-plugin-connections";
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
@@ -75,6 +76,7 @@ export const orpc: AppRouterClient = createORPCClient(link);
 export function invalidateAuthenticatedQueries() {
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
+  queryClient.invalidateQueries({ queryKey: PLUGIN_CONNECTIONS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
@@ -84,6 +86,7 @@ export function invalidateAuthenticatedQueries() {
 export function clearAuthenticatedQueries() {
   queryClient.removeQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
+  queryClient.removeQueries({ queryKey: PLUGIN_CONNECTIONS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });

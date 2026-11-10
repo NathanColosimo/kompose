@@ -18,6 +18,7 @@
     "@kompose/desktop": "workspace:*",
     "@kompose/env": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "@kompose/state": "workspace:*",
     "@kompose/task-parser": "workspace:*",
     "@opentelemetry/api": "catalog:",
