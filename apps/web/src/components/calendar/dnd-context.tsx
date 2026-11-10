@@ -30,7 +30,8 @@ import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   chosenScope,
   type EventSaveChanges,
-  eventSaveScopeState,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   refuseSave,
   type SaveRefusals,
@@ -778,7 +779,10 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   // The drop's dialog: the scopes it can't use and its line saying why, and
   // the scope it shows and saves with, all worked out each time.
   const googleDialog = googleSaveChanges
-    ? eventSaveScopeState(googleSaveChanges)
+    ? {
+        description: eventSaveDescription(googleSaveChanges),
+        disabled: eventSaveDisabledScopes(googleSaveChanges),
+      }
     : { description: SCOPE_DIALOG_COPY.saveEvent.description, disabled: {} };
   const googleScope = chosenScope(googlePick, "this", googleDialog.disabled);
 

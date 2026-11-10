@@ -63,7 +63,8 @@ import {
 import {
   chosenScope,
   type EventSaveChanges,
-  eventSaveScopeState,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
   refusalReason,
   refuseSave,
@@ -995,8 +996,11 @@ export function EventEditPopover({
         })
       : { dateMoved: false };
   const saveScopeChanges = saveChanges(pendingSave, pendingFacts, seriesStatus);
-  // The scopes that are off and the line saying why, led by any refusal.
-  const saveDialog = eventSaveScopeState(saveScopeChanges);
+  const saveDialog = {
+    // Says why each scope that's off is, led by any refusal.
+    description: eventSaveDescription(saveScopeChanges),
+    disabled: eventSaveDisabledScopes(saveScopeChanges),
+  };
   const saveScope = chosenScope(
     selectedScope,
     pendingSave?.defaultScope ?? "this",
