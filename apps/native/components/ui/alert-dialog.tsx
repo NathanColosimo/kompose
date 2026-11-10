@@ -25,14 +25,33 @@ import { useColor } from "@/hooks/use-color";
 
 export type AlertDialogProps = {
   isVisible: boolean;
-  onClose: () => void;
+  /**
+   * After the dialog fades out from its own Cancel, backdrop tap or
+   * confirm. Omit it when the caller hides the dialog by `isVisible`.
+   */
+  onClose?: () => void;
   title?: string;
   description?: string;
   children?: React.ReactNode;
   confirmText?: string;
+  /** "destructive" for an action that can't be undone, such as Delete. */
+  confirmVariant?: "default" | "destructive";
   cancelText?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  /**
+   * The confirm action is running: its button reads `pendingText`, and
+   * nothing closes the dialog until the caller hides it.
+   */
+  pending?: boolean;
+  pendingText?: string;
+  /** The confirm button is off (nothing to confirm yet). */
+  confirmDisabled?: boolean;
+  /**
+   * False when the caller closes the dialog itself (by `isVisible`), as
+   * after an async confirm.
+   */
+  closeOnConfirm?: boolean;
   dismissible?: boolean;
   showCancelButton?: boolean;
   style?: ViewStyle;
@@ -45,9 +64,14 @@ export function AlertDialog({
   description,
   children,
   confirmText = "OK",
+  confirmVariant = "default",
   cancelText = "Cancel",
   onConfirm,
   onCancel,
+  pending = false,
+  confirmDisabled = false,
+  pendingText = "Saving…",
+  closeOnConfirm = true,
   dismissible = true,
   showCancelButton = true,
   style,
@@ -85,7 +109,7 @@ export function AlertDialog({
   const animateClose = () => {
     "worklet";
     backdropOpacity.value = withTiming(0, { duration: 300 }, (finished) => {
-      if (finished) {
+      if (finished && onClose) {
         runOnJS(onClose)();
       }
     });
@@ -93,7 +117,7 @@ export function AlertDialog({
   };
 
   const handleBackdropPress = () => {
-    if (dismissible) {
+    if (dismissible && !pending) {
       animateClose();
       if (onCancel) onCancel();
     }
@@ -106,7 +130,9 @@ export function AlertDialog({
 
   const handleConfirm = () => {
     if (onConfirm) onConfirm();
-    animateClose();
+    if (closeOnConfirm) {
+      animateClose();
+    }
   };
 
   return (
@@ -140,12 +166,21 @@ export function AlertDialog({
               {children ? <CardContent>{children}</CardContent> : null}
               <CardFooter>
                 {showCancelButton && (
-                  <Button onPress={handleCancel} variant="outline">
+                  <Button
+                    disabled={pending}
+                    onPress={handleCancel}
+                    variant="outline"
+                  >
                     {cancelText}
                   </Button>
                 )}
-                <Button onPress={handleConfirm} style={{ flex: 1 }}>
-                  {confirmText}
+                <Button
+                  disabled={pending || confirmDisabled}
+                  onPress={handleConfirm}
+                  style={{ flex: 1 }}
+                  variant={confirmVariant}
+                >
+                  {pending ? pendingText : confirmText}
                 </Button>
               </CardFooter>
             </Card>

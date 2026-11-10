@@ -30,6 +30,11 @@ export interface DateRange {
 }
 
 interface BaseDatePickerProps {
+  /**
+   * What the field is, for VoiceOver ("Start time"); it's read with the
+   * value ("Start time, 10:00 AM"), since a filled field has no placeholder.
+   */
+  accessibilityLabel?: string;
   label?: string;
   error?: string;
   placeholder?: string;
@@ -100,6 +105,7 @@ const isDateRange = (
 
 export function DatePicker(props: DatePickerProps) {
   const {
+    accessibilityLabel,
     label,
     error,
     placeholder = "Select date",
@@ -232,6 +238,11 @@ export function DatePicker(props: DatePickerProps) {
     },
     [minimumDate, maximumDate]
   );
+  /** Whether `date`'s day is outside the bounds, whatever its time. */
+  const isDayDisabled = (date: Date) =>
+    isDateDisabled(
+      new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    );
 
   const isDateInRange = useCallback(
     (date: Date) => {
@@ -491,13 +502,15 @@ export function DatePicker(props: DatePickerProps) {
   const handleConfirm = () => {
     if (mode === "range") {
       (onChange as (value: DateRange | undefined) => void)?.(tempRange);
-    } else {
+    } else if (!isDayDisabled(currentDate)) {
+      // A day outside the bounds is never handed back, whatever the path.
       (onChange as (value: Date | undefined) => void)?.(currentDate);
     }
     close();
   };
 
   const resetToToday = () => {
+    // The button is off when today is out of bounds.
     const today = new Date();
     setCurrentDate(today);
 
@@ -1116,69 +1129,83 @@ export function DatePicker(props: DatePickerProps) {
   };
 
   const resolvedDisplayValue = displayValue ?? formatDisplayValue();
+  const isSet =
+    mode === "range"
+      ? isDateRange(value) &&
+        (value.startDate !== null || value.endDate !== null)
+      : Boolean(value);
   const hasValue =
-    displayValue !== undefined
-      ? displayValue.trim().length > 0
-      : mode === "range"
-        ? isDateRange(value) &&
-          (value.startDate !== null || value.endDate !== null)
-        : Boolean(value);
+    displayValue !== undefined ? displayValue.trim().length > 0 : isSet;
 
   return (
     <>
       <TouchableOpacity
+        accessibilityLabel={
+          accessibilityLabel
+            ? // An empty field shows a placeholder ("Due"), not a value.
+              `${accessibilityLabel}, ${isSet ? resolvedDisplayValue : "not set"}`
+            : undefined
+        }
+        accessibilityRole="button"
         disabled={disabled}
         onPress={handleOpenPicker}
         style={[triggerStyle, disabled && { opacity: 0.5 }, style]}
       >
+        {/* As wide as the content (not flex: 1's zero basis), so a trigger
+            without a set width fits its value; the trigger's justifyContent
+            places it. */}
         <View
           style={{
-            flex: 1,
+            flexShrink: 1,
             flexDirection: "row",
             alignItems: "center",
             gap: 8,
           }}
         >
-          <View
-            style={{
-              width: label ? 120 : "auto",
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            {showIcon ? (
-              mode === "time" ? (
-                <Icon as={Clock} size={20} strokeWidth={1} />
-              ) : mode === "datetime" ? (
-                <Icon as={CalendarClock} size={20} strokeWidth={1} />
-              ) : mode === "range" ? (
-                <Icon as={CalendarRange} size={20} strokeWidth={1} />
-              ) : (
-                <Icon as={Calendar} size={20} strokeWidth={1} />
-              )
-            ) : null}
+          {/* Only when there's an icon or a label: an empty slot would still
+              take a gap from the value beside it. */}
+          {showIcon || label ? (
+            <View
+              style={{
+                width: label ? 120 : "auto",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              {showIcon ? (
+                mode === "time" ? (
+                  <Icon as={Clock} size={20} strokeWidth={1} />
+                ) : mode === "datetime" ? (
+                  <Icon as={CalendarClock} size={20} strokeWidth={1} />
+                ) : mode === "range" ? (
+                  <Icon as={CalendarRange} size={20} strokeWidth={1} />
+                ) : (
+                  <Icon as={Calendar} size={20} strokeWidth={1} />
+                )
+              ) : null}
 
-            {label && (
-              <View style={{ flex: 1 }}>
-                <Text
-                  ellipsizeMode="tail"
-                  numberOfLines={1}
-                  style={[
-                    {
-                      color: error ? errorColor : textMutedColor,
-                    },
-                    labelStyle,
-                  ]}
-                  variant="caption"
-                >
-                  {label}
-                </Text>
-              </View>
-            )}
-          </View>
+              {label && (
+                <View style={{ flex: 1 }}>
+                  <Text
+                    ellipsizeMode="tail"
+                    numberOfLines={1}
+                    style={[
+                      {
+                        color: error ? errorColor : textMutedColor,
+                      },
+                      labelStyle,
+                    ]}
+                    variant="caption"
+                  >
+                    {label}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : null}
 
-          <View style={{ flex: 1 }}>
+          <View style={{ flexShrink: 1 }}>
             <Text
               ellipsizeMode="tail"
               numberOfLines={1}
@@ -1225,7 +1252,11 @@ export function DatePicker(props: DatePickerProps) {
                 gap: 8,
               }}
             >
-              <Button onPress={resetToToday} variant="outline">
+              <Button
+                disabled={isDayDisabled(new Date())}
+                onPress={resetToToday}
+                variant="outline"
+              >
                 Today
               </Button>
 

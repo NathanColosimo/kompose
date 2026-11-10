@@ -18,10 +18,12 @@ import {
   getTaskRecurrenceEditorState,
   getTaskRecurrenceIntervalLabel,
   TASK_RECURRENCE_DAYS,
+  type TaskRecurrenceDayCode,
   type TaskRecurrenceEditorState,
   type TaskRecurrenceFrequency,
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { Image } from "expo-image";
 import {
   Check,
@@ -34,7 +36,7 @@ import {
   XCircle,
 } from "lucide-react-native";
 import React from "react";
-import { Linking, Pressable, View } from "react-native";
+import { Linking, Pressable, useWindowDimensions, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
@@ -46,6 +48,12 @@ import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  formatShortDate,
+  localeTimeFormat,
+  plainDateToDate,
+  spokenDuration,
+} from "@/lib/time-format";
 
 export interface TaskDraft {
   description: string;
@@ -63,18 +71,33 @@ export interface TaskDraft {
 }
 
 interface TaskEditorSheetProps {
+  /** The draft can save now (see useTaskEditorFlow); Mark done saves too. */
+  canSave: boolean;
   draft: TaskDraft | null;
+  /** A save is running: the editor holds, read-only, until it ends. */
+  isSaving?: boolean;
   isVisible: boolean;
   mode: "create" | "edit";
   onClose: () => void;
   onDelete?: () => void;
   onSave: () => void;
   onToggleDone?: (nextStatus: TaskDraft["status"]) => void;
+  /** Dialogs that open over the editor (iOS presents them from its modal). */
+  overlay?: React.ReactNode;
   setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
   timeZone: string;
 }
 
 const DURATION_MINUTE_OPTIONS = [0, 15, 30, 45];
+const DAY_NAMES: Record<TaskRecurrenceDayCode, string> = {
+  FR: "Friday",
+  MO: "Monday",
+  SA: "Saturday",
+  SU: "Sunday",
+  TH: "Thursday",
+  TU: "Tuesday",
+  WE: "Wednesday",
+};
 const RECURRENCE_FREQUENCIES: Array<{
   value: TaskRecurrenceFrequency | "NONE";
   label: string;
@@ -85,10 +108,6 @@ const RECURRENCE_FREQUENCIES: Array<{
   { label: "Monthly", value: "MONTHLY" },
   { label: "Yearly", value: "YEARLY" },
 ];
-
-function plainDateToDate(plainDate: Temporal.PlainDate): Date {
-  return new Date(plainDate.year, plainDate.month - 1, plainDate.day);
-}
 
 function plainTimeToDate(plainTime: Temporal.PlainTime): Date {
   const date = new Date();
@@ -112,36 +131,13 @@ function dateToPlainTime(date: Date): Temporal.PlainTime {
   });
 }
 
-function formatPlainDateShort(date: Temporal.PlainDate | null): string {
-  if (!date) {
-    return "Not set";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(plainDateToDate(date));
-}
-
-function formatPlainTime24(time: Temporal.PlainTime | null): string {
+/** In the locale's hour cycle ("4:30 PM"), like the calendar block. */
+function formatPlainTime(time: Temporal.PlainTime | null): string {
   if (!time) {
-    return "--:--";
+    // A placeholder like the "Start" and "Due" chips beside it.
+    return "Time";
   }
-  return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
-}
-
-function formatDurationMinutes(minutes: number): string {
-  if (minutes < 60) {
-    return `${minutes}m`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-
-  if (remainder === 0) {
-    return `${hours}h`;
-  }
-
-  return `${hours}h ${remainder}m`;
+  return time.toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function TaskRecurrenceEndSection({
@@ -150,6 +146,7 @@ function TaskRecurrenceEndSection({
   updateRecurrence,
 }: {
   recurrenceState: TaskRecurrenceEditorState;
+  /** The task's start (or today): the earliest the repeat can end. */
   fallbackUntil: Temporal.PlainDate;
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
@@ -158,6 +155,7 @@ function TaskRecurrenceEndSection({
       <Text className="text-muted-foreground text-xs">Ends</Text>
       <View className="mt-1 flex-row flex-wrap gap-2">
         <Button
+          accessibilityState={{ selected: recurrenceState.endType === "never" }}
           onPress={() => updateRecurrence({ endType: "never", until: null })}
           size="sm"
           style={{ borderRadius: 999 }}
@@ -166,6 +164,7 @@ function TaskRecurrenceEndSection({
           <Text>Never</Text>
         </Button>
         <Button
+          accessibilityState={{ selected: recurrenceState.endType === "until" }}
           onPress={() =>
             updateRecurrence({
               endType: "until",
@@ -179,6 +178,7 @@ function TaskRecurrenceEndSection({
           <Text>On date</Text>
         </Button>
         <Button
+          accessibilityState={{ selected: recurrenceState.endType === "count" }}
           onPress={() =>
             updateRecurrence({
               count:
@@ -200,11 +200,14 @@ function TaskRecurrenceEndSection({
       {recurrenceState.endType === "until" ? (
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
+            accessibilityLabel="Repeat until"
             displayValue={
               recurrenceState.until
-                ? formatPlainDateShort(recurrenceState.until)
+                ? formatShortDate(recurrenceState.until)
                 : "Until date"
             }
+            // The repeat can't end before the task starts.
+            minimumDate={plainDateToDate(fallbackUntil)}
             mode="date"
             onChange={(date) =>
               updateRecurrence({
@@ -215,7 +218,7 @@ function TaskRecurrenceEndSection({
             showIcon={false}
             style={{
               borderRadius: 999,
-              minHeight: 38,
+              minHeight: 44,
               paddingHorizontal: 10,
             }}
             value={
@@ -232,6 +235,7 @@ function TaskRecurrenceEndSection({
       {recurrenceState.endType === "count" ? (
         <View className="mt-2 flex-row items-center gap-2">
           <Input
+            accessibilityLabel="Number of occurrences"
             containerStyle={{ width: 78 }}
             inputStyle={{ fontSize: 17 }}
             keyboardType="number-pad"
@@ -270,15 +274,19 @@ function TaskRecurrenceEditor({
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-3">
       <Text className="font-semibold text-foreground text-sm">Repeat</Text>
-      <Text className="mt-0.5 text-muted-foreground text-xs">
-        {recurrenceSummary}
-      </Text>
+      {/* The pattern in words; with no repeat, "None" below says it. */}
+      {hasRecurrence ? (
+        <Text className="mt-0.5 text-muted-foreground text-xs">
+          {recurrenceSummary}
+        </Text>
+      ) : null}
 
       <View className="mt-2 flex-row flex-wrap gap-2">
         {RECURRENCE_FREQUENCIES.map((frequency) => {
           const active = activeFrequency === frequency.value;
           return (
             <Button
+              accessibilityState={{ selected: active }}
               key={frequency.value}
               onPress={() => handleSelectFrequency(frequency.value)}
               size="sm"
@@ -296,6 +304,7 @@ function TaskRecurrenceEditor({
           <View className="mt-3 flex-row items-center gap-2">
             <Text className="text-muted-foreground text-xs">Every</Text>
             <Input
+              accessibilityLabel="Repeat every"
               containerStyle={{ width: 78 }}
               inputStyle={{ fontSize: 17 }}
               keyboardType="number-pad"
@@ -323,6 +332,9 @@ function TaskRecurrenceEditor({
                   const selected = recurrenceState.byDay.includes(day.value);
                   return (
                     <Button
+                      // "T" and "S" each stand for two days.
+                      accessibilityLabel={DAY_NAMES[day.value]}
+                      accessibilityState={{ selected }}
                       key={day.value}
                       onPress={() =>
                         updateRecurrence({
@@ -348,8 +360,9 @@ function TaskRecurrenceEditor({
             <View className="mt-3 flex-row items-center gap-2">
               <Text className="text-muted-foreground text-xs">On day</Text>
               <Input
+                accessibilityLabel="Day of month"
                 containerStyle={{ width: 78 }}
-                inputStyle={{ fontSize: 13 }}
+                inputStyle={{ fontSize: 17 }}
                 keyboardType="number-pad"
                 onChangeText={(value) => {
                   const nextMonthDay = Number.parseInt(value, 10) || 1;
@@ -387,11 +400,15 @@ function TaskTagPill({
   const ActionIcon = action === "add" ? Plus : Minus;
 
   return (
+    // A 44pt target around a 32pt pill. The negative margin keeps the rows'
+    // spacing; hitSlop wouldn't do, since iOS clips it at the row's edge.
     <Pressable
-      className="rounded-full border border-border px-2.5 py-1.5"
+      accessibilityLabel={`${action === "add" ? "Add" : "Remove"} tag ${tag.name}`}
+      accessibilityRole="button"
+      className="-my-1.5 py-1.5"
       onPress={onPress}
     >
-      <View className="flex-row items-center gap-1.5">
+      <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2.5 py-2">
         <Icon as={TagIcon} className="text-muted-foreground" size={12} />
         <Text className="text-foreground text-xs">{tag.name}</Text>
         <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
@@ -420,9 +437,13 @@ function TaskTagPicker({
       <View className="flex-row items-center justify-between">
         <Text className="font-semibold text-foreground text-sm">Tags</Text>
         <Button
+          accessibilityLabel={isExpanded ? "Hide tags" : "Add tags"}
+          accessibilityState={{ expanded: isExpanded }}
           onPress={onToggleExpanded}
           size="icon"
-          style={{ borderRadius: 999, height: 30, width: 30 }}
+          // 44pt to touch, laid out as 30pt (the negative margin), so the
+          // row keeps its height; hitSlop would be clipped at the row's edge.
+          style={{ borderRadius: 999, height: 44, margin: -7, width: 44 }}
           variant="ghost"
         >
           <Icon as={Plus} className="text-foreground" size={14} />
@@ -471,7 +492,250 @@ function TaskTagPicker({
   );
 }
 
+/** The editor's header: delete, then save, or "Saving…" while a save runs. */
+function TaskEditorHeaderActions({
+  canSave,
+  isSaving,
+  onDelete,
+  onSave,
+}: {
+  canSave: boolean;
+  isSaving: boolean;
+  onDelete?: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <View className="flex-row items-center gap-2">
+      {onDelete ? (
+        <Button
+          accessibilityLabel="Delete task"
+          disabled={isSaving}
+          onPress={onDelete}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Trash2}
+            className={isSaving ? "text-muted-foreground" : "text-destructive"}
+            size={18}
+          />
+        </Button>
+      ) : null}
+      {isSaving ? (
+        <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>
+      ) : (
+        <Button
+          accessibilityLabel="Save task"
+          disabled={!canSave}
+          onPress={onSave}
+          size="icon"
+          style={{ borderRadius: 999 }}
+          variant="ghost"
+        >
+          <Icon
+            as={Check}
+            // Ink, not a light green: it reads on the cream sheet.
+            className={canSave ? "text-primary" : "text-muted-foreground"}
+            size={18}
+          />
+        </Button>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Durations in 15-minute steps from 15m up to a day, plus the task's own
+ * when it's off-step (a 20-minute task from web), so the chip shows it.
+ */
+function durationOptionsFor(current: number) {
+  const minutes = Array.from({ length: 24 }, (_, hour) =>
+    DURATION_MINUTE_OPTIONS.map((minute) => hour * 60 + minute)
+  )
+    .flat()
+    .filter((total) => total > 0);
+  if (!minutes.includes(current)) {
+    minutes.push(current);
+    minutes.sort((a, b) => a - b);
+  }
+  return minutes.map((total) => ({
+    label: formatDuration(total),
+    value: String(total),
+  }));
+}
+
+const CHIP_TEXT_STYLE = { fontSize: 13 } as const;
+const CHIP_SLOT_STYLE = { flexGrow: 1, maxWidth: "100%" } as const;
+
+/**
+ * The schedule row: duration, start date and time, due date, and the
+ * Repeat toggle.
+ */
+function TaskScheduleChips({
+  draft,
+  isRecurrenceExpanded,
+  onToggleRecurrence,
+  recurrenceSummary,
+  setDraft,
+}: {
+  draft: TaskDraft;
+  isRecurrenceExpanded: boolean;
+  onToggleRecurrence: () => void;
+  recurrenceSummary: string;
+  setDraft: (updater: (previous: TaskDraft) => TaskDraft) => void;
+}) {
+  const { fontScale } = useWindowDimensions();
+  const scaled = (points: number) =>
+    Math.round(points * Math.max(1, fontScale));
+  // A date, time or due chip: as wide as its text (the picker's trigger
+  // otherwise spans its parent), so it fits any locale's format, with its
+  // text centered when the chip grows. (Centering the text itself would
+  // make iOS measure it at the full width available.) Never under 44pt
+  // wide, for a short value like "Due"; the side padding grows with the
+  // text.
+  const chipStyle = {
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: scaled(6),
+    width: "auto",
+  } as const;
+
+  // The row wraps when the chips don't fit one line ("Due 20. Sept." in
+  // German, or large text). The longest English values ("May 20",
+  // "10:00 AM", "Due May 20") share one line at 375pt with the default text.
+  return (
+    <View className="mb-3 flex-row flex-wrap items-center gap-1">
+      {/* Picker takes no accessibility props, so this names it. */}
+      <View
+        accessibilityLabel={`Duration, ${spokenDuration(draft.durationMinutes)}`}
+        accessibilityRole="button"
+        accessible
+        // Durations are compact and not localized ("23h 45m"), so this one
+        // chip has a set width, scaled with the text.
+        style={{ width: scaled(64) }}
+      >
+        <Picker
+          // Same size as the date and time chips beside it.
+          inputStyle={{ fontSize: 13, textAlign: "center" }}
+          modalTitle="Duration"
+          onValueChange={(value) => {
+            const nextMinutes = Number.parseInt(value, 10);
+            if (!Number.isFinite(nextMinutes)) {
+              return;
+            }
+            setDraft((current) => ({
+              ...current,
+              durationMinutes: nextMinutes,
+            }));
+          }}
+          options={durationOptionsFor(draft.durationMinutes)}
+          placeholder="Duration"
+          showChevron={false}
+          style={{ borderRadius: 999, minHeight: 44, paddingHorizontal: 0 }}
+          value={String(draft.durationMinutes)}
+          variant="outline"
+        />
+      </View>
+
+      {/* The date, time and due chips share what's left of their line. */}
+      <View style={CHIP_SLOT_STYLE}>
+        <DatePicker
+          accessibilityLabel="Start date"
+          displayValue={
+            draft.startDate ? formatShortDate(draft.startDate) : "Start"
+          }
+          mode="date"
+          onChange={(date) =>
+            setDraft((current) => ({
+              ...current,
+              startDate: date ? dateToPlainDate(date) : null,
+              startTime: date ? current.startTime : null,
+            }))
+          }
+          placeholder="Start"
+          showIcon={false}
+          style={chipStyle}
+          value={draft.startDate ? plainDateToDate(draft.startDate) : undefined}
+          valueTextStyle={CHIP_TEXT_STYLE}
+          variant="outline"
+        />
+      </View>
+      <View style={CHIP_SLOT_STYLE}>
+        <DatePicker
+          accessibilityLabel="Start time"
+          disabled={!draft.startDate}
+          displayValue={formatPlainTime(draft.startTime)}
+          mode="time"
+          onChange={(date) =>
+            setDraft((current) => ({
+              ...current,
+              startTime: date ? dateToPlainTime(date) : null,
+            }))
+          }
+          placeholder="Time"
+          showIcon={false}
+          style={chipStyle}
+          timeFormat={localeTimeFormat()}
+          value={draft.startTime ? plainTimeToDate(draft.startTime) : undefined}
+          valueTextStyle={CHIP_TEXT_STYLE}
+          variant="outline"
+        />
+      </View>
+
+      {/* Due and Repeat wrap on their own: when the due date needs a whole
+          line, Repeat moves to the next one rather than squeezing it. */}
+      <View style={CHIP_SLOT_STYLE}>
+        <DatePicker
+          accessibilityLabel="Due date"
+          displayValue={
+            draft.dueDate ? `Due ${formatShortDate(draft.dueDate)}` : "Due"
+          }
+          mode="date"
+          onChange={(date) =>
+            setDraft((current) => ({
+              ...current,
+              dueDate: date ? dateToPlainDate(date) : null,
+            }))
+          }
+          placeholder="Due"
+          showIcon={false}
+          style={chipStyle}
+          value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
+          valueTextStyle={CHIP_TEXT_STYLE}
+          variant="outline"
+        />
+      </View>
+
+      <Button
+        accessibilityLabel="Repeat"
+        accessibilityState={{ expanded: isRecurrenceExpanded }}
+        accessibilityValue={{
+          text: draft.recurrence ? recurrenceSummary : "None",
+        }}
+        onPress={onToggleRecurrence}
+        size="icon"
+        style={{ borderRadius: 999, height: 44, width: 44 }}
+        variant={isRecurrenceExpanded ? "default" : "outline"}
+      >
+        <Icon
+          as={Repeat2}
+          className={
+            isRecurrenceExpanded ? "text-primary-foreground" : "text-foreground"
+          }
+          size={14}
+        />
+      </Button>
+    </View>
+  );
+}
+
 export function TaskEditorSheet({
+  canSave,
+  overlay,
+  isSaving = false,
   isVisible,
   mode,
   draft,
@@ -487,23 +751,20 @@ export function TaskEditorSheet({
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
-  const canSave = draft
-    ? draft.title.trim().length > 0 || draft.links.length > 0
-    : false;
+  // Each opening starts with the repeat and tag panels folded, however the
+  // last one closed (a save closes it from the flow, not from here).
+  const [wasVisible, setWasVisible] = React.useState(isVisible);
+  if (isVisible !== wasVisible) {
+    setWasVisible(isVisible);
+    if (isVisible) {
+      setIsRecurrenceExpanded(false);
+      setIsTagPickerExpanded(false);
+    }
+  }
 
   if (!draft) {
     return null;
   }
-
-  const durationOptions = Array.from({ length: 24 }, (_, hour) =>
-    DURATION_MINUTE_OPTIONS.map((minute) => {
-      const totalMinutes = hour * 60 + minute;
-      return {
-        label: formatDurationMinutes(totalMinutes),
-        value: String(totalMinutes),
-      };
-    })
-  ).flat();
 
   const recurrenceState = getTaskRecurrenceEditorState(
     draft.recurrence,
@@ -511,7 +772,8 @@ export function TaskEditorSheet({
   );
   const recurrenceSummary = getTaskRecurrenceDisplayText(draft.recurrence);
   const activeFrequency = draft.recurrence?.freq ?? "NONE";
-  const canToggleDone = Boolean(mode === "edit" && onToggleDone);
+  // Mark done saves the edits with it, so it waits on the same check.
+  const canToggleDone = Boolean(mode === "edit" && onToggleDone) && canSave;
   const isDone = draft.status === "done";
 
   const selectedTags = tags.filter((tag) => draft.tagIds.includes(tag.id));
@@ -562,8 +824,11 @@ export function TaskEditorSheet({
   };
 
   const handleClose = () => {
-    setIsRecurrenceExpanded(false);
-    setIsTagPickerExpanded(false);
+    // While a save runs, the editor holds: closing would drop the edits if
+    // the save fails.
+    if (isSaving) {
+      return;
+    }
     onClose();
   };
 
@@ -571,275 +836,184 @@ export function TaskEditorSheet({
 
   return (
     <BottomSheet
+      disablePanGesture={isSaving}
+      enableBackdropDismiss={!isSaving}
       headerRight={
-        <View className="flex-row items-center gap-2">
-          {mode === "edit" && onDelete ? (
-            <Button
-              onPress={onDelete}
-              size="icon"
-              style={{ borderRadius: 999 }}
-              variant="ghost"
-            >
-              <Icon as={Trash2} className="text-red-500" size={18} />
-            </Button>
-          ) : null}
-          <Button
-            disabled={!canSave}
-            onPress={onSave}
-            size="icon"
-            style={{ borderRadius: 999 }}
-            variant="ghost"
-          >
-            <Icon
-              as={Check}
-              className={canSave ? "text-green-500" : "text-muted-foreground"}
-              size={18}
-            />
-          </Button>
-        </View>
+        <TaskEditorHeaderActions
+          canSave={canSave}
+          isSaving={isSaving}
+          onDelete={mode === "edit" ? onDelete : undefined}
+          onSave={onSave}
+        />
       }
       isVisible={isVisible}
       onClose={handleClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={mode === "edit" ? "Edit task" : "New task"}
     >
-      <View className="mb-3 flex-row items-center gap-1.5">
-        <View style={{ width: 86 }}>
-          <Picker
-            inputStyle={{ textAlign: "center" }}
-            modalTitle="Duration"
-            onValueChange={(value) => {
-              const nextMinutes = Number.parseInt(value, 10);
-              if (!Number.isFinite(nextMinutes)) {
-                return;
-              }
-              setDraft((current) => ({
-                ...current,
-                durationMinutes: nextMinutes,
-              }));
-            }}
-            options={durationOptions}
-            placeholder="Duration"
-            showChevron={false}
-            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 0 }}
-            value={String(draft.durationMinutes)}
-            variant="outline"
-          />
-        </View>
-
-        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
-          <View className="min-w-0 flex-1">
-            <DatePicker
-              displayValue={
-                draft.startDate
-                  ? formatPlainDateShort(draft.startDate)
-                  : "Start"
-              }
-              mode="date"
-              onChange={(date) =>
-                setDraft((current) => ({
-                  ...current,
-                  startDate: date ? dateToPlainDate(date) : null,
-                  startTime: date ? current.startTime : null,
-                }))
-              }
-              placeholder="Start"
-              showIcon={false}
-              style={{
-                borderRadius: 999,
-                minHeight: 38,
-                paddingHorizontal: 4,
-              }}
-              value={
-                draft.startDate ? plainDateToDate(draft.startDate) : undefined
-              }
-              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-              variant="outline"
-            />
-          </View>
-          <View style={{ width: 74 }}>
-            <DatePicker
-              disabled={!draft.startDate}
-              displayValue={formatPlainTime24(draft.startTime)}
-              mode="time"
-              onChange={(date) =>
-                setDraft((current) => ({
-                  ...current,
-                  startTime: date ? dateToPlainTime(date) : null,
-                }))
-              }
-              placeholder="--:--"
-              showIcon={false}
-              style={{
-                borderRadius: 999,
-                minHeight: 38,
-                paddingHorizontal: 4,
-              }}
-              timeFormat="24"
-              value={
-                draft.startTime ? plainTimeToDate(draft.startTime) : undefined
-              }
-              valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-              variant="outline"
-            />
-          </View>
-        </View>
-
-        <View style={{ width: 86 }}>
-          <DatePicker
-            displayValue={
-              draft.dueDate ? formatPlainDateShort(draft.dueDate) : "Due"
-            }
-            mode="date"
-            onChange={(date) =>
-              setDraft((current) => ({
-                ...current,
-                dueDate: date ? dateToPlainDate(date) : null,
-              }))
-            }
-            placeholder="Due"
-            showIcon={false}
-            style={{ borderRadius: 999, minHeight: 38, paddingHorizontal: 4 }}
-            value={draft.dueDate ? plainDateToDate(draft.dueDate) : undefined}
-            valueTextStyle={{ fontSize: 13, textAlign: "center" }}
-            variant="outline"
-          />
-        </View>
-
-        <Button
-          onPress={() => setIsRecurrenceExpanded((current) => !current)}
-          size="icon"
-          style={{ borderRadius: 999, height: 38, width: 38 }}
-          variant={isRecurrenceExpanded ? "default" : "outline"}
-        >
-          <Icon
-            as={Repeat2}
-            className={
-              isRecurrenceExpanded
-                ? "text-primary-foreground"
-                : "text-foreground"
-            }
-            size={14}
-          />
-        </Button>
-      </View>
-
-      {isRecurrenceExpanded ? (
-        <TaskRecurrenceEditor
-          activeFrequency={activeFrequency}
-          fallbackUntil={fallbackUntil}
-          handleSelectFrequency={handleSelectFrequency}
-          hasRecurrence={draft.recurrence !== null}
-          recurrenceState={recurrenceState}
-          recurrenceSummary={recurrenceSummary}
-          updateRecurrence={updateRecurrence}
-        />
-      ) : null}
-
-      <View className="mb-2.5 flex-row items-center gap-2">
-        <Checkbox
-          checked={isDone}
-          disabled={!canToggleDone}
-          onCheckedChange={(checked) => {
-            if (canToggleDone) {
-              const nextStatus: TaskDraft["status"] = checked ? "done" : "todo";
-              setDraft((current) => ({ ...current, status: nextStatus }));
-              onToggleDone?.(nextStatus);
-            }
-          }}
-          style={{
-            alignItems: "center",
-            justifyContent: "center",
-            paddingVertical: 0,
-            width: 36,
-          }}
-        />
-        <Input
-          containerStyle={{ flex: 1 }}
-          onChangeText={(value) =>
-            setDraft((current) => ({ ...current, title: value }))
+      {/* While a save runs, the fields are read-only, to touch and to
+          VoiceOver alike: a change made then would be dropped when the
+          editor closes. */}
+      <View
+        accessibilityElementsHidden={isSaving}
+        importantForAccessibility={isSaving ? "no-hide-descendants" : "auto"}
+        pointerEvents={isSaving ? "none" : "auto"}
+        style={isSaving ? { opacity: 0.6 } : undefined}
+      >
+        <TaskScheduleChips
+          draft={draft}
+          isRecurrenceExpanded={isRecurrenceExpanded}
+          onToggleRecurrence={() =>
+            setIsRecurrenceExpanded((current) => !current)
           }
-          pill
-          placeholder="Title"
-          value={draft.title}
+          recurrenceSummary={recurrenceSummary}
+          setDraft={setDraft}
+        />
+
+        {isRecurrenceExpanded ? (
+          <TaskRecurrenceEditor
+            activeFrequency={activeFrequency}
+            fallbackUntil={fallbackUntil}
+            handleSelectFrequency={handleSelectFrequency}
+            hasRecurrence={draft.recurrence !== null}
+            recurrenceState={recurrenceState}
+            recurrenceSummary={recurrenceSummary}
+            updateRecurrence={updateRecurrence}
+          />
+        ) : null}
+        {draft.recurrence && !draft.startDate ? (
+          <Text className="mb-2.5 text-destructive text-xs">
+            Pick a start date to repeat this task.
+          </Text>
+        ) : null}
+
+        <View className="mb-2.5 flex-row items-center gap-2">
+          <Checkbox
+            accessibilityLabel="Done"
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isDone, disabled: !canToggleDone }}
+            checked={isDone}
+            disabled={!canToggleDone}
+            // 36 by 26pt. The slop makes 44pt, all inside the row (iOS clips
+            // slop at the parent's edge): up and down, and right into the gap.
+            hitSlop={{ bottom: 9, right: 8, top: 9 }}
+            onCheckedChange={(checked) =>
+              onToggleDone?.(checked ? "done" : "todo")
+            }
+            style={{
+              alignItems: "center",
+              justifyContent: "center",
+              paddingVertical: 0,
+              width: 36,
+            }}
+          />
+          <Input
+            accessibilityLabel="Title"
+            containerStyle={{ flex: 1 }}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, title: value }))
+            }
+            pill
+            placeholder="Title"
+            value={draft.title}
+            variant="outline"
+          />
+        </View>
+
+        <TaskTagPicker
+          availableTags={availableTags}
+          isExpanded={isTagPickerExpanded}
+          onAdd={addTag}
+          onRemove={removeTag}
+          onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
+          selectedTags={selectedTags}
+        />
+
+        <Textarea
+          accessibilityLabel="Description"
+          containerStyle={{ marginBottom: 10 }}
+          onChangeText={(value) =>
+            setDraft((current) => ({ ...current, description: value }))
+          }
+          placeholder="Description"
+          value={draft.description}
           variant="outline"
         />
-      </View>
 
-      <TaskTagPicker
-        availableTags={availableTags}
-        isExpanded={isTagPickerExpanded}
-        onAdd={addTag}
-        onRemove={removeTag}
-        onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
-        selectedTags={selectedTags}
-      />
+        <NativeLinkListEditor
+          isParsing={parseLink.isPending}
+          linkInput={draft.linkInput}
+          links={draft.links}
+          onAddLink={(url) => {
+            const isFirstLink = draft.links.length === 0;
 
-      <Textarea
-        containerStyle={{ marginBottom: 10 }}
-        onChangeText={(value) =>
-          setDraft((current) => ({ ...current, description: value }))
-        }
-        placeholder="Description"
-        value={draft.description}
-        variant="outline"
-      />
+            // Insert placeholder immediately so the link survives a quick save
+            setDraft((current) => ({
+              ...current,
+              linkInput: "",
+              links: dedupeLinks([
+                ...current.links,
+                {
+                  fetchedAt: new Date().toISOString(),
+                  provider: "unknown" as const,
+                  url,
+                },
+              ]),
+            }));
 
-      <NativeLinkListEditor
-        isParsing={parseLink.isPending}
-        linkInput={draft.linkInput}
-        links={draft.links}
-        onAddLink={(url) => {
-          const isFirstLink = draft.links.length === 0;
-
-          // Insert placeholder immediately so the link survives a quick save
-          setDraft((current) => ({
-            ...current,
-            linkInput: "",
-            links: dedupeLinks([
-              ...current.links,
-              {
-                fetchedAt: new Date().toISOString(),
-                provider: "unknown" as const,
-                url,
+            parseLink.mutate(url, {
+              onSuccess: (meta) => {
+                setDraft((current) => {
+                  const next = {
+                    ...current,
+                    links: dedupeLinks(
+                      current.links.map((l) => (l.url === url ? meta : l))
+                    ),
+                  };
+                  if (isFirstLink) {
+                    if (meta.title && !current.title.trim()) {
+                      next.title = meta.title;
+                    }
+                    if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                      next.durationMinutes = Math.ceil(
+                        meta.durationSeconds / 60
+                      );
+                    }
+                  }
+                  return next;
+                });
               },
-            ]),
-          }));
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              setDraft((current) => {
-                const next = {
-                  ...current,
-                  links: dedupeLinks(
-                    current.links.map((l) => (l.url === url ? meta : l))
-                  ),
-                };
-                if (isFirstLink) {
-                  if (meta.title && !current.title.trim()) {
-                    next.title = meta.title;
-                  }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
-                  }
-                }
-                return next;
-              });
-            },
-          });
-        }}
-        onLinkInputChange={(value) =>
-          setDraft((current) => ({ ...current, linkInput: value }))
-        }
-        onRemoveLink={(index) =>
-          setDraft((current) => ({
-            ...current,
-            links: current.links.filter((_, i) => i !== index),
-          }))
-        }
-      />
+            });
+          }}
+          onLinkInputChange={(value) =>
+            setDraft((current) => ({ ...current, linkInput: value }))
+          }
+          onRemoveLink={(index) =>
+            setDraft((current) => ({
+              ...current,
+              links: current.links.filter((_, i) => i !== index),
+            }))
+          }
+        />
+      </View>
+      {overlay}
     </BottomSheet>
   );
+}
+
+/**
+ * An http(s) address the URL parser accepts too: the pattern alone lets
+ * through "https://host:abc", whose hostname the title fallback reads.
+ */
+function isWebUrl(text: string): boolean {
+  if (!URL_REGEX.test(text)) {
+    return false;
+  }
+  try {
+    return new URL(text).hostname.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function NativeLinkListEditor({
@@ -862,7 +1036,7 @@ function NativeLinkListEditor({
     if (!trimmed) {
       return;
     }
-    if (!URL_REGEX.test(trimmed)) {
+    if (!isWebUrl(trimmed)) {
       return;
     }
     if (links.some((l) => l.url === trimmed)) {
@@ -874,52 +1048,90 @@ function NativeLinkListEditor({
 
   return (
     <>
-      {links.map((meta, index) => (
-        <View
-          className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
-          key={meta.url}
-        >
-          {meta.thumbnailUrl ? (
-            <Pressable onPress={() => Linking.openURL(meta.url)}>
-              <Image
-                source={{ uri: meta.thumbnailUrl }}
-                style={{ borderRadius: 4, height: 40, width: 40 }}
-              />
-            </Pressable>
-          ) : null}
-          <Pressable
-            className="min-w-0 flex-1"
-            onPress={() => Linking.openURL(meta.url)}
+      {links.map((meta, index) => {
+        const providerLabel = getProviderLabel(meta.provider);
+        const durationMinutes = getLinkDurationMinutes(meta);
+        const wordCount = getLinkWordCount(meta);
+        return (
+          <View
+            className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
+            key={meta.url}
           >
-            <Text
-              className="font-semibold text-foreground text-sm"
-              numberOfLines={1}
+            {meta.thumbnailUrl ? (
+              <Pressable
+                // The title beside it opens the same link, so VoiceOver reads
+                // that one only. 40pt; the slop (inside the card's padding)
+                // makes the target 44pt.
+                accessibilityElementsHidden
+                hitSlop={2}
+                importantForAccessibility="no-hide-descendants"
+                onPress={() => Linking.openURL(meta.url)}
+              >
+                <Image
+                  source={{ uri: meta.thumbnailUrl }}
+                  style={{ borderRadius: 4, height: 40, width: 40 }}
+                />
+              </Pressable>
+            ) : null}
+            <Pressable
+              // Spoken as one link; "12m" would be read as meters.
+              accessibilityLabel={[
+                meta.title ?? "Untitled",
+                providerLabel,
+                durationMinutes === null
+                  ? null
+                  : spokenDuration(durationMinutes),
+                wordCount === null
+                  ? null
+                  : `${wordCount.toLocaleString()} words`,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+              accessibilityRole="link"
+              className="min-w-0 flex-1"
+              // About 38pt tall; the slop (inside the card's padding) makes 44.
+              hitSlop={{ bottom: 3, top: 3 }}
+              onPress={() => Linking.openURL(meta.url)}
             >
-              {meta.title ?? "Untitled"}
-            </Text>
-            <Text className="mt-0.5 text-muted-foreground text-xs">
-              {getProviderLabel(meta.provider)}
-              {(() => {
-                const dur = getLinkDurationMinutes(meta);
-                return dur === null ? "" : ` · ${dur}m`;
-              })()}
-              {(() => {
-                const wc = getLinkWordCount(meta);
-                return wc === null ? "" : ` · ${wc.toLocaleString()} words`;
-              })()}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => onRemoveLink(index)}
-            style={{ paddingTop: 2 }}
-          >
-            <Icon as={XCircle} className="text-muted-foreground" size={16} />
-          </Pressable>
-        </View>
-      ))}
+              <Text
+                className="font-semibold text-foreground text-sm"
+                numberOfLines={1}
+              >
+                {meta.title ?? "Untitled"}
+              </Text>
+              <Text className="mt-0.5 text-muted-foreground text-xs">
+                {providerLabel}
+                {durationMinutes === null ? "" : ` · ${durationMinutes}m`}
+                {wordCount === null
+                  ? ""
+                  : ` · ${wordCount.toLocaleString()} words`}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Remove link ${meta.title ?? meta.url}`}
+              accessibilityRole="button"
+              onPress={() => onRemoveLink(index)}
+              // 44pt to touch around the 16pt icon, laid out as before (16pt,
+              // 2pt down) by the negative margins; hitSlop would be clipped
+              // at the card's edge.
+              style={{
+                alignItems: "center",
+                height: 44,
+                justifyContent: "center",
+                marginBottom: -14,
+                marginHorizontal: -14,
+                marginTop: -12,
+                width: 44,
+              }}
+            >
+              <Icon as={XCircle} className="text-muted-foreground" size={16} />
+            </Pressable>
+          </View>
+        );
+      })}
 
       <View className="mb-2.5 flex-row items-center gap-2">
-        <Pressable
+        <View
           style={{ alignItems: "center", justifyContent: "center", width: 36 }}
         >
           {isParsing ? (
@@ -927,8 +1139,9 @@ function NativeLinkListEditor({
           ) : (
             <Icon as={Link2} className="text-muted-foreground" size={16} />
           )}
-        </Pressable>
+        </View>
         <Input
+          accessibilityLabel="Add link"
           autoCapitalize="none"
           autoCorrect={false}
           containerStyle={{ flex: 1 }}

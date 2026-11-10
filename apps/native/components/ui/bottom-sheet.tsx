@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import {
   Dimensions,
+  Platform,
   Modal,
   ScrollView,
   TouchableWithoutFeedback,
@@ -127,6 +128,11 @@ const BottomSheetContent = ({
 type BottomSheetProps = {
   isVisible: boolean;
   onClose: () => void;
+  /**
+   * After the sheet's modal has fully gone. Open the next sheet here: iOS
+   * can't present a modal while another is still dismissing.
+   */
+  onDismissed?: () => void;
   children: React.ReactNode;
   snapPoints?: number[];
   enableBackdropDismiss?: boolean;
@@ -139,6 +145,7 @@ type BottomSheetProps = {
 export function BottomSheet({
   isVisible,
   onClose,
+  onDismissed,
   children,
   snapPoints = [0.3, 0.6, 0.9],
   enableBackdropDismiss = true,
@@ -159,6 +166,13 @@ export function BottomSheet({
   const defaultHeight = snapPointsHeights[0];
 
   const [modalVisible, setModalVisible] = React.useState(false);
+  const wasModalVisible = React.useRef(false);
+  useEffect(() => {
+    if (wasModalVisible.current && !modalVisible && Platform.OS !== "ios") {
+      onDismissed?.();
+    }
+    wasModalVisible.current = modalVisible;
+  }, [modalVisible, onDismissed]);
 
   useEffect(() => {
     if (isVisible) {
@@ -234,6 +248,9 @@ export function BottomSheet({
   };
 
   const gesture = Gesture.Pan()
+    // Turned off rather than unwrapped: swapping the tree would remount the
+    // content, and with it any dialog open over the sheet and its scroll.
+    .enabled(!disablePanGesture)
     .onStart(() => {
       context.value = { y: translateY.value };
     })
@@ -277,6 +294,8 @@ export function BottomSheet({
   return (
     <Modal
       animationType="none"
+      // iOS reports the end of dismissal; Android has no dismissal to wait for.
+      onDismiss={onDismissed}
       onRequestClose={animateClose}
       statusBarTranslucent
       transparent
@@ -293,7 +312,7 @@ export function BottomSheet({
             <Animated.View style={{ flex: 1 }} />
           </TouchableWithoutFeedback>
 
-          {disablePanGesture ? (
+          <GestureDetector gesture={gesture}>
             <BottomSheetContent
               cardColor={cardColor}
               children={children}
@@ -304,20 +323,7 @@ export function BottomSheet({
               style={style}
               title={title}
             />
-          ) : (
-            <GestureDetector gesture={gesture}>
-              <BottomSheetContent
-                cardColor={cardColor}
-                children={children}
-                headerRight={headerRight}
-                mutedColor={mutedColor}
-                onHandlePress={handlePress}
-                rBottomSheetStyle={rBottomSheetStyle}
-                style={style}
-                title={title}
-              />
-            </GestureDetector>
-          )}
+          </GestureDetector>
         </Animated.View>
       </GestureHandlerRootView>
     </Modal>

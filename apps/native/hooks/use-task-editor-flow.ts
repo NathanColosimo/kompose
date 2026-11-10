@@ -3,13 +3,23 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
+import {
+  SAVE_FAILURE_MESSAGE,
+  TASK_CREATE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { SCOPE_DIALOG_COPY } from "@kompose/state/recurrence-scope-options";
 import {
   getTaskUpdateScopeDecision,
   haveTaskCoreFieldsChanged,
+  haveTaskTagIdsChanged,
+  markStatusFailureMessage,
   resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { AccessibilityInfo, Alert, Keyboard } from "react-native";
+import { Temporal } from "temporal-polyfill";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
@@ -30,8 +40,40 @@ function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   };
 }
 
-function trimmedDescription(draft: TaskDraft): string | null {
-  return draft.description.trim() ? draft.description.trim() : null;
+/** The title as typed, or the first link's title (or host) when blank. */
+function resolvedTitle(draft: TaskDraft): string {
+  const title = draft.title.trim();
+  const first = draft.links[0];
+  if (title || !first) {
+    return title;
+  }
+  return first.title ?? new URL(first.url).hostname;
+}
+
+/** The scope decision for saving `draft` over `task`, and whether it changed. */
+function scopeDecisionFor(draft: TaskDraft, task: TaskSelectDecoded) {
+  const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
+    next: draft,
+    previous: task,
+  });
+  const previousTagIds = task.tags.map((tag) => tag.id);
+  const hasChanges =
+    hasCoreFieldChanges ||
+    JSON.stringify(task.links ?? []) !== JSON.stringify(draft.links) ||
+    !taskRecurrenceEquals(task.recurrence, draft.recurrence) ||
+    haveTaskTagIdsChanged(previousTagIds, draft.tagIds);
+  return {
+    decision: getTaskUpdateScopeDecision({
+      hasCoreFieldChanges,
+      isSeriesMaster: task.seriesMasterId === task.id,
+      isRecurring: task.seriesMasterId !== null,
+      nextRecurrence: draft.recurrence,
+      nextTagIds: draft.tagIds,
+      previousRecurrence: task.recurrence,
+      previousTagIds,
+    }),
+    hasChanges,
+  };
 }
 
 /** Shared task editor orchestration; see documents/mobile-task-popover.md. */
@@ -43,143 +85,250 @@ export function useTaskEditorFlow() {
     null
   );
   const [scopeDialog, setScopeDialog] = useState<TaskScopeDialog>(null);
+  /** The draft (with any done change) the save scope dialog will apply. */
   const [pendingSaveDraft, setPendingSaveDraft] = useState<TaskDraft | null>(
     null
   );
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
+  /** A save is running; the editor holds open (read-only) until it ends. */
+  const isSaving = createTask.isPending || updateTask.isPending;
+  const resetCreate = createTask.reset;
+  const resetUpdate = updateTask.reset;
+  /**
+   * The editor session: bumped on every open and close, so a save that
+   * resolves later only acts on the session it started in (not a closed
+   * editor, another task, or the same task reopened).
+   */
+  const sessionRef = useRef(0);
 
-  // Stable so callers can use it in effect dependencies.
-  const openCreate = useCallback((nextDraft: TaskDraft) => {
-    setEditingTask(null);
+  /** Ends the current session and resets everything it held. */
+  const resetSession = useCallback(() => {
+    sessionRef.current += 1;
+    resetCreate();
+    resetUpdate();
     setPendingSaveDraft(null);
     setScopeDialog(null);
-    setDraft(nextDraft);
-    setIsEditorOpen(true);
-  }, []);
+  }, [resetCreate, resetUpdate]);
+
+  // Stable so callers can use it in effect dependencies.
+  const openCreate = useCallback(
+    (nextDraft: TaskDraft) => {
+      resetSession();
+      setEditingTask(null);
+      setDraft(nextDraft);
+      setIsEditorOpen(true);
+    },
+    [resetSession]
+  );
 
   function openEdit(task: TaskSelectDecoded) {
     const nextEditingTask: TaskSelectDecoded = {
       ...task,
       recurrence: resolveTaskRecurrenceForEditor(task, tasksQuery.data ?? []),
     };
+    resetSession();
     setEditingTask(nextEditingTask);
     setDraft(buildDraftFromTask(nextEditingTask));
     setIsEditorOpen(true);
   }
 
+  // The task stays set until the next open, so the sheet keeps reading
+  // "Edit task" (not "New task") while it animates out.
   function close() {
+    resetSession();
     setIsEditorOpen(false);
-    setEditingTask(null);
+  }
+
+  function updateDraft(updater: (previous: TaskDraft) => TaskDraft) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = updater(current);
+      if (
+        next.startDate &&
+        next.recurrence?.until &&
+        Temporal.PlainDate.compare(
+          next.startDate,
+          Temporal.PlainDate.from(next.recurrence.until)
+        ) > 0
+      ) {
+        return {
+          ...next,
+          recurrence: { ...next.recurrence, until: next.startDate.toString() },
+        };
+      }
+      return next;
+    });
+  }
+
+  const canSave = Boolean(
+    draft &&
+      !isSaving &&
+      resolvedTitle(draft) &&
+      draft.durationMinutes > 0 &&
+      (!draft.recurrence || draft.startDate)
+  );
+
+  /**
+   * Saves the draft over `task`, with its done state when that changed.
+   * Resolves to whether it saved. Not optimistic: the editor holds open on
+   * it, so the cache waits for the server instead of rolling back over the
+   * draft on failure.
+   */
+  function commitUpdate(
+    task: TaskSelectDecoded,
+    nextDraft: TaskDraft,
+    scope: UpdateScope
+  ): Promise<boolean> {
+    // The status goes on this occurrence alone; the server keeps it when a
+    // "following" save also changes the series.
+    const statusChanged = nextDraft.status !== task.status;
+    return updateTask
+      .mutateAsync({
+        failureMessage: statusChanged
+          ? markStatusFailureMessage(
+              nextDraft.status === "done" ? "done" : "todo"
+            )
+          : SAVE_FAILURE_MESSAGE,
+        id: task.id,
+        optimistic: false,
+        scope,
+        task: {
+          ...(statusChanged ? { status: nextDraft.status } : {}),
+          description: nextDraft.description.trim() || null,
+          dueDate: nextDraft.dueDate,
+          durationMinutes: nextDraft.durationMinutes,
+          links: nextDraft.links,
+          recurrence: nextDraft.recurrence,
+          startDate: nextDraft.startDate,
+          startTime: nextDraft.startTime,
+          tagIds: nextDraft.tagIds,
+          title: resolvedTitle(nextDraft),
+        },
+      })
+      .then(
+        () => true,
+        () => false
+      );
+  }
+
+  /** Resolves true once the task is created. */
+  function create(nextDraft: TaskDraft): Promise<boolean> {
+    return createTask
+      .mutateAsync({
+        description: nextDraft.description.trim() || null,
+        dueDate: nextDraft.dueDate,
+        durationMinutes: nextDraft.durationMinutes,
+        failureMessage: TASK_CREATE_FAILURE_MESSAGE,
+        isException: false,
+        links: nextDraft.links,
+        recurrence: nextDraft.recurrence,
+        seriesMasterId: null,
+        startDate: nextDraft.startDate,
+        startTime: nextDraft.startTime,
+        status: "todo",
+        tagIds: nextDraft.tagIds,
+        title: resolvedTitle(nextDraft),
+      })
+      .then(
+        () => true,
+        () => false
+      );
+  }
+
+  /**
+   * Holds the editor (and any scope dialog, its Apply reading "Saving…")
+   * until `saved` resolves: then everything closes, or on failure the
+   * dialog goes and the editor keeps the edits, with its done state as
+   * saved.
+   */
+  function holdUntil(saved: Promise<boolean>) {
+    Keyboard.dismiss();
+    AccessibilityInfo.announceForAccessibility("Saving…");
+    const session = sessionRef.current;
+    saved.then((ok) => {
+      if (sessionRef.current !== session) {
+        return;
+      }
+      if (ok) {
+        close();
+        return;
+      }
+      cancelScopeDialog();
+    });
+  }
+
+  /** Saves `nextDraft`, through the scope dialog when the task repeats. */
+  function saveDraft(task: TaskSelectDecoded, nextDraft: TaskDraft) {
+    const { decision } = scopeDecisionFor(nextDraft, task);
+    if (decision.action === "prompt") {
+      // The dialog opens over the editor, which stays put: Cancel goes
+      // straight back to it with the edits.
+      setPendingSaveDraft(nextDraft);
+      setSaveScope(decision.defaultScope);
+      setScopeDialog("save");
+      return;
+    }
+    holdUntil(commitUpdate(task, nextDraft, decision.scope));
+  }
+
+  function save() {
+    if (!(draft && canSave)) {
+      return;
+    }
+    if (!editingTask) {
+      holdUntil(create(draft));
+      return;
+    }
+    saveDraft(editingTask, draft);
+  }
+
+  /**
+   * Mark done (or not done) from the editor. Unsaved edits are saved with
+   * it, through the scope dialog when the task repeats, so they're never
+   * dropped.
+   */
+  function toggleDone(nextStatus: TaskDraft["status"]) {
+    if (!(editingTask && draft)) {
+      return;
+    }
+    if (!scopeDecisionFor(draft, editingTask).hasChanges) {
+      updateTask.mutate({
+        id: editingTask.id,
+        scope: "this",
+        task: { status: nextStatus },
+      });
+      close();
+      return;
+    }
+    if (!canSave) {
+      return;
+    }
+    updateDraft((current) => ({ ...current, status: nextStatus }));
+    saveDraft(editingTask, { ...draft, status: nextStatus });
+  }
+
+  /**
+   * Back to the editor underneath any scope dialog, edits kept and the done
+   * checkbox as saved: on Cancel (or a backdrop tap), and after a failed
+   * save.
+   */
+  function cancelScopeDialog() {
+    if (editingTask) {
+      const { status } = editingTask;
+      updateDraft((current) => ({ ...current, status }));
+    }
     setPendingSaveDraft(null);
     setScopeDialog(null);
   }
 
-  function updateDraft(updater: (previous: TaskDraft) => TaskDraft) {
-    setDraft((current) => (current ? updater(current) : current));
-  }
-
-  function commitUpdate(nextDraft: TaskDraft, scope: UpdateScope) {
-    if (!editingTask) {
+  function confirmScopedSave() {
+    if (!(editingTask && pendingSaveDraft)) {
       return;
     }
-
-    updateTask.mutate({
-      id: editingTask.id,
-      scope,
-      task: {
-        description: trimmedDescription(nextDraft),
-        dueDate: nextDraft.dueDate,
-        durationMinutes: nextDraft.durationMinutes,
-        links: nextDraft.links,
-        recurrence: nextDraft.recurrence,
-        startDate: nextDraft.startDate,
-        startTime: nextDraft.startTime,
-        tagIds: nextDraft.tagIds,
-        title: nextDraft.title.trim(),
-      },
-    });
-  }
-
-  function create(nextDraft: TaskDraft) {
-    let title = nextDraft.title.trim();
-    if (!title && nextDraft.links.length > 0) {
-      const first = nextDraft.links[0];
-      title = first.title ?? new URL(first.url).hostname;
-    }
-
-    createTask.mutate({
-      description: trimmedDescription(nextDraft),
-      dueDate: nextDraft.dueDate,
-      durationMinutes: nextDraft.durationMinutes,
-      isException: false,
-      links: nextDraft.links,
-      recurrence: nextDraft.recurrence,
-      seriesMasterId: null,
-      startDate: nextDraft.startDate,
-      startTime: nextDraft.startTime,
-      status: "todo",
-      tagIds: nextDraft.tagIds,
-      title,
-    });
-  }
-
-  function save() {
-    if (!draft) {
-      return;
-    }
-    if (!draft.title.trim() && draft.links.length === 0) {
-      return;
-    }
-    if (draft.durationMinutes <= 0) {
-      return;
-    }
-
-    if (!editingTask) {
-      create(draft);
-      close();
-      return;
-    }
-
-    const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-      next: {
-        description: draft.description,
-        dueDate: draft.dueDate,
-        durationMinutes: draft.durationMinutes,
-        startDate: draft.startDate,
-        startTime: draft.startTime,
-        title: draft.title,
-      },
-      previous: {
-        description: editingTask.description,
-        dueDate: editingTask.dueDate,
-        durationMinutes: editingTask.durationMinutes,
-        startDate: editingTask.startDate,
-        startTime: editingTask.startTime,
-        title: editingTask.title,
-      },
-    });
-
-    const decision = getTaskUpdateScopeDecision({
-      hasCoreFieldChanges,
-      isRecurring: editingTask.seriesMasterId !== null,
-      isSeriesMaster: editingTask.seriesMasterId === editingTask.id,
-      nextRecurrence: draft.recurrence,
-      nextTagIds: draft.tagIds,
-      previousRecurrence: editingTask.recurrence,
-      previousTagIds: editingTask.tags.map((tag) => tag.id),
-    });
-
-    if (decision.action === "prompt") {
-      setPendingSaveDraft(draft);
-      setSaveScope(decision.defaultScope);
-      setIsEditorOpen(false);
-      setScopeDialog("save");
-      return;
-    }
-
-    commitUpdate(draft, decision.scope);
-    close();
+    holdUntil(commitUpdate(editingTask, pendingSaveDraft, saveScope));
   }
 
   function requestDelete() {
@@ -188,22 +337,26 @@ export function useTaskEditorFlow() {
     }
 
     if (editingTask.seriesMasterId) {
+      // Over the editor, like the save dialog: Cancel goes back to it.
       setDeleteScope("this");
-      setIsEditorOpen(false);
       setScopeDialog("delete");
       return;
     }
 
-    deleteTask.mutate({ id: editingTask.id, scope: "this" });
-    close();
-  }
-
-  function confirmScopedSave() {
-    if (!(editingTask && pendingSaveDraft)) {
-      return;
-    }
-    commitUpdate(pendingSaveDraft, saveScope);
-    close();
+    // No undo, and the trash sits beside Save: confirm first, as web does.
+    const id = editingTask.id;
+    const { description, title } = SCOPE_DIALOG_COPY.deleteTaskAlone;
+    Alert.alert(title, description, [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => {
+          deleteTask.mutate({ id, scope: "this" });
+          close();
+        },
+        style: "destructive",
+        text: "Delete",
+      },
+    ]);
   }
 
   function confirmScopedDelete() {
@@ -214,19 +367,9 @@ export function useTaskEditorFlow() {
     close();
   }
 
-  function toggleDone(nextStatus: TaskDraft["status"]) {
-    if (!editingTask) {
-      return;
-    }
-    updateTask.mutate({
-      id: editingTask.id,
-      scope: "this",
-      task: { status: nextStatus },
-    });
-    close();
-  }
-
   return {
+    cancelScopeDialog,
+    canSave,
     close,
     confirmScopedDelete,
     confirmScopedSave,
@@ -234,6 +377,7 @@ export function useTaskEditorFlow() {
     draft,
     editingTask,
     isEditorOpen,
+    isSaving,
     openCreate,
     openEdit,
     requestDelete,
