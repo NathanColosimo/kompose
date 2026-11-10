@@ -97,6 +97,18 @@ export const EventSchema = z.object({
   outOfOfficeProperties: googleEventOpaqueObjectSchema.optional(),
   workingLocationProperties: googleEventOpaqueObjectSchema.optional(),
 
+  // Kept so a write (a full replace) doesn't reset them, and so an
+  // occurrence that sets its own is seen as changed.
+  anyoneCanAddSelf: z.boolean().optional(),
+  attachments: z.array(googleEventOpaqueObjectSchema).optional(),
+  guestsCanInviteOthers: z.boolean().optional(),
+  guestsCanModify: z.boolean().optional(),
+  guestsCanSeeOtherGuests: z.boolean().optional(),
+  reminders: googleEventOpaqueObjectSchema.optional(),
+  source: googleEventOpaqueObjectSchema.optional(),
+  transparency: z.string().optional(),
+  visibility: z.string().optional(),
+
   conferenceData: z
     .object({
       entryPoints: z
@@ -204,6 +216,8 @@ export type RecurrenceScope = z.infer<typeof RecurrenceScopeSchema>;
 export const CreateEventInputSchema = EventSchema.omit({
   id: true,
   htmlLink: true,
+  // Google gives each new event its own; one sent would claim another's.
+  iCalUID: true,
   organizer: true,
 });
 
