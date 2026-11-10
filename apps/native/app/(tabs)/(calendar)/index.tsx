@@ -751,6 +751,10 @@ function recurrenceToSend(
 /** What a delete dialog says after its delete failed, as on web. */
 const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
 
+/** For a calendar move that failed after its edits saved, as on web. */
+const SAVED_NOT_MOVED_MESSAGE =
+  "Saved your changes, but couldn't move the event to the other calendar. Save to try again.";
+
 /**
  * Delete confirmations for an event, over its editor: Cancel goes back to the
  * editor with its edits, and Delete holds "Deleting…" until it's done. A
@@ -816,7 +820,7 @@ function EventDeleteDialogs({
 /**
  * Scope for saving a recurring event. It opens over the editor (iOS presents
  * it from the sheet's modal): Cancel goes back to the editor with the edits,
- * and Apply holds "Saving…" until the save ends.
+ * and Save holds "Saving…" until the save ends.
  */
 function EventSaveScopeDialog({
   changes,
@@ -856,7 +860,7 @@ function EventSaveScopeDialog({
       closeOnConfirm={false}
       // The chosen scope can turn off once the series loads.
       confirmDisabled={Boolean(disabled[scope])}
-      confirmText="Apply"
+      confirmText="Save"
       description={description}
       isVisible={isVisible}
       onCancel={onCancel}
@@ -1595,6 +1599,8 @@ export default function CalendarTab() {
           calendarId: sourceCalendar.calendarId,
           destinationCalendarId,
           eventId: draft.eventId,
+          // The edits are in by now: a failed move mustn't say they aren't.
+          failureMessage: SAVED_NOT_MOVED_MESSAGE,
           scope,
         });
       }
