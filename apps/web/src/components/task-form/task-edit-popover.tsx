@@ -790,8 +790,6 @@ export function TaskCreateForm({
 
   return (
     <form className="space-y-3" onSubmit={handleSubmit(submit)}>
-      {/* Remounts read-only while the create runs, closing an open picker
-          (its options are portaled outside the popover's fieldset). */}
       <TaskFields form={form} />
     </form>
   );
