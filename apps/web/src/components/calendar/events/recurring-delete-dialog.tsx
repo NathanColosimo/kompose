@@ -4,20 +4,15 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import {
   chosenScope,
   eventDeleteScopeState,
   RECURRENCE_SCOPE_OPTIONS,
-  refuseSave,
-  type SaveRefusals,
   SCOPE_DIALOG_COPY,
-  seriesCutUnsure,
-  seriesRefusalOf,
 } from "@kompose/state/recurrence-scope-options";
-import { atom, useAtom, useAtomValue } from "jotai";
+import { atom, useAtom } from "jotai";
 import { useState } from "react";
 import { RecurrenceScopeDialog } from "@/components/recurrence-scope-dialog";
 
@@ -46,7 +41,7 @@ export const recurringDeleteAtom = atom<{
  * The scope dialog for deleting a recurring event, mounted once with the
  * calendar rather than in the event's block: a delete takes the event off
  * the calendar as it starts, which would take a dialog inside it along,
- * so a refusal or failure couldn't be said.
+ * so a failure couldn't be said.
  */
 export function RecurringDeleteDialog() {
   const [ask, setAsk] = useAtom(recurringDeleteAtom);
@@ -73,7 +68,6 @@ function DeleteScopeDialog({
   target: RecurringDelete;
 }) {
   const { accountId, calendarId, event } = target;
-  const timeZone = useAtomValue(timezoneAtom);
   const { deleteEvent } = useGoogleEventMutations();
   const series = useRecurringEventMaster({
     accountId,
@@ -82,39 +76,25 @@ function DeleteScopeDialog({
     event,
   });
   const [pick, setPick] = useState(target.defaultScope);
-  /** The scopes the server refused for this delete, and why. */
-  const [refused, setRefused] = useState<SaveRefusals | null>(null);
   const state = eventDeleteScopeState({
-    cutUnsure: seriesCutUnsure(event, series.data, timeZone),
-    refused,
     seriesRuleFailed: series.ruleFailed,
     seriesRuleLoaded: Boolean(event.recurrence?.length || series.ruleReady),
   });
-  // The delete runs quiet, so a failure other than a refusal is said here.
-  const failed =
-    deleteEvent.isError && seriesRefusalOf(deleteEvent.error) === null;
+  // The delete runs quiet, so a failure is said here.
+  const failed = deleteEvent.isError;
   // The one asked for, or the nearest available while it's off.
   const scope = chosenScope(pick, pick, state.disabled);
 
+  // A failure rejects, so the dialog stays open.
   const confirm = async () => {
-    try {
-      await deleteEvent.mutateAsync({
-        accountId,
-        calendarId,
-        eventId: event.id,
-        failureMessage: DELETE_FAILURE_MESSAGE,
-        quiet: true,
-        scope,
-      });
-    } catch (error) {
-      // A refused scope turns off, led by why. Rethrown, so the dialog
-      // stays open.
-      const refusal = seriesRefusalOf(error);
-      if (refusal) {
-        setRefused((before) => refuseSave(before, scope, refusal));
-      }
-      throw error;
-    }
+    await deleteEvent.mutateAsync({
+      accountId,
+      calendarId,
+      eventId: event.id,
+      failureMessage: DELETE_FAILURE_MESSAGE,
+      quiet: true,
+      scope,
+    });
   };
 
   return (

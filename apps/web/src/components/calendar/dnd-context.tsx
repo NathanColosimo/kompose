@@ -37,7 +37,6 @@ import {
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useMemo, useReducer, useRef, useState } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -70,11 +69,7 @@ import {
 } from "./dnd/helpers";
 import { movingItemKey, movingItemKeyAtom } from "./dnd/moving-item";
 import type { DragData, PreviewRect } from "./dnd/types";
-import {
-  cachedOccurrences,
-  eventForScope,
-  saveFacts,
-} from "./events/event-edit-utils";
+import { eventForScope, saveFacts } from "./events/event-edit-utils";
 import { GoogleCalendarEventPreview } from "./events/google-event";
 import { TaskEventPreview } from "./events/task-event";
 import { COLUMN_FREE_STRIP } from "./time-grid/day-column";
@@ -220,7 +215,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const [scopeDialog, setScopeDialog] = useState<"google" | "task" | null>(
     null
   );
-  const queryClient = useQueryClient();
   const pendingMaster = useRecurringEventMaster({
     accountId: pendingGoogleUpdate?.update.accountId ?? "",
     calendarId: pendingGoogleUpdate?.update.calendarId ?? "",
@@ -744,18 +738,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
     }
   }, [pendingUpdate, taskScope, updateTask]);
 
-  // The series' cached occurrences, read once per drop.
-  const pendingOccurrences = useMemo(
-    () =>
-      pendingGoogleUpdate
-        ? cachedOccurrences(
-            queryClient,
-            pendingGoogleUpdate.update,
-            pendingGoogleUpdate.occurrence
-          )
-        : [],
-    [pendingGoogleUpdate, queryClient]
-  );
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
         calendarChanged: false,
@@ -763,7 +745,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         ...saveFacts({
           edited: pendingGoogleUpdate.update.event,
           event: pendingGoogleUpdate.occurrence,
-          loaded: pendingOccurrences,
           master: pendingMaster.data ?? undefined,
           timeZone,
         }),

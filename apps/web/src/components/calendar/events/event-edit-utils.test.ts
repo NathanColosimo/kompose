@@ -124,15 +124,6 @@ describe("saveFacts", () => {
     start: at("2026-11-02T10:00:00-05:00"),
     summary: "Weekly sync",
   };
-  // Nov 23's meeting, renamed on its own, as the events cache has it.
-  const renamed: GoogleEvent = {
-    end: at("2026-11-23T10:30:00-05:00"),
-    id: "sync_20261123T150000Z",
-    originalStartTime: at("2026-11-23T10:00:00-05:00"),
-    recurringEventId: "sync",
-    start: at("2026-11-23T10:00:00-05:00"),
-    summary: "Sync (with the client)",
-  };
   const later = {
     end: at("2026-11-16T11:30:00-05:00"),
     start: at("2026-11-16T11:00:00-05:00"),
@@ -145,31 +136,29 @@ describe("saveFacts", () => {
     saveFacts({
       edited,
       event: onSlot,
-      loaded: [onSlot, renamed],
       master: loadedSeries ?? undefined,
       timeZone: zone,
     });
 
-  test("a new time names the changed meeting Entire series would reset", () => {
+  test("a new time on its own day leaves every scope on", () => {
+    // What it would cost other occurrences is the server's to refuse.
     const changes = facts(later);
     expect(changes.retimed).toBe(true);
-    expect(changes.entireSeriesCost?.reason).toBe("newStart");
-    expect(changes.entireSeriesCost?.day.toString()).toBe("2026-11-23");
+    expect(changes.dateMoved).toBe(false);
     expect(
       eventSaveDisabledScopes({
         ...changes,
         calendarChanged: false,
         patternChanged: false,
         seriesRuleLoaded: true,
-      }).all
-    ).toBe(true);
+      })
+    ).toEqual({});
   });
 
-  test("times left as they were cost the series nothing", () => {
+  test("times left as they were move nothing", () => {
     const changes = facts({ end: onSlot.end, start: onSlot.start });
     expect(changes.retimed).toBe(false);
     expect(changes.dateMoved).toBe(false);
-    expect(changes.entireSeriesCost).toBeNull();
   });
 
   test("a series that meets twice a day can't take a new time as a whole", () => {
@@ -197,6 +186,5 @@ describe("saveFacts", () => {
   test("before the series loads, a new time might move its start", () => {
     const changes = facts(later, null);
     expect(changes.retimed).toBe(true);
-    expect(changes.entireSeriesCost).toBeNull();
   });
 });

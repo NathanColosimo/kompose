@@ -2,9 +2,7 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
-import { getGoogleEventsByCalendarQueryKey } from "@kompose/state/google-calendar-query-keys";
 import {
-  entireSeriesCost,
   entireSeriesMovesSeveralADay,
   entireSeriesStartMoves,
   GOOGLE_EVENT_WEEKDAYS,
@@ -19,7 +17,6 @@ import {
   seriesMeetsSeveralTimesADay,
 } from "@kompose/state/recurrence-scope-options";
 import { seriesEditFields } from "@kompose/state/series-edit";
-import type { QueryClient } from "@tanstack/react-query";
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
 
 export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
@@ -167,28 +164,25 @@ export function eventForScope({
 /**
  * What a recurring event's save changes, for the scopes its dialog offers
  * (#127's `EventSaveChanges`), as the server will read it: from what the
- * save sends (its times, and its repeat when it sends one), the series as
- * loaded (`master`, once it is), and the series' occurrences in the events
- * cache (`loaded`, the opened one too). Shared by the editor and drops.
+ * save sends (its times, and its repeat when it sends one) and the series
+ * as loaded (`master`, once it is). What it would cost the series' other
+ * occurrences is the server's to refuse. Shared by the editor and drops.
  */
 export function saveFacts({
   edited,
   event,
-  loaded,
   master,
   timeZone,
 }: {
   edited: Pick<GoogleEvent, "end" | "recurrence" | "start">;
   /** The event the edit started from, as loaded. */
   event: GoogleEvent;
-  loaded: GoogleEvent[];
   master: GoogleEvent | undefined;
   /** The app's zone. */
   timeZone: string;
 }): Pick<
   EventSaveChanges,
   | "dateMoved"
-  | "entireSeriesCost"
   | "movesSeveralADay"
   | "opensSeries"
   | "repeatSkips"
@@ -211,16 +205,6 @@ export function saveFacts({
       seriesStart,
       timeZone,
     }),
-    entireSeriesCost: master
-      ? entireSeriesCost({
-          edited: times,
-          loaded,
-          master,
-          occurrence: event,
-          recurrence,
-          timeZone,
-        })
-      : null,
     movesSeveralADay: master
       ? entireSeriesMovesSeveralADay({
           edited: times,
@@ -247,26 +231,4 @@ export function saveFacts({
       : undefined,
     seriesTimeZone,
   };
-}
-
-/**
- * The series' occurrences in the events cache (the opened one too), for
- * what an Entire series save would cost those changed on their own
- * (`entireSeriesCost`).
- */
-export function cachedOccurrences(
-  queryClient: QueryClient,
-  calendar: { accountId: string; calendarId: string },
-  event: GoogleEvent | undefined
-): GoogleEvent[] {
-  const seriesId = event?.recurringEventId;
-  if (!seriesId) {
-    return [];
-  }
-  return queryClient
-    .getQueriesData<GoogleEvent[]>({
-      queryKey: getGoogleEventsByCalendarQueryKey(calendar),
-    })
-    .flatMap(([, events]) => events ?? [])
-    .filter((cached) => cached.recurringEventId === seriesId);
 }

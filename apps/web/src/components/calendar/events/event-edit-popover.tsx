@@ -79,7 +79,6 @@ import {
   formatEventWhen,
   moveEventStart,
 } from "@kompose/state/temporal-utils";
-import { useQueryClient } from "@tanstack/react-query";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   CalendarIcon,
@@ -170,7 +169,6 @@ import type {
 } from "../event-creation/create-form-shared";
 import {
   buildTemporalPayload,
-  cachedOccurrences,
   eventForScope,
   saveFacts,
   WEEKDAYS,
@@ -835,7 +833,6 @@ export function EventEditPopover({
   );
 
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
-  const queryClient = useQueryClient();
   const setRecurringDelete = useSetAtom(recurringDeleteAtom);
   const moveEvent = useMoveGoogleEventMutation();
   // The series' rule (an occurrence's lives on its master; shared with the
@@ -974,25 +971,13 @@ export function EventEditPopover({
     ]
   );
 
-  // The series' cached occurrences, read once per pending save: the save
-  // stays pending after the dialog closes (so its words hold as it fades),
-  // and a closed editor needn't scan the cache on every render.
-  const pendingOccurrences = useMemo(
-    () =>
-      pendingSave
-        ? cachedOccurrences(queryClient, { accountId, calendarId }, event)
-        : [],
-    [accountId, calendarId, event, pendingSave, queryClient]
-  );
   // The scope the save dialog shows and saves with, worked out each time
-  // from the pending edit, the series as loaded now, and its occurrences
-  // as cached when the save went pending.
+  // from the pending edit and the series as loaded now.
   const pendingFacts: ScopeFacts =
     pendingSave && event
       ? saveFacts({
           edited: pendingSave.variables.event,
           event,
-          loaded: pendingOccurrences,
           master: seriesMaster.data ?? undefined,
           timeZone,
         })
