@@ -1478,6 +1478,38 @@ describe("a COUNT through a move onto a meeting skipped twice over", () => {
   });
 });
 
+describe("a COUNT through a pause", () => {
+  test("holds a deleted meeting's own place when a live one moves onto it", async () => {
+    // Mondays six times from Nov 9, Dec 7 deleted; from Nov 16 moved to Nov
+    // 30. Dec 7 stays deleted on its own day and holds its place: Nov 16
+    // (now Nov 30), Nov 23, Nov 30 and Dec 14 are left, four meetings.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=6"],
+    };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-12-07T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-30T09:30:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-30T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=5",
+      "EXDATE:20261207T140000Z",
+    ]);
+  });
+});
+
 describe("a COUNT the user changed", () => {
   test("is written as they set it", async () => {
     const five: Event = {
