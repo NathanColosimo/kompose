@@ -263,7 +263,8 @@ describe("untilDefaultDay", () => {
 });
 
 describe("repeatChanged", () => {
-  const source = ["RRULE:FREQ=WEEKLY;COUNT=10;BYDAY=MO"];
+  // Saved by another editor with its days Sunday first.
+  const source = ["RRULE:FREQ=WEEKLY;COUNT=10;BYDAY=SU,MO"];
   test("a repeat set back to the series' own reads as unchanged", () => {
     const pattern = parseGoogleEventRecurrenceRule(source[0]);
     const withCount = (count: number) => [
@@ -272,7 +273,8 @@ describe("repeatChanged", () => {
         source[0]
       ) ?? "",
     ];
-    // Changed to 5 and back to 10: the rule is rebuilt with its parts reordered.
+    // Changed to 5 and back to 10: the rule is rebuilt with its parts and
+    // days reordered.
     expect(withCount(10)).not.toEqual(source);
     expect(
       repeatChanged({ edited: true, recurrence: withCount(10), source })
