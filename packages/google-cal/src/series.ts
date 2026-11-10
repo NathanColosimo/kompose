@@ -72,6 +72,85 @@ export function ruleMeetsAt(params: {
         rule.matches(slot.toZonedDateTimeISO(first.timeZoneId));
 }
 
+/** A slot of a series: a moment, or a date when it's all day. */
+type Slot = Temporal.PlainDate | Temporal.Instant;
+
+/** `slot` as the library reads it: a date at UTC midnight, a moment in the series' zone. */
+function asLibraryTime(
+  slot: Slot,
+  first: Temporal.PlainDate | Temporal.ZonedDateTime
+): Temporal.ZonedDateTime {
+  if (slot instanceof Temporal.PlainDate) {
+    return slot.toZonedDateTime({ timeZone: "UTC" });
+  }
+  return slot.toZonedDateTimeISO(
+    first instanceof Temporal.ZonedDateTime ? first.timeZoneId : "UTC"
+  );
+}
+
+/** A meeting the library gives back, in the series' form. */
+function fromLibrary(
+  meeting: Temporal.ZonedDateTime,
+  first: Temporal.PlainDate | Temporal.ZonedDateTime
+): Slot {
+  return first instanceof Temporal.PlainDate
+    ? meeting.toPlainDate()
+    : meeting.toInstant();
+}
+
+/**
+ * `rule`'s meetings from `from` through `to`, as a series starting at
+ * `first` repeats it (its start is a meeting). Null when the rule can't be
+ * read.
+ */
+export function ruleMeetings(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  from: Slot;
+  rule: string;
+  to: Slot;
+}): Slot[] | null {
+  const { first } = params;
+  const rule = expand(params.rule, first, true);
+  return rule
+    ? rule
+        .between(
+          asLibraryTime(params.from, first),
+          asLibraryTime(params.to, first),
+          true
+        )
+        .map((meeting) => fromLibrary(meeting, first))
+    : null;
+}
+
+/**
+ * Whether `rule`, repeating from the series' start (`first`), has no
+ * meeting at or after `split`: its COUNT or UNTIL ran out before. Null
+ * when the rule can't be read.
+ */
+export function ruleEndsBefore(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+  split: Slot;
+}): boolean | null {
+  const { first } = params;
+  const rule = expand(params.rule, first, true);
+  return rule
+    ? rule.next(asLibraryTime(params.split, first), true) === null
+    : null;
+}
+
+/**
+ * The moment (a date, all day) `rule`'s UNTIL names, read against a series
+ * starting at `first`; null when it has none or can't be read.
+ */
+export function ruleUntil(params: {
+  first: Temporal.PlainDate | Temporal.ZonedDateTime;
+  rule: string;
+}): Slot | null {
+  const until = expand(params.rule, params.first, true)?.options().until;
+  return until ? fromLibrary(until, params.first) : null;
+}
+
 /**
  * How many days `rule` meets on from `from` through `through`, as a series
  * starting on `from` (which counts only if the rule meets on it). Null

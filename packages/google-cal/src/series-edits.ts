@@ -11,15 +11,26 @@ import { ruleDayCount } from "./series";
 const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
 import { type CreateEvent, type Event, EventSchema } from "./schema";
-import { lengthMs, startInstant } from "./until";
+import { DATE_ONLY, googleDateTime, lengthMs, startInstant } from "./until";
 
 /**
  * Why a series write is refused, before anything changes, with no
- * occurrences to name. `severalTimesADay` is refused for good: only a
- * series made in another app has several rules (Kompose writes one), and
- * Kompose doesn't write that shape.
+ * occurrences to name. `endsBeforeStart` stays because no write through
+ * Google's API does what was asked. `severalRules`, `addedOccurrence` and
+ * `severalTimesADay` are refused for good: only a series made in another
+ * app has several rules or added meetings (Kompose writes one rule and no
+ * RDATE), and Kompose doesn't write those shapes.
  */
 const PLAIN_REFUSALS = [
+  // This and following in a series with several rules (or an exclusion
+  // rule): a new series has one start, and Google counts every rule's
+  // days, phase and COUNT from it.
+  "severalRules",
+  // This and following from an added meeting off the rule's days: a new
+  // series starting there would count its rule's days and time from it.
+  "addedOccurrence",
+  // The save's own repeat ends before the new series' first meeting.
+  "endsBeforeStart",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
   "severalTimesADay",
@@ -42,7 +53,7 @@ export const SeriesRefusalSchema = Schema.Union([
   Schema.Struct({
     originalStarts: Schema.Array(Schema.String),
     reason: Schema.Literals(NAMING_REFUSALS),
-    /** Only a series takes it: a new repeat. */
+    /** Only a series takes it: a new repeat, or a calendar move. */
     seriesOnly: Schema.optional(Schema.Literal(true)),
     /**
      * The series has an exclusion rule (EXRULE, made in another app), which
@@ -106,6 +117,12 @@ function elsewhere(refusal: NamingRefusal): string {
 /** The refusal in words for the user. */
 export function refusalMessage(refusal: SeriesRefusal): string {
   switch (refusal.reason) {
+    case "severalRules":
+      return "This and following isn't available for a series with more than one rule: a new series has one start, and Google would count every rule's days from it, moving their meetings.";
+    case "addedOccurrence":
+      return "This and following isn't available for an occurrence added to the series on its own: a new series starting here would repeat its rule from this day and time, moving its meetings.";
+    case "endsBeforeStart":
+      return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "severalTimesADay":
       return "This series meets at several set times each day, so one new time can't replace them for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":
@@ -446,4 +463,48 @@ export function ownChanges(
   return keepsTimes(occurrence, slot, zone)
     ? fields
     : { ...fields, end: occurrence.end, start: occurrence.start };
+}
+
+/**
+ * Where an old occurrence lands when the series' first meeting moved from
+ * `splitStart` to `newStart`: as many days on, its time of day moved as
+ * much as the first meeting's. Null when the series changes between timed
+ * and all day.
+ */
+export function placeInNewSeries(params: {
+  newStart: Pick<Event["start"], "date" | "dateTime" | "timeZone">;
+  originalStart: string;
+  splitStart: string;
+  zone: string;
+}): string | null {
+  const { newStart, originalStart, splitStart, zone } = params;
+  const allDay = DATE_ONLY.test(splitStart);
+  if (
+    allDay !== Boolean(newStart.date) ||
+    allDay !== DATE_ONLY.test(originalStart)
+  ) {
+    return null;
+  }
+  if (newStart.date) {
+    const shift = Temporal.PlainDate.from(splitStart).until(newStart.date);
+    return Temporal.PlainDate.from(originalStart).add(shift).toString();
+  }
+  const from = startInstant({ dateTime: splitStart }, zone);
+  const to = startInstant(newStart, zone);
+  const original = startInstant({ dateTime: originalStart }, zone);
+  if (!(from && to && original)) {
+    return null;
+  }
+  const fromWall = from.toZonedDateTimeISO(zone).toPlainDateTime();
+  const toWall = to.toZonedDateTimeISO(zone).toPlainDateTime();
+  const days = fromWall.toPlainDate().until(toWall.toPlainDate());
+  const clock = fromWall.toPlainTime().until(toWall.toPlainTime());
+  return googleDateTime(
+    original
+      .toZonedDateTimeISO(zone)
+      .toPlainDateTime()
+      .add(days)
+      .add(clock)
+      .toZonedDateTime(zone)
+  );
 }

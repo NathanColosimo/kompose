@@ -1,47 +1,223 @@
 import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
-import { ruleMeetsAt } from "./series";
+import { ruleEndsBefore, ruleMeetsAt, ruleUntil } from "./series";
+import type { SeriesRefusal } from "./series-edits";
 import {
   DATE_ONLY,
   dateValues,
+  keepingDateValues,
   type RecurrenceValue,
   readRecurrenceValue,
 } from "./until";
 
-const STRIP_TIME_SEPARATORS = /[-:]/g;
-const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/;
-const UNTIL_REGEX = /;?UNTIL=[^;]+/;
-const COUNT_STRIP = /;?COUNT=[^;]+/;
-
-export function truncateRecurrenceForFollowing(
-  recurrence: string[],
-  occurrenceStart: Date,
-  allDay: boolean
-): string[] {
-  const baseRule = recurrence[0];
-  if (!baseRule) {
+/**
+ * The series' rules cut to end just before the occurrence at
+ * `originalStart` (the second before it, or the day before all day). UNTIL
+ * replaces COUNT; a rule that already ended keeps its end, as a cut never
+ * lengthens it. Each part keeps its own added days (UNTIL doesn't cut
+ * them). A cut at or before the series' own start (meetings added before
+ * it) skips that start too: Google keeps a series' start whatever its rule
+ * says.
+ */
+export function truncateRecurrenceForFollowing(params: {
+  originalStart: string;
+  recurrence: string[];
+  /** The series' first start, where its rules count from. */
+  seriesStart: { date?: string | null; dateTime?: string | null };
+  seriesZone: string;
+}): string[] {
+  const { originalStart, recurrence, seriesZone } = params;
+  const split = asValue(originalStart, seriesZone);
+  const first = asValue(
+    params.seriesStart.dateTime ?? params.seriesStart.date ?? "",
+    seriesZone
+  );
+  if (!(split && first)) {
     return recurrence;
   }
+  const until = split.instant
+    ? split.instant
+        .subtract({ seconds: 1 })
+        .toString({ smallestUnit: "second" })
+        .replace(/[-:]/g, "")
+    : split.day.subtract({ days: 1 }).toString().replace(/-/g, "");
+  const ended = (rule: string) =>
+    ruleEndsBefore({
+      first: libraryFirst(first, seriesZone),
+      rule,
+      split: split.instant ?? split.day,
+    }) === true;
+  const cut = splitAddedDays(
+    recurrence,
+    originalStart,
+    seriesZone,
+    "before"
+  ).map((line) => {
+    if (!isRule(line) || ended(line)) {
+      return line;
+    }
+    // Part by part, so "RRULE:COUNT=5;..." leaves no empty part behind.
+    const parts = line
+      .slice("RRULE:".length)
+      .split(";")
+      .filter(
+        (part) =>
+          part && !part.startsWith("COUNT=") && !part.startsWith("UNTIL=")
+      );
+    return `RRULE:${[...parts, `UNTIL=${until}`].join(";")}`;
+  });
+  const atOrBeforeStart = !beforeSplit(first, originalStart, seriesZone);
+  return atOrBeforeStart
+    ? skipping(
+        cut,
+        [first.instant?.toString() ?? first.day.toString()],
+        seriesZone
+      )
+    : cut;
+}
 
-  const untilDate = new Date(occurrenceStart);
-  if (allDay) {
-    untilDate.setDate(untilDate.getDate() - 1);
-    untilDate.setHours(0, 0, 0, 0);
-  } else {
-    untilDate.setSeconds(untilDate.getSeconds() - 1);
+/** A series' start as the library reads it: a date, or a zoned time. */
+function libraryFirst(
+  first: RecurrenceValue,
+  seriesZone: string
+): Temporal.PlainDate | Temporal.ZonedDateTime {
+  return first.instant?.toZonedDateTimeISO(seriesZone) ?? first.day;
+}
+
+/** Whether a recurrence value comes before the split at `originalStart`. */
+function beforeSplit(
+  value: RecurrenceValue,
+  originalStart: string,
+  seriesZone: string
+): boolean {
+  const split = asValue(originalStart, seriesZone);
+  if (!split) {
+    return false;
   }
-  const untilIso = untilDate
-    .toISOString()
-    .replace(STRIP_TIME_SEPARATORS, "")
-    .replace(STRIP_MILLIS_SUFFIX, "Z");
+  return value.instant && split.instant
+    ? Temporal.Instant.compare(value.instant, split.instant) < 0
+    : Temporal.PlainDate.compare(value.day, split.day) < 0;
+}
 
-  // COUNT and UNTIL are mutually exclusive per RFC 5545 — strip COUNT before adding UNTIL.
-  const withoutCountOrUntil = baseRule
-    .replace(COUNT_STRIP, "")
-    .replace(UNTIL_REGEX, "");
-  const nextRule = `${withoutCountOrUntil};UNTIL=${untilIso}`;
+/**
+ * The recurrence keeping only the RDATE days on one side of the split
+ * (`keep`). UNTIL doesn't cut added days, so each part takes its own.
+ */
+export function splitAddedDays(
+  recurrence: string[],
+  originalStart: string,
+  seriesZone: string,
+  keep: "before" | "from"
+): string[] {
+  return keepingDateValues(
+    recurrence,
+    "RDATE",
+    seriesZone,
+    (value) =>
+      beforeSplit(value, originalStart, seriesZone) === (keep === "before")
+  );
+}
 
-  return [nextRule, ...recurrence.slice(1)];
+/**
+ * Whether a new series' rule ends (UNTIL) before `start`, its first
+ * meeting: Google would keep only that meeting.
+ */
+export function endsBeforeStart(
+  recurrence: string[],
+  start: { date?: string | null; dateTime?: string | null },
+  seriesZone: string
+): boolean {
+  const first = asValue(start.dateTime ?? start.date ?? "", seriesZone);
+  const rule = recurrence.find(isRule);
+  if (!(first && rule)) {
+    return false;
+  }
+  const until = ruleUntil({ first: libraryFirst(first, seriesZone), rule });
+  if (!until) {
+    return false;
+  }
+  return until instanceof Temporal.Instant
+    ? Boolean(
+        first.instant && Temporal.Instant.compare(until, first.instant) < 0
+      )
+    : Temporal.PlainDate.compare(until, first.day) < 0;
+}
+
+/**
+ * Whether `slot` (an original start) is an added (RDATE) meeting. It may be
+ * a rule meeting too; the caller decides whose it is.
+ */
+export function addsSlot(
+  recurrence: string[],
+  slot: string,
+  seriesZone: string
+): boolean {
+  const value = asValue(slot, seriesZone);
+  return Boolean(
+    value &&
+      dateValues(recurrence, "RDATE", seriesZone).some((added) =>
+        sameValue(added, value)
+      )
+  );
+}
+
+/** A This and following split of a series, as the helpers below read it. */
+interface FollowingSplit {
+  masterRecurrence: string[] | null | undefined;
+  masterStart: { date?: string | null; dateTime?: string | null };
+  originalStart: string;
+  seriesZone: string;
+}
+
+/**
+ * Whether "This and following" from `originalStart` is the whole series:
+ * nothing of it comes before (it's at or before the series' start, with
+ * no meeting added before it).
+ */
+export function followingIsWhole(params: FollowingSplit): boolean {
+  const { originalStart, seriesZone } = params;
+  const first = asValue(
+    params.masterStart.dateTime ?? params.masterStart.date ?? "",
+    seriesZone
+  );
+  return Boolean(
+    first &&
+      !beforeSplit(first, originalStart, seriesZone) &&
+      !dateValues(params.masterRecurrence ?? [], "RDATE", seriesZone).some(
+        (added) => beforeSplit(added, originalStart, seriesZone)
+      )
+  );
+}
+
+/**
+ * Why "This and following" can't start a new series at `originalStart`;
+ * null when it can. A new series repeats from its start, so that start
+ * must be a rule meeting. Several rules (an EXRULE counts; only other apps
+ * write them) can't keep each one's days and phase from one start, nor
+ * can an added (RDATE) meeting that isn't a rule meeting too.
+ */
+export function followingSplitBlocked(
+  params: FollowingSplit
+): Extract<SeriesRefusal["reason"], "addedOccurrence" | "severalRules"> | null {
+  const { originalStart, seriesZone } = params;
+  const recurrence = params.masterRecurrence ?? [];
+  const rules = recurrence.filter(
+    (line) => isRule(line) || line.startsWith("EXRULE")
+  );
+  if (rules.length > 1) {
+    return "severalRules";
+  }
+  // The series' own start is its rule's anchor, added there too or not.
+  const ruleMeets =
+    seriesMeetsAt({
+      recurrence: rules,
+      seriesZone,
+      slot: originalStart,
+      start: params.masterStart,
+    }) === true;
+  return addsSlot(recurrence, originalStart, seriesZone) && !ruleMeets
+    ? "addedOccurrence"
+    : null;
 }
 
 /** A Google start ("2026-11-10" or a date-time) as a recurrence value. */
