@@ -463,6 +463,30 @@ describe("This and following", () => {
     ]);
   });
 
+  test("a rule skip where nothing met cancels no meeting the split moves there", async () => {
+    // Mondays with a skip on Tue Nov 17 9:00, where no meeting was; from
+    // Nov 16 moved to Tuesdays: Nov 17 is the new series' first meeting.
+    const stale: Event = {
+      ...weekly,
+      recurrence: [...(weekly.recurrence ?? []), "EXDATE:20261117T140000Z"],
+    };
+    const google = fakeGoogle(stale);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(stale, "2026-11-16T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-17T09:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU"],
+            start: { dateTime: "2026-11-17T09:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+    ]);
+  });
+
   describe("a monthly series moved into the next month", () => {
     // Each later meeting lands as many months on as the split moved: the
     // 28th moved to Dec 2 puts Dec 28 on Jan 2 and Feb 28 on Mar 2.

@@ -2428,13 +2428,9 @@ export function makeGoogleCalendarService(
         addsSlot(master.recurrence ?? [], slot, zone);
       const split = slotMoment(originalStart, zone);
       // A skip the series had moves with its meeting; one it didn't was
-      // lined up by the client, and one where nothing met has no meeting
-      // to follow: both stay as written.
+      // lined up by the client and stays as written.
       const had = new Set(
         dateValues(master.recurrence ?? [], "EXDATE", zone).map(skipKey)
-      );
-      const unskipped = (master.recurrence ?? []).filter(
-        (line) => !line.startsWith("EXDATE")
       );
       const ownSkip = (value: RecurrenceValue) => {
         const slot = slotString(value.instant ?? value.day, zone);
@@ -2442,15 +2438,19 @@ export function makeGoogleCalendarService(
         return (
           had.has(skipKey(value)) &&
           !isAdded(slot) &&
-          Boolean(split && at && Temporal.Instant.compare(at, split) > 0) &&
-          seriesMeetsAt({
-            recurrence: unskipped,
-            seriesZone: zone,
-            slot,
-            start: master.start,
-          }) === true
+          Boolean(split && at && Temporal.Instant.compare(at, split) > 0)
         );
       };
+      const unskipped = (master.recurrence ?? []).filter(
+        (line) => !line.startsWith("EXDATE")
+      );
+      const met = (slot: string) =>
+        seriesMeetsAt({
+          recurrence: unskipped,
+          seriesZone: zone,
+          slot,
+          start: master.start,
+        }) === true;
       const ownSkips = dateValues(fromSplit, "EXDATE", zone)
         .filter(ownSkip)
         .map((value) => slotString(value.instant ?? value.day, zone));
@@ -2470,16 +2470,27 @@ export function makeGoogleCalendarService(
       const newZone = repeatZone(master, start);
       const startSlot = slotOf(start, newZone);
       const placed = [...params.cancelled, ...ownSkips].flatMap((slot) => {
-        const at = isAdded(slot) ? null : landingOf(slot, plan);
+        // One where nothing met has no meeting to follow: it stays where
+        // it is, unless the new series meets there, where it would cancel
+        // a meeting.
+        const stale = !(isAdded(slot) || met(slot));
+        const at = isAdded(slot) || stale ? null : landingOf(slot, plan);
         const formed = inFormOf(at ?? slot, start, newZone);
         const blocked =
-          at !== null &&
           formed !== null &&
-          (addsSlot(fromSplit, formed, zone) ||
-            liveMeetingLandsAt(formed, {
-              ...plan,
-              cancelled: params.cancelled,
-            }));
+          ((at !== null &&
+            (addsSlot(fromSplit, formed, zone) ||
+              liveMeetingLandsAt(formed, {
+                ...plan,
+                cancelled: params.cancelled,
+              }))) ||
+            (stale &&
+              seriesMeetsAt({
+                recurrence: plan.recurrence,
+                seriesZone: newZone,
+                slot: formed,
+                start,
+              }) === true));
         return formed && formed !== startSlot && !blocked ? [formed] : [];
       });
       const recurrence = skipping(
