@@ -50,7 +50,7 @@ JWT access tokens can't be revoked, so `/api/mcp` looks up the user's `oauth_con
 | `search_tasks` | `tasks.list` | Filters by text, status, start and due date ranges, and tags; newest created first. The description tells agents to set `params.limit`, since the procedure returns every match without one. |
 | `get_task` | `tasks.get` | One task by ID. |
 | `create_task` | `tasks.create` | Creates a task, or a whole series when given a `recurrence`. Returns every created occurrence. |
-| `update_task` | `tasks.update` | Changes only the given fields; `null` clears one. `scope` is `this` or `following` for recurring tasks. |
+| `update_task` | `tasks.update` | Changes only the given fields; `null` clears one. `scope` is `this` or `following` for recurring tasks: a status stays on the given occurrence, and a recurrence change needs `following`. An occurrence with no date, or one the update moves to the inbox, changes alone unless recurrence changes too. |
 | `delete_task` | `tasks.delete` | Marked destructive so clients confirm first. Same `scope` as update. |
 | `list_tags` | `tags.list` | The user's tags, for filtering and `tagIds`. |
 

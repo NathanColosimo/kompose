@@ -1,5 +1,4 @@
 import type {
-  TaskInsert,
   TaskSelect,
   TaskUpdate,
   taskTable,
@@ -9,19 +8,15 @@ import { uuidv7 } from "uuidv7";
 import { generateOccurrences } from "../../lib/recurrence";
 
 /**
- * Pure planning for a recurring series' rows: which occurrences a pattern
- * change keeps and creates, and with what fields. The task client applies
- * the plan to the database.
+ * Pure planning for a recurring series' rows: which occurrences an edit
+ * keeps and creates, with what fields, and the pattern the part of a
+ * series that outlives its master (or a split) carries. The task client
+ * applies the plan to the database.
  */
 
 export type TaskInsertRow = typeof taskTable.$inferInsert;
 
 export type SystemManagedTaskField = "createdAt" | "updatedAt";
-export type TaskInsertInput = Omit<TaskInsert, SystemManagedTaskField> & {
-  createdAt?: never;
-  tagIds?: string[];
-  updatedAt?: never;
-};
 export type TaskUpdateInput = Omit<TaskUpdate, SystemManagedTaskField> & {
   createdAt?: never;
   tagIds?: string[];
@@ -161,28 +156,35 @@ export function keepsEditedOccurrence(params: {
  * The new occurrences for a "this and following" pattern change, from where
  * the edited occurrence now starts: its new date when the edit moves it
  * (Nov 9 moved to Nov 12, Daily x3: Nov 12, 13, 14), else its original
- * one. Dates in `keptDates` (exceptions, including the kept edited
- * occurrence) are left out. When the edited occurrence is kept, it is the
- * master (`seriesMasterId` is its id) and carries the pattern. Otherwise
+ * one. Dates other kept tasks hold are left out. When the edited
+ * occurrence is kept, it holds the first date, as the master
+ * (`seriesMasterId` is its id) carrying the pattern. Otherwise
  * the first row, on its date, replaces it: the new master, with the
- * pattern and its status. Other new occurrences start open.
+ * pattern and its status (so `keptDates` mustn't hold that date, as
+ * keepsEditedOccurrence ensures). Other new occurrences start open.
  */
 export function regeneratedOccurrenceRows(params: {
   input: TaskUpdateInput;
   keepEdited: boolean;
+  /** The dates other kept tasks (exceptions) hold from the split on. */
   keptDates: ReadonlySet<string>;
   /** The new pattern, from the edited occurrence's start after the edit. */
   pattern: CheckedPattern;
+  /** The new master's id: the edited occurrence's when it's kept. */
   seriesMasterId: string;
   task: TaskSelect;
   userId: string;
 }): TaskInsertRow[] {
   const { input, pattern, task } = params;
   const seriesStartDate = Temporal.PlainDate.from(pattern.startDate);
+  const skipped = new Set(params.keptDates);
+  if (params.keepEdited) {
+    skipped.add(pattern.startDate);
+  }
   const occurrenceDates = generateOccurrences(
     pattern.recurrence,
     seriesStartDate
-  ).filter((date) => !params.keptDates.has(date.toString()));
+  ).filter((date) => !skipped.has(date.toString()));
   return buildOccurrenceRowsFromTask({
     input,
     occurrenceDates,
@@ -214,9 +216,7 @@ export function heirPattern(
   pattern: TaskSelect["recurrence"],
   remaining: number
 ): TaskSelect["recurrence"] {
-  return pattern?.count
-    ? { ...pattern, count: Math.max(1, remaining) }
-    : pattern;
+  return pattern?.count ? { ...pattern, count: remaining } : pattern;
 }
 
 /** A pattern stopped before `boundary` (a count no longer applies). */
