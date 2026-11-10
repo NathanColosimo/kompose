@@ -46,7 +46,8 @@ function buildInitialSharedFields(start: Date, end: Date) {
 
 /** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
-  const { state, actions, popoverTimes } = useEventCreation();
+  const { state, actions, eventUnavailableReason, popoverTimes } =
+    useEventCreation();
   const { createEvent } = useGoogleEventMutations();
   const [mode, setMode] = useState<CreationMode>("event");
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
@@ -148,11 +149,14 @@ export function EventCreationPopover() {
     [handleSave, state.showPopover]
   );
 
-  if (
-    !(state.showPopover && popoverTimes && state.accountId && state.calendarId)
-  ) {
+  if (!(state.showPopover && popoverTimes)) {
     return null;
   }
+  // With no calendar to write to, the chooser still makes a task.
+  const eventCalendar =
+    state.accountId && state.calendarId
+      ? { accountId: state.accountId, calendarId: state.calendarId }
+      : null;
 
   return (
     <Popover open={state.showPopover}>
@@ -196,7 +200,12 @@ export function EventCreationPopover() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleSave} size="sm" type="button">
+              <Button
+                disabled={mode === "event" && !eventCalendar}
+                onClick={handleSave}
+                size="sm"
+                type="button"
+              >
                 Save
               </Button>
             </div>
@@ -208,18 +217,24 @@ export function EventCreationPopover() {
             forceMount
             value="event"
           >
-            <EventEditForm
-              accountId={state.accountId}
-              calendarId={state.calendarId}
-              closeSaveRequestRef={eventCloseSaveRequestRef}
-              createInteropRef={eventInteropRef}
-              end={endDate}
-              mode="create"
-              onDelete={() => undefined}
-              onSave={handleSave}
-              open={state.showPopover}
-              start={startDate}
-            />
+            {eventCalendar ? (
+              <EventEditForm
+                accountId={eventCalendar.accountId}
+                calendarId={eventCalendar.calendarId}
+                closeSaveRequestRef={eventCloseSaveRequestRef}
+                createInteropRef={eventInteropRef}
+                end={endDate}
+                mode="create"
+                onDelete={() => undefined}
+                onSave={handleSave}
+                open={state.showPopover}
+                start={startDate}
+              />
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                {eventUnavailableReason}
+              </p>
+            )}
           </TabsContent>
 
           <TabsContent

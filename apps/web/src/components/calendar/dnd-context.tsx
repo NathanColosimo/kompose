@@ -754,6 +754,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
           event: pendingGoogleUpdate.occurrence,
           timeZone,
         }),
+        calendarMoved: false,
         patternChanged: false,
         seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,

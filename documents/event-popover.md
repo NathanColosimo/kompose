@@ -115,7 +115,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 #### Move to calendar flow — Edit Mode Only
 - Moving between calendars is handled via the calendar picker in the form.
 - If the user changes the calendar and clicks **Save**, the save flow handles both the data update and the calendar move.
-- Recurring moves offer all three scopes, matching the server.
+- A recurring event's new calendar applies to the entire series: Google moves a series to another calendar only as a whole, not one occurrence.
 - Non-recurring moves use `this`.
 
 #### Backend safety: partial failure recovery for `following`
@@ -123,6 +123,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 
 #### Error feedback
 - The editor's saves (`createEvent`, `updateEvent`) are held and quiet: a failure shows beside Save, with the edits kept, not as a toast.
+- The create popover (`EventCreationPopover`) isn't held: it closes on Save and creates in the background, and a failed create shows a toast. With no calendar to write to, it still opens: its Event tab says why, and its Task tab works.
 - `moveEvent` (the calendar move) runs quiet too: the editor says beside Save that it failed, and whether the edits before it saved.
 - A recurring delete runs quiet; its dialog says a failure (a polite live region) and stays open while the delete runs, its Delete button reading "Deleting…" and keeping focus.
 
