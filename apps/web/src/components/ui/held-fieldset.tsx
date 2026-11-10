@@ -1,7 +1,6 @@
 import { onlineManager } from "@tanstack/react-query";
 import {
   type ReactNode,
-  type SyntheticEvent,
   useEffect,
   useRef,
   useSyncExternalStore,
@@ -67,28 +66,13 @@ export function HeldFieldset({
       {children}
       {held
         ? createPortal(
-            // Under popovers and dialogs (z-50), over everything else. React
-            // bubbles a portal's events to its React parents, so a press here
-            // would reach the draggable block or row the editor opened from
-            // and start dragging it: it stops here.
-            <div
-              aria-hidden
-              className="fixed inset-0 z-40"
-              data-page-held
-              onClick={stopHere}
-              onMouseDown={stopHere}
-              onPointerDown={stopHere}
-              onTouchStart={stopHere}
-            />,
+            // Under popovers and dialogs (z-50), over everything else.
+            <div aria-hidden className="fixed inset-0 z-40" data-page-held />,
             document.body
           )
         : null}
     </fieldset>
   );
-}
-
-function stopHere(event: SyntheticEvent) {
-  event.stopPropagation();
 }
 
 /**

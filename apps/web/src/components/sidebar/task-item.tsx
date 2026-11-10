@@ -15,6 +15,7 @@ import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
 import { Temporal } from "temporal-polyfill";
+import { ownPresses } from "@/components/calendar/dnd/helpers";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../tags/tag-icon-map";
@@ -77,7 +78,7 @@ export const TaskItem = memo(function TaskItemInner({
         isDragging ? "opacity-0" : ""
       )}
       ref={setNodeRef}
-      {...listeners}
+      {...ownPresses(listeners)}
     >
       <Checkbox
         aria-label={`Done: ${task.title}`}
