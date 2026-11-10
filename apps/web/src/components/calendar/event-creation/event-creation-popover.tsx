@@ -3,7 +3,7 @@
 import { EVENT_CREATE_FAILURE_MESSAGE } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useAtomValue } from "jotai";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
   TaskCreateForm,
   type TaskFormValues,
-  useHeldSave,
 } from "../../task-form/task-edit-popover";
 import {
   type CloseSaveRequest,
@@ -91,7 +90,7 @@ function CreationChooser({
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
-  const taskSubmitRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
+  const taskSubmitRef = useRef<(() => boolean) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
 
@@ -154,13 +153,9 @@ function CreationChooser({
   // The popover stays open ("Saving…") until the create succeeds, so a
   // failed one keeps the draft. Escape and outside clicks wait too.
   const contentRef = useRef<HTMLDivElement>(null);
-  const hold = useHeldSave({
-    onClose: actions.closePopover,
-  });
-  const isSaving = hold.saving !== null;
+  const [isSaving, startSaving] = useTransition();
   const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
 
-  const { holdOpen } = hold;
   const handleCancel = useCallback(() => {
     if (!isSaving) {
       actions.closePopover();
@@ -177,8 +172,6 @@ function CreationChooser({
       const result = taskSubmitRef.current?.() ?? true;
       if (result === true) {
         actions.closePopover();
-      } else if (result !== false) {
-        holdOpen("save", result);
       }
       return;
     }
@@ -192,9 +185,8 @@ function CreationChooser({
       actions.closePopover();
       return;
     }
-    holdOpen(
-      "save",
-      createEvent
+    startSaving(async () => {
+      const saved = await createEvent
         .mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
@@ -202,9 +194,12 @@ function CreationChooser({
         .then(
           () => true,
           () => false
-        )
-    );
-  }, [actions, createEvent, eventBlocked, holdOpen, isSaving, shownMode]);
+        );
+      if (saved) {
+        actions.closePopover();
+      }
+    });
+  }, [actions, createEvent, eventBlocked, isSaving, shownMode]);
 
   useHotkeys(
     "mod+enter",
@@ -328,7 +323,6 @@ function CreationChooser({
               <TaskCreateForm
                 createInteropRef={taskInteropRef}
                 initialValues={initialTaskValues}
-                saving={isSaving}
                 submitRef={taskSubmitRef}
               />
             </TabsContent>

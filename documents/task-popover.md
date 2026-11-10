@@ -18,9 +18,7 @@ These live in `apps/web/src/components/task-form/task-edit-popover.tsx`.
   and the two tabs swap title, description, date, time and duration through
   `createInteropRef`. See [event-popover.md](./event-popover.md).
 - **`TaskFields`**: the fields both forms share (below).
-- **`useHeldSave`**: the held save (below). The popover that owns the editor
-  calls it, `TaskEditPopover` or `EventCreationPopover`, so it can ignore
-  Escape and outside clicks while it saves.
+
 
 Triggers: `components/sidebar/task-item.tsx` (sidebar) and
 `components/calendar/events/task-event.tsx` (calendar). Task queries and
@@ -42,19 +40,9 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 
 ## Saving
 
-- **Held saves.** Save, and Mark done when there are unsaved edits, keep the
-  editor open with "Saving…" until the server confirms; then it closes. While
-  a save holds, a native disabled fieldset makes the fields read-only, and
-  Escape and outside clicks do nothing.
-  These saves aren't optimistic, so a failure can't roll the cache back over
-  the draft.
-- **Failures** keep the draft and use the app's normal error toast.
-- **Mark done with no other edits** saves at once and closes.
-- **Moving or resizing the task** on the calendar while its editor is open
-  updates the editor's date, time and duration and keeps the other unsaved
-  edits, so Save can't write the old times back.
-- **Create** (create popover, Task tab) holds the same way: the popover stays
-  open with "Saving…", keeps the draft on failure, and shows an error toast.
+- Save, Mark done and task creation close the editor immediately. The shared task mutations update the cache optimistically where supported; failures roll back and use the app's normal error toast.
+- Mark done includes unsaved edits in the same write, after choosing scope when needed.
+- Moving or resizing the task while its editor is open updates its date, time and duration and keeps other unsaved edits.
 
 ## Repeating tasks
 
@@ -72,8 +60,7 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 - The editor takes focus when it opens, so Tab reaches its fields. Focus goes
   to the editor itself, not the title, so Backspace still deletes the task.
 - **Cmd+Enter** saves. **Backspace** or **Delete** (outside a text field)
-  asks to delete. Neither works while a save holds or a question is open over
-  the editor.
+  asks to delete. Neither works while a question is open over the editor.
 - When the delete question closes, focus returns to the editor if Backspace
   opened it, or to the trash icon if the icon did.
 - Opened from command-bar search or the desktop app, the editor scrolls its
