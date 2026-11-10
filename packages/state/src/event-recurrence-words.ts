@@ -19,7 +19,6 @@ import {
 const DAY_NAMES: Record<string, string> = Object.fromEntries(
   GOOGLE_EVENT_WEEKDAYS.map((weekday) => [weekday.value, weekday.label])
 );
-const WEEKDAY_CODES = GOOGLE_EVENT_WEEKDAYS.map((weekday) => weekday.value);
 const MONTH_NAMES = [
   "Jan",
   "Feb",
@@ -103,9 +102,7 @@ function monthlyWeekdayLabel(
   if (!(ordinal && byDay.every(isPlainWeekday))) {
     return null;
   }
-  const sorted = [...byDay].sort(
-    (a, b) => WEEKDAY_CODES.indexOf(a) - WEEKDAY_CODES.indexOf(b)
-  );
+  const sorted = weekOrdered(byDay);
   const days =
     DAY_SET_WORDS[sorted.join(",")] ??
     (sorted.length === 1 ? DAY_NAMES[sorted[0] ?? ""] : undefined);
@@ -352,11 +349,15 @@ export function monthlyDayOptions(
   if (options.some((option) => option.selected)) {
     return options;
   }
-  // BYSETPOS over days of the month ("the later of the 15th and 30th")
-  // isn't put in words.
+  // BYSETPOS over days of the month ("the later of the 15th and 30th"),
+  // or weekdays limited to some days of the month ("the 1st Mon, if on
+  // the 1st to 3rd"), isn't put in words.
   let own: string | null = null;
   if (pattern.byDay.length > 0) {
-    own = monthlyWeekdayLabel(rule, pattern.byDay);
+    own =
+      pattern.monthDays.length === 0
+        ? monthlyWeekdayLabel(rule, pattern.byDay)
+        : null;
   } else if (setPos === undefined) {
     own = monthDaysLabel(pattern.monthDays);
   }

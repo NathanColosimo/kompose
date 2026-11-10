@@ -247,6 +247,11 @@ export function TaskEditPopover({
     setOpen(false);
   }, []);
   const contentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  // Radix types the trigger as a button; the child here can be any element.
+  const setTrigger = useCallback((element: HTMLElement | null) => {
+    triggerRef.current = element;
+  }, []);
   const hold = useHeldSave({ editorRef: contentRef, onClose: handleCancel });
   const handleOpenAutoFocus = useCallback(
     (event: Event) => {
@@ -257,6 +262,12 @@ export function TaskEditPopover({
       if (!(matchesOpenRequest && openRequest)) {
         return;
       }
+      // Opened from search, the task can be scrolled out of its list or
+      // the calendar's hours; the editor follows it, so bring it into view.
+      triggerRef.current?.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+      });
 
       setOpen(true);
       setOpenRequest((currentRequest) =>
@@ -277,7 +288,9 @@ export function TaskEditPopover({
       }}
       open={open || matchesOpenRequest}
     >
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
+      <PopoverTrigger asChild ref={setTrigger}>
+        {children}
+      </PopoverTrigger>
       <PopoverContent
         align={align}
         className="max-h-(--radix-popover-content-available-height) w-[360px] max-w-[calc(100vw-16px)] space-y-3 overflow-y-auto p-4"
@@ -408,7 +421,7 @@ function canSaveFromKeyboard(params: {
 /**
  * Holds an editor open on a save, for Mark done ("done") or Save ("save"):
  * it closes when the save succeeds and keeps the draft if not. Owned by the
- * popover, whose Escape and outside clicks wait for it too.
+ * popover, whose Escape and outside clicks are ignored while it saves.
  */
 export function useHeldSave({
   editorRef,
@@ -555,7 +568,7 @@ export function TaskEditForm({
     setShowTagScopeDialog(true);
   }, []);
   const { holdOpen, saving } = hold;
-  /** Why the last held save failed, shown beside Save until the next one. */
+  /** Why the last held save failed, shown above the buttons until the next. */
   const [failure, setFailure] = useState<string | null>(null);
   const isSavingStatus = saving !== null;
   const isRecurring = task.seriesMasterId !== null;
@@ -627,9 +640,9 @@ export function TaskEditForm({
 
   /**
    * Saves the edits, plus `extra` fields, while the editor holds open.
-   * Resolves to whether it saved; a failure shows beside Save, and the cache
-   * waits for the server (no optimistic update) so it can't roll back over
-   * the draft.
+   * Resolves to whether it saved; a failure shows above the buttons, and
+   * the cache waits for the server (no optimistic update) so it can't roll
+   * back over the draft.
    */
   const commitUpdate = useCallback(
     (
@@ -649,7 +662,7 @@ export function TaskEditForm({
           failureMessage,
           id: task.id,
           optimistic: false,
-          // The editor says what failed, beside Save.
+          // The editor says what failed, above the buttons.
           quiet: true,
           scope,
           task: {

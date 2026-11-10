@@ -61,6 +61,7 @@ import { PIXELS_PER_HOUR } from "./constants";
 import { CreationPreview } from "./event-creation/creation-preview";
 import { EventCreationPopover } from "./event-creation/event-creation-popover";
 import {
+  DEFAULT_EVENT_DURATION_MINUTES,
   EventCreationContext,
   useEventCreation,
   useEventCreationState,
@@ -68,6 +69,7 @@ import {
 import { eventColor } from "./events/block-content";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
+import { RecurringDeleteDialog } from "./events/recurring-delete-dialog";
 import { TaskEvent } from "./events/task-event";
 import { WhoopSleepBand } from "./events/whoop-sleep-band";
 import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
@@ -392,6 +394,9 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       return;
     }
     const start = keyboardCreateStart({
+      length: Temporal.Duration.from({
+        minutes: DEFAULT_EVENT_DURATION_MINUTES,
+      }),
       now: Temporal.Now.zonedDateTimeISO(timeZone),
       visibleDays,
     });
@@ -840,6 +845,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
         {/* Event creation popover - shows after click-and-drag */}
         <EventCreationPopover />
+        <RecurringDeleteDialog />
       </div>
     </div>
   );

@@ -51,7 +51,7 @@ function canonicalRecurrence(
     return "null";
   }
   const fields: Record<string, unknown> = { ...recurrence };
-  if ("byDay" in recurrence && recurrence.byDay) {
+  if ("byDay" in recurrence) {
     fields.byDay = [...recurrence.byDay].sort();
   }
   // A key set to undefined is a key left out, as it is once sent as JSON.
@@ -65,9 +65,10 @@ function canonicalRecurrence(
 /**
  * Generate dates on or after startDate, stopping at the count (or safety cap)
  * or the inclusive until date, whichever comes first. The start date is
- * always the first, and counts toward the count, even when the pattern
- * wouldn't land on it (a Thursday start for "weekly on Monday"), as with
- * RFC 5545's DTSTART and Google: the task the user placed there stays.
+ * the first (unless it's past the until date) and counts toward the count,
+ * even when the pattern wouldn't land on it (a Thursday start for "weekly
+ * on Monday"), as with RFC 5545's DTSTART and Google: the task the user
+ * placed there stays.
  */
 export function generateOccurrences(
   recurrence: TaskRecurrence,

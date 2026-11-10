@@ -2,7 +2,11 @@
 
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { generateOccurrences, sameRecurrence } from "./recurrence";
+import {
+  generateOccurrences,
+  repeatEndsBeforeStart,
+  sameRecurrence,
+} from "./recurrence";
 
 const dates = (list: Temporal.PlainDate[]) => list.map(String);
 
@@ -37,6 +41,23 @@ describe("generateOccurrences", () => {
         Temporal.PlainDate.from("2026-11-09")
       )
     ).toEqual([]);
+  });
+});
+
+describe("repeatEndsBeforeStart", () => {
+  const daily = { freq: "DAILY" as const, interval: 1 };
+
+  test("is true only for an end date before the start", () => {
+    expect(
+      repeatEndsBeforeStart({ ...daily, until: "2026-11-05" }, "2026-11-09")
+    ).toBe(true);
+    expect(
+      repeatEndsBeforeStart({ ...daily, until: "2026-11-09" }, "2026-11-09")
+    ).toBe(false);
+    expect(repeatEndsBeforeStart({ ...daily, count: 3 }, "2026-11-09")).toBe(
+      false
+    );
+    expect(repeatEndsBeforeStart(null, "2026-11-09")).toBe(false);
   });
 });
 

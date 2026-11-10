@@ -17,7 +17,7 @@ import {
 import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { CalendarRange, ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -141,7 +141,10 @@ export function GoogleAccountsDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button className="gap-1.5" size="lg" variant="ghost">
-          Calendars
+          {/* A narrow toolbar (below @md) shows an icon, so the button
+              doesn't wrap it; the name stays for screen readers. */}
+          <CalendarRange aria-hidden className="@md:hidden size-4" />
+          <span className="sr-only @md:not-sr-only">Calendars</span>
           {visibleCount < totalCount ? (
             <span className="text-muted-foreground tabular-nums">
               {visibleCount}/{totalCount}

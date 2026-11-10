@@ -3,6 +3,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { Temporal } from "temporal-polyfill";
 import { isInboxTask, isListedAlone } from "./task-search-routing";
 
+// Only the fields these checks read; the rest don't affect them.
 const task = (extra: Partial<TaskSelectDecoded>): TaskSelectDecoded =>
   ({
     seriesMasterId: null,

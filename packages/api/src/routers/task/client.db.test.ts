@@ -21,7 +21,8 @@ import type { TaskRecurrence, TaskSelect } from "@kompose/db/schema/task";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import type { TaskService } from "./client";
 import type { DeleteScope, UpdateScope } from "./contract";
-import type { TaskUpdateInput } from "./occurrence-rows";
+
+type TaskUpdateInput = Parameters<TaskService["Service"]["updateTask"]>[2];
 
 const testDatabaseUrl = process.env.TASK_SERIES_TEST_DATABASE_URL;
 
@@ -42,14 +43,15 @@ function scratchDatabaseName(url: string): string {
 // database before the first import.
 async function loadModules(url: string) {
   process.env.DATABASE_URL = url;
-  const [db, auth, task, drizzle, client] = await Promise.all([
+  const [db, auth, tag, task, drizzle, client] = await Promise.all([
     import("@kompose/db"),
     import("@kompose/db/schema/auth"),
+    import("@kompose/db/schema/tag"),
     import("@kompose/db/schema/task"),
     import("drizzle-orm"),
     import("./client"),
   ]);
-  return { auth, client, db, drizzle, task };
+  return { auth, client, db, drizzle, tag, task };
 }
 
 /** A pattern, short: "DAILY/1 x4", "WEEKLY/1 MO until 2026-11-30". */
@@ -65,10 +67,13 @@ const INBOX_LAST = "9999-12-31";
 
 /**
  * A user's tasks, one line each, by date (inbox last) then title: date,
- * title, status, "exc" for an exception, the due date, and its series
- * role: "alone", "MASTER <rule>", or "in <its master's date>".
+ * title, status, "exc" for an exception, the due date, its series role
+ * ("alone", "MASTER <rule>", or "in <its master's date>"), and its tags.
  */
-function describeRows(rows: TaskSelect[]): string[] {
+function describeRows(
+  rows: TaskSelect[],
+  tags: { name: string; taskId: string }[]
+): string[] {
   const dates = new Map(rows.map((row) => [row.id, row.startDate ?? "inbox"]));
   return rows
     .toSorted(
@@ -90,6 +95,10 @@ function describeRows(rows: TaskSelect[]): string[] {
         ...(row.isException ? ["exc"] : []),
         ...(row.dueDate ? [`due ${row.dueDate}`] : []),
         role,
+        ...tags
+          .filter((tag) => tag.taskId === row.id)
+          .map((tag) => `#${tag.name}`)
+          .sort(),
       ];
       // A pattern belongs on its master alone.
       if (row.recurrence && row.seriesMasterId !== row.id) {
@@ -135,6 +144,7 @@ describe("scratchDatabaseName", () => {
 describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
   let modules: Awaited<ReturnType<typeof loadModules>>;
   let runtime: ManagedRuntime.ManagedRuntime<Database | TaskService, never>;
+  let connected = false;
   const userIds: string[] = [];
 
   beforeAll(async () => {
@@ -145,6 +155,7 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     runtime = ManagedRuntime.make(
       Layer.mergeAll(modules.client.TaskService.layer, modules.db.DatabaseLive)
     );
+    connected = true;
     // And the connection really is to it.
     const { rows } = await runtime.runPromise(
       Effect.gen(function* () {
@@ -158,18 +169,20 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
   });
 
   afterAll(async () => {
-    // Nothing ran, and nothing connected, if beforeAll refused the database.
-    if (userIds.length === 0) {
+    // Nothing connected if beforeAll refused the database's name.
+    if (!connected) {
       return;
     }
-    await runtime.runPromise(
-      Effect.gen(function* () {
-        const db = yield* modules.db.Database;
-        yield* db
-          .delete(modules.auth.user)
-          .where(modules.drizzle.inArray(modules.auth.user.id, userIds));
-      })
-    );
+    if (userIds.length > 0) {
+      await runtime.runPromise(
+        Effect.gen(function* () {
+          const db = yield* modules.db.Database;
+          yield* db
+            .delete(modules.auth.user)
+            .where(modules.drizzle.inArray(modules.auth.user.id, userIds));
+        })
+      );
+    }
     await runtime.dispose();
   });
 
@@ -201,13 +214,24 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           .select()
           .from(modules.task.taskTable)
           .where(modules.drizzle.eq(modules.task.taskTable.userId, userId));
-        const lines = describeRows(rows);
-        return result._tag === "Failure"
-          ? [
-              `error: ${(result.failure as { message?: string }).message}`,
-              ...lines,
-            ]
-          : lines;
+        const { tagTable, taskTagTable } = modules.tag;
+        const tags = yield* db
+          .select({ name: tagTable.name, taskId: taskTagTable.taskId })
+          .from(taskTagTable)
+          .innerJoin(
+            tagTable,
+            modules.drizzle.eq(tagTable.id, taskTagTable.tagId)
+          )
+          .where(modules.drizzle.eq(tagTable.userId, userId));
+        const lines = describeRows(rows, tags);
+        if (result._tag === "Success") {
+          return lines;
+        }
+        const { failure } = result;
+        return [
+          `error: ${failure instanceof Error ? failure.message : String(failure)}`,
+          ...lines,
+        ];
       })
     );
   }
@@ -231,7 +255,7 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       create: (
         startDate: string,
         recurrence: TaskRecurrence,
-        extra: { dueDate?: string } = {}
+        extra: { dueDate?: string; tagIds?: string[] } = {}
       ) =>
         service.createTask(userId, {
           recurrence,
@@ -240,10 +264,36 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
           userId,
           ...extra,
         }),
-      remove: (date: string, scope: DeleteScope) =>
+      remove: (date: string | null, scope: DeleteScope) =>
         Effect.flatMap(find(date), (task) =>
           service.deleteTask(userId, task.id, scope)
         ),
+      /**
+       * Delete a task's row directly, past the service: how older code left
+       * a series without its master.
+       */
+      drop: (date: string) =>
+        Effect.flatMap(find(date), (task) =>
+          Effect.gen(function* () {
+            const db = yield* modules.db.Database;
+            yield* db
+              .delete(modules.task.taskTable)
+              .where(modules.drizzle.eq(modules.task.taskTable.id, task.id));
+          })
+        ),
+      /** A new tag of the user's, by name; returns its id. */
+      tag: (name: string) =>
+        Effect.gen(function* () {
+          const db = yield* modules.db.Database;
+          const [created] = yield* db
+            .insert(modules.tag.tagTable)
+            .values({ icon: "tag", id: crypto.randomUUID(), name, userId })
+            .returning({ id: modules.tag.tagTable.id });
+          if (!created) {
+            return yield* Effect.die(new Error(`Tag ${name} not created`));
+          }
+          return created.id;
+        }),
       update: (
         date: string | null,
         input: TaskUpdateInput,
@@ -303,6 +353,26 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "error: Pick a start date to repeat this task.",
       "2026-11-09 Review todo MASTER DAILY/1 x3",
       "2026-11-10 Review done exc in 2026-11-09",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
+  });
+
+  test("rejects a new pattern ending before its start, before any write", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: { freq: "DAILY", interval: 1, until: "2026-11-05" } },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "error: The repeat ends before the task starts.",
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-10 Review todo in 2026-11-09",
       "2026-11-11 Review todo in 2026-11-09",
     ]);
   });
@@ -395,6 +465,50 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
     ]);
   });
 
+  test("sets a following save's status on the edited occurrence alone", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update(
+            "2026-11-10",
+            { status: "done", title: "Renamed" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-10 Renamed done exc in 2026-11-09",
+      "2026-11-11 Renamed todo in 2026-11-09",
+    ]);
+  });
+
+  test("gives a pattern change's tags to its new rows, not to kept occurrences", async () => {
+    // Nov 11 retagged alone, then Nov 10 given Daily x3 tagged Errand.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          const home = yield* u.tag("Home");
+          const work = yield* u.tag("Work");
+          const errand = yield* u.tag("Errand");
+          yield* u.create("2026-11-09", daily(4), { tagIds: [home] });
+          yield* u.update("2026-11-11", { tagIds: [work] }, "this");
+          yield* u.update(
+            "2026-11-10",
+            { recurrence: daily(3), tagIds: [errand] },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 until 2026-11-09 #Home",
+      "2026-11-10 Review todo MASTER DAILY/1 x3 #Errand",
+      "2026-11-11 Review todo exc in 2026-11-10 #Work",
+      "2026-11-12 Review todo in 2026-11-10 #Errand",
+    ]);
+  });
+
   test("deleting from an occurrence on ends the series there", async () => {
     expect(
       await scenario((u) =>
@@ -404,6 +518,54 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
         })
       )
     ).toEqual(["2026-11-09 Review todo MASTER DAILY/1 until 2026-11-09"]);
+  });
+
+  test("deleting from an occurrence before a master moved later keeps the earlier part", async () => {
+    // Daily x5; the Nov 9 master moved alone to Nov 20; then Nov 11 and
+    // following deleted, the moved master with them.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.remove("2026-11-11", "following");
+        })
+      )
+    ).toEqual(["2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10"]);
+  });
+
+  test("deleting a master moved later, and what follows it, keeps the earlier part", async () => {
+    // Daily x5; the Nov 9 master moved alone to Nov 20, then deleted with
+    // "following".
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.remove("2026-11-20", "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 until 2026-11-13",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-12 Review todo in 2026-11-10",
+      "2026-11-13 Review todo in 2026-11-10",
+    ]);
+  });
+
+  test("deletes an inbox occurrence alone, even from following", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.remove(null, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+    ]);
   });
 
   test("treats a pattern sent along unchanged, in another key order, as no change", async () => {
@@ -472,6 +634,138 @@ describe.skipIf(!testDatabaseUrl)("TaskService series writes", () => {
       "2026-11-11 Review todo in 2026-11-09",
       "2026-11-20 Review todo MASTER DAILY/1 x2",
       "2026-11-21 Review todo in 2026-11-20",
+    ]);
+  });
+
+  test("makes a master moved to the inbox a lone task when its series splits", async () => {
+    // Daily x5; the Nov 9 master moved to the inbox; Nov 11 takes
+    // Wednesdays x2 from there on.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-09", { startDate: null }, "this");
+          yield* u.update(
+            "2026-11-11",
+            {
+              recurrence: {
+                byDay: ["WE"],
+                count: 2,
+                freq: "WEEKLY",
+                interval: 1,
+              },
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 until 2026-11-10",
+      "2026-11-11 Review todo MASTER WEEKLY/1 WE x2",
+      "2026-11-18 Review todo in 2026-11-11",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves inbox occurrences alone when the rest of their series goes", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          // Deleting a master "following", and a master with no dated
+          // occurrence left to take its role.
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-11", { startDate: null }, "this");
+          yield* u.remove("2026-11-09", "following");
+          yield* u.create("2026-11-20", daily(2));
+          yield* u.update("2026-11-21", { startDate: null }, "this");
+          yield* u.remove("2026-11-20", "this");
+        })
+      )
+    ).toEqual(["inbox Review todo alone", "inbox Review todo alone"]);
+  });
+
+  test("makes an inbox master a series of its own, handing its role on", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-09", { startDate: null }, "this");
+          yield* u.update(
+            null,
+            { recurrence: daily(2), startDate: "2026-11-20" },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER DAILY/1 x2",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-20 Review todo MASTER DAILY/1 x2",
+      "2026-11-21 Review todo in 2026-11-20",
+    ]);
+  });
+
+  test("takes an inbox occurrence out of its series on Repeat: None", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.update(null, { recurrence: null }, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-09 Review todo MASTER DAILY/1 x3",
+      "2026-11-11 Review todo in 2026-11-09",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves an inbox occurrence alone when a series splits before its moved master", async () => {
+    // Daily x5; Nov 12 moved to the inbox; the Nov 9 master moved alone to
+    // Nov 20; Nov 10 takes Wednesdays x2 from there on.
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(5));
+          yield* u.update("2026-11-12", { startDate: null }, "this");
+          yield* u.update("2026-11-09", { startDate: "2026-11-20" }, "this");
+          yield* u.update(
+            "2026-11-10",
+            {
+              recurrence: {
+                byDay: ["WE"],
+                count: 2,
+                freq: "WEEKLY",
+                interval: 1,
+              },
+            },
+            "following"
+          );
+        })
+      )
+    ).toEqual([
+      "2026-11-10 Review todo MASTER WEEKLY/1 WE x2",
+      "2026-11-11 Review todo in 2026-11-10",
+      "2026-11-20 Review todo exc in 2026-11-10",
+      "inbox Review todo alone",
+    ]);
+  });
+
+  test("leaves an inbox occurrence alone when a series that lost its master splits", async () => {
+    expect(
+      await scenario((u) =>
+        Effect.gen(function* () {
+          yield* u.create("2026-11-09", daily(3));
+          yield* u.update("2026-11-10", { startDate: null }, "this");
+          yield* u.drop("2026-11-09");
+          yield* u.update("2026-11-11", { recurrence: daily(2) }, "following");
+        })
+      )
+    ).toEqual([
+      "2026-11-11 Review todo MASTER DAILY/1 x2",
+      "2026-11-12 Review todo in 2026-11-11",
+      "inbox Review todo alone",
     ]);
   });
 });
