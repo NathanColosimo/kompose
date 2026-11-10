@@ -8,7 +8,16 @@
   },
   "scripts": {
     "lint": "biome check .",
+    "test": "bun test src",
     "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@better-auth/core": "catalog:",
+    "@kompose/db": "workspace:*",
+    "@kompose/env": "workspace:*",
+    "effect": "catalog:",
+    "undici": "^8.10.0",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@kompose/config": "workspace:*",

@@ -2,7 +2,7 @@
 
 import type { PluginConnection } from "@kompose/api/routers/plugins/contract";
 import { clientEnv } from "@kompose/env/client";
-import type { PluginManifest } from "@kompose/plugins";
+import type { OAuthPlugin } from "@kompose/plugins";
 import {
   connectLabel,
   initials,
@@ -27,7 +27,7 @@ import { isDesktopRuntime } from "@/lib/desktop";
 export function PluginConnectionsSettings() {
   const [isDesktop, setIsDesktop] = useState(false);
   const { cards, connect, connectionsQuery, disconnect, refresh } =
-    usePluginConnections(async (plugin: PluginManifest) => {
+    usePluginConnections(async (plugin: OAuthPlugin) => {
       if (isDesktop) {
         window.open(`${clientEnv.NEXT_PUBLIC_WEB_URL}/dashboard/settings`);
         return;
@@ -52,7 +52,7 @@ export function PluginConnectionsSettings() {
     return () => window.removeEventListener("focus", refresh);
   });
 
-  const connectPlugin = (plugin: PluginManifest) =>
+  const connectPlugin = (plugin: OAuthPlugin) =>
     connect.mutate(plugin, {
       onError: (error) => toast.error(error.message),
     });
