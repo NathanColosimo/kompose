@@ -1731,16 +1731,6 @@ function landingOf(slot: string, plan: SplitPlan): string | null {
   const formed = inFormOf(slot, start, zone) ?? slot;
   const splitStart =
     inFormOf(plan.originalStart, start, zone) ?? plan.originalStart;
-  const splitDay = dayOfStart(asStart(splitStart), zone);
-  const ownDayStart = onDay(start, splitDay, zone);
-  const ownDay =
-    ownDayStart &&
-    placeInNewSeries({
-      newStart: ownDayStart,
-      originalStart: formed,
-      splitStart,
-      zone,
-    });
   const moved = placeInNewSeries({
     newStart: start,
     originalStart: formed,
@@ -1759,11 +1749,27 @@ function landingOf(slot: string, plan: SplitPlan): string | null {
   // A timed series kept timed turns each meeting as its start turned
   // round the clock (`clockTurn`, as Entire series does): 23:30 to the
   // next day's 00:30 puts each a day on, 9:00 to the next day's 8:00
-  // keeps each on its own day.
+  // keeps each on its own day. Another keeps its own day, in the new form.
+  const ownDay = () => {
+    const ownDayStart = onDay(
+      start,
+      dayOfStart(asStart(splitStart), zone),
+      zone
+    );
+    return (
+      ownDayStart &&
+      placeInNewSeries({
+        newStart: ownDayStart,
+        originalStart: formed,
+        splitStart,
+        zone,
+      })
+    );
+  };
   const turned =
-    from && to && at && start.dateTime && !DATE_ONLY.test(splitStart)
+    from && to && at && start.dateTime && !DATE_ONLY.test(plan.originalStart)
       ? googleDateTime(at.add(clockTurn({ from, to })).toZonedDateTime(zone))
-      : ownDay;
+      : ownDay();
   const order = [turned, period, moved];
   return (
     order.find(
@@ -2192,9 +2198,9 @@ function followingOccurrences(params: {
 
 /**
  * Whether a meeting at `slot` that lands at `place` stays on its own
- * place: its day, or less than a day off by the clock (as `landingOf`
- * measures a move), read in the new series' form (`start`'s), so a timed
- * Monday made an all-day Tuesday is a day off. Another meeting moved
+ * place: its day, or less than a day off by the clock, read in the new
+ * series' form (`start`'s), so a timed Monday made an all-day Tuesday is
+ * a day off. Another meeting moved
  * there too gives way to it.
  */
 function onOwnPlace(params: {
