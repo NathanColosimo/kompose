@@ -45,12 +45,20 @@ export function HeldFieldset({
       {saving && online
         ? createPortal(
             // Under popovers and dialogs (z-50), over everything else.
-            <div aria-hidden className="fixed inset-0 z-40" />,
+            <div aria-hidden className="fixed inset-0 z-40" data-page-held />,
             document.body
           )
         : null}
     </fieldset>
   );
+}
+
+/**
+ * Whether an editor is holding the page for its save (`HeldFieldset`): the
+ * shortcuts that change the view wait too, as its clicks do.
+ */
+export function pageIsHeld(): boolean {
+  return document.querySelector("[data-page-held]") !== null;
 }
 
 /**
