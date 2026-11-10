@@ -487,6 +487,37 @@ describe("This and following", () => {
     ]);
   });
 
+  test("carries a meeting made all day on its own when the split makes the series all day", async () => {
+    // Nov 30 made all day and renamed on its own; from Nov 16 the series is
+    // made all day too: Nov 30 keeps its name on the new series' Nov 30.
+    const google = fakeGoogle(weekly, [
+      {
+        ...occurrenceOf(weekly, "2026-11-30T09:00:00-05:00"),
+        end: { date: "2026-12-01" },
+        start: { date: "2026-11-30" },
+        summary: "Planning (Nov 30)",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", nov16, {
+            end: { date: "2026-11-17" },
+            start: { date: "2026-11-16" },
+          })
+        )
+      )
+    ).toBe(true);
+    const [created, carried] = google.writes();
+    expect(carried?.url.pathname).toEndWith(
+      `/events/${String(created?.body?.id)}_20261130`
+    );
+    expect(carried?.body).toMatchObject({
+      start: { date: "2026-11-30" },
+      summary: "Planning (Nov 30)",
+    });
+  });
+
   describe("a move past later meetings", () => {
     // A changed meeting the move passes lands where a later meeting does:
     // carrying it would overwrite that one, so the save is refused.
