@@ -20,6 +20,7 @@ import {
   buildGoogleEventRecurrenceRule,
   type EventRecurrencePattern,
   type EventRecurrenceFrequency as Frequency,
+  GOOGLE_EVENT_WEEKDAYS,
   getPrimaryRecurrenceRule,
   parseGoogleEventRecurrenceRule,
   pickRecurrenceFrequency,
@@ -154,7 +155,6 @@ import {
   buildTemporalPayload,
   eventForScope,
   saveFacts,
-  WEEKDAYS,
 } from "./event-edit-utils";
 import { recurringDeleteAtom } from "./recurring-delete-dialog";
 
@@ -190,31 +190,6 @@ interface EventFormValues {
   summary: string;
 }
 
-/**
- * What a save changes for the scopes the dialog offers (`saveFacts`),
- * worked out each render from the pending edit and the series as loaded
- * now, so a series that loads after Save counts.
- */
-type ScopeFacts = ReturnType<typeof saveFacts>;
-
-/**
- * What a pending save changes, for the scopes the dialog offers. Whether
- * the series' rule is in is read live, so an open dialog updates when it
- * loads.
- */
-function saveChanges(
-  pendingSave: Pick<PendingSave, "calendarChanged" | "patternChanged"> | null,
-  facts: ScopeFacts,
-  series: Pick<EventSaveChanges, "seriesRuleFailed" | "seriesRuleLoaded">
-): EventSaveChanges {
-  return {
-    calendarMoved: Boolean(pendingSave?.calendarChanged),
-    patternChanged: pendingSave?.patternChanged ?? false,
-    ...facts,
-    ...series,
-  };
-}
-
 export type CloseSaveRequest =
   | { type: "none" }
   /** The form can't be saved as is (it ends before it starts): stay open. */
@@ -222,8 +197,7 @@ export type CloseSaveRequest =
   | {
       type: "save";
       /**
-       * Mutation payload that represents the user’s edits.
-       * We keep recurrence scope out of the form and ask for it after close.
+       * The form's edits; the scope is chosen in a dialog over the editor.
        */
       variables: UpdateGoogleEventInput;
       isRecurring: boolean;
@@ -495,7 +469,7 @@ function RepeatDays({
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
           <div className="flex flex-wrap gap-1">
-            {WEEKDAYS.map((day) => {
+            {GOOGLE_EVENT_WEEKDAYS.map((day) => {
               const active = shownDays.includes(day.value);
               return (
                 <Button
@@ -937,7 +911,7 @@ export function EventEditPopover({
 
   // The scope the save dialog shows and saves with, worked out each time
   // from the pending edit and the series as loaded now.
-  const pendingFacts: ScopeFacts =
+  const pendingFacts =
     pendingSave && event
       ? saveFacts({
           edited: pendingSave.variables.event,
@@ -945,7 +919,12 @@ export function EventEditPopover({
           timeZone,
         })
       : { dateMoved: false };
-  const saveScopeChanges = saveChanges(pendingSave, pendingFacts, seriesStatus);
+  const saveScopeChanges: EventSaveChanges = {
+    calendarMoved: Boolean(pendingSave?.calendarChanged),
+    patternChanged: pendingSave?.patternChanged ?? false,
+    ...pendingFacts,
+    ...seriesStatus,
+  };
   const saveDialog = {
     // Explain the choices disabled by the edit or a pending series load.
     description: eventSaveDescription(saveScopeChanges),

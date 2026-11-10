@@ -95,7 +95,11 @@ import {
 import { Text } from "@/components/ui/text";
 import { Textarea } from "@/components/ui/textarea";
 import { useColor } from "@/hooks/use-color";
-import { localeTimeFormat } from "@/lib/time-format";
+import {
+  formatShortDate,
+  localeTimeFormat,
+  plainDateToDate,
+} from "@/lib/time-format";
 import { cn } from "@/lib/utils";
 
 const RECURRENCE_FREQUENCIES: Array<{
@@ -125,21 +129,10 @@ function dateToPlainTime(date: Date): Temporal.PlainTime {
   });
 }
 
-function plainDateToPickerDate(date: Temporal.PlainDate): Date {
-  return new Date(date.year, date.month - 1, date.day);
-}
-
 function plainTimeToPickerDate(time: Temporal.PlainTime): Date {
   const value = new Date();
   value.setHours(time.hour, time.minute, 0, 0);
   return value;
-}
-
-function formatPlainDateCompact(date: Temporal.PlainDate): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-  }).format(plainDateToPickerDate(date));
 }
 
 function toCalendarOptionValue(option: {
@@ -623,7 +616,7 @@ function RecurrenceEndSection({
         <View className="mt-2" style={{ maxWidth: 220 }}>
           <DatePicker
             displayValue={untilDay ? formatPlainDateLong(untilDay) : undefined}
-            minimumDate={plainDateToPickerDate(endFrom)}
+            minimumDate={plainDateToDate(endFrom)}
             mode="date"
             onChange={(date) => {
               if (date) {
@@ -640,7 +633,7 @@ function RecurrenceEndSection({
               }
             }}
             placeholder="Until"
-            value={untilDay ? plainDateToPickerDate(untilDay) : undefined}
+            value={untilDay ? plainDateToDate(untilDay) : undefined}
             variant="outline"
           />
         </View>
@@ -671,7 +664,7 @@ function formatPlainDateLong(date: Temporal.PlainDate): string {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(plainDateToPickerDate(date));
+  }).format(plainDateToDate(date));
 }
 
 /**
@@ -1242,7 +1235,7 @@ function EventDateTimeRow({
         <View className="min-w-0 flex-1">
           <DatePicker
             accessibilityLabel="Start date"
-            displayValue={formatPlainDateCompact(startDate)}
+            displayValue={formatShortDate(startDate)}
             mode="date"
             onChange={(date) => {
               if (!date) {
@@ -1284,7 +1277,7 @@ function EventDateTimeRow({
         <View className="min-w-0 flex-1">
           <DatePicker
             accessibilityLabel="End date"
-            displayValue={formatPlainDateCompact(endDate)}
+            displayValue={formatShortDate(endDate)}
             mode="date"
             onChange={(date) => {
               if (!date) {
@@ -1337,11 +1330,11 @@ function useEventDatePickerValues({
   endTime,
 }: EventDraft) {
   const startDatePickerValue = React.useMemo(
-    () => plainDateToPickerDate(startDate),
+    () => plainDateToDate(startDate),
     [startDate]
   );
   const endDatePickerValue = React.useMemo(
-    () => plainDateToPickerDate(endDate),
+    () => plainDateToDate(endDate),
     [endDate]
   );
   const startTimePickerValue = React.useMemo(

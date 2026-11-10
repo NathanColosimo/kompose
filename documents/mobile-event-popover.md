@@ -71,7 +71,7 @@ Locked, Gmail, and birthday events, and those on a calendar the user can only vi
 - The dialog waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series’ date.
 - Series saves send only changed details, with edited times directly. Unchanged occurrence titles, guests, and other details stay out of the series payload.
 - The repeat editor parses and builds its primary rule and keeps unsupported parts and other recurrence lines. Explicitly picked end dates are encoded for the event’s form. Start moves do not rewrite weekdays, month days, UNTIL, COUNT, or exception dates.
-- Entire series applies edited times to the series’ first event, keeping its date. This and following ends the old series and creates a new one. The UI does not inspect other occurrences or handle typed refusals.
+- Entire series applies edited times to the series’ first event, keeping its date. This and following ends the old series and creates a new one.
 - Recurring delete offers all three scopes. Non-recurring delete asks for confirmation. Deleting… holds the dialog; a failure stays there with retry available.
 
 ## Implementation constraints
