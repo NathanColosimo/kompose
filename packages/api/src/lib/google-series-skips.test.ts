@@ -2722,3 +2722,41 @@ describe("an Entire series move to another weekday and time with a skip in the r
     expect(written).not.toContain("20261116T140000Z");
   });
 });
+
+describe("a weekdays series moved past midnight with a skip in the rule", () => {
+  // Every weekday at 23:30 from Mon Nov 9; the Entire series moved to Tue
+  // Nov 10 00:30, the editor sending the rule alone, as it does. Each
+  // meeting moves an hour on, into the next day: Thursday's is Fri 00:30,
+  // Friday's would be Saturday's, a day the rule doesn't meet.
+  const weekdays = (skip: string): Event => ({
+    ...weekly,
+    end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", `EXDATE:${skip}`],
+    start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+  });
+  const moveOn = (series: Event) =>
+    edit("all", occurrenceOf(series, "2026-11-09T23:30:00-05:00"), {
+      end: { dateTime: "2026-11-10T00:59:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+      start: { dateTime: "2026-11-10T00:30:00-05:00", timeZone: zone },
+    });
+
+  test("leaves Thursday's meeting on when Friday was skipped", async () => {
+    const google = fakeGoogle(weekdays("20261121T043000Z"));
+    expect(
+      Exit.isSuccess(await run(moveOn(weekdays("20261121T043000Z"))))
+    ).toBe(true);
+    const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+    expect(written).not.toContain("20261120T053000Z");
+  });
+
+  test("moves a skipped Thursday to Friday 00:30", async () => {
+    const google = fakeGoogle(weekdays("20261120T043000Z"));
+    expect(
+      Exit.isSuccess(await run(moveOn(weekdays("20261120T043000Z"))))
+    ).toBe(true);
+    expect(JSON.stringify(google.writes()[0]?.body?.recurrence)).toContain(
+      "20261120T053000Z"
+    );
+  });
+});
