@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDuration } from "@kompose/state/temporal-utils";
+
 import { Timer } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +11,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { formatDuration } from "@kompose/state/temporal-utils";
 import { cn } from "@/lib/utils";
 
 interface DurationPickerProps {
