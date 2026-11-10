@@ -152,40 +152,48 @@ export function ruleUntil(params: {
 }
 
 /**
- * How many of a COUNT `rule`'s positions are at or after `split`, for a
- * series starting at `first`: its meetings, skipped ones too, the start
- * counted as the first (RFC 5545, as Google counts them). Null when the
- * rule can't be read, or when the clocks skip its time on a day before
- * the split: RFC 5545 drops that meeting, and whether Google does isn't
- * known, so how many are left can't be told.
+ * A COUNT `rule`'s positions, for a series starting at `first`: its
+ * meetings, skipped ones too, the start counted as the first (RFC 5545,
+ * as Google counts them), how many (`count`) and how many come before
+ * `split` (`before`). With the days before the split whose position the
+ * clocks skip (`skippedTimeDays`, a timed rule meeting once a day): RFC
+ * 5545 drops that meeting, and whether Google does isn't known, so
+ * `before` can't be trusted when there are any. Null when the rule can't
+ * be read.
  */
-export function positionsLeft(params: {
+export function rulePositions(params: {
   first: Temporal.PlainDate | Temporal.ZonedDateTime;
   rule: string;
   split: Slot;
-}): number | null {
-  const { first, rule, split } = params;
-  const at = asLibraryTime(split, first);
+}): {
+  before: number;
+  count: number;
+  skippedTimeDays: Temporal.PlainDate[];
+} | null {
+  const { first, rule } = params;
+  const split = asLibraryTime(params.split, first);
   try {
     const positions = expand(rule, first, true)?.all();
     if (!positions) {
       return null;
     }
     const before = positions.filter(
-      (position) => Temporal.ZonedDateTime.compare(position, at) < 0
-    ).length;
+      (position) => Temporal.ZonedDateTime.compare(position, split) < 0
+    );
     // A timed rule meeting once a day has a position on each of its days
     // unless the clocks skip its time there.
-    if (first instanceof Temporal.ZonedDateTime && meetsOnceADay(rule)) {
-      const day = at.toPlainDate();
-      const daysBefore = (expand(rule, first.toPlainDate(), true)?.all() ?? [])
-        .map((position) => position.toPlainDate())
-        .filter((position) => Temporal.PlainDate.compare(position, day) < 0);
-      if (daysBefore.length !== before) {
-        return null;
-      }
-    }
-    return positions.length - before;
+    const days =
+      first instanceof Temporal.ZonedDateTime && meetsOnceADay(rule)
+        ? (expand(rule, first.toPlainDate(), true)?.all() ?? [])
+        : [];
+    const skippedTimeDays = days
+      .map((day) => day.toPlainDate())
+      .filter(
+        (day) =>
+          Temporal.PlainDate.compare(day, split.toPlainDate()) < 0 &&
+          !before.some((position) => position.toPlainDate().equals(day))
+      );
+    return { before: before.length, count: positions.length, skippedTimeDays };
   } catch {
     // The library gives up on a rule too long to expand.
     return null;

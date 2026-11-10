@@ -22,7 +22,9 @@ import {
 
 /**
  * A split's new `recurrence` with the series' COUNT carried on: the
- * positions left from the split. Null where they can't be told.
+ * positions left from the split, read from Google's list (`starts`) when a
+ * clock change before it skips the series' time. Null where they can't be
+ * told.
  */
 const carried = (
   recurrence: string[],
@@ -31,9 +33,12 @@ const carried = (
     originalStart: string;
     seriesStart: string;
     seriesZone: string;
+    /** Google's list of the series' meetings, by original start. */
+    starts?: string[];
   }
 ) => {
   const left = countLeft({
+    listed: params.starts,
     originalStart: params.originalStart,
     recurrence: params.masterRecurrence,
     seriesStart: params.seriesStart.includes("T")
@@ -608,6 +613,79 @@ describe("carrying a COUNT through a split", () => {
     ).toBe(0);
   });
 
+  test("counts from Google's list across a clock change, skips it doesn't list in", () => {
+    // Daily 2:30 AM New York ten times from Mar 10 2027, Mar 12 and Mar 17
+    // skipped (Google doesn't list them); Mar 14's 2:30 doesn't exist, and
+    // Google lists it at 3:30. Before a split at Mar 16: Mar 10 to 15, the
+    // skipped Mar 12 in, six positions, so four are left.
+    const rule = "RRULE:FREQ=DAILY;COUNT=10";
+    const skips = "EXDATE:20270312T073000Z,20270317T063000Z";
+    expect(
+      carried([rule, skips], {
+        masterRecurrence: [rule, skips],
+        originalStart: "2027-03-16T02:30:00-04:00",
+        seriesStart: "2027-03-10T02:30:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [
+          "2027-03-10T02:30:00-05:00",
+          "2027-03-11T02:30:00-05:00",
+          "2027-03-13T02:30:00-05:00",
+          "2027-03-14T03:30:00-04:00",
+          "2027-03-15T02:30:00-04:00",
+          "2027-03-16T02:30:00-04:00",
+          "2027-03-18T02:30:00-04:00",
+          "2027-03-19T02:30:00-04:00",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=4", skips]);
+  });
+
+  test("counts from Google's list across a clock change, around added days at another time", () => {
+    // Daily 2:30 AM New York five times from Mar 12 2027 (Mar 14's 2:30
+    // doesn't exist, and Google lists nothing then), with meetings added
+    // Mar 13 and 16 at 9:00. Split at Mar 15: Mar 15, 16 and 17 are left.
+    const rule = "RRULE:FREQ=DAILY;COUNT=5";
+    const added = "RDATE:20270313T140000Z,20270316T130000Z";
+    expect(
+      carried([rule, added], {
+        masterRecurrence: [rule, added],
+        originalStart: "2027-03-15T02:30:00-04:00",
+        seriesStart: "2027-03-12T02:30:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [
+          "2027-03-12T02:30:00-05:00",
+          "2027-03-13T02:30:00-05:00",
+          "2027-03-13T09:00:00-05:00",
+          "2027-03-15T02:30:00-04:00",
+          "2027-03-16T02:30:00-04:00",
+          "2027-03-16T09:00:00-04:00",
+          "2027-03-17T02:30:00-04:00",
+        ],
+      })
+    ).toEqual(["RRULE:FREQ=DAILY;COUNT=3", added]);
+  });
+
+  test("can't tell a count from Google's list with a skip on the day the clocks skip", () => {
+    // As above, Mar 14 skipped (at 2:30, a time it doesn't have) and not
+    // listed: whether Google had a meeting there can't be told.
+    const rule = "RRULE:FREQ=DAILY;COUNT=5";
+    const skip = "EXDATE;TZID=America/New_York:20270314T023000";
+    expect(
+      carried([rule, skip], {
+        masterRecurrence: [rule, skip],
+        originalStart: "2027-03-15T02:30:00-04:00",
+        seriesStart: "2027-03-12T02:30:00-05:00",
+        seriesZone: "America/New_York",
+        starts: [
+          "2027-03-12T02:30:00-05:00",
+          "2027-03-13T02:30:00-05:00",
+          "2027-03-15T02:30:00-04:00",
+          "2027-03-16T02:30:00-04:00",
+        ],
+      })
+    ).toBeNull();
+  });
+
   test("can't tell a count across a clock change at the series' time", () => {
     // Daily 2:30 AM New York from Mar 7 2026: Mar 8's 2:30 doesn't exist.
     expect(
@@ -1107,10 +1185,10 @@ describe("a COUNT with stale skips at another time", () => {
     ]);
   });
 
-  test("is refused when a clock change skips its time before the split", async () => {
-    // Daily 2:30 five times from Mar 12 2027, with stale 3:30 skips on Mar
-    // 13 and 16; Mar 14 has no 2:30. Whether Google counts Mar 14 isn't
-    // known, so the meetings left from Mar 15 can't be told.
+  test("counts from Google's list past them", async () => {
+    // Daily 2:30 five times from Mar 12 2027 (Mar 14 has no 2:30, so the
+    // count is read from Google's list), with stale 3:30 skips on Mar 13
+    // and 16; renamed from Mar 15: Mar 15, 16 and 17 are left.
     const series: Event = {
       ...weekly,
       end: { dateTime: "2027-03-12T03:00:00-05:00", timeZone: zone },
@@ -1120,7 +1198,59 @@ describe("a COUNT with stale skips at another time", () => {
       ],
       start: { dateTime: "2027-03-12T02:30:00-05:00", timeZone: zone },
     };
-    const google = fakeGoogle(series);
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: [
+              "2027-03-12T02:30:00-05:00",
+              "2027-03-13T02:30:00-05:00",
+              "2027-03-15T02:30:00-04:00",
+              "2027-03-16T02:30:00-04:00",
+              "2027-03-17T02:30:00-04:00",
+            ].map((start) => occurrenceOf(series, start)),
+          }
+        : undefined
+    );
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(series, "2027-03-15T02:30:00-04:00"), {
+            summary: "Planning (new)",
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=DAILY;COUNT=3",
+      "EXDATE:20270313T083000Z",
+      "EXDATE:20270316T073000Z",
+    ]);
+  });
+
+  test("is refused when the day the clocks skip has a skip Google doesn't list", async () => {
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2027-03-12T03:00:00-05:00", timeZone: zone },
+      recurrence: [
+        "RRULE:FREQ=DAILY;COUNT=5",
+        "EXDATE;TZID=America/New_York:20270314T023000",
+      ],
+      start: { dateTime: "2027-03-12T02:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series, [], (request) =>
+      request.url.pathname.endsWith("/events/series/instances") &&
+      !request.url.searchParams.get("originalStart")
+        ? {
+            items: [
+              "2027-03-12T02:30:00-05:00",
+              "2027-03-13T02:30:00-05:00",
+              "2027-03-15T02:30:00-04:00",
+              "2027-03-16T02:30:00-04:00",
+            ].map((start) => occurrenceOf(series, start)),
+          }
+        : undefined
+    );
     expect(
       await refusalOf(
         edit("following", occurrenceOf(series, "2027-03-15T02:30:00-04:00"), {

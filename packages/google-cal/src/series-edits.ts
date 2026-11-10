@@ -34,10 +34,11 @@ const PLAIN_REFUSALS = [
   // The save's own repeat ends before the new series' first meeting.
   "endsBeforeStart",
   // This and following keeping a series' COUNT, when a clock change skips
-  // the series' time on a day before the split: RFC 5545 drops that
-  // meeting, and whether Google counts it isn't known, so the meetings
-  // left can't be told. An UNTIL at the last one would keep them, but the
-  // series would no longer end after the number of times the user set.
+  // the series' time on a day before the split that also has a skip or an
+  // added meeting: whether Google had a meeting there, and so a COUNT
+  // position, can't be told, from the rule or Google's list. An UNTIL at
+  // the last meeting would keep them, but the series would no longer end
+  // after the number of times the user set.
   "countUnknown",
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
@@ -132,7 +133,7 @@ export function refusalMessage(refusal: SeriesRefusal): string {
     case "endsBeforeStart":
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "countUnknown":
-      return "This and following isn't available for this series: a clock change skips its time on an earlier day, so how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
+      return "This and following isn't available for this series: a clock change skips its time on an earlier day that also has a skipped or added occurrence, so how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
     case "severalTimesADay":
       return "This series meets at several set times each day, so one new time can't replace them for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":

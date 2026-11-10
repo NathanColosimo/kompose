@@ -1459,9 +1459,11 @@ function movedOffRule(plan: SplitPlan): string[] {
  * place for the moved meeting's skip where the rule meets (`moved`, from
  * `movedOffRule`; an added day's alone takes none). `spent` when no
  * position is left: only added days follow. `unknown` when the positions
- * left can't be told.
+ * left can't be told (`countLeft`) from the rule, or from `listed`.
  */
 function carriedRule(params: {
+  /** Google's list of the series' meetings, once read for the COUNT. */
+  listed?: string[];
   master: Event;
   originalStart: string;
   /** Whether `saved` is the series' own rule, not a new repeat. */
@@ -1478,6 +1480,7 @@ function carriedRule(params: {
     params.ownRule && seriesCount !== null && countOf(saved) === seriesCount;
   const left = keeps
     ? countLeft({
+        listed: params.listed,
         originalStart,
         recurrence: master.recurrence ?? [],
         seriesStart: master.start,
@@ -2657,6 +2660,7 @@ export function makeGoogleCalendarService(
    * sets that ends before `start`.
    */
   const newSeriesRecurrence = (params: {
+    calendarId: string;
     cancelled: string[];
     edited: string[] | undefined;
     master: Event;
@@ -2678,13 +2682,13 @@ export function makeGoogleCalendarService(
         zone,
         "from"
       );
-      const carried = carriedRule({
-        master,
-        originalStart,
-        ownRule,
-        saved,
-        start,
-      });
+      const counting = { master, originalStart, ownRule, saved, start };
+      let carried = carriedRule(counting);
+      // A clock change before the split: Google's list tells what it did.
+      if (carried.kind === "unknown") {
+        const listed = yield* listOccurrenceStarts(params.calendarId, master);
+        carried = carriedRule({ ...counting, listed });
+      }
       if (carried.kind === "unknown") {
         return yield* Effect.fail(refused({ reason: "countUnknown" }));
       }
@@ -2714,6 +2718,24 @@ export function makeGoogleCalendarService(
         return repeats(added) ? added : [];
       }
       return yield* Effect.fail(refused({ reason: "endsBeforeStart" }));
+    });
+
+  /** Every meeting of `master` Google lists, by original start, cancelled ones too. */
+  const listOccurrenceStarts = (calendarId: string, master: Event) =>
+    Effect.gen(function* () {
+      const items = yield* allPages((pageToken) =>
+        client.calendars.events.instances(master.id, {
+          calendarId,
+          maxResults: 2500,
+          pageToken,
+          showDeleted: true,
+        })
+      );
+      return items.flatMap((item) => {
+        const start = item.originalStartTime ?? item.start;
+        const slot = start && slotOf(start, seriesZoneOf(master));
+        return slot ? [slot] : [];
+      });
     });
 
   /** Writes a carried occurrence's own changes onto its new series' one. */
@@ -3055,6 +3077,7 @@ export function makeGoogleCalendarService(
       // Left out keeps the series' pattern; an empty list ends it
       // ("Repeat: None").
       const recurrence = yield* newSeriesRecurrence({
+        calendarId,
         cancelled: exceptions.cancelled,
         edited: edited.recurrence,
         master,
@@ -3293,6 +3316,7 @@ export function makeGoogleCalendarService(
       const slot = seriesSlotAt(master, originalStart);
       const exceptions = yield* exceptionsOf(calendarId, master, originalStart);
       const recurrence = yield* newSeriesRecurrence({
+        calendarId,
         cancelled: exceptions.cancelled,
         edited: undefined,
         master,

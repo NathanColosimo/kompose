@@ -1,9 +1,9 @@
 import { Temporal } from "temporal-polyfill";
 import type { CreateEvent, Event } from "./schema";
 import {
-  positionsLeft,
   ruleEndsBefore,
   ruleMeetsAt,
+  rulePositions,
   ruleUntil,
 } from "./series";
 import type { SeriesRefusal } from "./series-edits";
@@ -359,28 +359,76 @@ export function countOf(recurrence: string[] | undefined): number | null {
 
 /**
  * How many of a series' COUNT positions are left from `originalStart` on
- * (`positionsLeft`); null when that can't be told.
+ * (`rulePositions`). When the clocks skip the series' time on a day before
+ * the split, the positions before it are read from Google's list of the
+ * series' meetings (`listed`, original starts): each listed one but an
+ * added day off the rule, and each skip on one of the rule's meetings
+ * (Google may not list it), every moment once. Null when that list is
+ * needed and not given, or can't tell: a skip or an added meeting on a
+ * day whose time the clocks skip, where whether Google had a meeting
+ * isn't known.
  */
 export function countLeft(params: {
+  listed?: string[];
   originalStart: string;
   recurrence: string[];
   seriesStart: { date?: string | null; dateTime?: string | null };
   seriesZone: string;
 }): number | null {
-  const { seriesZone } = params;
-  const rule = params.recurrence.find(isRule);
+  const { listed, recurrence, seriesZone } = params;
+  const rule = recurrence.find(isRule);
   const first = asValue(
     params.seriesStart.dateTime ?? params.seriesStart.date ?? "",
     seriesZone
   );
   const split = asValue(params.originalStart, seriesZone);
-  return rule && first && split
-    ? positionsLeft({
-        first: libraryFirst(first, seriesZone),
-        rule,
-        split: split.instant ?? split.day,
-      })
-    : null;
+  const positions =
+    rule &&
+    first &&
+    split &&
+    rulePositions({
+      first: libraryFirst(first, seriesZone),
+      rule,
+      split: split.instant ?? split.day,
+    });
+  if (!(rule && first && positions)) {
+    return null;
+  }
+  const { count, skippedTimeDays } = positions;
+  if (skippedTimeDays.length === 0) {
+    return count - positions.before;
+  }
+  const beforeIt = (value: RecurrenceValue) =>
+    beforeSplit(value, params.originalStart, seriesZone);
+  const lines = (name: "EXDATE" | "RDATE") =>
+    dateValues(recurrence, name, seriesZone).filter(beforeIt);
+  const onSkippedDay = (value: RecurrenceValue) =>
+    skippedTimeDays.some((day) => day.equals(value.day));
+  if (!listed || [...lines("EXDATE"), ...lines("RDATE")].some(onSkippedDay)) {
+    return null;
+  }
+  const rulePosition = (value: RecurrenceValue) =>
+    seriesMeetsAt({
+      recurrence: [rule],
+      seriesZone,
+      slot: value.instant?.toString() ?? value.day.toString(),
+      start: params.seriesStart,
+    }) === true;
+  const added = lines("RDATE");
+  const before = new Set(
+    [
+      ...listed
+        .map((slot) => asValue(slot, seriesZone))
+        .filter((value): value is RecurrenceValue => value !== null)
+        .filter(beforeIt)
+        .filter(
+          (value) =>
+            rulePosition(value) || !added.some((day) => sameValue(day, value))
+        ),
+      ...lines("EXDATE").filter(rulePosition),
+    ].map(skipKey)
+  );
+  return count - before.size;
 }
 
 /** `recurrence` with its rule's COUNT set to `count`; a rule without one is unchanged. */
