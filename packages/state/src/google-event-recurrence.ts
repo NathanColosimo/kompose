@@ -620,7 +620,7 @@ export function entireSeriesStartMoves(params: {
   if (!master) {
     return !keepsTimes(edited, occurrence, zone);
   }
-  const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
+  const start = entireSeriesStart({ edited, master, occurrence, zone });
   return !sameTime(start, master.start, zone);
 }
 
@@ -639,7 +639,7 @@ export function entireSeriesMovesSeveralADay(params: {
 }): boolean {
   const { edited, master, occurrence } = params;
   const zone = seriesTimeZone(occurrence, master.start, params.timeZone);
-  const { start } = entireSeriesTimes({ edited, master, occurrence, zone });
+  const start = entireSeriesStart({ edited, master, occurrence, zone });
   const first = startInstant(master.start, zone)?.toZonedDateTimeISO(zone);
   const to = clockOf(start, zone);
   return Boolean(
@@ -651,22 +651,21 @@ export function entireSeriesMovesSeveralADay(params: {
 }
 
 /**
- * The series' start and end after an Entire series save made through
- * `occurrence`, as the server sets them (its entireSeriesTimes): its own
- * while the edit keeps the occurrence's times; the edit's through the
- * series' first meeting; otherwise the edit's time of day and length on
- * the series' first day.
+ * The series' start after an Entire series save made through
+ * `occurrence`, as the server sets it (its entireSeriesTimes): its own
+ * while the edit keeps the occurrence's start (a new length alone, also
+ * for one moved on its own before); the edit's through the series' first
+ * meeting; otherwise the edit's time of day on the series' first day.
  */
-function entireSeriesTimes(params: {
+function entireSeriesStart(params: {
   edited: { end: EventTime; start: EventTime };
   master: GoogleEvent;
-  occurrence: Pick<GoogleEvent, "end" | "originalStartTime" | "start">;
+  occurrence: Pick<GoogleEvent, "originalStartTime" | "start">;
   zone: string;
-}): { end: EventTime; start: EventTime } {
+}): EventTime {
   const { edited, master, occurrence, zone } = params;
-  const kept = { end: master.end, start: master.start };
-  if (keepsTimes(edited, occurrence, zone)) {
-    return kept;
+  if (sameTime(edited.start, occurrence.start, zone)) {
+    return master.start;
   }
   if (
     sameTime(
@@ -675,7 +674,7 @@ function entireSeriesTimes(params: {
       zone
     )
   ) {
-    return edited;
+    return edited.start;
   }
   return (
     seriesTimesForEdit({
@@ -683,7 +682,7 @@ function entireSeriesTimes(params: {
       editedStart: edited.start,
       masterEnd: master.end,
       masterStart: master.start,
-    }) ?? kept
+    })?.start ?? master.start
   );
 }
 

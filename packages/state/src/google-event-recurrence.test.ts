@@ -1959,7 +1959,26 @@ describe("an Entire series save through one occurrence", () => {
         end: at("2026-12-03T10:30:00-05:00"),
         start: at("2026-12-03T10:00:00-05:00"),
       })
-    ).toBe(true); // Before the series loads, any new time might move it.
+    ).toBe(true);
+    // One moved on its own before, now only lengthened: the series keeps
+    // its start.
+    const movedBefore = {
+      ...opened,
+      end: at("2026-12-03T11:30:00-05:00"),
+      start: at("2026-12-03T11:00:00-05:00"),
+    };
+    expect(
+      entireSeriesStartMoves({
+        edited: {
+          end: at("2026-12-03T12:00:00-05:00"),
+          start: movedBefore.start,
+        },
+        master,
+        occurrence: movedBefore,
+        timeZone: zone,
+      })
+    ).toBe(false);
+    // Before the series loads, any new time might move it.
     const unloaded = (edited: {
       end: { dateTime: string };
       start: { dateTime: string };
