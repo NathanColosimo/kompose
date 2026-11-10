@@ -376,32 +376,6 @@ export function seriesRefusalOf(error: unknown): SeriesRefusal | null {
 }
 
 /**
- * The recurring delete dialog's state: This and following is off until the
- * series loads (and if it failed), with the line that says why. The
- * server refuses no delete.
- */
-export function eventDeleteScopeState(params: {
-  seriesRuleFailed?: boolean;
-  seriesRuleLoaded: boolean;
-}): {
-  description: string;
-  disabled: Partial<Record<RecurrenceScope, boolean>>;
-} {
-  if (params.seriesRuleLoaded) {
-    return {
-      description: SCOPE_DIALOG_COPY.deleteEvent.description,
-      disabled: {},
-    };
-  }
-  return {
-    description: params.seriesRuleFailed
-      ? SCOPE_DIALOG_COPY.seriesFailedSave
-      : SCOPE_DIALOG_COPY.seriesLoading,
-    disabled: { following: true },
-  };
-}
-
-/**
  * Why "This and following" can't start a new series at `occurrence`, as
  * the server refuses it: an added (RDATE) meeting, or a series with
  * several rules. Null when it can, where it's the whole series

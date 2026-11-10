@@ -4,7 +4,6 @@ import { ORPCError } from "@orpc/client";
 import {
   chosenScope,
   type EventSaveChanges,
-  eventDeleteScopeState,
   eventSaveDescription,
   eventSaveDisabledScopes,
   opensSeries,
@@ -304,25 +303,6 @@ test("keeps This and following off until the series loads", () => {
   expect(eventSaveDescription({ ...repeat, seriesRuleFailed: true })).toBe(
     "Couldn't load the series, so a new repeat can't be saved. Try again later."
   );
-});
-
-test("keeps deleting This and following off until the series is known", () => {
-  expect(eventDeleteScopeState({ seriesRuleLoaded: true })).toEqual({
-    description: "Delete:",
-    disabled: {},
-  });
-  expect(eventDeleteScopeState({ seriesRuleLoaded: false })).toEqual({
-    description:
-      "Loading the series… This and following is available once it loads.",
-    disabled: { following: true },
-  });
-  expect(
-    eventDeleteScopeState({ seriesRuleFailed: true, seriesRuleLoaded: false })
-  ).toEqual({
-    description:
-      "Couldn't load the series, so This and following isn't available. Try again later.",
-    disabled: { following: true },
-  });
 });
 
 test("returns to the preferred scope once it's available", () => {
