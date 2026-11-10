@@ -435,6 +435,94 @@ describe("This and following", () => {
     });
   });
 
+  describe("a monthly series moved into the next month", () => {
+    // Each later meeting lands as many months on as the split moved: the
+    // 28th moved to Dec 2 puts Dec 28 on Jan 2 and Feb 28 on Mar 2.
+    const on28th: Event = {
+      ...weekly,
+      end: { dateTime: "2026-10-28T09:30:00-04:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=28"],
+      start: { dateTime: "2026-10-28T09:00:00-04:00", timeZone: zone },
+    };
+    const toThe2nd = () =>
+      edit("following", occurrenceOf(on28th, "2026-11-28T09:00:00-05:00"), {
+        end: { dateTime: "2026-12-02T09:30:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=2"],
+        start: { dateTime: "2026-12-02T09:00:00-05:00", timeZone: zone },
+      });
+
+    test("skips each deleted meeting on its place a month on", async () => {
+      const google = fakeGoogle(on28th, [
+        {
+          ...occurrenceOf(on28th, "2026-12-28T09:00:00-05:00"),
+          status: "cancelled",
+        },
+        {
+          ...occurrenceOf(on28th, "2027-02-28T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(Exit.isSuccess(await run(toThe2nd()))).toBe(true);
+      const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+      expect(written).toContain("20270102T140000Z");
+      expect(written).toContain("20270302T140000Z");
+      expect(written).not.toContain("20270202T140000Z");
+    });
+
+    test("puts a renamed meeting back on its place a month on", async () => {
+      const google = fakeGoogle(on28th, [
+        {
+          ...occurrenceOf(on28th, "2026-12-28T09:00:00-05:00"),
+          summary: "Planning (Dec 28)",
+        },
+      ]);
+      expect(Exit.isSuccess(await run(toThe2nd()))).toBe(true);
+      const [created, carried] = google.writes();
+      expect(carried?.url.pathname).toEndWith(
+        `/events/${String(created?.body?.id)}_20270102T140000Z`
+      );
+    });
+
+    test("skips a deleted third Monday on the next month's first Monday", async () => {
+      // The third Monday from Oct 19; from Nov 16 moved to the first
+      // Monday, Dec 7. Dec 21 was deleted: January's first Monday goes.
+      const monthly: Event = {
+        ...weekly,
+        end: { dateTime: "2026-10-19T09:30:00-04:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=3MO"],
+        start: { dateTime: "2026-10-19T09:00:00-04:00", timeZone: zone },
+      };
+      const google = fakeGoogle(monthly, [
+        {
+          ...occurrenceOf(monthly, "2026-12-21T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(monthly, "2026-11-16T09:00:00-05:00"),
+              {
+                end: { dateTime: "2026-12-07T09:30:00-05:00", timeZone: zone },
+                recurrence: ["RRULE:FREQ=MONTHLY;BYDAY=1MO"],
+                start: {
+                  dateTime: "2026-12-07T09:00:00-05:00",
+                  timeZone: zone,
+                },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=MONTHLY;BYDAY=1MO",
+        "EXDATE:20270104T140000Z",
+      ]);
+    });
+  });
+
   describe("a monthly series moved to another weekday of its month", () => {
     // The third Monday from Oct 19, Dec 21's deleted or renamed on its own;
     // from Nov 16 it moves to the third Tuesday. December's meeting is
