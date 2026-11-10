@@ -2580,9 +2580,18 @@ export function EventEditForm({
     [applySharedFields, getSharedFields]
   );
 
-  const formStartDay = watchedValues.startDate
-    ? pickerDateToTemporal(watchedValues.startDate)
-    : null;
+  const repeatStart = buildTemporalPayload(
+    getValues(),
+    clampToStartIfNeeded
+  )?.startPayload;
+  let formStartDay: Temporal.PlainDate | null = null;
+  if (repeatStart?.date) {
+    formStartDay = Temporal.PlainDate.from(repeatStart.date);
+  } else if (repeatStart?.dateTime) {
+    formStartDay = Temporal.Instant.from(repeatStart.dateTime)
+      .toZonedDateTimeISO(seriesTimeZone)
+      .toPlainDate();
+  }
   const startTimeValue = watchedValues.allDay ? "" : watchedValues.startTime;
   const endTimeValue = watchedValues.allDay ? "" : watchedValues.endTime;
   const recurrenceRule = getPrimaryRecurrenceRule(watchedValues.recurrence);
