@@ -2664,3 +2664,61 @@ describe("an Entire series move a day on to the evening", () => {
     ]);
   });
 });
+
+describe("an Entire series move to another weekday and time with a skip in the rule", () => {
+  test("moves the skip with its meeting when the repeat moves too", async () => {
+    // Mondays 22:00, Mon Nov 23 skipped in the rule; the first meeting
+    // moved to Tue Nov 10 06:00, the repeat made Tuesdays: Nov 23's meeting
+    // is Tue Nov 24 06:00 now, and stays skipped.
+    const series: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T22:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO", "EXDATE:20261124T030000Z"],
+      start: { dateTime: "2026-11-09T22:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-09T22:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T06:30:00-05:00", timeZone: zone },
+            recurrence: [
+              "RRULE:FREQ=WEEKLY;BYDAY=TU",
+              "EXDATE:20261124T030000Z",
+            ],
+            start: { dateTime: "2026-11-10T06:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=TU",
+      "EXDATE:20261124T110000Z",
+    ]);
+  });
+
+  test("moves the skip when the client leaves it out", async () => {
+    // Mondays and Wednesdays 9:00, Mon Nov 16 skipped; the first meeting
+    // moved to Tue Nov 10 8:00, the repeat made Tuesdays and Wednesdays.
+    // Nov 16's meeting is Tue Nov 17 8:00 now, and stays skipped.
+    const series: Event = {
+      ...weekly,
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "EXDATE:20261116T140000Z"],
+    };
+    const google = fakeGoogle(series);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-09T09:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T08:30:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=TU,WE"],
+            start: { dateTime: "2026-11-10T08:00:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+    expect(written).toContain("20261117T130000Z");
+    expect(written).not.toContain("20261116T140000Z");
+  });
+});

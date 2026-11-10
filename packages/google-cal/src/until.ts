@@ -927,9 +927,16 @@ export function matchRecurrenceToStart(
       })
     : null;
   // Whether a skip was on a meeting of the rules (or the start) before the
-  // edit. A rule that can't be read may meet there: a skip where nothing
-  // meets does nothing, one missed brings a meeting back.
-  const readers = first ? rules.map((rule) => readRule({ first, rule })) : [];
+  // edit: the series' own rules (`days.before`) as well as the saved ones,
+  // as a save may change its weekdays too. A rule that can't be read may
+  // meet there: a skip where nothing meets does nothing, one missed brings
+  // a meeting back.
+  const readers = first
+    ? [
+        ...rules,
+        ...(days?.before ?? []).filter((line) => line.startsWith("RRULE:")),
+      ].map((rule) => readRule({ first, rule }))
+    : [];
   const ownSlot = first
     ? (value: RecurrenceValue) =>
         value.instant !== null &&

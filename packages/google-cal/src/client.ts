@@ -400,8 +400,6 @@ function timesOnOwnDay(params: {
 
 /** A set hour or minute in a rule (BYHOUR=9), which only other apps write. */
 const SET_TIME_PART = /[:;]BY(?:HOUR|MINUTE)=/;
-/** A rule's end parts, to compare rules by their days alone. */
-
 /** A meeting of a series on one day: a rule's, or one added to it. */
 interface DayMeeting {
   added: boolean;
