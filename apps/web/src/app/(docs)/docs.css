@@ -1,0 +1,14 @@
+/*
+ * Fumadocs styles, loaded only under /docs. Utilities are generated from
+ * Fumadocs' own class lists with the app's theme; base styles and the app's
+ * utilities come from index.css.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "../../theme.css";
+@import "fumadocs-ui/css/shadcn.css";
+@import "fumadocs-ui/css/preset.css";
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+#nd-docs-layout {
+  --fd-layout-width: 100vw;
+}
