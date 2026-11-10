@@ -74,16 +74,21 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
+  refuseSave,
+  type SaveRefusals,
   SCOPE_DIALOG_COPY,
+  seriesRefusalOf,
   seriesSplitBlock,
 } from "@kompose/state/recurrence-scope-options";
-import { seriesEditFields } from "@kompose/state/series-edit";
+import {
+  savedSeriesRecurrence,
+  seriesEditFields,
+} from "@kompose/state/series-edit";
 import {
   formatTimeRange,
   nearestSlotMinutes,
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
-import { ORPCError } from "@orpc/client";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 // biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
 import * as Haptics from "expo-haptics";
@@ -706,37 +711,6 @@ function WorkoutSheet({
 }
 
 /**
- * The saved event's series pattern: its own rules, or its master's. Not the
- * draft's, which may add a repeat to a one-off event that isn't a series yet.
- */
-function savedSeriesRecurrence(
-  event: GoogleEvent,
-  masterRecurrence: string[]
-): string[] {
-  return event.recurrence?.length ? event.recurrence : masterRecurrence;
-}
-
-/**
- * Whether a failed save is a write the server won't make to a series: its
- * typed refusal, sent as a BAD_REQUEST with the reason in `data` and the
- * words for the user in its message.
- */
-function isSeriesRefusal(
-  error: unknown
-): error is ORPCError<"BAD_REQUEST", { reason: string }> {
-  if (!(error instanceof ORPCError && error.code === "BAD_REQUEST")) {
-    return false;
-  }
-  const data: unknown = error.data;
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    "reason" in data &&
-    typeof data.reason === "string"
-  );
-}
-
-/**
  * The repeat in the start's form: an all-day series' UNTIL and skipped
  * days are dates, a timed one's date-times.
  */
@@ -852,15 +826,6 @@ function EventDeleteDialogs({
 }
 
 /**
- * The scopes the server refused for one pending save, and its latest
- * reason: they stay off, so a second refusal can't bring the first back.
- */
-interface Refusals {
-  message: string;
-  scopes: Partial<Record<RecurrenceScope, true>>;
-}
-
-/**
  * Scope for saving a recurring event. It opens over the editor (iOS presents
  * it from the sheet's modal): Cancel goes back to the editor with the edits,
  * and Apply holds "Saving…" until the save ends.
@@ -874,9 +839,11 @@ function EventSaveScopeDialog({
   pending,
   pick,
   preferred,
-  refusals,
 }: {
-  /** What the save changes, for the scopes it can use. */
+  /**
+   * What the save changes, for the scopes it can use, with the scopes the
+   * server refused for it (`refuseSave`).
+   */
   changes: EventSaveChanges | null;
   isVisible: boolean;
   onCancel: () => void;
@@ -887,19 +854,12 @@ function EventSaveScopeDialog({
   pick: RecurrenceScope | null;
   /** The scope the save suggests, shown once it's available. */
   preferred: RecurrenceScope;
-  /** The scopes the server refused for this save, and its latest reason. */
-  refusals: Refusals | null;
 }) {
-  // The shared rules, plus the scopes the server refused for this save.
-  const disabled = {
-    ...(changes ? eventSaveDisabledScopes(changes) : {}),
-    ...refusals?.scopes,
-  };
-  // Why each scope that's off is, led by the server's latest reason.
-  const rules = changes
+  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
+  // Why each scope that's off is, led by the server's reasons.
+  const description = changes
     ? eventSaveDescription(changes)
     : SCOPE_DIALOG_COPY.saveEvent.description;
-  const description = refusals ? `${refusals.message} ${rules}` : rules;
   // Worked out each time: a preferred scope off for a moment (the series
   // loading) comes back once it's on, unless the user chose another.
   const scope = chosenScope(pick, preferred, disabled);
@@ -1217,9 +1177,9 @@ export default function CalendarTab() {
   const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
     useState<EditEventDraft | null>(null);
 
-  // What the server refused for the pending save (its scopes and latest
-  // reason), shown by the scope dialog until it closes.
-  const [saveRefusals, setSaveRefusals] = useState<Refusals | null>(null);
+  // What the server refused for the pending save (its scopes and
+  // reasons), shown by the scope dialog until it closes.
+  const [saveRefusals, setSaveRefusals] = useState<SaveRefusals | null>(null);
 
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
@@ -1659,7 +1619,7 @@ export default function CalendarTab() {
         .catch((error: Error) => {
           // A refusal is shown where the save was asked for (the scope
           // dialog, or the editor); anything else as a failed save.
-          if (!isSeriesRefusal(error)) {
+          if (!seriesRefusalOf(error)) {
             notifyError?.(heldSaveError(error, SAVE_FAILURE_MESSAGE));
           }
           throw error;
@@ -1797,7 +1757,7 @@ export default function CalendarTab() {
       // A new repeat on a one-off event can be refused too (it would end
       // before it starts): the server's words, over the editor.
       await commitEventUpdate(draft, "this").catch((error: unknown) => {
-        if (isSeriesRefusal(error)) {
+        if (error instanceof Error && seriesRefusalOf(error)) {
           notifyError?.(error);
         }
         throw error;
@@ -1829,12 +1789,9 @@ export default function CalendarTab() {
         // the dialog leads with the server's reason, which names any meeting
         // it would have undone, as on web. Any other failure returns to the
         // editor with the edits.
-        if (isSeriesRefusal(error)) {
-          const { message } = error;
-          setSaveRefusals((refused) => ({
-            message,
-            scopes: { ...refused?.scopes, [scope]: true },
-          }));
+        const refusal = seriesRefusalOf(error);
+        if (refusal) {
+          setSaveRefusals((refused) => refuseSave(refused, scope, refusal));
         } else {
           setEventDialog(null);
           setPendingEventSaveDraft(null);
@@ -2477,7 +2434,10 @@ export default function CalendarTab() {
               <EventSaveScopeDialog
                 changes={
                   pendingEventSaveDraft
-                    ? eventSaveChanges(pendingEventSaveDraft)
+                    ? {
+                        ...eventSaveChanges(pendingEventSaveDraft),
+                        refused: saveRefusals,
+                      }
                     : null
                 }
                 isVisible={eventDialog === "save"}
@@ -2489,7 +2449,6 @@ export default function CalendarTab() {
                 pending={isSavingEvent}
                 pick={eventSavePick}
                 preferred={eventSavePreferred}
-                refusals={saveRefusals}
               />
             </>
           }
