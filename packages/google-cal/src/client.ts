@@ -1719,13 +1719,12 @@ function placeInPeriod(
  * Where the old series' meeting at `slot` (an original start) lands in a
  * split's new series, in its form (made all day or timed, by day). Each
  * place is tried in turn, and the first the new series meets at is it:
- * - its own day, its time moved as much as the split's;
+ * - its own day, its time turned as the split's start turned round the
+ *   clock (`clockTurn`: 23:30 to the next day's 00:30 is a day on);
  * - in a monthly or yearly series, the new meeting as many into its month
  *   or year (`placeInPeriod`);
  * - as far on as the split moved, days and time.
- * A move of less than a day by the clock (23:30 to 00:30 the next day)
- * shifts each meeting by as much first. Null when the new series meets at
- * none.
+ * Null when the new series meets at none.
  */
 function landingOf(slot: string, plan: SplitPlan): string | null {
   const { master, start } = plan;
@@ -1757,10 +1756,16 @@ function landingOf(slot: string, plan: SplitPlan): string | null {
     momentOf(time, zone)?.toZonedDateTimeISO(zone).toPlainDateTime();
   const from = wall(asStart(splitStart));
   const to = wall(start);
-  let order = [ownDay, period, moved];
-  if (from && to && Math.abs(from.until(to).total("hours")) < 24) {
-    order = [moved, ownDay, period];
-  }
+  const at = wall(asStart(formed));
+  // A timed series kept timed turns each meeting as its start turned
+  // round the clock (`clockTurn`, as Entire series does): 23:30 to the
+  // next day's 00:30 puts each a day on, 9:00 to the next day's 8:00
+  // keeps each on its own day.
+  const turned =
+    from && to && at && start.dateTime && !DATE_ONLY.test(splitStart)
+      ? googleDateTime(at.add(clockTurn({ from, to })).toZonedDateTime(zone))
+      : ownDay;
+  const order = [turned, period, moved];
   return (
     order.find(
       (place) =>
