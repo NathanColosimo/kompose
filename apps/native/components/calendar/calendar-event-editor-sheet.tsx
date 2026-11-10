@@ -1363,8 +1363,8 @@ export function EventEditorSheet({
   // An occurrence shows its series' pattern, kept in step as the series
   // loads or is fetched again (a fresher rule after a save replaces the
   // old one), keeping the other edits, unless the user changed the repeat.
-  const isOccurrence =
-    draft.mode === "edit" && Boolean(draft.sourceEvent.recurringEventId);
+  const sourceEvent = draft.mode === "edit" ? draft.sourceEvent : undefined;
+  const isOccurrence = Boolean(sourceEvent?.recurringEventId);
   React.useEffect(() => {
     const next = masterRecurrence ?? [];
     if (
@@ -1435,7 +1435,6 @@ export function EventEditorSheet({
   const mapsUrl =
     location.trim().length > 0 ? getMapsSearchUrl(location) : null;
 
-  const sourceEvent = draft.mode === "edit" ? draft.sourceEvent : undefined;
   // Keep the event zone when encoding its times and a picked repeat end.
   const seriesTimeZone = eventTimeZone(sourceEvent, appTimeZone);
   // The times a save sends, as instants (the event's own while untouched).
@@ -1446,7 +1445,11 @@ export function EventEditorSheet({
     sourceEvent
   );
   const endsInOrder = endsAfterStart(sentTimes);
-  const repeatDay = values.startDate;
+  const repeatDay = sentTimes.allDay
+    ? Temporal.PlainDate.from(sentTimes.start.date)
+    : Temporal.Instant.from(sentTimes.start.dateTime)
+        .toZonedDateTimeISO(seriesTimeZone)
+        .toPlainDate();
   const shownRepeat = occurrenceRepeatShown({
     edited: Boolean(values.recurrenceEdited),
     recurrence: values.recurrence,
