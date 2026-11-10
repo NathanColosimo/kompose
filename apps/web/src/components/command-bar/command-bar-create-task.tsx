@@ -9,6 +9,7 @@ import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import type { TaskFields } from "@kompose/task-parser/fields";
 import type { ParsedTask, TagOption } from "@kompose/task-parser/parser";
 import {
@@ -37,7 +38,7 @@ import {
   CommandGroup,
   CommandItem,
 } from "@/components/ui/command";
-import { formatDuration, formatPlainDate } from "@/lib/temporal-utils";
+import { formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { cn } from "@/lib/utils";
 

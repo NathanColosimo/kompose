@@ -4,14 +4,11 @@ import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { formatDuration } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
-import {
-  formatDuration,
-  formatPlainDate,
-  formatTime,
-} from "@/lib/temporal-utils";
+import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Badge } from "../ui/badge";
