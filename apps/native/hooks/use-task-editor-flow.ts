@@ -1,7 +1,5 @@
-import { sameRecurrence } from "@kompose/api/lib/recurrence";
 import type {
   DeleteScope,
-  TaskRecurrence,
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
@@ -16,25 +14,15 @@ import {
   haveTaskCoreFieldsChanged,
   haveTaskTagIdsChanged,
   markStatusFailureMessage,
-  repeatBlocksSave,
   resolveTaskRecurrenceForEditor,
+  taskRecurrenceEquals,
 } from "@kompose/state/task-recurrence";
 import { useCallback, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, Keyboard } from "react-native";
+import { Temporal } from "temporal-polyfill";
 import type { TaskDraft } from "@/components/tasks/task-editor-sheet";
 
 type TaskScopeDialog = "save" | "delete" | null;
-
-/** The series a task being edited belongs to; null when it doesn't repeat. */
-export interface TaskSeries {
-  /** The series' saved pattern, which a repeat change is measured against. */
-  recurrence: TaskRecurrence | null;
-  /**
-   * An occurrence moved to the inbox (no date): nothing follows it, and a
-   * repeat change takes it out of its series.
-   */
-  undated: boolean;
-}
 
 function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   return {
@@ -52,10 +40,6 @@ function buildDraftFromTask(task: TaskSelectDecoded): TaskDraft {
   };
 }
 
-function trimmedDescription(draft: TaskDraft): string | null {
-  return draft.description.trim() ? draft.description.trim() : null;
-}
-
 /** The title as typed, or the first link's title (or host) when blank. */
 function resolvedTitle(draft: TaskDraft): string {
   const title = draft.title.trim();
@@ -66,54 +50,22 @@ function resolvedTitle(draft: TaskDraft): string {
   return first.title ?? new URL(first.url).hostname;
 }
 
-/**
- * Whether the draft can save (Save, and Mark done, which saves the edits):
- * it needs a title or a link, a duration, and a repeat with occurrences.
- */
-function canSaveDraft(draft: TaskDraft, series: TaskSeries | null): boolean {
-  if (!resolvedTitle(draft) || draft.durationMinutes <= 0) {
-    return false;
-  }
-  return !repeatBlocksSave({
-    next: draft.recurrence,
-    previous: series?.recurrence ?? null,
-    startDate: draft.startDate,
-  });
-}
-
 /** The scope decision for saving `draft` over `task`, and whether it changed. */
 function scopeDecisionFor(draft: TaskDraft, task: TaskSelectDecoded) {
   const hasCoreFieldChanges = haveTaskCoreFieldsChanged({
-    next: {
-      description: draft.description,
-      dueDate: draft.dueDate,
-      durationMinutes: draft.durationMinutes,
-      startDate: draft.startDate,
-      startTime: draft.startTime,
-      title: draft.title,
-    },
-    previous: {
-      description: task.description,
-      dueDate: task.dueDate,
-      durationMinutes: task.durationMinutes,
-      startDate: task.startDate,
-      startTime: task.startTime,
-      title: task.title,
-    },
+    next: draft,
+    previous: task,
   });
   const previousTagIds = task.tags.map((tag) => tag.id);
   const hasChanges =
     hasCoreFieldChanges ||
     JSON.stringify(task.links ?? []) !== JSON.stringify(draft.links) ||
-    !sameRecurrence(task.recurrence, draft.recurrence) ||
+    !taskRecurrenceEquals(task.recurrence, draft.recurrence) ||
     haveTaskTagIdsChanged(previousTagIds, draft.tagIds);
   return {
     decision: getTaskUpdateScopeDecision({
       hasCoreFieldChanges,
-      // Later occurrences follow only a dated one that stays dated: moving
-      // an occurrence to the inbox affects it alone, so there's no scope to
-      // ask.
-      hasFollowing: task.startDate !== null && draft.startDate !== null,
+      isSeriesMaster: task.seriesMasterId === task.id,
       isRecurring: task.seriesMasterId !== null,
       nextRecurrence: draft.recurrence,
       nextTagIds: draft.tagIds,
@@ -140,7 +92,9 @@ export function useTaskEditorFlow() {
   const [saveScope, setSaveScope] = useState<UpdateScope>("this");
   const [deleteScope, setDeleteScope] = useState<DeleteScope>("this");
   /** A save is running; the editor holds open (read-only) until it ends. */
-  const [isSaving, setIsSaving] = useState(false);
+  const isSaving = createTask.isPending || updateTask.isPending;
+  const resetCreate = createTask.reset;
+  const resetUpdate = updateTask.reset;
   /**
    * The editor session: bumped on every open and close, so a save that
    * resolves later only acts on the session it started in (not a closed
@@ -151,10 +105,11 @@ export function useTaskEditorFlow() {
   /** Ends the current session and resets everything it held. */
   const resetSession = useCallback(() => {
     sessionRef.current += 1;
-    setIsSaving(false);
+    resetCreate();
+    resetUpdate();
     setPendingSaveDraft(null);
     setScopeDialog(null);
-  }, []);
+  }, [resetCreate, resetUpdate]);
 
   // Stable so callers can use it in effect dependencies.
   const openCreate = useCallback(
@@ -186,16 +141,35 @@ export function useTaskEditorFlow() {
   }
 
   function updateDraft(updater: (previous: TaskDraft) => TaskDraft) {
-    setDraft((current) => (current ? updater(current) : current));
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = updater(current);
+      if (
+        next.startDate &&
+        next.recurrence?.until &&
+        Temporal.PlainDate.compare(
+          next.startDate,
+          Temporal.PlainDate.from(next.recurrence.until)
+        ) > 0
+      ) {
+        return {
+          ...next,
+          recurrence: { ...next.recurrence, until: next.startDate.toString() },
+        };
+      }
+      return next;
+    });
   }
 
-  const series: TaskSeries | null = editingTask?.seriesMasterId
-    ? {
-        recurrence: editingTask.recurrence,
-        undated: !editingTask.startDate,
-      }
-    : null;
-  const canSave = Boolean(draft && !isSaving && canSaveDraft(draft, series));
+  const canSave = Boolean(
+    draft &&
+      !isSaving &&
+      resolvedTitle(draft) &&
+      draft.durationMinutes > 0 &&
+      (!draft.recurrence || draft.startDate)
+  );
 
   /**
    * Saves the draft over `task`, with its done state when that changed.
@@ -214,22 +188,20 @@ export function useTaskEditorFlow() {
     return updateTask
       .mutateAsync({
         failureMessage: statusChanged
-          ? markStatusFailureMessage(nextDraft.status)
+          ? markStatusFailureMessage(
+              nextDraft.status === "done" ? "done" : "todo"
+            )
           : SAVE_FAILURE_MESSAGE,
         id: task.id,
         optimistic: false,
         scope,
         task: {
           ...(statusChanged ? { status: nextDraft.status } : {}),
-          description: trimmedDescription(nextDraft),
+          description: nextDraft.description.trim() || null,
           dueDate: nextDraft.dueDate,
           durationMinutes: nextDraft.durationMinutes,
           links: nextDraft.links,
-          // Sent only when it changed: an explicit null ends the repeat, so
-          // an untouched occurrence must not send one.
-          recurrence: sameRecurrence(task.recurrence, nextDraft.recurrence)
-            ? undefined
-            : nextDraft.recurrence,
+          recurrence: nextDraft.recurrence,
           startDate: nextDraft.startDate,
           startTime: nextDraft.startTime,
           tagIds: nextDraft.tagIds,
@@ -246,7 +218,7 @@ export function useTaskEditorFlow() {
   function create(nextDraft: TaskDraft): Promise<boolean> {
     return createTask
       .mutateAsync({
-        description: trimmedDescription(nextDraft),
+        description: nextDraft.description.trim() || null,
         dueDate: nextDraft.dueDate,
         durationMinutes: nextDraft.durationMinutes,
         failureMessage: TASK_CREATE_FAILURE_MESSAGE,
@@ -275,7 +247,6 @@ export function useTaskEditorFlow() {
   function holdUntil(saved: Promise<boolean>) {
     Keyboard.dismiss();
     AccessibilityInfo.announceForAccessibility("Saving…");
-    setIsSaving(true);
     const session = sessionRef.current;
     saved.then((ok) => {
       if (sessionRef.current !== session) {
@@ -285,7 +256,6 @@ export function useTaskEditorFlow() {
         close();
         return;
       }
-      setIsSaving(false);
       cancelScopeDialog();
     });
   }
@@ -366,8 +336,7 @@ export function useTaskEditorFlow() {
       return;
     }
 
-    // An occurrence moved to the inbox has nothing after it: no scope to ask.
-    if (editingTask.seriesMasterId && editingTask.startDate) {
+    if (editingTask.seriesMasterId) {
       // Over the editor, like the save dialog: Cancel goes back to it.
       setDeleteScope("this");
       setScopeDialog("delete");
@@ -415,7 +384,6 @@ export function useTaskEditorFlow() {
     save,
     saveScope,
     scopeDialog,
-    series,
     setDeleteScope,
     setSaveScope,
     toggleDone,

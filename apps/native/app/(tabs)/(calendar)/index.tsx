@@ -1582,7 +1582,9 @@ export default function CalendarTab() {
     ]
   );
 
-  const [isSavingEvent, setIsSavingEvent] = useState(false);
+  const isSavingEvent = [createEvent, updateEvent, moveEvent].some(
+    (mutation) => mutation.isPending
+  );
   const saveEvent = useCallback(
     async (draft: EventDraft) => {
       if (!draft.summary.trim()) {
@@ -1654,7 +1656,6 @@ export default function CalendarTab() {
         return;
       }
       Keyboard.dismiss();
-      setIsSavingEvent(true);
       setEventSaveFailure(null);
       try {
         // Closes the editor (and this dialog) when it saves.
@@ -1663,8 +1664,6 @@ export default function CalendarTab() {
         // Return to the sheet, keeping its draft and failure message.
         setEventDialog(null);
         setPendingEventSaveDraft(null);
-      } finally {
-        setIsSavingEvent(false);
       }
     },
     [commitEventUpdate, pendingEventSaveDraft]
@@ -1702,14 +1701,13 @@ export default function CalendarTab() {
     [deleteEvent, masterRecurrence]
   );
 
-  const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+  const isDeletingEvent = deleteEvent.isPending;
   const confirmEventDelete = useCallback(
     async (scope: RecurrenceScope) => {
       if (!editingEventDraft) {
         return;
       }
 
-      setIsDeletingEvent(true);
       try {
         await deleteEvent.mutateAsync({
           accountId: editingEventDraft.sourceCalendar.accountId,
@@ -1722,8 +1720,6 @@ export default function CalendarTab() {
         closeEventModal();
       } catch {
         // The dialog stays open and says it failed (`deleteEvent.isError`).
-      } finally {
-        setIsDeletingEvent(false);
       }
     },
     [closeEventModal, deleteEvent, editingEventDraft]
@@ -2272,11 +2268,8 @@ export default function CalendarTab() {
             // leaves it open with the draft.
             // Typing after this point wouldn't be saved: close the keyboard.
             Keyboard.dismiss();
-            setIsSavingEvent(true);
             setEventSaveFailure(null);
-            saveEvent(draft)
-              .catch(() => null)
-              .finally(() => setIsSavingEvent(false));
+            saveEvent(draft).catch(() => null);
           }}
           overlay={
             <>
@@ -2403,7 +2396,6 @@ export default function CalendarTab() {
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
         overlay={<TaskScopeDialogs flow={taskFlow} />}
-        series={taskFlow.series}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />

@@ -1,5 +1,4 @@
 import type { LocationSuggestion } from "@kompose/api/routers/maps/contract";
-import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
@@ -84,6 +83,7 @@ import {
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
+import { HeldFields } from "@/components/ui/held-fields";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
@@ -660,11 +660,11 @@ function RecurrenceEndSection({
 
 /** "Feb 7, 2027", as on web. */
 function formatPlainDateLong(date: Temporal.PlainDate): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return date.toLocaleString(undefined, {
     day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(plainDateToDate(date));
+  });
 }
 
 /**
@@ -771,33 +771,6 @@ function readOnlyReasonFor(
       option.calendarId === draft.sourceCalendar.calendarId
   );
   return calendarEventEditBlockReason(draft.sourceEvent, source?.accessRole);
-}
-
-function noop() {
-  // Intentionally empty: the sheet holds while its save runs.
-}
-
-/**
- * The sheet's fields, dimmed and inert while its save runs: out of reach
- * of touch and of VoiceOver, so nothing changes after the save took them.
- */
-function HeldWhileSaving({
-  children,
-  isSaving,
-}: {
-  children: React.ReactNode;
-  isSaving: boolean;
-}) {
-  return (
-    <View
-      accessibilityElementsHidden={isSaving}
-      importantForAccessibility={isSaving ? "no-hide-descendants" : "auto"}
-      pointerEvents={isSaving ? "none" : "auto"}
-      style={isSaving ? { opacity: 0.6 } : undefined}
-    >
-      {children}
-    </View>
-  );
 }
 
 function EndsBeforeStartNote({ endsEarly }: { endsEarly: boolean }) {
@@ -954,7 +927,6 @@ function ReadOnlyEventView({
 function EventEditorHeaderRight({
   canSubmit,
   isSaving,
-  showDelete,
   onDelete,
   onSubmit,
   submitLabel,
@@ -962,7 +934,6 @@ function EventEditorHeaderRight({
   canSubmit: boolean;
   /** The save is running: "Saving…" replaces the actions until it ends. */
   isSaving: boolean;
-  showDelete: boolean;
   onDelete?: () => void;
   onSubmit: () => void;
   submitLabel: string;
@@ -972,7 +943,7 @@ function EventEditorHeaderRight({
   }
   return (
     <View className="flex-row items-center gap-2">
-      {showDelete && onDelete ? (
+      {onDelete ? (
         <Button
           accessibilityLabel="Delete event"
           accessibilityRole="button"
@@ -1323,64 +1294,6 @@ function EventDateTimeRow({
   );
 }
 
-function useEventDatePickerValues({
-  startDate,
-  endDate,
-  startTime,
-  endTime,
-}: EventDraft) {
-  const startDatePickerValue = React.useMemo(
-    () => plainDateToDate(startDate),
-    [startDate]
-  );
-  const endDatePickerValue = React.useMemo(
-    () => plainDateToDate(endDate),
-    [endDate]
-  );
-  const startTimePickerValue = React.useMemo(
-    () => plainTimeToPickerDate(startTime ?? DEFAULT_START_TIME),
-    [startTime]
-  );
-  const endTimePickerValue = React.useMemo(
-    () => plainTimeToPickerDate(endTime ?? DEFAULT_END_TIME),
-    [endTime]
-  );
-
-  return {
-    endDate,
-    endDatePickerValue,
-    endTimePickerValue,
-    startDate,
-    startDatePickerValue,
-    startTimePickerValue,
-  };
-}
-
-function useEventMeeting(ctx: {
-  conferenceData: EventDraft["conferenceData"];
-  description: string;
-  location: string;
-  sourceEvent: GoogleEvent | undefined;
-}) {
-  const meetingSource = React.useMemo(
-    () => ({
-      ...(ctx.sourceEvent ?? {}),
-      conferenceData: ctx.conferenceData ?? ctx.sourceEvent?.conferenceData,
-      description: ctx.description,
-      location: ctx.location,
-    }),
-    [ctx.description, ctx.location, ctx.sourceEvent, ctx.conferenceData]
-  );
-  const meetingLink = React.useMemo(
-    () => extractMeetingLink(meetingSource),
-    [meetingSource]
-  );
-  const isConferencePending = Boolean(
-    ctx.conferenceData?.createRequest && !meetingLink
-  );
-  return { isConferencePending, meetingLink };
-}
-
 interface EventEditorSheetProps {
   calendarOptions: CalendarOption[];
   draft: EventDraft;
@@ -1502,14 +1415,15 @@ export function EventEditorSheet({
     pastelizeColor(selectedCalendarOption?.color);
   const selectedColorBorder = selectedPalette?.foreground ?? borderColor;
 
-  const {
-    startDate,
-    endDate,
-    startDatePickerValue,
-    endDatePickerValue,
-    startTimePickerValue,
-    endTimePickerValue,
-  } = useEventDatePickerValues(values);
+  const { startDate, endDate } = values;
+  const startDatePickerValue = plainDateToDate(startDate);
+  const endDatePickerValue = plainDateToDate(endDate);
+  const startTimePickerValue = plainTimeToPickerDate(
+    values.startTime ?? DEFAULT_START_TIME
+  );
+  const endTimePickerValue = plainTimeToPickerDate(
+    values.endTime ?? DEFAULT_END_TIME
+  );
 
   const locationSearch = useLocationSearch(location);
   const locationSuggestions = locationSearch.data ?? [];
@@ -1543,12 +1457,15 @@ export function EventEditorSheet({
   const primaryRule = getPrimaryRecurrenceRule(values.recurrence);
   const parsedRecurrence = parseGoogleEventRecurrenceRule(primaryRule);
   const canSubmit = summary.trim().length > 0 && endsInOrder;
-  const { meetingLink, isConferencePending } = useEventMeeting({
-    conferenceData: values.conferenceData,
-    description,
-    location,
-    sourceEvent,
+  const meetingLink = extractMeetingLink({
+    ...sourceEvent,
+    conferenceData: values.conferenceData ?? sourceEvent?.conferenceData,
+    description: values.description,
+    location: values.location,
   });
+  const isConferencePending = Boolean(
+    values.conferenceData?.createRequest && !meetingLink
+  );
 
   const applyPrimaryRecurrenceRule = React.useCallback(
     (rule: string | null) => {
@@ -1664,7 +1581,6 @@ export function EventEditorSheet({
       isSaving={isSaving}
       onDelete={draft.mode === "edit" ? handleDelete : undefined}
       onSubmit={handleSheetSubmit}
-      showDelete={draft.mode === "edit" && Boolean(onDelete)}
       submitLabel={submitLabel}
     />
   );
@@ -1675,7 +1591,7 @@ export function EventEditorSheet({
       enableBackdropDismiss={!isSaving}
       headerRight={headerRight}
       isVisible
-      onClose={isSaving ? noop : onClose}
+      onClose={onClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >
@@ -1688,7 +1604,7 @@ export function EventEditorSheet({
           {saveFailure}
         </Text>
       ) : null}
-      <HeldWhileSaving isSaving={isSaving}>
+      <HeldFields saving={isSaving}>
         {/* The title first: it's the most-edited field, and on create the
             first thing typed. */}
         <View className="mb-2.5 flex-row items-center gap-2">
@@ -1785,7 +1701,7 @@ export function EventEditorSheet({
           value={selectedCalendarValue}
           variant="outline"
         />
-      </HeldWhileSaving>
+      </HeldFields>
       {overlay}
     </BottomSheet>
   );

@@ -10,6 +10,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 - Shared editor flow: `apps/native/hooks/use-task-editor-flow.ts`
 - Scope dialogs (shown over the editor): `apps/native/components/tasks/task-scope-dialogs.tsx`
 - Shared task recurrence logic: `packages/state/src/task-recurrence.ts`
+- Repeat end dates cannot be picked before the task starts. Moving the start past an existing end moves the end forward too.
 - Shared recurrence scope options: `packages/state/src/recurrence-scope-options.ts`
 
 ## Draft model
@@ -41,9 +42,6 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
   - Weekly days
   - Monthly day-of-month
   - End mode: never/date/count
-- A note under the repeat block says what a repeat change does ("Applies to
-  this and later occurrences"), or why it can't save (it ends before the
-  task starts).
 - Title row with completion checkbox (edit mode can toggle status).
 - Tags (`TaskTagPicker`).
 - Description.
@@ -54,7 +52,7 @@ Mobile task editing uses a bottom-sheet editor shared by the Tasks tab and Calen
 
 - Delete (edit mode) and Save in the sheet header.
 - Save is off until the draft can save (`flow.canSave`): a title or a link,
-  a duration, and a repeat that has occurrences. Mark done uses the same
+  a positive duration, and a start date when repeating. Mark done uses the same
   rule, because it saves the edits too.
 
 ## Scope dialogs
@@ -85,11 +83,7 @@ Edit:
 - Decision behavior:
   - Changes to a recurring task's core fields or tags prompt for scope,
     defaulting to `this`.
-  - A recurrence change applies to `following` with no prompt: one
-    occurrence can't repeat differently from its series. The note under
-    the repeat block says so.
-  - An occurrence in the inbox (no date), or moved there by this edit, has
-    nothing after it, so its edits apply to it alone.
+  - A repeat change also prompts, defaulting to `following` for an occurrence and `this` for the series master.
   - Non-recurring edits apply immediately with scope `this`.
 - Scoped update dialog options use shared constants:
   - Only this occurrence
@@ -102,7 +96,7 @@ Mark done / not done:
 
 ## Delete behavior
 
-- Non-recurring task (or an occurrence moved to the inbox): a native alert
+- Non-recurring task: a native alert
   confirms first, since there's no undo.
 - Recurring task: the delete scope dialog opens over the editor with:
   - Only this occurrence
@@ -114,8 +108,7 @@ Mark done / not done:
 
 - Editing a recurring task's core fields or tags prompts for update scope
   (default `this`) over the editor; Cancel returns with the edits kept.
-- Changing a recurring task's repeat shows the note and saves without a
-  prompt.
+- Changing a recurring task's repeat prompts for scope.
 - Recurring delete prompts for scope over the editor; non-recurring delete
   asks for confirmation.
 - Save shows "Saving…", then closes the sheet and updates the task list

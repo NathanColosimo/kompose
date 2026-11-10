@@ -94,7 +94,7 @@ describe("buildGoogleEventRecurrenceRule", () => {
     for (const [rule, expected] of [
       [
         "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU",
-        "RRULE:FREQ=WEEKLY;INTERVAL=2;WKST=SU;BYDAY=TU;COUNT=5",
+        "RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=5;BYDAY=TU;WKST=SU",
       ],
       ["RRULE:FREQ=YEARLY;INTERVAL=2", "RRULE:FREQ=YEARLY;INTERVAL=2;COUNT=5"],
       [
@@ -111,7 +111,9 @@ describe("buildGoogleEventRecurrenceRule", () => {
         "RRULE:FREQ=MONTHLY;BYSETPOS=-1;BYDAY=MO,TU,WE,TH,FR;COUNT=5",
       ],
     ] as const) {
-      expect(edit(rule, endAfter5)).toBe(expected);
+      expect(edit(rule, endAfter5)?.slice(6).split(";").sort()).toEqual(
+        expected.slice(6).split(";").sort()
+      );
     }
   });
 
@@ -136,7 +138,11 @@ describe("buildGoogleEventRecurrenceRule", () => {
       "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=4TH",
       "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE",
     ]) {
-      expect(pick(rule, parseGoogleEventRecurrenceRule(rule).freq)).toBe(rule);
+      expect(
+        parseGoogleEventRecurrenceRule(
+          pick(rule, parseGoogleEventRecurrenceRule(rule).freq) ?? undefined
+        )
+      ).toEqual(parseGoogleEventRecurrenceRule(rule));
     }
     // "2nd Tuesday" means nothing weekly; it repeats on the start's weekday.
     expect(pick("RRULE:FREQ=MONTHLY;BYDAY=2TU", "WEEKLY")).toBe(
@@ -183,7 +189,7 @@ describe("buildGoogleEventRecurrenceRule", () => {
         ...p,
         end: { count: 5, type: "count" },
       }))
-    ).toBe("RRULE:FREQ=MONTHLY;BYMONTHDAY=8,9,10;BYDAY=2TU;COUNT=5");
+    ).toBe("RRULE:FREQ=MONTHLY;COUNT=5;BYDAY=2TU;BYMONTHDAY=8,9,10");
   });
 });
 

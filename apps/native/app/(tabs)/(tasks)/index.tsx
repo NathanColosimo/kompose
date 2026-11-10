@@ -506,7 +506,6 @@ export default function TasksScreen() {
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
         overlay={<TaskScopeDialogs flow={taskFlow} />}
-        series={taskFlow.series}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
