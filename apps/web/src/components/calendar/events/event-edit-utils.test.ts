@@ -23,11 +23,6 @@ const occurrence: GoogleEvent = {
   summary: "Sync (offsite)",
 };
 
-// The series: Mondays 10:00-10:30 from Nov 2.
-const master = {
-  recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-  start: at("2026-11-02T10:00:00-05:00"),
-};
 // An occurrence on its own slot, as loaded.
 const onSlot: GoogleEvent = {
   end: at("2026-11-16T10:30:00-05:00"),
@@ -41,8 +36,7 @@ const forScope = (
   edited: GoogleEvent,
   scope: "all" | "following" | "this",
   opened = occurrence
-) =>
-  eventForScope({ edited, master, occurrence: opened, scope, timeZone: zone });
+) => eventForScope({ edited, occurrence: opened, scope });
 
 describe("eventForScope", () => {
   test("one occurrence gets the whole edit, as loaded", () => {
@@ -51,9 +45,6 @@ describe("eventForScope", () => {
   });
 
   test("the series gets the times as they are, and nothing left alone", () => {
-    // The editor's payload starts from the whole occurrence. Its own times
-    // go as they are: equal to the occurrence's, they mean unchanged, and
-    // under This and following a moved one stays moved.
     for (const scope of ["all", "following"] as const) {
       expect(forScope({ ...occurrence }, scope)).toEqual({
         end: occurrence.end,
@@ -88,7 +79,7 @@ describe("eventForScope", () => {
     expect(sent.location).toBeUndefined();
   });
 
-  test("a repeat only when the user changed it or the day moved", () => {
+  test("a repeat only when the user changed it", () => {
     // Unchanged, on its own day: the series keeps its rule.
     expect("recurrence" in forScope({ ...onSlot }, "all", onSlot)).toBe(false);
     // A new time on its own day: still no rule.
@@ -103,88 +94,43 @@ describe("eventForScope", () => {
     expect(
       forScope({ ...onSlot, recurrence: own }, "following", onSlot).recurrence
     ).toBe(own);
-    // Moved to Tuesday: the series' rule follows the new day.
+    // Moving to Tuesday leaves the repeat alone.
     const tuesday = {
       ...onSlot,
       end: at("2026-11-17T10:30:00-05:00"),
       start: at("2026-11-17T10:00:00-05:00"),
     };
-    expect(forScope(tuesday, "following", onSlot).recurrence?.[0]).toContain(
-      "BYDAY=TU"
-    );
+    expect(forScope(tuesday, "following", onSlot).recurrence).toBeUndefined();
   });
 });
 
 describe("saveFacts", () => {
-  // The series, loaded: Mondays 10:00-10:30 from Nov 2, in New York.
-  const series: GoogleEvent = {
-    end: at("2026-11-02T10:30:00-05:00"),
-    id: "sync",
-    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
-    start: at("2026-11-02T10:00:00-05:00"),
-    summary: "Weekly sync",
-  };
-  const later = {
-    end: at("2026-11-16T11:30:00-05:00"),
-    start: at("2026-11-16T11:00:00-05:00"),
-  };
-  const facts = (
-    edited: Pick<GoogleEvent, "end" | "recurrence" | "start">,
-    // null: the series hasn't loaded.
-    loadedSeries: GoogleEvent | null = series
-  ) =>
-    saveFacts({
-      edited,
+  test("a time change on the same day leaves all scopes available", () => {
+    const facts = saveFacts({
+      edited: { start: at("2026-11-16T11:00:00-05:00") },
       event: onSlot,
-      master: loadedSeries ?? undefined,
       timeZone: zone,
     });
-
-  test("a new time on its own day leaves every scope on", () => {
-    // What it would cost other occurrences is the server's to refuse.
-    const changes = facts(later);
-    expect(changes.retimed).toBe(true);
-    expect(changes.dateMoved).toBe(false);
     expect(
       eventSaveDisabledScopes({
-        ...changes,
-        calendarChanged: false,
+        ...facts,
         patternChanged: false,
         seriesRuleLoaded: true,
       })
     ).toEqual({});
   });
-
-  test("times left as they were move nothing", () => {
-    const changes = facts({ end: onSlot.end, start: onSlot.start });
-    expect(changes.retimed).toBe(false);
-    expect(changes.dateMoved).toBe(false);
-  });
-
-  test("a series that meets twice a day can't take a new time as a whole", () => {
-    const twice = {
-      ...series,
-      recurrence: [
-        "RRULE:FREQ=WEEKLY;BYDAY=MO",
-        "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=15;BYMINUTE=0",
-      ],
-    };
-    const changes = facts(later, twice);
-    expect(changes.severalRules).toBe(true);
-    expect(changes.movesSeveralADay).toBe(true);
-  });
-
-  test("a series in another zone is named, from its own start", () => {
-    const tokyo = {
-      ...series,
-      start: { ...series.start, timeZone: "Asia/Tokyo" },
-    };
-    expect(facts(later, tokyo).seriesTimeZone).toBe("Asia/Tokyo");
-    expect(facts(later).seriesTimeZone).toBeUndefined();
-  });
-
-  test("before the series loads, a new time might move its start", () => {
-    const changes = facts(later, null);
-    expect(changes.retimed).toBe(true);
+  test("a day move disables Entire series", () => {
+    const facts = saveFacts({
+      edited: { start: at("2026-11-17T10:00:00-05:00") },
+      event: onSlot,
+      timeZone: zone,
+    });
+    expect(
+      eventSaveDisabledScopes({
+        ...facts,
+        patternChanged: false,
+        seriesRuleLoaded: true,
+      })
+    ).toEqual({ all: true });
   });
 });

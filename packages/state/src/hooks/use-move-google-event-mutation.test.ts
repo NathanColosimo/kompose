@@ -16,7 +16,7 @@ const move = {
 };
 
 /**
- * A move the server refuses, the errors the app was told about, and the
+ * A move the server fails, the errors the app was told about, and the
  * source calendar's list after it, which the realtime sync refreshed while
  * the move was out.
  */
@@ -38,7 +38,7 @@ async function failedMove(held: { failureMessage?: string; quiet?: boolean }) {
         move: (input: unknown) => {
           sent.push(input);
           queryClient.setQueryData(queryKey, [{ id: "event" }, { id: "new" }]);
-          return Promise.reject(new Error("refused"));
+          return Promise.reject(new Error("failed"));
         },
       },
     },
@@ -63,7 +63,7 @@ test("a failed move the editor reports itself shows no toast", async () => {
 test("a failed move otherwise says what failed, in the editor's words", async () => {
   const { told } = await failedMove({ failureMessage: "Couldn't move it." });
   expect(told.map((error) => error.message)).toEqual(["Couldn't move it."]);
-  expect(told[0]?.cause).toEqual(new Error("refused"));
+  expect(told[0]?.cause).toEqual(new Error("failed"));
 });
 
 test("the server gets the move alone, not the editor's options", async () => {
@@ -77,7 +77,7 @@ test("a failed move leaves the lists as they've since been refreshed", async () 
   expect(cached).toEqual([{ id: "event" }, { id: "new" }]);
 });
 
-test("a move marks both calendars' events and series stale, moved or refused", async () => {
+test("a move marks both calendars' events and series stale, moved or failed", async () => {
   const keys = ["work", "home"].flatMap((calendarId) => [
     [
       ...getGoogleEventsByCalendarQueryKey({ accountId: "acct", calendarId }),
@@ -93,7 +93,7 @@ test("a move marks both calendars' events and series stale, moved or refused", a
   ]);
   const answers = [
     () => Promise.resolve(null),
-    () => Promise.reject(new Error("refused")),
+    () => Promise.reject(new Error("failed")),
   ];
   const runs = answers.map(async (answer) => {
     const queryClient = new QueryClient();

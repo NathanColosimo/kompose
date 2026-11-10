@@ -20,7 +20,6 @@ import type {
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
-import { useStateConfig } from "@kompose/state/config";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -33,11 +32,7 @@ import {
   eventSaveDescription,
   eventSaveDisabledScopes,
   RECURRENCE_SCOPE_OPTIONS,
-  refuseSave,
-  type SaveRefusals,
   SCOPE_DIALOG_COPY,
-  seriesRefusalOf,
-  seriesSplitBlock,
   TASK_UPDATE_SCOPE_OPTIONS,
 } from "@kompose/state/recurrence-scope-options";
 import { formatEventWhen } from "@kompose/state/temporal-utils";
@@ -125,8 +120,6 @@ interface PendingGoogleUpdate {
   /** A drop moved it; a resize changed its length. */
   moved: boolean;
   occurrence: GoogleEvent;
-  /** The scopes the server refused for this drop, and why (`refuseSave`). */
-  refused?: SaveRefusals;
   update: UpdateGoogleEventInput;
 }
 
@@ -248,7 +241,6 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const { updateTask } = useTasks();
   const { updateEvent: updateGoogleEventMutation } = useGoogleEventMutations();
-  const { notifyError } = useStateConfig();
 
   const clearPreview = useCallback(() => {
     pendingPreviewRef.current = null;
@@ -756,23 +748,15 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
 
   const googleSaveChanges: EventSaveChanges | null = pendingGoogleUpdate
     ? {
-        calendarChanged: false,
         // A new day, or a new time on its own day, as the editor reads it.
         ...saveFacts({
           edited: pendingGoogleUpdate.update.event,
           event: pendingGoogleUpdate.occurrence,
-          master: pendingMaster.data ?? undefined,
           timeZone,
         }),
         patternChanged: false,
-        refused: pendingGoogleUpdate.refused,
         seriesRuleFailed: pendingMaster.ruleFailed,
         seriesRuleLoaded: pendingMaster.ruleReady,
-        splitBlocked: seriesSplitBlock(
-          pendingGoogleUpdate.occurrence,
-          pendingMaster.data,
-          timeZone
-        ),
       }
     : null;
 
@@ -792,50 +776,19 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       return;
     }
     const { occurrence, update } = pendingGoogleUpdate;
-    try {
-      await updateGoogleEventMutation.mutateAsync({
-        ...update,
-        // For the series, only the new time (and a rule following a moved
-        // day): an occurrence renamed or rescheduled on its own keeps that.
-        event: eventForScope({
-          edited: update.event,
-          master: pendingMaster.data ?? undefined,
-          occurrence,
-          scope: googleScope,
-          timeZone,
-        }),
-        // Said below: a refusal in the dialog, anything else as a toast.
-        quiet: true,
-        recurrenceScope: googleScope,
-      });
-    } catch (error) {
-      const refusal = seriesRefusalOf(error);
-      if (refusal) {
-        // The server won't make this write: ask again, as the editor does,
-        // with that scope off and its reason leading the dialog.
-        setPendingGoogleUpdate({
-          ...pendingGoogleUpdate,
-          refused: refuseSave(
-            pendingGoogleUpdate.refused,
-            googleScope,
-            refusal
-          ),
-        });
-        throw error;
-      }
-      // Any other failure closes the dialog and is reported.
-      if (error instanceof Error) {
-        notifyError?.(error);
-      }
-    }
-  }, [
-    googleScope,
-    notifyError,
-    pendingGoogleUpdate,
-    pendingMaster.data,
-    timeZone,
-    updateGoogleEventMutation,
-  ]);
+    await updateGoogleEventMutation.mutateAsync({
+      ...update,
+      // Send only the edited details for a series.
+      event: eventForScope({
+        edited: update.event,
+        occurrence,
+        scope: googleScope,
+      }),
+      // The dialog reports failures beside Save.
+      quiet: true,
+      recurrenceScope: googleScope,
+    });
+  }, [googleScope, pendingGoogleUpdate, updateGoogleEventMutation]);
 
   return (
     <>

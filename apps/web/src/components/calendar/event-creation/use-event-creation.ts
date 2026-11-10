@@ -1,6 +1,5 @@
 "use client";
 
-import { canWriteCalendar } from "@kompose/google-cal/schema";
 import {
   googleAccountsDataAtom,
   googleCalendarsDataAtom,
@@ -8,6 +7,7 @@ import {
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { eventCreationBlockedReason } from "@kompose/state/event-creation";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
 import { useAtomValue } from "jotai";
 import {
   createContext,
