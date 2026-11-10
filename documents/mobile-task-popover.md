@@ -65,14 +65,9 @@ kept and the done checkbox as it was.
 
 ## Save behavior
 
-Every save holds the editor open, read-only, with "Saving…" in the header
-(and on the scope dialog's Apply) until the server answers. On success
-everything closes; on failure the dialog closes and the editor keeps the
-edits, with the done checkbox back to its saved state. Updates to an
-existing task are not optimistic: the list waits for the server rather than
-showing a change it might roll back over the open draft. A new
-non-recurring task does appear in the list at once (the create mutation's
-optimistic row), and is removed again if the create fails.
+Task creates, updates and saves close the editor immediately. Shared task
+mutations update the cache optimistically where supported. A failed write
+rolls back and shows the app's normal error toast.
 
 Create:
 - Calls `createTask` with current draft. A blank title falls back to the
@@ -111,8 +106,7 @@ Mark done / not done:
 - Changing a recurring task's repeat prompts for scope.
 - Recurring delete prompts for scope over the editor; non-recurring delete
   asks for confirmation.
-- Save shows "Saving…", then closes the sheet and updates the task list
-  and calendar entry; a failed save keeps the editor and its edits.
+- Save closes the sheet immediately and updates the task list and calendar entry; a failed write rolls back and shows an error toast.
 - Mark done/todo from the edit sheet toggles status, saving any edits with
   it.
 - At large text sizes, in another locale (German dates are longer), and on

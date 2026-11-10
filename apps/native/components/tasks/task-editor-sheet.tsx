@@ -43,7 +43,6 @@ import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DatePicker } from "@/components/ui/date-picker";
-import { HeldFields } from "@/components/ui/held-fields";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
@@ -75,8 +74,6 @@ interface TaskEditorSheetProps {
   /** The draft can save now (see useTaskEditorFlow); Mark done saves too. */
   canSave: boolean;
   draft: TaskDraft | null;
-  /** A save is running: the editor holds, read-only, until it ends. */
-  isSaving?: boolean;
   isVisible: boolean;
   mode: "create" | "edit";
   onClose: () => void;
@@ -493,15 +490,13 @@ function TaskTagPicker({
   );
 }
 
-/** The editor's header: delete, then save, or "Saving…" while a save runs. */
+/** The editor's header: delete, then save. */
 function TaskEditorHeaderActions({
   canSave,
-  isSaving,
   onDelete,
   onSave,
 }: {
   canSave: boolean;
-  isSaving: boolean;
   onDelete?: () => void;
   onSave: () => void;
 }) {
@@ -510,38 +505,30 @@ function TaskEditorHeaderActions({
       {onDelete ? (
         <Button
           accessibilityLabel="Delete task"
-          disabled={isSaving}
           onPress={onDelete}
           size="icon"
           style={{ borderRadius: 999 }}
           variant="ghost"
         >
-          <Icon
-            as={Trash2}
-            className={isSaving ? "text-muted-foreground" : "text-destructive"}
-            size={18}
-          />
+          <Icon as={Trash2} className="text-destructive" size={18} />
         </Button>
       ) : null}
-      {isSaving ? (
-        <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>
-      ) : (
-        <Button
-          accessibilityLabel="Save task"
-          disabled={!canSave}
-          onPress={onSave}
-          size="icon"
-          style={{ borderRadius: 999 }}
-          variant="ghost"
-        >
-          <Icon
-            as={Check}
-            // Ink, not a light green: it reads on the cream sheet.
-            className={canSave ? "text-primary" : "text-muted-foreground"}
-            size={18}
-          />
-        </Button>
-      )}
+
+      <Button
+        accessibilityLabel="Save task"
+        disabled={!canSave}
+        onPress={onSave}
+        size="icon"
+        style={{ borderRadius: 999 }}
+        variant="ghost"
+      >
+        <Icon
+          as={Check}
+          // Ink, not a light green: it reads on the cream sheet.
+          className={canSave ? "text-primary" : "text-muted-foreground"}
+          size={18}
+        />
+      </Button>
     </View>
   );
 }
@@ -736,7 +723,6 @@ function TaskScheduleChips({
 export function TaskEditorSheet({
   canSave,
   overlay,
-  isSaving = false,
   isVisible,
   mode,
   draft,
@@ -824,174 +810,155 @@ export function TaskEditorSheet({
     });
   };
 
-  const handleClose = () => {
-    // While a save runs, the editor holds: closing would drop the edits if
-    // the save fails.
-    if (isSaving) {
-      return;
-    }
-    onClose();
-  };
-
   const fallbackUntil = draft.startDate ?? Temporal.Now.plainDateISO(timeZone);
 
   return (
     <BottomSheet
-      disablePanGesture={isSaving}
-      enableBackdropDismiss={!isSaving}
       headerRight={
         <TaskEditorHeaderActions
           canSave={canSave}
-          isSaving={isSaving}
           onDelete={mode === "edit" ? onDelete : undefined}
           onSave={onSave}
         />
       }
       isVisible={isVisible}
-      onClose={handleClose}
+      onClose={onClose}
       snapPoints={[0.84, 0.95, 0.99]}
       title={mode === "edit" ? "Edit task" : "New task"}
     >
-      {/* While a save runs, the fields are read-only, to touch and to
-          VoiceOver alike: a change made then would be dropped when the
-          editor closes. */}
-      <HeldFields saving={isSaving}>
-        <TaskScheduleChips
-          draft={draft}
-          isRecurrenceExpanded={isRecurrenceExpanded}
-          onToggleRecurrence={() =>
-            setIsRecurrenceExpanded((current) => !current)
-          }
+      <TaskScheduleChips
+        draft={draft}
+        isRecurrenceExpanded={isRecurrenceExpanded}
+        onToggleRecurrence={() =>
+          setIsRecurrenceExpanded((current) => !current)
+        }
+        recurrenceSummary={recurrenceSummary}
+        setDraft={setDraft}
+      />
+
+      {isRecurrenceExpanded ? (
+        <TaskRecurrenceEditor
+          activeFrequency={activeFrequency}
+          fallbackUntil={fallbackUntil}
+          handleSelectFrequency={handleSelectFrequency}
+          hasRecurrence={draft.recurrence !== null}
+          recurrenceState={recurrenceState}
           recurrenceSummary={recurrenceSummary}
-          setDraft={setDraft}
+          updateRecurrence={updateRecurrence}
         />
+      ) : null}
+      {draft.recurrence && !draft.startDate ? (
+        <Text className="mb-2.5 text-destructive text-xs">
+          Pick a start date to repeat this task.
+        </Text>
+      ) : null}
 
-        {isRecurrenceExpanded ? (
-          <TaskRecurrenceEditor
-            activeFrequency={activeFrequency}
-            fallbackUntil={fallbackUntil}
-            handleSelectFrequency={handleSelectFrequency}
-            hasRecurrence={draft.recurrence !== null}
-            recurrenceState={recurrenceState}
-            recurrenceSummary={recurrenceSummary}
-            updateRecurrence={updateRecurrence}
-          />
-        ) : null}
-        {draft.recurrence && !draft.startDate ? (
-          <Text className="mb-2.5 text-destructive text-xs">
-            Pick a start date to repeat this task.
-          </Text>
-        ) : null}
-
-        <View className="mb-2.5 flex-row items-center gap-2">
-          <Checkbox
-            accessibilityLabel="Done"
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isDone, disabled: !canToggleDone }}
-            checked={isDone}
-            disabled={!canToggleDone}
-            // 36 by 26pt. The slop makes 44pt, all inside the row (iOS clips
-            // slop at the parent's edge): up and down, and right into the gap.
-            hitSlop={{ bottom: 9, right: 8, top: 9 }}
-            onCheckedChange={(checked) =>
-              onToggleDone?.(checked ? "done" : "todo")
-            }
-            style={{
-              alignItems: "center",
-              justifyContent: "center",
-              paddingVertical: 0,
-              width: 36,
-            }}
-          />
-          <Input
-            accessibilityLabel="Title"
-            containerStyle={{ flex: 1 }}
-            onChangeText={(value) =>
-              setDraft((current) => ({ ...current, title: value }))
-            }
-            pill
-            placeholder="Title"
-            value={draft.title}
-            variant="outline"
-          />
-        </View>
-
-        <TaskTagPicker
-          availableTags={availableTags}
-          isExpanded={isTagPickerExpanded}
-          onAdd={addTag}
-          onRemove={removeTag}
-          onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
-          selectedTags={selectedTags}
-        />
-
-        <Textarea
-          accessibilityLabel="Description"
-          containerStyle={{ marginBottom: 10 }}
-          onChangeText={(value) =>
-            setDraft((current) => ({ ...current, description: value }))
+      <View className="mb-2.5 flex-row items-center gap-2">
+        <Checkbox
+          accessibilityLabel="Done"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isDone, disabled: !canToggleDone }}
+          checked={isDone}
+          disabled={!canToggleDone}
+          // 36 by 26pt. The slop makes 44pt, all inside the row (iOS clips
+          // slop at the parent's edge): up and down, and right into the gap.
+          hitSlop={{ bottom: 9, right: 8, top: 9 }}
+          onCheckedChange={(checked) =>
+            onToggleDone?.(checked ? "done" : "todo")
           }
-          placeholder="Description"
-          value={draft.description}
+          style={{
+            alignItems: "center",
+            justifyContent: "center",
+            paddingVertical: 0,
+            width: 36,
+          }}
+        />
+        <Input
+          accessibilityLabel="Title"
+          containerStyle={{ flex: 1 }}
+          onChangeText={(value) =>
+            setDraft((current) => ({ ...current, title: value }))
+          }
+          pill
+          placeholder="Title"
+          value={draft.title}
           variant="outline"
         />
+      </View>
 
-        <NativeLinkListEditor
-          isParsing={parseLink.isPending}
-          linkInput={draft.linkInput}
-          links={draft.links}
-          onAddLink={(url) => {
-            const isFirstLink = draft.links.length === 0;
+      <TaskTagPicker
+        availableTags={availableTags}
+        isExpanded={isTagPickerExpanded}
+        onAdd={addTag}
+        onRemove={removeTag}
+        onToggleExpanded={() => setIsTagPickerExpanded((current) => !current)}
+        selectedTags={selectedTags}
+      />
 
-            // Insert placeholder immediately so the link survives a quick save
-            setDraft((current) => ({
-              ...current,
-              linkInput: "",
-              links: dedupeLinks([
-                ...current.links,
-                {
-                  fetchedAt: new Date().toISOString(),
-                  provider: "unknown" as const,
-                  url,
-                },
-              ]),
-            }));
+      <Textarea
+        accessibilityLabel="Description"
+        containerStyle={{ marginBottom: 10 }}
+        onChangeText={(value) =>
+          setDraft((current) => ({ ...current, description: value }))
+        }
+        placeholder="Description"
+        value={draft.description}
+        variant="outline"
+      />
 
-            parseLink.mutate(url, {
-              onSuccess: (meta) => {
-                setDraft((current) => {
-                  const next = {
-                    ...current,
-                    links: dedupeLinks(
-                      current.links.map((l) => (l.url === url ? meta : l))
-                    ),
-                  };
-                  if (isFirstLink) {
-                    if (meta.title && !current.title.trim()) {
-                      next.title = meta.title;
-                    }
-                    if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                      next.durationMinutes = Math.ceil(
-                        meta.durationSeconds / 60
-                      );
-                    }
-                  }
-                  return next;
-                });
+      <NativeLinkListEditor
+        isParsing={parseLink.isPending}
+        linkInput={draft.linkInput}
+        links={draft.links}
+        onAddLink={(url) => {
+          const isFirstLink = draft.links.length === 0;
+
+          // Insert placeholder immediately so the link survives a quick save
+          setDraft((current) => ({
+            ...current,
+            linkInput: "",
+            links: dedupeLinks([
+              ...current.links,
+              {
+                fetchedAt: new Date().toISOString(),
+                provider: "unknown" as const,
+                url,
               },
-            });
-          }}
-          onLinkInputChange={(value) =>
-            setDraft((current) => ({ ...current, linkInput: value }))
-          }
-          onRemoveLink={(index) =>
-            setDraft((current) => ({
-              ...current,
-              links: current.links.filter((_, i) => i !== index),
-            }))
-          }
-        />
-      </HeldFields>
+            ]),
+          }));
+
+          parseLink.mutate(url, {
+            onSuccess: (meta) => {
+              setDraft((current) => {
+                const next = {
+                  ...current,
+                  links: dedupeLinks(
+                    current.links.map((l) => (l.url === url ? meta : l))
+                  ),
+                };
+                if (isFirstLink) {
+                  if (meta.title && !current.title.trim()) {
+                    next.title = meta.title;
+                  }
+                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
+                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
+                  }
+                }
+                return next;
+              });
+            },
+          });
+        }}
+        onLinkInputChange={(value) =>
+          setDraft((current) => ({ ...current, linkInput: value }))
+        }
+        onRemoveLink={(index) =>
+          setDraft((current) => ({
+            ...current,
+            links: current.links.filter((_, i) => i !== index),
+          }))
+        }
+      />
       {overlay}
     </BottomSheet>
   );

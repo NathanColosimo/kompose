@@ -67,6 +67,7 @@ import {
   Switch as RNSwitch,
   useWindowDimensions,
   View,
+  type ViewProps,
 } from "react-native";
 import { Temporal } from "temporal-polyfill";
 import type {
@@ -83,7 +84,6 @@ import {
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
-import { HeldFields } from "@/components/ui/held-fields";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Picker } from "@/components/ui/picker";
@@ -1317,7 +1317,6 @@ interface EventEditorSheetProps {
   onSubmit: (draft: EventDraft) => void;
   /** Dialogs that open over the editor (iOS presents them from its modal). */
   overlay?: React.ReactNode;
-  saveFailure?: string | null;
 }
 
 /**
@@ -1327,7 +1326,6 @@ interface EventEditorSheetProps {
 export function EventEditorSheet({
   draft,
   isSaving = false,
-  saveFailure,
   masterFailed = false,
   masterLoading = false,
   onRetryMaster,
@@ -1588,6 +1586,15 @@ export function EventEditorSheet({
     />
   );
 
+  const fieldProps: ViewProps = isSaving
+    ? {
+        accessibilityElementsHidden: true,
+        importantForAccessibility: "no-hide-descendants",
+        pointerEvents: "none",
+        style: { opacity: 0.6 },
+      }
+    : {};
+
   return (
     <BottomSheet
       disablePanGesture={isSaving}
@@ -1598,16 +1605,7 @@ export function EventEditorSheet({
       snapPoints={[0.84, 0.95, 0.99]}
       title={sheetTitle}
     >
-      {saveFailure ? (
-        <Text
-          accessibilityRole="alert"
-          className="mb-2.5 text-destructive text-sm"
-          selectable
-        >
-          {saveFailure}
-        </Text>
-      ) : null}
-      <HeldFields saving={isSaving}>
+      <View {...fieldProps}>
         {/* The title first: it's the most-edited field, and on create the
             first thing typed. */}
         <View className="mb-2.5 flex-row items-center gap-2">
@@ -1704,7 +1702,7 @@ export function EventEditorSheet({
           value={selectedCalendarValue}
           variant="outline"
         />
-      </HeldFields>
+      </View>
       {overlay}
     </BottomSheet>
   );

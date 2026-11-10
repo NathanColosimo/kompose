@@ -1,16 +1,12 @@
 "use client";
 
-import {
-  EVENT_CREATE_FAILURE_MESSAGE,
-  TASK_CREATE_FAILURE_MESSAGE,
-} from "@kompose/state/held-save";
+import { EVENT_CREATE_FAILURE_MESSAGE } from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useAtomValue } from "jotai";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useTransition } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
-import { SaveFailure, SavingLabel } from "@/components/ui/held-fieldset";
 import {
   Popover,
   PopoverContent,
@@ -25,7 +21,6 @@ import { isNarrowViewportAtom } from "@/state/sidebar";
 import {
   TaskCreateForm,
   type TaskFormValues,
-  useHeldSave,
 } from "../../task-form/task-edit-popover";
 import {
   type CloseSaveRequest,
@@ -95,7 +90,7 @@ function CreationChooser({
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
     null
   );
-  const taskSubmitRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
+  const taskSubmitRef = useRef<(() => boolean) | null>(null);
   const eventInteropRef = useRef<CalendarCreateFormInterop | null>(null);
   const taskInteropRef = useRef<CalendarCreateFormInterop | null>(null);
 
@@ -140,8 +135,6 @@ function CreationChooser({
     if (nextMode === shownMode) {
       return;
     }
-    // A failed create's message belongs to the other form.
-    setFailure(null);
 
     const currentInterop =
       shownMode === "event" ? eventInteropRef.current : taskInteropRef.current;
@@ -160,31 +153,8 @@ function CreationChooser({
   // The popover stays open ("Saving…") until the create succeeds, so a
   // failed one keeps the draft. Escape and outside clicks wait too.
   const contentRef = useRef<HTMLDivElement>(null);
-  const hold = useHeldSave({
-    editorRef: contentRef,
-    onClose: actions.closePopover,
-  });
-  const isSaving = hold.saving !== null;
+  const [isSaving, startSaving] = useTransition();
   const eventBlocked = shownMode === "event" && eventUnavailableReason !== null;
-
-  /** Why the last create failed, shown beside Save until the next one. */
-  const [failure, setFailure] = useState<string | null>(null);
-  const { holdOpen } = hold;
-  const holdForCreate = useCallback(
-    (created: Promise<boolean>, failureMessage: string) => {
-      setFailure(null);
-      holdOpen(
-        "save",
-        created.then((saved) => {
-          if (!saved) {
-            setFailure(failureMessage);
-          }
-          return saved;
-        })
-      );
-    },
-    [holdOpen]
-  );
 
   const handleCancel = useCallback(() => {
     if (!isSaving) {
@@ -202,8 +172,6 @@ function CreationChooser({
       const result = taskSubmitRef.current?.() ?? true;
       if (result === true) {
         actions.closePopover();
-      } else if (result !== false) {
-        holdForCreate(result, TASK_CREATE_FAILURE_MESSAGE);
       }
       return;
     }
@@ -217,21 +185,21 @@ function CreationChooser({
       actions.closePopover();
       return;
     }
-    holdForCreate(
-      createEvent
+    startSaving(async () => {
+      const saved = await createEvent
         .mutateAsync({
           ...request.payload,
           failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-          // Shown beside Save; a toast could land on the popover.
-          quiet: true,
         })
         .then(
           () => true,
           () => false
-        ),
-      EVENT_CREATE_FAILURE_MESSAGE
-    );
-  }, [actions, createEvent, eventBlocked, holdForCreate, isSaving, shownMode]);
+        );
+      if (saved) {
+        actions.closePopover();
+      }
+    });
+  }, [actions, createEvent, eventBlocked, isSaving, shownMode]);
 
   useHotkeys(
     "mod+enter",
@@ -315,12 +283,10 @@ function CreationChooser({
                   size="sm"
                   type="button"
                 >
-                  <SavingLabel saving={isSaving}>Save</SavingLabel>
+                  {isSaving ? "Saving…" : "Save"}
                 </Button>
               </div>
             </div>
-            {/* Beside Save, where the click was: the form can be long. */}
-            <SaveFailure className="text-right" message={failure} />
 
             {/* Keep both forms mounted so tab switches can transfer values in-place. */}
             <TabsContent
@@ -357,7 +323,6 @@ function CreationChooser({
               <TaskCreateForm
                 createInteropRef={taskInteropRef}
                 initialValues={initialTaskValues}
-                saving={isSaving}
                 submitRef={taskSubmitRef}
               />
             </TabsContent>

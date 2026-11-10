@@ -715,7 +715,7 @@ function recurrenceToSend(
   return changed ? draft.recurrence : undefined;
 }
 
-/** What a delete dialog says after its delete failed, as on web. */
+/** The error toast for a failed delete, as on web. */
 const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
 
 /** For a calendar move that failed after its edits saved, as on web. */
@@ -725,11 +725,10 @@ const SAVED_NOT_MOVED_MESSAGE =
 /**
  * Delete confirmations for an event, over its editor: Cancel goes back to the
  * editor with its edits, and Delete holds "Deleting…" until it's done. A
- * failed delete keeps its dialog open, which says so.
+ * failed delete keeps its dialog open for another try.
  */
 function EventDeleteDialogs({
   dialog,
-  failed,
   onCancel,
   onConfirm,
   onScopeChange,
@@ -737,21 +736,18 @@ function EventDeleteDialogs({
   scope,
 }: {
   dialog: EventDialog;
-  /** The last delete failed. */
-  failed: boolean;
   onCancel: () => void;
   onConfirm: (scope: RecurrenceScope) => void;
   onScopeChange: (scope: RecurrenceScope) => void;
   pending: boolean;
   scope: RecurrenceScope;
 }) {
-  const failure = failed ? `${DELETE_FAILURE_MESSAGE} ` : "";
   return (
     <>
       <AlertDialog
         closeOnConfirm={false}
         confirmText="Delete"
-        description={`${failure}${SCOPE_DIALOG_COPY.deleteEvent.description}`}
+        description={SCOPE_DIALOG_COPY.deleteEvent.description}
         isVisible={dialog === "delete"}
         onCancel={onCancel}
         onConfirm={() => onConfirm(scope)}
@@ -772,7 +768,7 @@ function EventDeleteDialogs({
       <AlertDialog
         closeOnConfirm={false}
         confirmText="Delete"
-        description={`${failure}This action cannot be undone.`}
+        description="This action cannot be undone."
         isVisible={dialog === "simple-delete"}
         onCancel={onCancel}
         onConfirm={() => onConfirm("this")}
@@ -1108,11 +1104,9 @@ export default function CalendarTab() {
   const [pendingEventSaveDraft, setPendingEventSaveDraft] =
     useState<EditEventDraft | null>(null);
 
-  const [eventSaveFailure, setEventSaveFailure] = useState<string | null>(null);
-
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
-    setEventSaveFailure(null);
+
     setPendingEventSaveDraft(null);
     setEventDraft(draft);
   }, []);
@@ -1501,47 +1495,37 @@ export default function CalendarTab() {
               }),
               recurrence: formPayload.recurrence,
             };
-      await updateEvent
-        .mutateAsync({
-          accountId: sourceCalendar.accountId,
-          calendarId: sourceCalendar.calendarId,
-          // The editor holds on the save; the cache changes once it's in.
-          optimistic: false,
-          // The sheet shows failures with the draft still open.
-          quiet: true,
-          event: {
-            // One occurrence keeps its other fields; a save for the series
-            // sends only its changes, so a field the editor never showed
-            // (guests, say) can't carry an old copy onto the series.
-            ...(scope === "this" ? draft.sourceEvent : { id: draft.eventId }),
-            ...eventPayload,
-            end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
-            start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
-          },
-          eventId: draft.eventId,
-          recurrenceScope: scope,
-        })
-        .catch((error: unknown) => {
-          setEventSaveFailure(SAVE_FAILURE_MESSAGE);
-          throw error;
-        });
+      await updateEvent.mutateAsync({
+        accountId: sourceCalendar.accountId,
+        calendarId: sourceCalendar.calendarId,
+        // The editor holds on the save; the cache changes once it's in.
+        optimistic: false,
+        failureMessage: SAVE_FAILURE_MESSAGE,
+
+        event: {
+          // One occurrence keeps its other fields; a save for the series
+          // sends only its changes, so a field the editor never showed
+          // (guests, say) can't carry an old copy onto the series.
+          ...(scope === "this" ? draft.sourceEvent : { id: draft.eventId }),
+          ...eventPayload,
+          end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
+          start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
+        },
+        eventId: draft.eventId,
+        recurrenceScope: scope,
+      });
 
       if (destinationCalendarId) {
-        await moveEvent
-          .mutateAsync({
-            accountId: sourceCalendar.accountId,
-            calendarId: sourceCalendar.calendarId,
-            destinationCalendarId,
-            eventId: draft.eventId,
-            // The edits are in by now: a failed move mustn't say they aren't.
-            failureMessage: SAVED_NOT_MOVED_MESSAGE,
-            quiet: true,
-            scope,
-          })
-          .catch((error: unknown) => {
-            setEventSaveFailure(SAVED_NOT_MOVED_MESSAGE);
-            throw error;
-          });
+        await moveEvent.mutateAsync({
+          accountId: sourceCalendar.accountId,
+          calendarId: sourceCalendar.calendarId,
+          destinationCalendarId,
+          eventId: draft.eventId,
+          // The edits are in by now: a failed move mustn't say they aren't.
+          failureMessage: SAVED_NOT_MOVED_MESSAGE,
+
+          scope,
+        });
       }
 
       closeEventModal();
@@ -1592,18 +1576,13 @@ export default function CalendarTab() {
       }
 
       if (draft.mode === "create") {
-        await createEvent
-          .mutateAsync({
-            accountId: draft.calendar.accountId,
-            calendarId: draft.calendar.calendarId,
-            failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
-            quiet: true,
-            event: buildEventPayload(draft),
-          })
-          .catch((error: unknown) => {
-            setEventSaveFailure(EVENT_CREATE_FAILURE_MESSAGE);
-            throw error;
-          });
+        await createEvent.mutateAsync({
+          accountId: draft.calendar.accountId,
+          calendarId: draft.calendar.calendarId,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+
+          event: buildEventPayload(draft),
+        });
         closeEventModal();
         return;
       }
@@ -1627,7 +1606,7 @@ export default function CalendarTab() {
         // The scope dialog opens over the editor, which stays open; it
         // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
-        setEventSaveFailure(null);
+
         setEventSavePreferred(
           suggested === "this" && changes.patternChanged
             ? "following"
@@ -1656,7 +1635,7 @@ export default function CalendarTab() {
         return;
       }
       Keyboard.dismiss();
-      setEventSaveFailure(null);
+
       try {
         // Closes the editor (and this dialog) when it saves.
         await commitEventUpdate(pendingEventSaveDraft, scope);
@@ -1682,8 +1661,7 @@ export default function CalendarTab() {
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
       // The dialog opens over the editor, which stays open: Cancel goes back
-      // to it with the edits. It starts without an earlier delete's failure.
-      deleteEvent.reset();
+      // to it with the edits.
 
       if (recurring) {
         setEventDeleteScope(
@@ -1698,7 +1676,7 @@ export default function CalendarTab() {
 
       setEventDialog("simple-delete");
     },
-    [deleteEvent, masterRecurrence]
+    [masterRecurrence]
   );
 
   const isDeletingEvent = deleteEvent.isPending;
@@ -1713,13 +1691,13 @@ export default function CalendarTab() {
           accountId: editingEventDraft.sourceCalendar.accountId,
           calendarId: editingEventDraft.sourceCalendar.calendarId,
           eventId: editingEventDraft.eventId,
-          // The dialog says a failure itself.
-          quiet: true,
+          failureMessage: DELETE_FAILURE_MESSAGE,
+
           scope,
         });
         closeEventModal();
       } catch {
-        // The dialog stays open and says it failed (`deleteEvent.isError`).
+        // The mutation reports the error toast; keep the dialog open to retry.
       }
     },
     [closeEventModal, deleteEvent, editingEventDraft]
@@ -1797,7 +1775,7 @@ export default function CalendarTab() {
 
   function dismissEventSaveDialog() {
     setEventDialog(null);
-    setEventSaveFailure(null);
+
     setPendingEventSaveDraft(null);
   }
 
@@ -2268,14 +2246,13 @@ export default function CalendarTab() {
             // leaves it open with the draft.
             // Typing after this point wouldn't be saved: close the keyboard.
             Keyboard.dismiss();
-            setEventSaveFailure(null);
+
             saveEvent(draft).catch(() => null);
           }}
           overlay={
             <>
               <EventDeleteDialogs
                 dialog={eventDialog}
-                failed={deleteEvent.isError}
                 onCancel={() => setEventDialog(null)}
                 onConfirm={(scope) => {
                   confirmEventDelete(scope).catch(() => null);
@@ -2302,7 +2279,6 @@ export default function CalendarTab() {
               />
             </>
           }
-          saveFailure={eventSaveFailure}
         />
       ) : null}
 
@@ -2388,7 +2364,6 @@ export default function CalendarTab() {
         canSave={taskFlow.canSave}
         // Drop the content as soon as it closes rather than animating it out.
         draft={taskFlow.isEditorOpen ? taskFlow.draft : null}
-        isSaving={taskFlow.isSaving}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
         onClose={taskFlow.close}
