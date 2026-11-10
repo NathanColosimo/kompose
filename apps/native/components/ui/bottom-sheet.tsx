@@ -296,7 +296,7 @@ export function BottomSheet({
       animationType="none"
       // iOS reports the end of dismissal; Android has no dismissal to wait for.
       onDismiss={onDismissed}
-      onRequestClose={animateClose}
+      onRequestClose={handleBackdropPress}
       statusBarTranslucent
       transparent
       visible={modalVisible}
