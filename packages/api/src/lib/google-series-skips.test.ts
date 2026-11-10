@@ -1779,11 +1779,12 @@ describe("a removed added day's skip the saved series still needs", () => {
   );
 
   test.each([["all"]] as const)(
-    "stays when the saved rule meets there (%s) is refused",
+    "stays deleted when the saved rule meets there, its start kept (%s)",
     async (scope) => {
       // Mondays plus an added Tue Dec 1 9:00, deleted on its own; the save
       // makes it Mondays and Tuesdays and drops the added day. Dec 1 9:00
-      // is the rule's now, and stays deleted.
+      // is the rule's now; the start doesn't move, so Google keeps its
+      // deleted occurrence there.
       const series: Event = {
         ...weekly,
         recurrence: [
@@ -1798,15 +1799,18 @@ describe("a removed added day's skip the saved series still needs", () => {
       const google = fakeGoogle(series, [deleted]);
       const opened = occurrenceOf(series, "2026-11-16T09:00:00-05:00");
       expect(
-        await refusalOf(
-          edit(scope, opened, {
-            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
-          })
+        Exit.isSuccess(
+          await run(
+            edit(scope, opened, {
+              recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU"],
+            })
+          )
         )
-      ).toMatchObject({
-        data: { reason: "otherAppRepeat" },
-      });
-      expect(google.writes()).toEqual([]);
+      ).toBe(true);
+      expect(google.writes()).toHaveLength(1);
+      expect(google.writes()[0]?.body?.recurrence).toEqual([
+        "RRULE:FREQ=WEEKLY;BYDAY=MO,TU",
+      ]);
     }
   );
 
@@ -2559,5 +2563,77 @@ describe("moveSkippedDays (the apps' rule rebuild for a new day)", () => {
         toTime: nine,
       })
     ).toBe(recurrence);
+  });
+});
+
+describe("a rule-only change to a series from another app, its start kept", () => {
+  // Google keeps a deleted occurrence whose slot the new rule still has,
+  // so a save that only changes the rule loses nothing.
+  test.each([
+    [
+      "with an added meeting",
+      ["RRULE:FREQ=WEEKLY;BYDAY=MO", "RDATE:20261118T140000Z"],
+      ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE", "RDATE:20261118T140000Z"],
+    ],
+    [
+      "with a set hour",
+      ["RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9"],
+      ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;BYHOUR=9"],
+    ],
+  ] as const)("is saved %s", async (_shape, own, saved) => {
+    // Mondays 9:00, Nov 23 deleted on its own; Wednesdays added for the
+    // Entire series.
+    const series: Event = { ...weekly, recurrence: [...own] };
+    const google = fakeGoogle(series, [
+      {
+        ...occurrenceOf(series, "2026-11-23T09:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(series, "2026-11-16T09:00:00-05:00"), {
+            recurrence: [...saved],
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()).toHaveLength(1);
+  });
+});
+
+describe("an Entire series move past midnight with a deleted meeting and a skip in the rule", () => {
+  test("puts both skips on their meetings' new places", async () => {
+    // Daily 23:00 from Nov 9, Nov 20 deleted on its own and Nov 22 skipped
+    // in the rule; the first meeting moved to Nov 10 00:30. Each meeting
+    // moves an hour and a half on: Nov 20's place is Nov 21 00:30, Nov
+    // 22's Nov 23 00:30, and Nov 20 00:30 (Nov 19's) stays on.
+    const late: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=DAILY", "EXDATE:20261123T040000Z"],
+      start: { dateTime: "2026-11-09T23:00:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(late, [
+      {
+        ...occurrenceOf(late, "2026-11-20T23:00:00-05:00"),
+        status: "cancelled",
+      },
+    ]);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", occurrenceOf(late, "2026-11-09T23:00:00-05:00"), {
+            end: { dateTime: "2026-11-10T01:00:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-10T00:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    const written = JSON.stringify(google.writes()[0]?.body?.recurrence);
+    expect(written).toContain("20261121T053000Z");
+    expect(written).toContain("20261123T053000Z");
+    expect(written).not.toContain("20261120T053000Z");
   });
 });
