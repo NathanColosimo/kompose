@@ -72,6 +72,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
   // would otherwise send the change twice while the first is running.
   const pendingRef = useRef(false);
   const confirmation = useMutation({
+    networkMode: "always",
     mutationFn: async () => onConfirm(),
     onSuccess: () => onOpenChange(false),
     onSettled: () => {
