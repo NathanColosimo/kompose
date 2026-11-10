@@ -39,6 +39,12 @@ const PLAIN_REFUSALS = [
   // A new time for an entire series that meets several times a day: its
   // start's time is one of several, each a rule of its own.
   "severalTimesADay",
+  // A new time of day, or all day or timed, for a series made in another
+  // app (meetings added outside its repeat, or a set hour in its rule),
+  // where its skips and deleted meetings can't all follow: written, it
+  // would cancel a meeting or bring a deleted one back. Only then; a save
+  // that keeps every meeting as it was goes through.
+  "otherAppRepeat",
 ] as const;
 
 /**
@@ -130,6 +136,8 @@ export function refusalMessage(refusal: SeriesRefusal): string {
       return "The repeat ends before this occurrence, so it can't start a new series here. Pick a later end.";
     case "countUnknown":
       return "This and following isn't available for this series: a clock change skips its time on an earlier day that also has a skipped or added occurrence, so how many times it has left to repeat can't be worked out. Change this and following to end on a date, or after a number of times other than the series' current one, then try again.";
+    case "otherAppRepeat":
+      return "This series repeats in a way made in another app (meetings added outside its repeat, or a set hour in its rule), so its time can't be changed here without bringing back or cancelling a meeting. Change single occurrences instead.";
     case "severalTimesADay":
       return "This series meets at several set times each day, so one new time can't replace them for the entire series. Change one occurrence at a time.";
     case "dropsChangedOccurrences":

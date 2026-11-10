@@ -37,7 +37,13 @@ import {
   EventSchema,
   type RecurrenceScope,
 } from "./schema";
-import { meetsSeveralTimesADay, ruleDayCount, ruleMeetings } from "./series";
+import {
+  isRuleDay,
+  meetsSeveralTimesADay,
+  readRule,
+  ruleDayCount,
+  ruleMeetings,
+} from "./series";
 import {
   canonicalRule,
   changedFields,
@@ -389,6 +395,283 @@ function timesOnOwnDay(params: {
       masterStart: inSeriesZone(occurrence.start, master.start),
     }) ?? { end: occurrence.end, start: occurrence.start }
   );
+}
+
+/** A set hour or minute in a rule (BYHOUR=9), which only other apps write. */
+const SET_TIME_PART = /[:;]BY(?:HOUR|MINUTE)=/;
+/** A rule's end parts, to compare rules by their days alone. */
+const END_PARTS = /;(?:COUNT|UNTIL)=[^;]*/g;
+
+/** A meeting of a series on one day: a rule's, or one added to it. */
+interface DayMeeting {
+  added: boolean;
+  dead: boolean;
+  key: string;
+  /** A rule meeting at an added one's moment. */
+  shared?: boolean;
+}
+
+/**
+ * A series' meetings read for `losesMeetings`: on a day, its rule's (at
+ * most one, as Google meets a rule once a day) and its added ones, each
+ * live or skipped (in its EXDATEs, or by `deleted` original starts).
+ */
+function seriesDays(params: {
+  deleted: string[];
+  first: Event["start"];
+  lines: string[];
+  zone: string;
+}) {
+  const { first, lines, zone } = params;
+  const begin = first.date
+    ? Temporal.PlainDate.from(first.date)
+    : startInstant(first, zone)?.toZonedDateTimeISO(zone);
+  const readers = begin
+    ? rulesOf(lines).map((rule) => readRule({ first: begin, rule }))
+    : [];
+  const keyOf = (value: RecurrenceValue) =>
+    value.instant ? `${value.instant.epochMilliseconds}` : `${value.day}`;
+  const skips = dateValues(lines, "EXDATE", zone);
+  const dead = new Set([
+    ...skips.map(keyOf),
+    ...params.deleted.flatMap((slot) => {
+      const value = readRecurrenceValue(slot, zone, zone);
+      return value ? [keyOf(value)] : [];
+    }),
+  ]);
+  const deadDays = new Set(
+    skips.filter((value) => !value.instant).map((value) => `${value.day}`)
+  );
+  const meeting = (value: RecurrenceValue, isAdded: boolean): DayMeeting => ({
+    added: isAdded,
+    dead: dead.has(keyOf(value)) || deadDays.has(`${value.day}`),
+    key: keyOf(value),
+  });
+  const added = dateValues(lines, "RDATE", zone);
+  return {
+    added,
+    keyOf,
+    on: (day: Temporal.PlainDate): DayMeeting[] => {
+      const lo = day.toZonedDateTime({ timeZone: zone }).toInstant();
+      const hi = day
+        .add({ days: 1 })
+        .toZonedDateTime({ timeZone: zone })
+        .toInstant()
+        .subtract({ nanoseconds: 1 });
+      const ruleMeeting = readers
+        .flatMap((reader) => reader?.meetingsBetween(lo, hi) ?? [])
+        .at(0);
+      const adds = added
+        .filter((value) => value.day.equals(day))
+        .map((value) => meeting(value, true));
+      if (!ruleMeeting) {
+        return adds;
+      }
+      const own = meeting(
+        ruleMeeting instanceof Temporal.Instant
+          ? { day, instant: ruleMeeting }
+          : { day: ruleMeeting, instant: null },
+        false
+      );
+      return [
+        { ...own, shared: adds.some((add) => add.key === own.key) },
+        ...adds,
+      ];
+    },
+    /** Whether the rule has a day there, its time apart. */
+    ruleDay: (day: Temporal.PlainDate) =>
+      begin !== undefined &&
+      rulesOf(lines).some(
+        (rule) =>
+          isRuleDay(
+            rule,
+            begin instanceof Temporal.PlainDate ? begin : begin.toPlainDate(),
+            day
+          ) === true
+      ),
+    dead: (key: string) => dead.has(key),
+  };
+}
+
+/**
+ * Whether one day's meetings lose one through a save: each meeting the
+ * day had before (`was`) against its own after (`is`): the rule's against
+ * the rule's (unless the new one is a live added meeting's too: that one
+ * stays its own), an added one against itself, a removed added one
+ * against a rule meeting that takes its day. Made all day, the day is
+ * skipped only when all it had was. A meeting the save adds is live.
+ */
+function dayLoses(params: {
+  is: DayMeeting[];
+  keepsForm: boolean;
+  was: DayMeeting[];
+}): boolean {
+  const { is, keepsForm, was } = params;
+  if (!keepsForm) {
+    const allDead = was.length > 0 && was.every((meeting) => meeting.dead);
+    return (
+      is.length > 0 &&
+      was.length > 0 &&
+      is.every((meeting) => meeting.dead) !== allDead
+    );
+  }
+  const left = [...is];
+  const take = (find: (meeting: DayMeeting) => boolean) => {
+    const at = left.findIndex(find);
+    return at < 0 ? undefined : left.splice(at, 1)[0];
+  };
+  const differ = (a: DayMeeting, b: DayMeeting | undefined) =>
+    Boolean(b && a.dead !== b.dead);
+  const oldRule = was.find((meeting) => !meeting.added);
+  const newRule = take((meeting) => !meeting.added);
+  const keeps = (meeting: DayMeeting) =>
+    left.some((add) => add.key === meeting.key && !add.dead);
+  if (oldRule && newRule && !(newRule.shared && keeps(newRule))) {
+    if (differ(oldRule, newRule)) {
+      return true;
+    }
+  } else if (newRule && !oldRule) {
+    left.push(newRule);
+  }
+  for (const add of was.filter((meeting) => meeting.added)) {
+    const same = take((meeting) => meeting.added && meeting.key === add.key);
+    const own =
+      same ??
+      (newRule && !oldRule ? take((meeting) => !meeting.added) : undefined);
+    if (differ(add, own)) {
+      return true;
+    }
+  }
+  return left.some((meeting) => meeting.dead && !meeting.shared);
+}
+
+/**
+ * Whether a save that gives a series made in another app (meetings added
+ * outside its repeat, or a set hour in its rule) a new time of day or form
+ * would lose a meeting (`otherAppRepeat`): on a day with a skip, a deleted
+ * occurrence or an added meeting (from `from`, mapped by the start's move
+ * in days), a meeting still on skipped after the save, a skipped or
+ * deleted one back, a rule meeting with no place (the clocks skip its new
+ * time that day).
+ */
+function losesMeetings(params: {
+  /** The occurrences deleted on their own, by original start. */
+  cancelled: string[];
+  /** The start the save moves from: the series' own, or a split's. */
+  from: Event["start"];
+  master: Event;
+  start: Event["start"];
+  written: string[];
+}): boolean {
+  const { cancelled, from, master, start, written } = params;
+  const own = master.recurrence ?? [];
+  const zone = seriesZoneOf(master);
+  const newZone = repeatZone(master, start);
+  const otherApp = [...own, ...written].some(
+    (line) =>
+      line.startsWith("RDATE") ||
+      (line.startsWith("RRULE:") && SET_TIME_PART.test(line))
+  );
+  const fromClock = clockOf(from, zone);
+  const toClock = clockOf(start, newZone);
+  const keepsForm = Boolean(from.date) === Boolean(start.date);
+  const retimed =
+    !keepsForm || Boolean(fromClock && toClock && !fromClock.equals(toClock));
+  // A new rule, or added days the save adds or removes, places them too.
+  const placed = (lines: string[]) =>
+    lines
+      .filter((line) => line.startsWith("RRULE:") || line.startsWith("RDATE"))
+      .map((line) => line.replace(END_PARTS, ""))
+      .sort()
+      .join("\n");
+  const replaced = placed(own) !== placed(written);
+  const fromDay = dayOfStart(from, zone);
+  const toDay = dayOfStart(start, newZone);
+  if (!(otherApp && (retimed || replaced) && fromDay && toDay)) {
+    return false;
+  }
+  const shift = fromDay.until(toDay).days;
+  const counted = rulesOf(written).some((rule) => rule.includes("COUNT="));
+  const before = seriesDays({
+    deleted: cancelled,
+    first: master.start,
+    lines: own,
+    zone,
+  });
+  const after = seriesDays({
+    deleted: [],
+    first: start,
+    lines: written,
+    zone: newZone,
+  });
+  const days = new Map<string, Temporal.PlainDate>();
+  for (const value of [
+    ...dateValues(own, "EXDATE", zone),
+    ...before.added,
+    ...cancelled.flatMap((slot) => {
+      const read = readRecurrenceValue(slot, zone, zone);
+      return read ? [read] : [];
+    }),
+  ]) {
+    if (Temporal.PlainDate.compare(value.day, fromDay) >= 0) {
+      days.set(`${value.day}`, value.day);
+    }
+  }
+  return [...days.values()].some((day) => {
+    const moved = day.add({ days: shift });
+    const was = before.on(day);
+    const is = after.on(moved);
+    // A rule meeting with no place: its day kept, its new time not there
+    // (the clocks skip it); a deleted one too under a COUNT, whose place
+    // it held can't be told.
+    const noPlace =
+      keepsForm &&
+      was.some((meeting) => !meeting.added && (counted || !meeting.dead)) &&
+      !is.some((meeting) => !meeting.added) &&
+      after.ruleDay(moved);
+    return noPlace || dayLoses({ is, keepsForm, was });
+  });
+}
+
+/**
+ * A split's rule lined up with its new start (`ruleForStart`), with no
+ * skip at the meeting just saved there (a start moved onto a skipped day,
+ * made all day, would skip it whole); null when that would lose a meeting
+ * of a series made in another app (`losesMeetings`).
+ */
+function splitRuleForStart(params: {
+  cancelled: string[];
+  master: Event;
+  originalStart: string;
+  recurrence: string[];
+  start: Event["start"];
+}): string[] | null {
+  const { master, start } = params;
+  const zone = repeatZone(master, start);
+  const lined = ruleForStart(
+    params.recurrence,
+    master,
+    start,
+    params.originalStart
+  );
+  const at = readRecurrenceValue(slotOf(start, zone) ?? "", zone, zone);
+  const written = at
+    ? keepingDateValues(
+        lined,
+        "EXDATE",
+        zone,
+        (value) => skipKey(value) !== skipKey(at)
+      )
+    : lined;
+  return losesMeetings({
+    cancelled: params.cancelled,
+    from: asStart(params.originalStart),
+    master,
+    start,
+    written,
+  })
+    ? null
+    : written;
 }
 
 /**
@@ -2645,7 +2928,21 @@ export function makeGoogleCalendarService(
       }
       const { cancelled, changed } = yield* exceptionsOf(calendarId, master);
       const kept = afterSave({ cancelled, changed, plan });
-      return "reason" in kept ? yield* Effect.fail(refused(kept)) : kept;
+      if ("reason" in kept) {
+        return yield* Effect.fail(refused(kept));
+      }
+      if (
+        losesMeetings({
+          cancelled,
+          from: master.start,
+          master,
+          start: times.start,
+          written: kept.recurrence,
+        })
+      ) {
+        return yield* Effect.fail(refused({ reason: "otherAppRepeat" }));
+      }
+      return kept;
     });
 
   const updateEventAll = (
@@ -2827,7 +3124,16 @@ export function makeGoogleCalendarService(
       });
       const recurrence = skipping(rule, [...placed, ...moved], zone);
       if (!endsBeforeStart(recurrence, start, newZone)) {
-        return ruleForStart(recurrence, master, start, originalStart);
+        const written = splitRuleForStart({
+          cancelled: params.cancelled,
+          master,
+          originalStart,
+          recurrence,
+          start,
+        });
+        return (
+          written ?? (yield* Effect.fail(refused({ reason: "otherAppRepeat" })))
+        );
       }
       // The series' own end before the new start (a meeting moved past
       // it): its rule is spent, so the new part has that meeting and any
