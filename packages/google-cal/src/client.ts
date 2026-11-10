@@ -814,7 +814,8 @@ function firstMeetingFields(params: {
   const fields: Partial<CreateEvent> = Object.fromEntries(
     Object.entries(own).filter(([field]) => !(field in changes))
   );
-  if (own.attendees && changes.attendees) {
+  // Cleared on its own, its guests read as none (`attendees: undefined`).
+  if ("attendees" in own && changes.attendees) {
     fields.attendees = seriesAttendees({
       edited: edited.attendees ?? [],
       occurrence: opened.attendees,
