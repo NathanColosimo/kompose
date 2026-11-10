@@ -73,6 +73,7 @@ const WHOOP_DAY = { recovery: "81%", strain: "12.4" };
 
 const DAY_WIDTH = "calc(100% / var(--days) - 6px)";
 
+/** The first task is the one mid-drag onto the calendar. */
 const INBOX = ["Review PR", "Book flights for Lisbon"];
 
 /**
@@ -218,7 +219,7 @@ export function HomePreview() {
                 }}
               >
                 <span className="mt-px size-2.5 shrink-0 rounded-[3px] border border-foreground/60 max-sm:hidden" />
-                <span className="truncate">Review PR</span>
+                <span className="truncate">{INBOX[0]}</span>
               </div>
             </div>
           </div>
