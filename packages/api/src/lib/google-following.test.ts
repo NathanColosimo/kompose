@@ -583,6 +583,79 @@ describe("This and following", () => {
     );
   });
 
+  describe("a split moved by the clock", () => {
+    test("leaves Thursday's meeting on when a weekdays series moves past midnight", async () => {
+      // Every weekday at 23:30, Fri Nov 20 deleted on its own; from Mon Nov
+      // 16 moved to Tue Nov 17 00:30. Each meeting moves an hour on, so
+      // Thursday's is Fri 00:30, and Friday's would be Saturday's.
+      const weekdays: Event = {
+        ...weekly,
+        end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+        start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+      };
+      const google = fakeGoogle(weekdays, [
+        {
+          ...occurrenceOf(weekdays, "2026-11-20T23:30:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(weekdays, "2026-11-16T23:30:00-05:00"),
+              {
+                end: { dateTime: "2026-11-17T00:59:00-05:00", timeZone: zone },
+                start: {
+                  dateTime: "2026-11-17T00:30:00-05:00",
+                  timeZone: zone,
+                },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      expect(
+        JSON.stringify(google.writes()[0]?.body?.recurrence)
+      ).not.toContain("20261120T053000Z");
+    });
+
+    test("keeps each meeting on its own day when dragged to the next day an hour earlier", async () => {
+      // Daily 9:00, Nov 20 deleted; from Nov 16 dragged to Nov 17 8:00: an
+      // hour back, as Entire series reads it, so Nov 20's skip is Nov 20
+      // at 8:00.
+      const daily: Event = { ...weekly, recurrence: ["RRULE:FREQ=DAILY"] };
+      const google = fakeGoogle(daily, [
+        {
+          ...occurrenceOf(daily, "2026-11-20T09:00:00-05:00"),
+          status: "cancelled",
+        },
+      ]);
+      expect(
+        Exit.isSuccess(
+          await run(
+            edit(
+              "following",
+              occurrenceOf(daily, "2026-11-16T09:00:00-05:00"),
+              {
+                end: { dateTime: "2026-11-17T08:30:00-05:00", timeZone: zone },
+                start: {
+                  dateTime: "2026-11-17T08:00:00-05:00",
+                  timeZone: zone,
+                },
+              }
+            )
+          )
+        )
+      ).toBe(true);
+      expect(google.writes()[0]?.body?.recurrence).toContain(
+        "EXDATE:20261120T130000Z"
+      );
+    });
+  });
+
   describe("a move past later meetings", () => {
     // A changed meeting the move passes lands where a later meeting does:
     // carrying it would overwrite that one, so the save is refused.
