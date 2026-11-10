@@ -1414,13 +1414,13 @@ describe("seriesRecurrenceForSave", () => {
     ] as const;
     expect(save(...tue)).toBeUndefined();
     expect(moved(...tue)).toBe(false);
-    // New times there (only its end): the series would start on Tuesday.
+    // Only its end changed: a new length, so the series keeps its Mondays.
     const longer = [
       "2026-11-10T09:00:00-05:00",
       "2026-11-10T10:00:00-05:00",
     ] as const;
-    expect(moved(...longer)).toBe(true);
-    expect(save(...longer)).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=TU"]);
+    expect(moved(...longer)).toBe(false);
+    expect(save(...longer)).toBeUndefined();
     // Moved on to Wednesday: Mondays become Wednesdays.
     const wed = [
       "2026-11-11T09:00:00-05:00",
@@ -2129,5 +2129,53 @@ describe("repeatEndsBeforeStart", () => {
         timeZone: zone,
       })
     ).toBe(null);
+  });
+});
+
+describe("a meeting moved to another day before, then only lengthened", () => {
+  // Mondays 9:00 to 9:30; Nov 16 was moved alone to Tue Nov 17 before. Now
+  // only its end changes, to 10:00.
+  const occurrence = {
+    end: {
+      dateTime: "2026-11-17T09:30:00-05:00",
+      timeZone: "America/New_York",
+    },
+    originalStartTime: {
+      dateTime: "2026-11-16T09:00:00-05:00",
+      timeZone: "America/New_York",
+    },
+    recurringEventId: "series",
+    start: {
+      dateTime: "2026-11-17T09:00:00-05:00",
+      timeZone: "America/New_York",
+    },
+  };
+  const lengthened = {
+    editedEnd: {
+      dateTime: "2026-11-17T10:00:00-05:00",
+      timeZone: "America/New_York",
+    },
+    editedStart: occurrence.start,
+    occurrence,
+    timeZone: "America/New_York",
+  };
+
+  test("hasn't moved its series to another day", () => {
+    // The server gives the series the new length and keeps its Mondays.
+    expect(occurrenceDayMoved(lengthened)).toBe(false);
+  });
+
+  test("sends no repeat for the series", () => {
+    expect(
+      seriesRecurrenceForSave({
+        ...lengthened,
+        masterRecurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+        masterStart: {
+          dateTime: "2026-11-09T09:00:00-05:00",
+          timeZone: "America/New_York",
+        },
+        recurrence: undefined,
+      })
+    ).toBeUndefined();
   });
 });

@@ -752,13 +752,14 @@ export function untilDefaultDay(
 
 /**
  * Whether a save moves an occurrence's series to another day: the edit
- * changes its times, and its new start is on another day than its place
+ * changes its start, and its new start is on another day than its place
  * in the series (its original start; a rescheduled one's was where it was
- * moved from). An edit that keeps its times keeps the series' slot, as the
- * server reads it (`keepsTimes`): one rescheduled before, then only
- * renamed, hasn't moved, and one moved back onto its own day hasn't either.
+ * moved from). An edit that keeps its start keeps the series' slot, as the
+ * server reads it: one rescheduled before, then only renamed or given a
+ * new end, hasn't moved, and one moved back onto its own day hasn't either.
  */
 export function occurrenceDayMoved(params: {
+  /** Not read: a new end alone moves nothing. Kept for the callers. */
   editedEnd: EventTime;
   editedStart: EventTime;
   occurrence: Pick<
@@ -769,7 +770,7 @@ export function occurrenceDayMoved(params: {
   seriesStart?: StartTime | null;
   timeZone: string;
 }): boolean {
-  const { editedEnd, editedStart, occurrence } = params;
+  const { editedStart, occurrence } = params;
   if (!occurrence.recurringEventId) {
     return false;
   }
@@ -778,8 +779,7 @@ export function occurrenceDayMoved(params: {
     params.seriesStart,
     params.timeZone
   );
-  const edited = { end: editedEnd, start: editedStart };
-  if (keepsTimes(edited, occurrence, timeZone)) {
+  if (sameTime(editedStart, occurrence.start, timeZone)) {
     return false;
   }
   const from = dayOfStart(
