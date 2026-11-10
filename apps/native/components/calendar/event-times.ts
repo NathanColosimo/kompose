@@ -74,5 +74,6 @@ export function draftTimes(
   };
 }
 
-const DEFAULT_START_TIME = Temporal.PlainTime.from("09:00");
-const DEFAULT_END_TIME = Temporal.PlainTime.from("10:00");
+/** The times a timed draft with none takes (an all-day event made timed). */
+export const DEFAULT_START_TIME = Temporal.PlainTime.from("09:00");
+export const DEFAULT_END_TIME = Temporal.PlainTime.from("10:00");

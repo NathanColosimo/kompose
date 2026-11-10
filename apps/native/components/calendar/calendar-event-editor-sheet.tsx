@@ -31,6 +31,7 @@ import {
   timeInZone,
   timeZoneCity,
   untilDefaultDay,
+  weekdayCodeOf,
   weekOrdered,
 } from "@kompose/state/google-event-recurrence";
 import { useLocationSearch } from "@kompose/state/hooks/use-location-search";
@@ -79,7 +80,12 @@ import type {
   EditEventDraft,
   EventDraft,
 } from "@/components/calendar/calendar-editor-types";
-import { type DraftTimes, draftTimes } from "@/components/calendar/event-times";
+import {
+  DEFAULT_END_TIME,
+  DEFAULT_START_TIME,
+  type DraftTimes,
+  draftTimes,
+} from "@/components/calendar/event-times";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -271,8 +277,6 @@ function RepeatSection({
   );
 }
 
-const RRULE_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
-
 function RecurrenceEditorSection({
   allDay,
   endFrom,
@@ -304,7 +308,7 @@ function RecurrenceEditorSection({
   const shownDays =
     parsedRecurrence.byDay.length > 0
       ? parsedRecurrence.byDay
-      : [RRULE_WEEKDAYS[startDate.dayOfWeek - 1] ?? "MO"];
+      : [weekdayCodeOf(startDate)];
   return (
     <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
       {/* Chips at their own width, wrapping (3 + 2 on a phone), as in the
@@ -607,11 +611,7 @@ function RecurrenceEndSection({
                 updateRecurrence({
                   end: {
                     date: untilRuleForDay(
-                      Temporal.PlainDate.from({
-                        day: date.getDate(),
-                        month: date.getMonth() + 1,
-                        year: date.getFullYear(),
-                      }),
+                      dateToPlainDate(date),
                       allDay,
                       timeZone
                     ),
@@ -749,7 +749,7 @@ function readOnlyReasonFor(
   draft: EventDraft,
   calendarOptions: CalendarOption[]
 ): string | null {
-  if (draft.mode !== "edit" || !draft.sourceEvent) {
+  if (draft.mode !== "edit") {
     return null;
   }
   const source = calendarOptions.find(
@@ -1366,9 +1366,6 @@ function EventDateTimeRow({
   );
 }
 
-const DEFAULT_START_TIME = Temporal.PlainTime.from("09:00");
-const DEFAULT_END_TIME = Temporal.PlainTime.from("10:00");
-
 function useEventDatePickerValues({
   startDate,
   endDate,
@@ -1641,7 +1638,6 @@ export function EventEditorSheet({
       allDay={values.allDay}
       applyPrimaryRecurrenceRule={applyPrimaryRecurrenceRule}
       disabled={recurrenceDisabled}
-      // The day its repeat's implicit days count from, in the series' zone.
       endFrom={formDay}
       isExpanded={isRecurrenceExpanded}
       onToggle={() => setIsRecurrenceExpanded((current) => !current)}
