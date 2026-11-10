@@ -346,12 +346,12 @@ function getSharedFieldsFromEventValues(
  */
 function CountField({
   label,
-  max = 999,
+  max,
   onValue,
   value,
 }: {
   label: string;
-  max?: number;
+  max: number;
   onValue: (value: number) => void;
   value: number;
 }) {
@@ -500,6 +500,8 @@ interface RepeatPartProps {
   start: Temporal.PlainDate;
 }
 
+const MON_TO_FRI = ["MO", "TU", "WE", "TH", "FR"];
+
 /** Which days a weekly or monthly series repeats on. */
 function RepeatDays({
   emit,
@@ -515,7 +517,7 @@ function RepeatDays({
       {pattern.freq === "WEEKLY" && (
         <div className="space-y-2">
           <span className="text-muted-foreground text-xs">On days</span>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {WEEKDAYS.map((day) => {
               const active = shownDays.includes(day.value);
               return (
@@ -542,6 +544,15 @@ function RepeatDays({
                 </Button>
               );
             })}
+            {/* Every weekday in one click, as Google Calendar offers. */}
+            <Button
+              className="ml-auto h-8 rounded-full px-2.5 text-xs"
+              onClick={() => emit({ ...pattern, byDay: MON_TO_FRI })}
+              type="button"
+              variant="outline"
+            >
+              Mon–Fri
+            </Button>
           </div>
         </div>
       )}
@@ -691,6 +702,7 @@ function RepeatEnds({
         <div className="flex items-center gap-2 text-xs">
           <CountField
             label="Occurrences"
+            max={MAX_OCCURRENCES}
             onValue={(count) =>
               emit({ ...pattern, end: { count, type: "count" } })
             }
@@ -704,6 +716,9 @@ function RepeatEnds({
     </div>
   );
 }
+
+/** Google Calendar's editor takes at most this many occurrences. */
+const MAX_OCCURRENCES = 730;
 
 const RECURRENCE_ENDS = [
   { label: "Never", value: "none" },
