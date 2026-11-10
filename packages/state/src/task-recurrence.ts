@@ -407,7 +407,7 @@ export function repeatBlocksSave(params: {
   previous: TaskRecurrence | null;
   startDate: Temporal.PlainDate | null | undefined;
 }): boolean {
-  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+  if (taskRecurrenceEquals(params.previous, params.next)) {
     return false;
   }
   // A repeat counts from the start date, so it needs one.
@@ -443,7 +443,7 @@ export function repeatNote(params: {
           : PICK_START_TO_REPEAT,
     };
   }
-  if (taskRecurrenceEquals(params.previous, params.next ?? null)) {
+  if (taskRecurrenceEquals(params.previous, params.next)) {
     return null;
   }
   const text = repeatChangeText(params);
