@@ -1948,6 +1948,41 @@ describe("Entire series start and length changes, as Google applies them", () =>
       ["from it", "2026-11-09T09:00:00-05:00"],
       ["from another", "2026-11-16T09:00:00-05:00"],
     ])(
+      "keeping its guests cleared on its own when the save adds one, saved %s",
+      async (_from, from) => {
+        // The series has a; Nov 9, the first meeting, had every guest
+        // removed on its own. The save adds b and ends the repeat: Nov 9
+        // left has b.
+        const guests: Event = {
+          ...weekly,
+          attendees: [{ email: "a@example.com" }],
+        };
+        const first = { ...occurrenceOf(guests, nov9), attendees: undefined };
+        const google = fakeGoogle(guests, [first]);
+        const opened = from === nov9 ? first : occurrenceOf(guests, from);
+        expect(
+          Exit.isSuccess(
+            await run(
+              edit("all", opened, {
+                attendees: [
+                  ...(opened.attendees ?? []),
+                  { email: "b@example.com" },
+                ],
+                recurrence: [],
+              })
+            )
+          )
+        ).toBe(true);
+        expect(google.writes()[0]?.body?.attendees).toEqual([
+          { email: "b@example.com" },
+        ]);
+      }
+    );
+
+    test.each([
+      ["from it", "2026-11-09T09:00:00-05:00"],
+      ["from another", "2026-11-16T09:00:00-05:00"],
+    ])(
       "keeping a guest of its own when the save adds one, saved %s",
       async (_from, from) => {
         // The series has a; Nov 9, the first meeting, also x on its own. The
