@@ -40,7 +40,7 @@ Unified inline editor for Google calendar events. Supports both **create** and *
   - A recurring event asks for the scope in a dialog over the editor. Cancel goes back to the editor with the edits; Save there holds the editor the same way.
   - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
   - The repeat is sent only when the user changed it with the Repeat control. An occurrence's pattern lives on its master, which can load after the editor opens.
-- **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs). While a save runs, the page under the editor takes no clicks (`HeldFieldset`): a click that changed the view would unmount the editor and drop its edits if the save failed.
+- **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving (not while a save runs). While a save runs, the page under the editor takes no clicks (`HeldFieldset`): a click that changed the view would unmount the editor and drop its edits if the save failed. An event write made offline fails at once (`HELD_WRITE_NETWORK_MODE`), so the editor never waits on the connection.
 - Opening an event's editor (click, or Enter on a focused block) focuses the editor itself, not its title: Tab goes into the fields, and the calendar's shortcuts stay out of it. While a save runs, and when the scope dialog closes over it, the editor keeps focus (its fields remount read-only on a save), so the calendar's keys can't navigate away from it.
 
 ### Repeat editor (web and iOS)
