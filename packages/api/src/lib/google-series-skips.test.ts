@@ -1495,6 +1495,62 @@ describe("an UNTIL through a move a day on and an hour earlier", () => {
   });
 });
 
+describe("an end date that isn't a meeting's day, through a move past midnight", () => {
+  test("stays as set when the weekday is kept", async () => {
+    // Mondays 23:30 until Sun Dec 6, so Nov 30 is the last. From Nov 16
+    // moved to Tue Nov 17 00:30 with Mondays kept: the new series meets
+    // Mondays at 00:30, Nov 30 still the last. An end a day on would add
+    // Mon Dec 7.
+    const late: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T23:59:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207T045959Z"],
+      start: { dateTime: "2026-11-09T23:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(late, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("following", occurrenceOf(late, "2026-11-16T23:30:00-05:00"), {
+            end: { dateTime: "2026-11-17T00:59:00-05:00", timeZone: zone },
+            start: { dateTime: "2026-11-17T00:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207T045959Z",
+    ]);
+  });
+
+  test("moves back with the last meeting when the weekday moves back", async () => {
+    // Mondays 00:30 until Sun Dec 6, so Nov 30 is the last. The first
+    // meeting moves to Sun Nov 8 23:30 and the rule to Sundays: the last
+    // meeting is Sun Nov 29. The end left on Dec 6 would add that Sunday.
+    const early: Event = {
+      ...weekly,
+      end: { dateTime: "2026-11-09T01:00:00-05:00", timeZone: zone },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20261207T045959Z"],
+      start: { dateTime: "2026-11-09T00:30:00-05:00", timeZone: zone },
+    };
+    const google = fakeGoogle(early, []);
+    expect(
+      Exit.isSuccess(
+        await run(
+          edit("all", early, {
+            end: { dateTime: "2026-11-09T00:00:00-05:00", timeZone: zone },
+            recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20261207T045959Z"],
+            start: { dateTime: "2026-11-08T23:30:00-05:00", timeZone: zone },
+          })
+        )
+      )
+    ).toBe(true);
+    expect(google.writes()[0]?.body?.recurrence).toEqual([
+      "RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20261130T045959Z",
+    ]);
+  });
+});
+
 describe("a deleted meeting's skip through a short move onto another weekday", () => {
   test("stays on its own day where the saved rule meets", async () => {
     // Mondays and Wednesdays 9:00 from Nov 9, Wed Nov 18 deleted; the first
