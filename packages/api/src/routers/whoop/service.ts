@@ -12,11 +12,10 @@ import { getLinkedAccessToken } from "../../lib/linked-account";
 import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
+import { ttlForDay } from "./day-policy";
 import { WhoopInvalidRangeError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
-const TODAY_CACHE_TTL_SECONDS = 15 * 60;
-const PAST_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 function dateFromOffset(dateTime: string, offset: string): string {
   return Temporal.Instant.from(dateTime)
@@ -332,18 +331,6 @@ function groupRawDataByDay(params: {
   }
 
   return byDay;
-}
-
-// Today and days with no data yet (future days, band off) can still gain
-// data, so they expire quickly. Caching empty days at all keeps windows that
-// include future days from refetching WHOOP on every load.
-function ttlForDay(payload: WhoopCachedDayRaw, timeZone: string): number {
-  const isToday =
-    payload.day === Temporal.Now.plainDateISO(timeZone).toString();
-
-  return isToday || !hasData(payload)
-    ? TODAY_CACHE_TTL_SECONDS
-    : PAST_CACHE_TTL_SECONDS;
 }
 
 export class WhoopService extends Context.Service<WhoopService>()(

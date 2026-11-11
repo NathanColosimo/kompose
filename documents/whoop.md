@@ -99,9 +99,10 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 
 | Resource | Key pattern | TTL |
 |----------|-------------|-----|
-| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today, or no data yet), 7 days (past) |
+| Per-day raw data | `whoop:day:{userId}:{accountId}:{YYYY-MM-DD}` | 15 min (today, empty, pending, or incomplete), 7 days (complete past days) |
 
 - Days with no WHOOP data (future days, today before the band syncs, days the band was off) are cached as empty for 15 min and left out of `days.list` responses. Without this, any window containing a future day (the current week or month always does) refetched from WHOOP on every load.
+- Past days use seven days only after the cycle closes, recovery and its sleep are present, and no cycle, recovery, sleep, or workout is still pending.
 - Cache writes only target days that were actually missing. Cached days are never overwritten by data from an adjacent day's fetch.
 - Fetch window starts 6 hours before midnight local time to capture cycles/sleeps that begin in the late evening.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and degrade to API fetches; they never fail requests.
