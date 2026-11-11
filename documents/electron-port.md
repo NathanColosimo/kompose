@@ -60,6 +60,11 @@ copies the returned session cookies into the windows' cookie store, and reloads
 the main window. From then on the windows are ordinary same-origin web pages:
 sessions refresh and sign out exactly as on the web.
 
+The browser only starts the SDK's redirect poller when an authorization cookie
+is present after OAuth, or after transferring an already signed-in session from
+the desktop login URL. Transfer errors appear on the login page with a Try again
+button. The button also stays available after transfer in case the app does not open.
+
 Account linking opens the normal settings page in the browser and uses Better
 Auth's standard `linkSocial`, including WHOOP's generic provider. Use the same
 Kompose account in that browser; linked accounts refresh when the app regains

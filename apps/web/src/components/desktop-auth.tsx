@@ -14,6 +14,10 @@ export function DesktopAuth() {
     if (isDesktopRuntime()) {
       return window.onAuthError((error) => toast.error(error.message));
     }
+    // OAuth sets this cookie before redirecting back to the web app.
+    if (!authClient.electron.getAuthorizationCode()) {
+      return;
+    }
     const timer = authClient.ensureElectronRedirect();
     return () => clearInterval(timer);
   });
