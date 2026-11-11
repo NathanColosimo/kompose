@@ -47,10 +47,11 @@ visibleCalendarsStateAtom.onMount = (setState) => {
   }
 
   const apply = (raw: string | null) => {
-    setState({
-      hydrated: true,
-      value: parseVisibleCalendars(raw),
-    });
+    setState((current) =>
+      current.hydrated
+        ? current
+        : { hydrated: true, value: parseVisibleCalendars(raw) }
+    );
   };
   const markHydrated = () => {
     setState((prev) => ({ ...prev, hydrated: true }));
@@ -79,9 +80,8 @@ export const visibleCalendarsAtom = atom(
           )
         : update;
 
-    // Keep the hydration bit stable so later writes do not flip readiness.
     set(visibleCalendarsStateAtom, {
-      hydrated: current.hydrated,
+      hydrated: true,
       value: next,
     });
 
@@ -94,7 +94,7 @@ export const visibleCalendarsAtom = atom(
 );
 
 /**
- * Tracks when the persisted calendar selection has been read from storage.
+ * Tracks when the calendar selection is ready, from storage or a user choice.
  */
 export const visibleCalendarsHydratedAtom = atom(
   (get) => get(visibleCalendarsStateAtom).hydrated

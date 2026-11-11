@@ -44,7 +44,7 @@
 - `series-edit.ts`: Only the details changed in the editor are sent for a series update, so an occurrence’s unchanged title and other details do not spread to the series. Times are sent directly. savedSeriesRecurrence reads the saved repeat for change detection.
 - `soft-hyphens.ts`: `withSoftHyphens`, which lets long words in narrow calendar blocks break with a hyphen, three letters kept on each side.
 - `state-provider.tsx`: `StateProvider`, which sets the storage adapter, hydrates the config and shared QueryClient atoms, and runs the today-tick refresh.
-- `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter.
+- `storage.ts`: Storage adapter interface, persisted atom helper, and web adapter. Startup storage reads never overwrite a preference the user has already changed. Calendar selection follows the same rule and becomes ready immediately on a user write.
 - `temporal-utils.ts`: Shared Temporal helpers for date math, and the time and range words web and iOS both show (`formatEventWhen`, `formatAllDayWhen`, `formatTimeRange`, `formatClockTime`/`formatClockRange`, `formatDuration`, `formatScheduledAt`, with a fallback where Hermes lacks `Intl.RelativeTimeFormat`). It also snaps a touch to the nearest slot (`nearestSlotMinutes`), and `moveEventStart` keeps an event's length when its start moves (real time when given the zone, so over a clock change too, and then with its ends as moments, since a clock time alone can't say which half of a repeated hour it's in; a start the clocks skip comes back as the time it lands on; zero stays zero).
 - `types.ts`: Shared auth client types.
 

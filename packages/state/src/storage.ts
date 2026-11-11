@@ -31,7 +31,7 @@ function parseStoredValue<T>(raw: string | null, fallback: T): T {
 
 /** Stored data loads on mount; reads before hydration use the initial value. */
 export function createPersistedAtom<T>(key: string, initialValue: T) {
-  const baseAtom = atom(initialValue);
+  const baseAtom = atom({ value: initialValue, written: false });
 
   baseAtom.onMount = (setValue) => {
     const adapter = storageAdapter;
@@ -40,7 +40,11 @@ export function createPersistedAtom<T>(key: string, initialValue: T) {
     }
     const read = adapter.getItem(key);
     const apply = (raw: string | null) => {
-      setValue(parseStoredValue(raw, initialValue));
+      setValue((current) =>
+        current.written
+          ? current
+          : { value: parseStoredValue(raw, initialValue), written: false }
+      );
     };
 
     if (read && typeof (read as Promise<string | null>).then === "function") {
@@ -51,13 +55,13 @@ export function createPersistedAtom<T>(key: string, initialValue: T) {
   };
 
   return atom(
-    (get) => get(baseAtom),
+    (get) => get(baseAtom).value,
     (get, set, update: T | ((prev: T) => T)) => {
       const next =
         typeof update === "function"
-          ? (update as (prev: T) => T)(get(baseAtom))
+          ? (update as (prev: T) => T)(get(baseAtom).value)
           : update;
-      set(baseAtom, next);
+      set(baseAtom, { value: next, written: true });
 
       const adapter = storageAdapter;
       if (!adapter) {
