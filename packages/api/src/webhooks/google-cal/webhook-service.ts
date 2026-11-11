@@ -12,7 +12,7 @@ import {
   type GoogleCalendarService,
 } from "@kompose/google-cal/client";
 import type { Account } from "better-auth";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { uuidv7 } from "uuidv7";
 import {
@@ -99,26 +99,6 @@ function isPushNotSupportedError(error: WebhookProviderError): boolean {
   );
 }
 
-const upsertSub = (values: WebhookSubscriptionInsert) =>
-  Effect.gen(function* () {
-    const db = yield* Database;
-    yield* db
-      .insert(webhookSubscriptionTable)
-      .values(values)
-      .onConflictDoUpdate({
-        set: {
-          active: values.active ?? true,
-          config: values.config,
-          expiresAt: values.expiresAt,
-          lastNotifiedAt: values.lastNotifiedAt,
-          providerAccountId: values.providerAccountId,
-          updatedAt: new Date().toISOString(),
-          webhookToken: values.webhookToken,
-        },
-        target: webhookSubscriptionTable.id,
-      });
-  });
-
 const deactivateSubById = (params: { id: string }) =>
   Effect.gen(function* () {
     const db = yield* Database;
@@ -158,10 +138,7 @@ type WatchChannel = Effect.Success<
   ReturnType<GoogleCalendarService["watchCalendarList"]>
 >;
 
-/**
- * Reuse the subscription ID across renewals. An unsupported watch returns
- * undefined and must not be persisted. See documents/services.md.
- */
+/** Save a replacement channel before retiring the old one. */
 const renewWatch = <E, R>(params: {
   account: Account;
   config: (resourceId: string) => WebhookSubscriptionInsert["config"];
@@ -181,17 +158,9 @@ const renewWatch = <E, R>(params: {
       return;
     }
 
-    if (existing?.active) {
-      yield* stopWatch({
-        id: existing.id,
-        operation: params.stopOperation,
-        resourceId: existing.config.resourceId,
-      });
-    }
-
     yield* validateCallbackUrl();
 
-    const subId = existing?.id ?? uuidv7();
+    const subId = uuidv7();
     const channel = yield* params.watch({
       address: GOOGLE_WEBHOOK_CALLBACK_URL,
       expiration: String(Date.now() + GOOGLE_CHANNEL_TTL_MS),
@@ -210,8 +179,10 @@ const renewWatch = <E, R>(params: {
       );
     }
 
-    yield* upsertSub({
+    const db = yield* Database;
+    const values: WebhookSubscriptionInsert = {
       accountId: params.account.id,
+      active: true,
       config: params.config(channel.resourceId),
       expiresAt: computeExpiresAt(channel.expiration),
       id: subId,
@@ -219,7 +190,40 @@ const renewWatch = <E, R>(params: {
       providerAccountId: params.account.accountId,
       userId: params.userId,
       webhookToken: env.GOOGLE_WEBHOOK_TOKEN,
+    };
+    const save = existing
+      ? db
+          .update(webhookSubscriptionTable)
+          .set(values)
+          .where(
+            and(
+              eq(webhookSubscriptionTable.id, existing.id),
+              eq(webhookSubscriptionTable.active, existing.active)
+            )
+          )
+          .returning({ id: webhookSubscriptionTable.id })
+      : db
+          .insert(webhookSubscriptionTable)
+          .values(values)
+          .returning({ id: webhookSubscriptionTable.id });
+    const stopNew = stopWatch({
+      id: subId,
+      operation: params.stopOperation,
+      resourceId: channel.resourceId,
     });
+    const saved = yield* save.pipe(Effect.onError(() => stopNew));
+    // Another renewal or unlink may already have replaced/deleted this row.
+    if (saved.length === 0) {
+      yield* stopNew;
+      return;
+    }
+    if (existing?.active) {
+      yield* stopWatch({
+        id: existing.id,
+        operation: params.stopOperation,
+        resourceId: existing.config.resourceId,
+      });
+    }
   });
 
 // ── Service ──────────────────────────────────────────────────────────
