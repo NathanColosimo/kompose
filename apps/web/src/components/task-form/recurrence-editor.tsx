@@ -349,7 +349,12 @@ function RecurrenceForm({
           <X className="size-3.5" />
           Clear
         </Button>
-        <Button onClick={handleApply} size="sm" type="button">
+        <Button
+          disabled={endType === "until" && !until}
+          onClick={handleApply}
+          size="sm"
+          type="button"
+        >
           Apply
         </Button>
       </div>

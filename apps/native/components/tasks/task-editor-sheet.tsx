@@ -207,11 +207,11 @@ function TaskRecurrenceEndSection({
             // The repeat can't end before the task starts.
             minimumDate={plainDateToDate(fallbackUntil)}
             mode="date"
-            onChange={(date) =>
-              updateRecurrence({
-                until: date ? dateToPlainDate(date) : null,
-              })
-            }
+            onChange={(date) => {
+              if (date) {
+                updateRecurrence({ until: dateToPlainDate(date) });
+              }
+            }}
             placeholder="Until date"
             showIcon={false}
             style={{
