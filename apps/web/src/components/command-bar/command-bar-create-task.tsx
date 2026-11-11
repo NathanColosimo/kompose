@@ -5,9 +5,14 @@ import type {
   ClientTaskInsertDecoded,
   LinkMeta,
 } from "@kompose/api/routers/task/contract";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { dedupeLinks, getProviderLabel } from "@kompose/state/link-meta-utils";
+import {
+  dedupeLinks,
+  getLinkDurationMinutes,
+  getProviderLabel,
+} from "@kompose/state/link-meta-utils";
 import { getTaskRecurrenceDisplayText } from "@kompose/state/task-recurrence";
 import { formatDuration } from "@kompose/state/temporal-utils";
 import type { TaskFields } from "@kompose/task-parser/fields";
@@ -23,10 +28,8 @@ import {
 } from "lucide-react";
 import {
   type ReactNode,
-  useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useTransition,
 } from "react";
@@ -77,13 +80,6 @@ function draft(text: string, task: ParsedTask | null): TaskDraft {
 }
 
 /** Round link media durations up to whole minutes. */
-function linkDurationMinutes(meta: LinkMeta | undefined): number | null {
-  if (meta && "durationSeconds" in meta && meta.durationSeconds > 0) {
-    return Math.ceil(meta.durationSeconds / 60);
-  }
-  return null;
-}
-
 function buildTaskDataFromParsed(
   parsed: TaskDraft,
   linkMetaMap: Record<string, LinkMeta>,
@@ -104,7 +100,9 @@ function buildTaskDataFromParsed(
 
   let title = parsed.title || firstLinkMeta?.title || "";
   let durationMinutes = parsed.durationMinutes ?? 30;
-  const linkMinutes = linkDurationMinutes(firstLinkMeta);
+  const linkMinutes = firstLinkMeta
+    ? getLinkDurationMinutes(firstLinkMeta)
+    : null;
   if (!parsed.durationMinutes && linkMinutes !== null) {
     durationMinutes = linkMinutes;
   }
@@ -181,7 +179,7 @@ export function CommandBarCreateTask({
   onCreated,
   onUpdateSearch,
 }: CommandBarCreateTaskProps) {
-  const { createTask, parseLink } = useTasks();
+  const { createTask } = useTasks();
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? EMPTY_TAGS;
 
@@ -198,57 +196,23 @@ export function CommandBarCreateTask({
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
 
-  const [linkMetaMap, setLinkMetaMap] = useState<Record<string, LinkMeta>>({});
-  const [pendingUrls, setPendingUrls] = useState<Set<string>>(new Set());
-  const lastParsedUrls = useRef<string[]>([]);
-
-  const parseLinkMutate = parseLink.mutate;
-
-  const dispatchParses = useCallback(
-    (urls: string[]) => {
-      const previous = lastParsedUrls.current;
-      const previousUrls = new Set(previous);
-      const newUrls = urls.filter((url) => !previousUrls.has(url));
-      lastParsedUrls.current = urls;
-
-      for (const url of newUrls) {
-        setPendingUrls((prev) => new Set([...prev, url]));
-        parseLinkMutate(url, {
-          onError: () => {
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-          onSuccess: (meta) => {
-            setLinkMetaMap((prev) => ({ ...prev, [url]: meta }));
-            setPendingUrls((prev) => {
-              const next = new Set(prev);
-              next.delete(url);
-              return next;
-            });
-          },
-        });
-      }
-
-      if (urls.length === 0 && previous.length > 0) {
-        lastParsedUrls.current = [];
-        setLinkMetaMap({});
-        setPendingUrls(new Set());
-      }
-    },
-    [parseLinkMutate]
-  );
-
-  // Wait for 500ms idle so partially typed URLs do not trigger backend calls.
+  const [debouncedUrls, setDebouncedUrls] = useState<string[]>([]);
+  const urlText = parsed.links.join("\n");
   useEffect(() => {
-    const urls = parsed.links;
     const timer = setTimeout(() => {
-      dispatchParses(urls);
+      setDebouncedUrls(urlText ? urlText.split("\n") : []);
     }, 500);
     return () => clearTimeout(timer);
-  }, [parsed.links, dispatchParses]);
+  }, [urlText]);
+  const linkQueries = useLinkMetadata(
+    debouncedUrls.filter((url) => parsed.links.includes(url))
+  );
+  const linkMetaMap: Record<string, LinkMeta> = {};
+  for (const { url, data } of linkQueries) {
+    if (data) {
+      linkMetaMap[url] = data;
+    }
+  }
 
   const firstLinkMeta =
     parsed.links.length > 0 ? linkMetaMap[parsed.links[0]] : undefined;
@@ -307,7 +271,8 @@ export function CommandBarCreateTask({
   };
 
   const effectiveDuration =
-    parsed.durationMinutes ?? linkDurationMinutes(firstLinkMeta);
+    parsed.durationMinutes ??
+    (firstLinkMeta ? getLinkDurationMinutes(firstLinkMeta) : null);
 
   const createItemLabel =
     parsed.title ||
@@ -393,7 +358,8 @@ export function CommandBarCreateTask({
                   const meta = linkMetaMap[url];
                   return (
                     <PreviewBadge key={url}>
-                      {pendingUrls.has(url) ? (
+                      {linkQueries.find((query) => query.url === url)
+                        ?.isPending ? (
                         <Loader2Icon className="size-3.5 animate-spin" />
                       ) : (
                         <Link2Icon className="size-3.5" />

@@ -927,8 +927,11 @@ export function TaskEditorSheet({
             ]),
           }));
 
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
+          // mutate()'s onSuccess fires only for the latest call, so a second link
+          // would leave the first a placeholder. A failed parse keeps it too.
+          parseLink
+            .mutateAsync(url)
+            .then((meta) => {
               setDraft((current) => {
                 const next = {
                   ...current,
@@ -940,14 +943,15 @@ export function TaskEditorSheet({
                   if (meta.title && !current.title.trim()) {
                     next.title = meta.title;
                   }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
+                  const duration = getLinkDurationMinutes(meta);
+                  if (duration !== null) {
+                    next.durationMinutes = duration;
                   }
                 }
                 return next;
               });
-            },
-          });
+            })
+            .catch(() => undefined);
         }}
         onLinkInputChange={(value) =>
           setDraft((current) => ({ ...current, linkInput: value }))

@@ -1052,8 +1052,11 @@ function TaskFields({
             shouldDirty: true,
           });
 
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
+          // mutate()'s onSuccess fires only for the latest call, so a second link
+          // would leave the first a placeholder. A failed parse keeps it too.
+          parseLink
+            .mutateAsync(url)
+            .then((meta) => {
               const latest = getValues("links") ?? [];
               setValue(
                 "links",
@@ -1065,16 +1068,13 @@ function TaskFields({
                 if (meta.title && !getValues("title")?.trim()) {
                   setValue("title", meta.title, { shouldDirty: true });
                 }
-                if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                  setValue(
-                    "durationMinutes",
-                    Math.ceil(meta.durationSeconds / 60),
-                    { shouldDirty: true }
-                  );
+                const duration = getLinkDurationMinutes(meta);
+                if (duration !== null) {
+                  setValue("durationMinutes", duration, { shouldDirty: true });
                 }
               }
-            },
-          });
+            })
+            .catch(() => undefined);
         }}
         onRemoveLink={(index) => {
           setValue(
