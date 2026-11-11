@@ -28,9 +28,8 @@ function recoveryColor(score: number): string {
   return "bg-red-500";
 }
 
-/** Sleep as decimal hours, "7.2h", to fit a narrow header. */
-function formatSleepHours(ms: number): string {
-  return `${(ms / 3_600_000).toFixed(1)}h`;
+function formatSleep(milliseconds: number): string {
+  return formatDuration(Math.round(milliseconds / 60_000));
 }
 
 /** The day's WHOOP numbers as one sentence, for the tooltip and screen readers. */
@@ -43,7 +42,7 @@ function whoopDescription(summary: WhoopDaySummary, calories: number | null) {
       ? null
       : `Strain ${summary.strainScore.toFixed(1)}`,
     summary.sleep
-      ? `Slept ${formatDuration(Math.round(summary.sleep.totalSleepMilliseconds / 60_000))}${
+      ? `Slept ${formatSleep(summary.sleep.totalSleepMilliseconds)}${
           summary.sleepPerformance === null
             ? ""
             : ` (${summary.sleepPerformance}% of need)`
@@ -73,7 +72,7 @@ export const DayHeader = memo(function DayHeaderInner({
   return (
     <div
       className={cn(
-        "@container flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
+        "flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
         showWhoopRow ? "h-[3.75rem]" : "h-12",
         isTodayHighlight ? "bg-foreground/[0.03]" : ""
       )}
@@ -104,12 +103,18 @@ export const DayHeader = memo(function DayHeaderInner({
 
       {showWhoopRow ? (
         <div
-          className="flex h-4 min-w-0 items-center gap-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
+          className="flex h-4 min-w-0 flex-wrap items-center gap-x-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
           title={description || undefined}
         >
           {description ? <span className="sr-only">{description}</span> : null}
+          {/* Recovery and strain take the width of their widest values,
+              "100%" and "21.0", so every column lays out the same and the
+              sleep item shows or hides in all of them at once. */}
           {whoopSummary?.recoveryScore == null ? null : (
-            <span aria-hidden className="flex items-center gap-1">
+            <span
+              aria-hidden
+              className="flex min-w-[calc(4ch+0.625rem)] items-center gap-1"
+            >
               <span
                 className={cn(
                   "size-1.5 rounded-full",
@@ -120,7 +125,10 @@ export const DayHeader = memo(function DayHeaderInner({
             </span>
           )}
           {whoopSummary?.strainScore == null ? null : (
-            <span aria-hidden className="flex items-center gap-1">
+            <span
+              aria-hidden
+              className="flex min-w-[calc(3ch+1rem)] items-center gap-1"
+            >
               <Activity className="size-3" />
               {whoopSummary.strainScore.toFixed(1)}
             </span>
@@ -128,12 +136,17 @@ export const DayHeader = memo(function DayHeaderInner({
           {whoopSummary?.sleep ? (
             <span
               aria-hidden
-              className="flex @max-[7rem]:hidden min-w-0 items-center gap-1"
+              className="@container flex min-w-[1.625rem] flex-1 items-center gap-1"
             >
               <Moon className="size-3 shrink-0" />
-              <span className="truncate">
-                {formatSleepHours(whoopSummary.sleep.totalSleepMilliseconds)}
+              <span className="@max-[2rem]:hidden truncate">
+                {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
+                  " ",
+                  ""
+                )}
               </span>
+              {/* Too narrow for even "8…": a clean "…", not a cut glyph. */}
+              <span className="@max-[2rem]:inline hidden">…</span>
             </span>
           ) : null}
         </div>
