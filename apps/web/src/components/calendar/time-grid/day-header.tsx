@@ -28,9 +28,8 @@ function recoveryColor(score: number): string {
   return "bg-red-500";
 }
 
-/** Sleep as decimal hours, "7.2h", to fit a narrow header. */
-function formatSleepHours(ms: number): string {
-  return `${(ms / 3_600_000).toFixed(1)}h`;
+function formatSleep(milliseconds: number): string {
+  return formatDuration(Math.round(milliseconds / 60_000));
 }
 
 /** The day's WHOOP numbers as one sentence, for the tooltip and screen readers. */
@@ -43,7 +42,7 @@ function whoopDescription(summary: WhoopDaySummary, calories: number | null) {
       ? null
       : `Strain ${summary.strainScore.toFixed(1)}`,
     summary.sleep
-      ? `Slept ${formatDuration(Math.round(summary.sleep.totalSleepMilliseconds / 60_000))}${
+      ? `Slept ${formatSleep(summary.sleep.totalSleepMilliseconds)}${
           summary.sleepPerformance === null
             ? ""
             : ` (${summary.sleepPerformance}% of need)`
@@ -73,7 +72,7 @@ export const DayHeader = memo(function DayHeaderInner({
   return (
     <div
       className={cn(
-        "@container flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
+        "flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
         showWhoopRow ? "h-[3.75rem]" : "h-12",
         isTodayHighlight ? "bg-foreground/[0.03]" : ""
       )}
@@ -104,9 +103,11 @@ export const DayHeader = memo(function DayHeaderInner({
 
       {showWhoopRow ? (
         <div
-          className="flex h-4 min-w-0 items-center gap-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
+          className="flex h-4 min-w-0 flex-wrap items-center gap-x-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
           title={description || undefined}
         >
+          {/* Wrapping drops any item that does not fit onto a clipped second
+              line, so a narrow column hides it whole instead of cutting it. */}
           {description ? <span className="sr-only">{description}</span> : null}
           {whoopSummary?.recoveryScore == null ? null : (
             <span aria-hidden className="flex items-center gap-1">
@@ -126,14 +127,13 @@ export const DayHeader = memo(function DayHeaderInner({
             </span>
           )}
           {whoopSummary?.sleep ? (
-            <span
-              aria-hidden
-              className="flex @max-[7rem]:hidden min-w-0 items-center gap-1"
-            >
-              <Moon className="size-3 shrink-0" />
-              <span className="truncate">
-                {formatSleepHours(whoopSummary.sleep.totalSleepMilliseconds)}
-              </span>
+            <span aria-hidden className="flex items-center gap-1">
+              <Moon className="size-3" />
+              {/* "7h12m": hours and minutes, without the space, to fit. */}
+              {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
+                " ",
+                ""
+              )}
             </span>
           ) : null}
         </div>
