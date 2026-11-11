@@ -130,6 +130,7 @@ export async function* createUserSyncEventIterator(
   try {
     await subscriber.subscribe(channel);
     connectionSpan.addEvent("sync.subscribed");
+    queue.push({ payload: {}, type: "keepalive" });
 
     keepaliveTimer = setInterval(() => {
       queue.push({ payload: {}, type: "keepalive" });

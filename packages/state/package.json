@@ -37,6 +37,8 @@
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
-    "@types/react": "catalog:"
+    "@types/react": "catalog:",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.3.1"
   }
 }

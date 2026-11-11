@@ -147,7 +147,9 @@ Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Sc
   - Includes Expo `lastLoginMethodClient` for "Last used" auth UI hints.
 - Session gating:
   - The root layout subscribes through `authClient.useSession()` and starts
-    realtime sync with the authenticated user's ID.
+    realtime sync with the authenticated user's ID. AppState changes pass foreground
+    status to the shared hook, which disconnects after 30 s in the background and
+    reconnects on return.
 - oRPC client (cookie injection + required server URL):
   - Uses `expo/fetch` for streaming and forces `credentials: "omit"` on
     authenticated requests because the session cookie is attached manually.
