@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -12,27 +13,45 @@ import { isDesktopRuntime } from "@/lib/desktop";
 
 function DashboardRedirect() {
   const { replace } = useRouter();
+  const handoff = useMutation({
+    mutationFn: async () => {
+      const query = getElectronAuthQuery();
+      if (!query) {
+        replace("/dashboard");
+        return;
+      }
+      const { error } = await authClient.electron.transferUser({
+        fetchOptions: { query },
+      });
+      if (error) {
+        throw new Error(
+          error.message || "Desktop sign-in failed. Please try again."
+        );
+      }
+      authClient.ensureElectronRedirect();
+    },
+  });
 
   useMountEffect(() => {
-    const query = getElectronAuthQuery();
-    if (query) {
-      authClient.electron
-        .transferUser({ fetchOptions: { query } })
-        .then(({ error }) => {
-          if (error) {
-            console.error("Electron authorization failed", error.message);
-          } else {
-            authClient.ensureElectronRedirect();
-          }
-        });
-    } else {
-      replace("/dashboard");
-    }
+    handoff.mutate();
   });
 
   return (
-    <main className="flex min-h-svh items-center justify-center p-6 text-muted-foreground text-sm">
-      <p role="status">Opening your workspace…</p>
+    <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center text-sm">
+      {handoff.isError ? (
+        <p role="alert">{handoff.error.message}</p>
+      ) : (
+        <p className="text-muted-foreground" role="status">
+          Opening your workspace…
+        </p>
+      )}
+      <Button
+        disabled={handoff.isPending}
+        onClick={() => handoff.mutate()}
+        type="button"
+      >
+        Try again
+      </Button>
     </main>
   );
 }
