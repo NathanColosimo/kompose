@@ -106,11 +106,15 @@ export const DayHeader = memo(function DayHeaderInner({
           className="flex h-4 min-w-0 flex-wrap items-center gap-x-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
           title={description || undefined}
         >
-          {/* Wrapping drops any item that does not fit onto a clipped second
-              line, so a narrow column hides it whole instead of cutting it. */}
           {description ? <span className="sr-only">{description}</span> : null}
+          {/* Recovery and strain take the width of their widest values,
+              "100%" and "21.0", so every column lays out the same and the
+              sleep item shows or hides in all of them at once. */}
           {whoopSummary?.recoveryScore == null ? null : (
-            <span aria-hidden className="flex items-center gap-1">
+            <span
+              aria-hidden
+              className="flex min-w-[calc(4ch+0.625rem)] items-center gap-1"
+            >
               <span
                 className={cn(
                   "size-1.5 rounded-full",
@@ -121,18 +125,28 @@ export const DayHeader = memo(function DayHeaderInner({
             </span>
           )}
           {whoopSummary?.strainScore == null ? null : (
-            <span aria-hidden className="flex items-center gap-1">
+            <span
+              aria-hidden
+              className="flex min-w-[calc(3ch+1rem)] items-center gap-1"
+            >
               <Activity className="size-3" />
               {whoopSummary.strainScore.toFixed(1)}
             </span>
           )}
           {whoopSummary?.sleep ? (
-            <span aria-hidden className="flex items-center gap-1">
-              <Moon className="size-3" />
-              {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
-                " ",
-                ""
-              )}
+            <span
+              aria-hidden
+              className="@container flex min-w-[1.625rem] flex-1 items-center gap-1"
+            >
+              <Moon className="size-3 shrink-0" />
+              <span className="@max-[2rem]:hidden truncate">
+                {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
+                  " ",
+                  ""
+                )}
+              </span>
+              {/* Too narrow for even "8…": a clean "…", not a cut glyph. */}
+              <span className="@max-[2rem]:inline hidden">…</span>
             </span>
           ) : null}
         </div>
