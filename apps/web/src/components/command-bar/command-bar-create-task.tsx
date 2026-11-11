@@ -194,6 +194,12 @@ export function CommandBarCreateTask({
   const parsed = draft(text, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (!search) {
+      submitting.current = false;
+    }
+  }, [search]);
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
@@ -287,13 +293,15 @@ export function CommandBarCreateTask({
 
   const createFrom = (input: TaskDraft) => {
     const taskData = buildTaskDataFromParsed(input, linkMetaMap, firstLinkMeta);
-    createTask.mutate(taskData, { onSuccess: () => onCreated() });
+    createTask.mutate(taskData);
   };
 
   const handleCreate = () => {
-    if (!isValid || createTask.isPending || resolving) {
+    if (!isValid || submitting.current || resolving) {
       return;
     }
+    submitting.current = true;
+    onCreated();
     if (magic.parse.status === "done") {
       createFrom(parsed);
       return;
