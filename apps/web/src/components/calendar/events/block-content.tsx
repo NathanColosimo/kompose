@@ -213,28 +213,25 @@ export function BlockContent({
             {formatClockTime(shownStart ?? start)}
           </span>
         ) : null}
-        {isTall && detailRows.length > 0 ? (
-          <span
-            className={cn(
-              "flex @max-[5.5rem]:hidden min-w-0 shrink-0 flex-col gap-px",
-              META
-            )}
-          >
-            {detailRows}
-          </span>
-        ) : null}
-        {/* Takes the rest of the block, cut to whole 14px lines (META's
-            line height) so none shows in half. A later item drawn over the
-            block would hide it. */}
-        {description && !isCovered ? (
+        {/* The rest of the block: a tall block's detail rows, then the
+            description. Cut to whole 14px lines (META's line height), so a
+            row or line that doesn't fit is left out rather than shown in
+            half. A later item drawn over the block would hide the
+            description. */}
+        {isTall || description ? (
           <span className="@max-[5.5rem]:hidden min-h-0 flex-1 [container-type:size]">
             <span
               className={cn(
-                "block max-h-[round(down,100cqh,14px)] overflow-hidden whitespace-pre-line [overflow-wrap:anywhere]",
+                "flex max-h-[round(down,100cqh,14px)] min-w-0 flex-col overflow-hidden",
                 META
               )}
             >
-              {description}
+              {isTall ? detailRows : null}
+              {description && !isCovered ? (
+                <span className="whitespace-pre-line [overflow-wrap:anywhere]">
+                  {description}
+                </span>
+              ) : null}
             </span>
           </span>
         ) : null}
