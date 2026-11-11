@@ -1913,8 +1913,12 @@ export default function CalendarTab() {
                 const items = allDayEventsByDay.get(day.toString()) ?? [];
                 return (
                   <View
-                    className="min-h-7 flex-1 gap-1 border-border border-r px-1 py-1"
+                    className="min-h-7 flex-1 gap-1 border-border border-r py-1 pl-px"
                     key={`${day.toString()}-allday`}
+                    // Same edges as the timed cards below, inside their 1pt ring.
+                    style={{
+                      paddingRight: createGutterPt(visibleDays.length) + 1,
+                    }}
                   >
                     <AllDayCellItems
                       items={items}

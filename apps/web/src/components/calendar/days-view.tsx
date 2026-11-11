@@ -71,7 +71,7 @@ import { TaskEvent } from "./events/task-event";
 import { WhoopSleepBand } from "./events/whoop-sleep-band";
 import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
 import { keyboardCreateStart } from "./keyboard-create-start";
-import { DayColumn } from "./time-grid/day-column";
+import { COLUMN_FREE_STRIP, DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
 import { TimeGutter } from "./time-grid/time-gutter";
 
@@ -686,9 +686,13 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
                 return (
                   <div
-                    className="flex min-h-7 flex-col items-start gap-1 overflow-hidden border-border border-r px-2 py-1 last:border-r-0"
+                    className="flex min-h-7 flex-col items-start gap-1 overflow-hidden border-border border-r py-1 pl-px last:border-r-0"
                     key={`${dayKey}-all-day`}
-                    style={{ width: dayColumnWidth }}
+                    // Same edges as the timed blocks below (blockHorizontalStyle).
+                    style={{
+                      paddingRight: COLUMN_FREE_STRIP + 1,
+                      width: dayColumnWidth,
+                    }}
                   >
                     {dayAllDay
                       .slice(0, MAX_ALL_DAY_EVENTS)
