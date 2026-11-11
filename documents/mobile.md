@@ -103,6 +103,10 @@ Tab labels/icons use `NativeTabs.Trigger.Label` and `NativeTabs.Trigger.Icon`.
 
 Each tab is wrapped in a Stack for native headers. Header controls use `Stack.Screen` with `headerLeft`/`headerRight` options.
 
+### Modal dismissal
+
+A sheet or dialog close handler finishes its exit animation before notifying the parent. When visibility changes afterward, an already-transparent modal hides immediately instead of animating again. Parent-driven closes still animate normally. The chooser and all-day list open their next sheet from `onDismissed`.
+
 ### Tasks implementation
 
 - Layout: `apps/native/app/(tabs)/(tasks)/_layout.tsx`

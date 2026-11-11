@@ -87,6 +87,8 @@ export function AlertDialog({
       setModalVisible(true);
       backdropOpacity.value = withTiming(1, { duration: 250 });
       cardOpacity.value = withTiming(1, { duration: 200 });
+    } else if (backdropOpacity.value === 0) {
+      setModalVisible(false);
     } else {
       backdropOpacity.value = withTiming(0, { duration: 250 }, (finished) => {
         if (finished) {

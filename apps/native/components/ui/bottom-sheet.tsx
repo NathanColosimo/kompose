@@ -180,6 +180,8 @@ export function BottomSheet({
       translateY.value = withSpring(defaultHeight, SPRING_CONFIG);
       opacity.value = withTiming(1, { duration: 300 });
       currentSnapIndex.value = 0;
+    } else if (opacity.value === 0) {
+      setModalVisible(false);
     } else {
       translateY.value = withSpring(0, SPRING_CONFIG);
       opacity.value = withTiming(0, { duration: 300 }, (finished) => {
