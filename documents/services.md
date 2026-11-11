@@ -289,7 +289,9 @@ Google-specific watch management. Depends on `WebhookRepositoryService`.
 | `deactivateEventsWatch` | Stop watching and deactivate a removed calendar |
 | `listCalendarIds` | Fetch the user's calendar IDs from Google, minus holiday calendars, which Google can't watch |
 
-Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise stop the old channel, open a new one under the same subscription ID, and save it. Stopping a channel is best effort; a failure is ignored.
+Both refresh methods share `renewWatch`: skip a channel that is active and not near expiry, otherwise create a new channel ID, save it, then stop the old channel. A failed creation leaves the old channel running. A failed save stops the new channel. Updates match the previous row ID and active flag, so overlapping renewals keep one replacement and stop the loser without a lock. Stopping a channel is best effort.
+
+Before Better Auth deletes a Google account, its deletion hook marks subscriptions inactive and attempts to stop their channels. This runs before the account deletion cascades away their resource IDs. Remote cleanup has a ten-second budget and does not block unlink on provider failure. In-flight renewals with an active snapshot cannot reactivate those rows. If deletion fails after a remote stop, inactive rows will be renewed on the next refresh. No cooldown state or account lock is stored; unsupported calendars retain the existing skip-and-log behavior.
 
 Accepts a `GoogleCalendar` Effect client via `Effect.provideService` — it does not build clients internally. The caller (`WebhookService`) resolves OAuth tokens and provides the client.
 
