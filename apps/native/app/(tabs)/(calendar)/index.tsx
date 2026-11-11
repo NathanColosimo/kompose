@@ -1,4 +1,5 @@
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
@@ -16,47 +17,96 @@ import {
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import {
+  googleAccountsDataAtom,
   googleCalendarsDataAtom,
+  googleCalendarsLoadingAtom,
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
+import {
+  hasWhoopStats,
+  shouldShowWhoopRow,
+  WHOOP_DAYS_QUERY_KEY,
+  whoopAccountIdAtom,
+  whoopSummariesByDayAtom,
+} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
   type PositionedItem,
 } from "@kompose/state/collision-utils";
+import { eventCreationBlockedReason } from "@kompose/state/event-creation";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
   getGoogleEventsByCalendarQueryKey,
 } from "@kompose/state/google-calendar-query-keys";
+import { canWriteCalendar } from "@kompose/state/google-event-editability";
 import {
+  eventTimeZone,
   getDefaultRecurrenceScopeForEvent,
   isRecurringGoogleEvent,
+  repeatChanged,
 } from "@kompose/state/google-event-recurrence";
 import { withEditedTime } from "@kompose/state/google-event-times";
+import {
+  EVENT_CREATE_FAILURE_MESSAGE,
+  SAVE_FAILURE_MESSAGE,
+} from "@kompose/state/held-save";
 import { useGoogleEventMutations } from "@kompose/state/hooks/use-google-event-mutations";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useMoveGoogleEventMutation } from "@kompose/state/hooks/use-move-google-event-mutation";
 import { useRecurringEventMaster } from "@kompose/state/hooks/use-recurring-event-master";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { RECURRENCE_SCOPE_OPTIONS } from "@kompose/state/recurrence-scope-options";
-import { todayPlainDate } from "@kompose/state/temporal-utils";
+import {
+  chosenScope,
+  type EventSaveChanges,
+  eventSaveDescription,
+  eventSaveDisabledScopes,
+  RECURRENCE_SCOPE_OPTIONS,
+  SCOPE_DIALOG_COPY,
+} from "@kompose/state/recurrence-scope-options";
+import {
+  savedSeriesRecurrence,
+  seriesEditFields,
+} from "@kompose/state/series-edit";
+import {
+  formatTimeRange,
+  nearestSlotMinutes,
+  todayPlainDate,
+} from "@kompose/state/temporal-utils";
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+// biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
+import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
+import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionSheetIOS,
+  Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
+  Alert as RNAlert,
   ScrollView,
   type ScrollViewInstance,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { Temporal } from "temporal-polyfill";
+import {
+  AllDayBlock,
+  type BlockDetail,
+  EventBlock,
+  eventDetails,
+  MAX_CALENDAR_TEXT_SCALE,
+  MIN_DRAWN_MINUTES,
+  TaskBlock,
+  useCalendarTextScale,
+} from "@/components/calendar/calendar-blocks";
 import type {
   CalendarOption,
   CreateEventDraft,
@@ -66,6 +116,8 @@ import type {
 import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
+import { draftTimes } from "@/components/calendar/event-times";
+import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
   TaskEditorSheet,
@@ -82,27 +134,24 @@ import { useColorScheme } from "@/lib/color-scheme-context";
 
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
-const DEFAULT_SCROLL_HOUR = 8;
+const DEFAULT_SCROLL_HOUR = 7;
+/** All-day chips shown per day before "+N more". */
+const MAX_ALL_DAY_CHIPS = 2;
+const HOUR_LABEL_CLEARANCE_PX = 10;
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 // Swipe thresholds for horizontal navigation without interfering with vertical scroll.
 const SWIPE_ACTIVATION_DISTANCE = 16;
 const SWIPE_TRIGGER_DISTANCE = 60;
 const SWIPE_VERTICAL_TOLERANCE = 12;
 const EVENT_BLOCK_INSET_PX = 1;
-const EVENT_OUTLINE_WIDTH_PX = 1;
-const EVENT_OUTLINE_COLOR = "rgba(0,0,0,0.35)";
 const TIME_GUTTER_WIDTH_PX = 56;
+/** Free strip on the right of each day for tapping to create; wider when there's room. */
+function createGutterPt(visibleDays: number): number {
+  return visibleDays >= 3 ? 10 : 16;
+}
 const TIME_GUTTER_LABEL_OFFSET_PX = PIXELS_PER_HOUR / 2;
 
 // --- Temporal helpers ---
-
-function combineDateTime(
-  date: Temporal.PlainDate,
-  time: Temporal.PlainTime,
-  timeZone: string
-): Temporal.ZonedDateTime {
-  return date.toZonedDateTime({ plainTime: time, timeZone });
-}
 
 function minutesFromMidnight(zdt: Temporal.ZonedDateTime): number {
   return zdt.hour * 60 + zdt.minute;
@@ -126,7 +175,17 @@ function calculateTimePosition(timeZone: string): number {
   return (now.hour + now.minute / 60) * PIXELS_PER_HOUR;
 }
 
-function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
+/**
+ * The now line runs under the blocks so it never strikes through a title;
+ * its dot is drawn on top at the column's edge.
+ */
+function CurrentTimeIndicator({
+  part,
+  timeZone,
+}: {
+  part: "dot" | "line";
+  timeZone: string;
+}) {
   const [topPosition, setTopPosition] = useState(() =>
     calculateTimePosition(timeZone)
   );
@@ -141,33 +200,25 @@ function CurrentTimeIndicator({ timeZone }: { timeZone: string }) {
 
   return (
     <View
-      className="pointer-events-none absolute right-0 left-0 z-20 flex-row items-center"
-      style={{ top: topPosition, transform: [{ translateY: -4 }] }}
+      className="pointer-events-none absolute right-0 left-0 flex-row items-center"
+      // Centered on the time: the dot is 8pt tall, the line 2pt.
+      style={{
+        top: topPosition,
+        transform: [{ translateY: part === "dot" ? -4 : -1 }],
+      }}
     >
-      <View className="size-2 rounded-full bg-red-500" />
-      <View className="h-0.5 flex-1 bg-red-500" />
+      {part === "dot" ? (
+        <View className="size-2 rounded-full bg-red-500" />
+      ) : (
+        <View className="h-0.5 flex-1 bg-red-500" />
+      )}
     </View>
   );
-}
-
-function formatTimeShort(zdt: Temporal.ZonedDateTime): string {
-  const hour = zdt.hour;
-  const minute = zdt.minute;
-  const ampm = hour >= 12 ? "pm" : "am";
-  const displayHour = hour % 12 || 12;
-  return minute === 0
-    ? `${displayHour}${ampm}`
-    : `${displayHour}:${minute.toString().padStart(2, "0")}${ampm}`;
 }
 
 function formatHourLabel(hour: number): string {
   const time = new Temporal.PlainTime(hour, 0);
   return time.toLocaleString(undefined, { hour: "numeric" });
-}
-
-function snapMinutes(mins: number): number {
-  const snapped = Math.round(mins / MINUTES_STEP) * MINUTES_STEP;
-  return Math.max(0, Math.min(24 * 60 - MINUTES_STEP, snapped));
 }
 
 function isoStringToZonedDateTime(str: string, timeZone: string) {
@@ -190,10 +241,57 @@ interface GoogleEventSource {
   event: GoogleEvent;
 }
 
-interface PositionedGoogleEvent {
+/** The part of a timed item on one day, for layout. */
+interface DaySegment {
+  segmentEnd: Temporal.ZonedDateTime;
+  segmentStart: Temporal.ZonedDateTime;
+}
+
+/**
+ * The part of [start, end) on `day`, or null when it doesn't touch that day,
+ * so an overnight item shows on both days. A zero-length item (Google allows
+ * one) is a point on its start's day, midnight included.
+ */
+function daySegment(
+  start: Temporal.ZonedDateTime,
+  end: Temporal.ZonedDateTime,
+  day: Temporal.PlainDate,
+  timeZone: string
+): DaySegment | null {
+  const { compare } = Temporal.ZonedDateTime;
+  const dayStart = day.toZonedDateTime({ timeZone });
+  const dayEnd = dayStart.add({ days: 1 });
+  const point = compare(start, end) === 0;
+  const endsBefore = point
+    ? compare(start, dayStart) < 0
+    : compare(end, dayStart) <= 0;
+  if (endsBefore || compare(start, dayEnd) >= 0) {
+    return null;
+  }
+  return {
+    segmentEnd: compare(end, dayEnd) > 0 ? dayEnd : end,
+    segmentStart: compare(start, dayStart) < 0 ? dayStart : start,
+  };
+}
+
+/** A segment's end in minutes from its day's midnight; 1440 at midnight. */
+function segmentEndMinutes({ segmentEnd, segmentStart }: DaySegment): number {
+  return segmentEnd.toPlainDate().equals(segmentStart.toPlainDate())
+    ? minutesFromMidnight(segmentEnd)
+    : 24 * 60;
+}
+
+/** Real start and end (for text and editing) plus the part on one day. */
+interface PositionedGoogleEvent extends DaySegment {
   end: Temporal.ZonedDateTime;
   source: GoogleEventSource;
   start: Temporal.ZonedDateTime;
+}
+
+interface TaskSegment extends DaySegment {
+  end: Temporal.ZonedDateTime;
+  start: Temporal.ZonedDateTime;
+  task: TaskSelectDecoded;
 }
 
 interface AllDayGoogleEvent {
@@ -225,7 +323,7 @@ function buildCreateTaskDraftFromSlot(
   day: Temporal.PlainDate,
   minutes: number
 ): TaskDraft {
-  const snapped = snapMinutes(minutes);
+  const snapped = nearestSlotMinutes(minutes);
 
   return {
     description: "",
@@ -246,6 +344,173 @@ function buildCreateTaskDraftFromSlot(
   };
 }
 
+/** The create chooser's line, naming its slot ("… for Sat, Nov 7 at 11:30 AM."). */
+function createChooserCopy(
+  slot: { day: Temporal.PlainDate; minutes: number } | null,
+  timeZone: string
+): string | null {
+  if (!slot) {
+    return null;
+  }
+  return `Create an event or a scheduled task for ${formatSlot(slot.day, slot.minutes, timeZone)}.`;
+}
+
+/** A slot such as "Sat, Nov 7 at 11:30 AM" (the locale's wording). */
+function formatSlot(
+  day: Temporal.PlainDate,
+  minutes: number,
+  timeZone: string
+): string {
+  return day
+    .toZonedDateTime({
+      plainTime: Temporal.PlainTime.from({
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+      }),
+      timeZone,
+    })
+    .toLocaleString(undefined, {
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      month: "short",
+      weekday: "short",
+    });
+}
+
+/** A block's height: at least its drawn minutes, less the gap between blocks. */
+function blockHeight(minutes: number): number {
+  const drawn = Math.max(minutes, MIN_DRAWN_MINUTES);
+  return (drawn / 60) * PIXELS_PER_HOUR - EVENT_BLOCK_INSET_PX;
+}
+
+/** WHOOP workouts use one teal, matching the web's --whoop-workout. */
+const WORKOUT_COLOR = {
+  dark: "hsl(176, 45%, 50%)",
+  light: "hsl(178, 45%, 38%)",
+};
+
+interface PositionedWorkout extends DaySegment {
+  /** The whole workout's end, for its time text. */
+  end: Temporal.ZonedDateTime;
+  id: string;
+  sportName: string | null;
+  start: Temporal.ZonedDateTime;
+  strainScore: number | null;
+}
+
+/** Each workout's part on `day`, keeping its real start and end for text. */
+function workoutSegmentsForDay(
+  day: Temporal.PlainDate,
+  summaries: Iterable<WhoopDaySummary>,
+  timeZone: string
+): PositionedWorkout[] {
+  const segments: PositionedWorkout[] = [];
+  for (const summary of summaries) {
+    for (const workout of summary.workouts) {
+      const start = isoStringToZonedDateTime(workout.start, timeZone);
+      const end = isoStringToZonedDateTime(workout.end, timeZone);
+      const segment = daySegment(start, end, day, timeZone);
+      if (segment) {
+        segments.push({
+          ...segment,
+          end,
+          id: workout.id,
+          sportName: workout.sportName,
+          start,
+          strainScore: workout.strainScore,
+        });
+      }
+    }
+  }
+  return segments;
+}
+
+/** Whether day headers keep a WHOOP row; see shouldShowWhoopRow. */
+function useShowWhoopRow(days: Temporal.PlainDate[]): boolean {
+  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
+  const summaries = useAtomValue(whoopSummariesByDayAtom);
+  return shouldShowWhoopRow(
+    whoopAccountId,
+    days.map((day) => day.toString()),
+    summaries
+  );
+}
+
+/** Recovery green (67–100), yellow (34–66) or red (0–33), as on web. */
+function recoveryColor(score: number): string {
+  if (score >= 67) {
+    return "bg-emerald-500";
+  }
+  return score >= 34 ? "bg-amber-400" : "bg-red-500";
+}
+
+/** The date and any WHOOP numbers, as VoiceOver reads a day header. */
+function dayHeaderLabel(
+  day: Temporal.PlainDate,
+  summary: WhoopDaySummary | undefined,
+  isTodayDay: boolean
+): string {
+  return [
+    isTodayDay ? "Today" : null,
+    day.toLocaleString(undefined, {
+      day: "numeric",
+      month: "long",
+      weekday: "long",
+    }),
+    summary?.recoveryScore == null
+      ? null
+      : `recovery ${summary.recoveryScore}%`,
+    summary?.strainScore == null
+      ? null
+      : `strain ${summary.strainScore.toFixed(1)}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Recovery and strain under a day's date. */
+function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
+  const scale = useCalendarTextScale();
+  if (!(summary && hasWhoopStats(summary))) {
+    // Keep every header the same height.
+    return <View style={{ height: 14 * scale }} />;
+  }
+  // The day header reads these out; see dayHeaderLabel.
+  return (
+    <View
+      className="flex-row items-center gap-2"
+      style={{ height: 14 * scale }}
+    >
+      {summary.recoveryScore === null ? null : (
+        <View className="flex-row items-center gap-1">
+          <View
+            className={`size-1.5 rounded-full ${recoveryColor(summary.recoveryScore)}`}
+          />
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
+            {summary.recoveryScore}%
+          </Text>
+        </View>
+      )}
+      {summary.strainScore === null ? null : (
+        <View className="flex-row items-center gap-0.5">
+          <Icon as={Activity} className="text-muted-foreground" size={10} />
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
+            {summary.strainScore.toFixed(1)}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** An all-day event chip, colored like its timed events. */
 function AllDayEventChip({
   item,
   onPress,
@@ -253,99 +518,336 @@ function AllDayEventChip({
   item: AllDayGoogleEvent;
   onPress: () => void;
 }) {
-  const { background, foreground } = useGoogleEventColors(item.source);
-
+  const { background } = useGoogleEventColors(item.source);
   return (
-    <Pressable
-      className="rounded-md px-1.5 py-1"
+    <AllDayBlock
+      color={background}
       onPress={onPress}
-      style={{
-        backgroundColor: background,
-        borderColor: EVENT_OUTLINE_COLOR,
-        borderRadius: 6,
-        borderWidth: EVENT_OUTLINE_WIDTH_PX,
-      }}
-    >
-      <Text
-        className="text-[11px]"
-        numberOfLines={1}
-        style={{ color: foreground }}
-      >
-        {item.source.event.summary ?? "All-day"}
-      </Text>
-    </Pressable>
+      title={item.source.event.summary || "(No title)"}
+    />
   );
 }
 
+/** A timed Google event on the grid, tinted with its calendar color. */
 function TimedGoogleEventBlock({
   item,
-  top,
-  height,
-  durationMinutes,
-  columnIndex = 0,
-  totalColumns = 1,
-  columnSpan = 1,
-  zIndex = 1,
   onPress,
+  ...position
 }: {
-  item: PositionedGoogleEvent;
-  top: number;
-  height: number;
-  durationMinutes: number;
+  areaWidth: number;
   columnIndex?: number;
-  totalColumns?: number;
   columnSpan?: number;
-  zIndex?: number;
+  height: number;
+  item: PositionedGoogleEvent;
+  onLongPressAt?: (offsetY: number) => void;
   onPress: () => void;
+  stackDepth?: number;
+  uncoveredMinutes?: number;
+  top: number;
+  totalColumns?: number;
+  zIndex?: number;
 }) {
-  const { background, foreground } = useGoogleEventColors(item.source);
-
-  // Shared column-span layout: see packages/state/src/collision-utils.ts.
-  const singleColumnWidth = 100 / totalColumns;
-  const columnWidthPercent = singleColumnWidth * columnSpan;
-  const leftPercent = columnIndex * singleColumnWidth;
-
+  const { background } = useGoogleEventColors(item.source);
+  const details = useMemo(
+    () => eventDetails(item.source.event),
+    [item.source.event]
+  );
   return (
-    <Pressable
-      className="absolute rounded-md px-1 py-1 shadow-black/5 shadow-sm"
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress();
-      }}
-      style={{
-        backgroundColor: background,
-        borderColor: EVENT_OUTLINE_COLOR,
-        borderRadius: 6,
-        borderWidth: EVENT_OUTLINE_WIDTH_PX,
-        height,
-        left: `${leftPercent}%`,
-        top,
-        width: `${columnWidthPercent}%`,
-        zIndex,
-      }}
-    >
-      <Text
-        className="font-semibold text-[10px]"
-        numberOfLines={1}
-        style={{ color: foreground }}
-      >
-        {item.source.event.summary ?? "Event"}
-      </Text>
-      {durationMinutes >= 30 ? (
-        <Text
-          className="text-[9px] opacity-80"
-          numberOfLines={1}
-          style={{ color: foreground }}
+    <EventBlock
+      {...position}
+      color={background}
+      details={details}
+      end={item.end}
+      minutes={Math.round(
+        item.segmentEnd.since(item.segmentStart).total({ unit: "minutes" })
+      )}
+      onPress={onPress}
+      start={item.start}
+      title={item.source.event.summary || "(No title)"}
+    />
+  );
+}
+
+/** The task's first tag, plus a count of the rest. */
+function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const [first, ...rest] = task.tags;
+  if (!first) {
+    return [];
+  }
+  return [
+    {
+      icon: tagIconMap[first.icon],
+      label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
+    },
+  ];
+}
+
+/** A day's first all-day chips, then "+N more" for the rest. */
+function AllDayCellItems({
+  items,
+  onMore,
+  onOpen,
+}: {
+  items: AllDayGoogleEvent[];
+  onMore: () => void;
+  onOpen: (item: AllDayGoogleEvent) => void;
+}) {
+  return (
+    <>
+      {items.slice(0, MAX_ALL_DAY_CHIPS).map((item) => (
+        <AllDayEventChip
+          item={item}
+          key={`${item.source.accountId}-${item.source.calendarId}-${item.source.event.id}`}
+          onPress={() => onOpen(item)}
+        />
+      ))}
+      {items.length > MAX_ALL_DAY_CHIPS ? (
+        <Pressable
+          accessibilityRole="button"
+          className="rounded px-1 active:bg-muted"
+          hitSlop={6}
+          onPress={onMore}
         >
-          {formatTimeShort(item.start)} - {formatTimeShort(item.end)}
-        </Text>
+          <Text
+            className="text-[10px] text-muted-foreground"
+            maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          >
+            +{items.length - MAX_ALL_DAY_CHIPS} more
+          </Text>
+        </Pressable>
       ) : null}
-    </Pressable>
+    </>
+  );
+}
+
+/** Every all-day event on one day, from its "+N more". */
+function AllDayListSheet({
+  day,
+  itemsByDay,
+  onClose,
+  onDismissed,
+  onOpen,
+}: {
+  day: Temporal.PlainDate | null;
+  itemsByDay: Map<string, AllDayGoogleEvent[]>;
+  onClose: () => void;
+  onDismissed: () => void;
+  onOpen: (item: AllDayGoogleEvent) => void;
+}) {
+  return (
+    <BottomSheet
+      isVisible={day !== null}
+      onClose={onClose}
+      onDismissed={onDismissed}
+      snapPoints={[0.4, 0.7]}
+      title={
+        day?.toLocaleString(undefined, {
+          day: "numeric",
+          month: "long",
+          weekday: "long",
+        }) ?? "All day"
+      }
+    >
+      <View className="gap-2">
+        {(day ? (itemsByDay.get(day.toString()) ?? []) : []).map((item) => (
+          <AllDayEventChip
+            item={item}
+            key={`${item.source.accountId}-${item.source.calendarId}-${item.source.event.id}`}
+            onPress={() => onOpen(item)}
+          />
+        ))}
+      </View>
+    </BottomSheet>
+  );
+}
+
+/** A WHOOP workout's details; workouts are read-only in Kompose. */
+function WorkoutSheet({
+  onClose,
+  workout,
+}: {
+  onClose: () => void;
+  workout: PositionedWorkout | null;
+}) {
+  return (
+    <BottomSheet
+      isVisible={workout !== null}
+      onClose={onClose}
+      snapPoints={[0.3]}
+      title={workout?.sportName || "Workout"}
+    >
+      {workout ? (
+        <View className="gap-1.5">
+          <Text className="text-foreground">
+            {formatTimeRange(workout.start, workout.end)}
+          </Text>
+          {workout.strainScore === null ? null : (
+            <Text className="text-foreground">
+              Strain {workout.strainScore.toFixed(1)}
+            </Text>
+          )}
+          <Text className="text-muted-foreground text-sm">
+            From WHOOP. Edit workouts in the WHOOP app.
+          </Text>
+        </View>
+      ) : null}
+    </BottomSheet>
+  );
+}
+
+/**
+ * The repeat to send with an event save: only when it changed, so an empty
+ * list means "Repeat: None" and leaving it out keeps the series' pattern
+ * (also while the master's pattern is still loading).
+ */
+function recurrenceToSend(
+  draft: EventDraft,
+  masterRecurrence: string[]
+): string[] | undefined {
+  if (draft.mode === "create") {
+    return draft.recurrence.length > 0 ? draft.recurrence : undefined;
+  }
+  const changed = repeatChanged({
+    edited: Boolean(draft.recurrenceEdited),
+    recurrence: draft.recurrence,
+    source: savedSeriesRecurrence(draft.sourceEvent, masterRecurrence),
+  });
+  return changed ? draft.recurrence : undefined;
+}
+
+/** The error toast for a failed delete, as on web. */
+const DELETE_FAILURE_MESSAGE = "Couldn't delete it. Try again.";
+
+/** For a calendar move that failed after its edits saved, as on web. */
+const SAVED_NOT_MOVED_MESSAGE =
+  "Saved your changes, but couldn't move the event to the other calendar. Save to try again.";
+
+/**
+ * Delete confirmations for an event, over its editor: Cancel goes back to the
+ * editor with its edits, and Delete holds "Deleting…" until it's done. A
+ * failed delete keeps its dialog open for another try.
+ */
+function EventDeleteDialogs({
+  dialog,
+  onCancel,
+  onConfirm,
+  onScopeChange,
+  pending,
+  scope,
+}: {
+  dialog: EventDialog;
+  onCancel: () => void;
+  onConfirm: (scope: RecurrenceScope) => void;
+  onScopeChange: (scope: RecurrenceScope) => void;
+  pending: boolean;
+  scope: RecurrenceScope;
+}) {
+  return (
+    <>
+      <AlertDialog
+        closeOnConfirm={false}
+        confirmText="Delete"
+        description={SCOPE_DIALOG_COPY.deleteEvent.description}
+        isVisible={dialog === "delete"}
+        onCancel={onCancel}
+        onConfirm={() => onConfirm(scope)}
+        pending={pending}
+        pendingText="Deleting…"
+        title={SCOPE_DIALOG_COPY.deleteEvent.title}
+      >
+        <View className="mt-2">
+          <RadioGroup
+            // The choice the delete took stays shown while it runs.
+            disabled={pending}
+            onValueChange={(value) => onScopeChange(value as RecurrenceScope)}
+            options={RECURRENCE_SCOPE_OPTIONS}
+            value={scope}
+          />
+        </View>
+      </AlertDialog>
+      <AlertDialog
+        closeOnConfirm={false}
+        confirmText="Delete"
+        description="This action cannot be undone."
+        isVisible={dialog === "simple-delete"}
+        onCancel={onCancel}
+        onConfirm={() => onConfirm("this")}
+        pending={pending}
+        pendingText="Deleting…"
+        title="Delete event"
+      />
+    </>
+  );
+}
+
+/**
+ * Scope for saving a recurring event. It opens over the editor (iOS presents
+ * it from the sheet's modal): Cancel goes back to the editor with the edits,
+ * and Save holds "Saving…" until the save ends.
+ */
+function EventSaveScopeDialog({
+  changes,
+  isVisible,
+  onCancel,
+  onConfirm,
+  onPick,
+  pending,
+  pick,
+  preferred,
+}: {
+  /** What the save changes, for the scopes it can use. */
+  changes: EventSaveChanges | null;
+  isVisible: boolean;
+  onCancel: () => void;
+  onConfirm: (scope: RecurrenceScope) => void;
+  onPick: (scope: RecurrenceScope) => void;
+  pending: boolean;
+  /** The user's own pick; null until they pick. */
+  pick: RecurrenceScope | null;
+  /** The scope the save suggests, shown once it's available. */
+  preferred: RecurrenceScope;
+}) {
+  const disabled = changes ? eventSaveDisabledScopes(changes) : {};
+  // Explain choices disabled by the edit or a pending series load.
+  const description = changes
+    ? eventSaveDescription(changes)
+    : SCOPE_DIALOG_COPY.saveEvent.description;
+  // Worked out each time: a preferred scope off for a moment (the series
+  // loading) comes back once it's on, unless the user chose another.
+  const scope = chosenScope(pick, preferred, disabled);
+  return (
+    <AlertDialog
+      closeOnConfirm={false}
+      // The chosen scope can turn off once the series loads.
+      confirmDisabled={Boolean(disabled[scope])}
+      confirmText="Save"
+      description={description}
+      isVisible={isVisible}
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(scope)}
+      pending={pending}
+      title={SCOPE_DIALOG_COPY.saveEvent.title}
+    >
+      <View className="mt-2">
+        <RadioGroup
+          // The choice the save took stays shown while it runs.
+          disabled={pending}
+          onValueChange={(value) => onPick(value as RecurrenceScope)}
+          options={RECURRENCE_SCOPE_OPTIONS.map((option) => ({
+            disabled: Boolean(disabled[option.value]),
+            label: option.label,
+            value: option.value,
+          }))}
+          value={scope}
+        />
+      </View>
+    </AlertDialog>
   );
 }
 
 export default function CalendarTab() {
   const { isDarkColorScheme } = useColorScheme();
+  const textScale = useCalendarTextScale();
   const queryClient = useQueryClient();
   const { createEvent, updateEvent, deleteEvent } = useGoogleEventMutations();
   const moveEvent = useMoveGoogleEventMutation();
@@ -360,7 +862,7 @@ export default function CalendarTab() {
   const windows = useAtomValue(eventWindowsAtom);
 
   // Tasks: use the same query source as mutations to avoid stale editor state.
-  const { tasksQuery } = useTasks();
+  const { tasksQuery, updateTask } = useTasks();
   const tasks = tasksQuery.data ?? [];
 
   const scheduledTasks = useMemo(
@@ -369,6 +871,8 @@ export default function CalendarTab() {
   );
 
   const googleCalendars = useAtomValue(googleCalendarsDataAtom);
+  const googleAccounts = useAtomValue(googleAccountsDataAtom);
+  const isLoadingCalendars = useAtomValue(googleCalendarsLoadingAtom);
   const calendarMetadataByKey = useMemo(() => {
     const metadata = new Map<
       string,
@@ -397,6 +901,7 @@ export default function CalendarTab() {
   const isFetchingCalendars = useIsFetching({
     queryKey: GOOGLE_CALENDARS_QUERY_KEY,
   });
+  const isFetchingWhoop = useIsFetching({ queryKey: WHOOP_DAYS_QUERY_KEY });
 
   const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
     useGoogleEvents({
@@ -405,6 +910,36 @@ export default function CalendarTab() {
     });
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+
+  const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
+  // "Nov", or "Oct–Nov" when the visible days cross a month.
+  const firstMonth = visibleDays[0]?.toLocaleString(undefined, {
+    month: "short",
+  });
+  const lastMonth = visibleDays.at(-1)?.toLocaleString(undefined, {
+    month: "short",
+  });
+  const gutterMonths =
+    firstMonth === lastMonth ? firstMonth : `${firstMonth}–${lastMonth}`;
+  const showWhoopRow = useShowWhoopRow(visibleDays);
+  // Each day's block area, less the time gutter, borders, and create strip.
+  const { width: windowWidth } = useWindowDimensions();
+  const blockAreaWidth =
+    (windowWidth - TIME_GUTTER_WIDTH_PX) / Math.max(visibleDays.length, 1) -
+    1 -
+    createGutterPt(visibleDays.length);
+  // Each workout's part on every visible day it touches, so an overnight
+  // workout shows on both days with its real times.
+  const workoutsByDay = useMemo(
+    () =>
+      new Map(
+        visibleDays.map((day) => [
+          day.toString(),
+          workoutSegmentsForDay(day, whoopSummaries.values(), timeZone),
+        ])
+      ),
+    [visibleDays, whoopSummaries, timeZone]
+  );
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MVP grouping logic kept inline for now.
   const { timedEventsByDay, allDayEventsByDay } = useMemo(() => {
@@ -434,10 +969,19 @@ export default function CalendarTab() {
       const endDateTime = item.event.end.dateTime;
 
       if (startDate && !startDateTime && !endDateTime) {
+        // End dates are exclusive: a trip from the 11th to the 13th shows
+        // on the 11th and 12th.
         const date = Temporal.PlainDate.from(startDate);
-        const bucket = allDay.get(date.toString());
-        if (bucket) {
-          bucket.push({ date, source });
+        const endDate = item.event.end.date
+          ? Temporal.PlainDate.from(item.event.end.date)
+          : date.add({ days: 1 });
+        for (const day of visibleDays) {
+          if (
+            Temporal.PlainDate.compare(day, date) >= 0 &&
+            Temporal.PlainDate.compare(day, endDate) < 0
+          ) {
+            allDay.get(day.toString())?.push({ date, source });
+          }
         }
         continue;
       }
@@ -454,10 +998,11 @@ export default function CalendarTab() {
       try {
         const start = isoStringToZonedDateTime(startStr, timeZone);
         const end = isoStringToZonedDateTime(endStr, timeZone);
-        const dayKey = start.toPlainDate().toString();
-        const bucket = timed.get(dayKey);
-        if (bucket) {
-          bucket.push({ end, source, start });
+        for (const day of visibleDays) {
+          const segment = daySegment(start, end, day, timeZone);
+          if (segment) {
+            timed.get(day.toString())?.push({ ...segment, end, source, start });
+          }
         }
       } catch {
         // Skip unparseable events.
@@ -467,27 +1012,32 @@ export default function CalendarTab() {
     return { allDayEventsByDay: allDay, timedEventsByDay: timed };
   }, [calendarMetadataByKey, googleEvents, timeZone, visibleDays]);
 
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, TaskSelectDecoded[]>();
+  // Each scheduled task's part on every visible day it touches.
+  const taskSegmentsByDay = useMemo(() => {
+    const map = new Map<string, TaskSegment[]>();
     for (const day of visibleDays) {
       map.set(day.toString(), []);
     }
     for (const task of scheduledTasks) {
-      if (!task.startDate) {
+      if (!(task.startDate && task.startTime)) {
         continue;
       }
-      const bucket = map.get(task.startDate.toString());
-      if (bucket) {
-        bucket.push(task);
+      const start = task.startDate.toZonedDateTime({
+        plainTime: task.startTime,
+        timeZone,
+      });
+      const end = start.add({
+        minutes: Math.max(MINUTES_STEP, task.durationMinutes),
+      });
+      for (const day of visibleDays) {
+        const segment = daySegment(start, end, day, timeZone);
+        if (segment) {
+          map.get(day.toString())?.push({ ...segment, end, start, task });
+        }
       }
     }
     return map;
-  }, [scheduledTasks, visibleDays]);
-
-  const hasAllDayEvents = useMemo(
-    () => Array.from(allDayEventsByDay.values()).some((v) => v.length > 0),
-    [allDayEventsByDay]
-  );
+  }, [scheduledTasks, timeZone, visibleDays]);
 
   // Calculate collision layouts for all visible days (tasks + google events combined).
   const collisionLayoutsByDay = useMemo(() => {
@@ -495,46 +1045,43 @@ export default function CalendarTab() {
 
     for (const day of visibleDays) {
       const dayKey = day.toString();
-      const dayTasks = tasksByDay.get(dayKey) ?? [];
-      const dayGoogleEvents = timedEventsByDay.get(dayKey) ?? [];
+      const taskItems: PositionedItem[] = (
+        taskSegmentsByDay.get(dayKey) ?? []
+      ).map((segment) => ({
+        endMinutes: segmentEndMinutes(segment),
+        id: segment.task.id,
+        startMinutes: minutesFromMidnight(segment.segmentStart),
+        type: "task" as const,
+      }));
 
-      const taskItems: PositionedItem[] = dayTasks
-        .filter((task) => task.startDate !== null && task.startTime !== null)
-        .map((task) => {
-          const start = task.startDate?.toZonedDateTime({
-            plainTime:
-              task.startTime ??
-              Temporal.PlainTime.from({ hour: 0, minute: 0, second: 0 }),
-            timeZone,
-          });
-          const startMinutes = start ? minutesFromMidnight(start) : 0;
-          const endMinutes = startMinutes + (task.durationMinutes || 30);
-          return {
-            endMinutes,
-            id: task.id,
-            startMinutes,
-            type: "task" as const,
-          };
-        });
+      const googleItems: PositionedItem[] = (
+        timedEventsByDay.get(dayKey) ?? []
+      ).map((ge) => ({
+        endMinutes: segmentEndMinutes(ge),
+        id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
+        startMinutes: minutesFromMidnight(ge.segmentStart),
+        type: "google-event" as const,
+      }));
 
-      const googleItems: PositionedItem[] = dayGoogleEvents.map((ge) => {
-        const startMinutes = minutesFromMidnight(ge.start);
-        const endMinutes = minutesFromMidnight(ge.end);
-        return {
-          endMinutes,
-          id: `${ge.source.accountId}-${ge.source.calendarId}-${ge.source.event.id}`,
-          startMinutes,
-          type: "google-event" as const,
-        };
+      const workoutItems: PositionedItem[] = (
+        workoutsByDay.get(dayKey) ?? []
+      ).map((workout) => ({
+        endMinutes: segmentEndMinutes(workout),
+        id: `whoop-${workout.id}`,
+        startMinutes: minutesFromMidnight(workout.segmentStart),
+        type: "whoop-workout" as const,
+      }));
+
+      const allItems = [...taskItems, ...googleItems, ...workoutItems];
+      // Cover is measured against each block's drawn length (blockHeight).
+      const layout = calculateCollisionLayout(allItems, {
+        minDrawnMinutes: MIN_DRAWN_MINUTES,
       });
-
-      const allItems = [...taskItems, ...googleItems];
-      const layout = calculateCollisionLayout(allItems);
       layoutsByDay.set(dayKey, layout);
     }
 
     return layoutsByDay;
-  }, [visibleDays, tasksByDay, timedEventsByDay, timeZone]);
+  }, [visibleDays, taskSegmentsByDay, timedEventsByDay, workoutsByDay]);
 
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
   const editingEventDraft =
@@ -546,19 +1093,21 @@ export default function CalendarTab() {
     event: editingEventDraft?.sourceEvent ?? null,
   });
   const masterRecurrence = recurringMasterEvent.data?.recurrence ?? [];
-  const [eventSaveScope, setEventSaveScope] = useState<RecurrenceScope>("this");
+  const [eventSavePick, setEventSavePick] = useState<RecurrenceScope | null>(
+    null
+  );
+  const [eventSavePreferred, setEventSavePreferred] =
+    useState<RecurrenceScope>("this");
   const [eventDeleteScope, setEventDeleteScope] =
     useState<RecurrenceScope>("this");
   const [eventDialog, setEventDialog] = useState<EventDialog>(null);
   const [pendingEventSaveDraft, setPendingEventSaveDraft] =
     useState<EditEventDraft | null>(null);
-  const [pendingEventDeleteDraft, setPendingEventDeleteDraft] =
-    useState<EditEventDraft | null>(null);
 
   const showEventEditor = useCallback((draft: EventDraft | null) => {
     setEventDialog(null);
+
     setPendingEventSaveDraft(null);
-    setPendingEventDeleteDraft(null);
     setEventDraft(draft);
   }, []);
 
@@ -566,32 +1115,28 @@ export default function CalendarTab() {
     showEventEditor(null);
   }, [showEventEditor]);
 
-  useEffect(() => {
-    if (
-      !(
-        editingEventDraft &&
-        editingEventDraft.recurrence.length === 0 &&
-        masterRecurrence.length > 0
-      )
-    ) {
-      return;
-    }
-
-    setEventDraft((current) =>
-      current &&
-      isEditEventDraft(current) &&
-      current.eventId === editingEventDraft.eventId
-        ? { ...current, recurrence: masterRecurrence }
-        : current
-    );
-  }, [editingEventDraft, masterRecurrence]);
-
   const taskFlow = useTaskEditorFlow();
   const openCreateTask = taskFlow.openCreate;
+  // The event picked from that list, opened once the list has closed.
+  const [pendingAllDayEdit, setPendingAllDayEdit] =
+    useState<AllDayGoogleEvent | null>(null);
+  // The day whose full all-day list is open, from "+N more".
+  const [allDayListDay, setAllDayListDay] = useState<Temporal.PlainDate | null>(
+    null
+  );
+  // The WHOOP workout whose details are open; workouts are read-only.
+  const [openWorkout, setOpenWorkout] = useState<PositionedWorkout | null>(
+    null
+  );
   const [createSlotSelection, setCreateSlotSelection] = useState<{
     day: Temporal.PlainDate;
     minutes: number;
   } | null>(null);
+  // The chooser sheet animates out after the slot clears; its line keeps
+  // the last slot so it doesn't vanish mid-exit.
+  const [lastCreateSlot, setLastCreateSlot] =
+    useState<typeof createSlotSelection>(null);
+  const shownCreateSlot = createSlotSelection ?? lastCreateSlot;
   const [pendingCreateAction, setPendingCreateAction] = useState<{
     kind: "event" | "task";
     day: Temporal.PlainDate;
@@ -601,6 +1146,7 @@ export default function CalendarTab() {
   const allCalendarOptions = useMemo<CalendarOption[]>(
     () =>
       googleCalendars.map((calendar) => ({
+        accessRole: calendar.calendar.accessRole ?? null,
         accountId: calendar.accountId,
         calendarId: calendar.calendar.id,
         color: calendar.calendar.backgroundColor ?? null,
@@ -620,7 +1166,11 @@ export default function CalendarTab() {
     [allCalendarOptions, visibleCalendarIds]
   );
 
-  const defaultCalendar = visibleCalendarOptions[0] ?? allCalendarOptions[0];
+  // New events go to a shown calendar the user can write to, so they don't
+  // land somewhere hidden (as on web).
+  const defaultCalendar = visibleCalendarOptions.find((option) =>
+    canWriteCalendar(option.accessRole)
+  );
   // Editing keeps the event within its account; creating can use any calendar.
   const eventCalendarOptions = useMemo(() => {
     if (!editingEventDraft) {
@@ -666,13 +1216,14 @@ export default function CalendarTab() {
       if (!defaultCalendar) {
         return;
       }
-      const snapped = snapMinutes(minutes);
+      const snapped = nearestSlotMinutes(minutes);
       const startTime = Temporal.PlainTime.from({
         hour: Math.floor(snapped / 60),
         minute: snapped % 60,
         second: 0,
       });
-      const endTime = startTime.add({ minutes: 30 });
+      // 30 minutes, onto the next day from 11:45 PM.
+      const end = day.toPlainDateTime(startTime).add({ minutes: 30 });
       const createDraft: CreateEventDraft = {
         allDay: false,
         calendar: {
@@ -682,8 +1233,8 @@ export default function CalendarTab() {
         colorId: null,
         conferenceData: null,
         description: "",
-        endDate: day,
-        endTime,
+        endDate: end.toPlainDate(),
+        endTime: end.toPlainTime(),
         location: "",
         mode: "create",
         recurrence: [],
@@ -705,40 +1256,118 @@ export default function CalendarTab() {
 
   const openCreateChooserAt = useCallback(
     (day: Temporal.PlainDate, minutes: number) => {
-      setCreateSlotSelection({ day, minutes: snapMinutes(minutes) });
+      const slot = { day, minutes: nearestSlotMinutes(minutes) };
+      // A fresh chooser drops any action left from one iOS never dismissed.
+      setPendingCreateAction(null);
+      setCreateSlotSelection(slot);
+      setLastCreateSlot(slot);
     },
     []
+  );
+
+  // VoiceOver can't tap an empty slot, so each day header offers the create
+  // chooser: today at the next half hour, other days at 9 AM.
+  const openCreateChooserForDay = useCallback(
+    (day: Temporal.PlainDate) => {
+      const now = Temporal.Now.zonedDateTimeISO(timeZone);
+      if (day.equals(now.toPlainDate())) {
+        // Late at night this clamps to 11:30 PM, the last slot of the day.
+        const nextHalfHour = Math.ceil((now.hour * 60 + now.minute) / 30) * 30;
+        openCreateChooserAt(day, Math.min(nextHalfHour, 23 * 60 + 30));
+      } else {
+        openCreateChooserAt(day, 9 * 60);
+      }
+    },
+    [openCreateChooserAt, timeZone]
+  );
+
+  const toggleTaskDone = useCallback(
+    (task: TaskSelectDecoded) =>
+      updateTask.mutate({
+        id: task.id,
+        scope: "this",
+        task: { status: task.status === "done" ? "todo" : "done" },
+      }),
+    [updateTask]
+  );
+
+  // A long press on a block offers that block's actions and creating at the
+  // pressed time, so the gesture never does something you can't see coming.
+  const showBlockMenu = useCallback(
+    ({
+      day,
+      done,
+      offsetY,
+      onOpen,
+      onToggleDone,
+      title,
+    }: {
+      day: Temporal.PlainDate;
+      done?: boolean;
+      offsetY: number;
+      onOpen?: () => void;
+      onToggleDone?: () => void;
+      title: string;
+    }) => {
+      Haptics.selectionAsync().catch(() => undefined);
+      const minutes = nearestSlotMinutes((offsetY / PIXELS_PER_HOUR) * 60);
+      const time = Temporal.PlainTime.from({
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+      }).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
+      const actions: { label: string; run: () => void }[] = [];
+      if (onOpen) {
+        actions.push({ label: "Open", run: onOpen });
+      }
+      if (onToggleDone) {
+        actions.push({
+          label: done ? "Mark as not done" : "Mark as done",
+          run: onToggleDone,
+        });
+      }
+      actions.push({
+        label: `New event or task at ${time}`,
+        run: () => openCreateChooserAt(day, minutes),
+      });
+      if (Platform.OS === "ios") {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            cancelButtonIndex: actions.length,
+            options: [...actions.map((action) => action.label), "Cancel"],
+            title,
+          },
+          (index) => actions[index]?.run()
+        );
+        return;
+      }
+      RNAlert.alert(title, undefined, [
+        ...actions.map((action) => ({
+          onPress: action.run,
+          text: action.label,
+        })),
+        { style: "cancel" as const, text: "Cancel" },
+      ]);
+    },
+    [openCreateChooserAt]
   );
 
   const closeCreateChooser = useCallback(() => {
     setCreateSlotSelection(null);
   }, []);
 
-  useEffect(() => {
-    if (createSlotSelection !== null || pendingCreateAction === null) {
+  // Runs the chosen create action once the chooser's modal is gone; a modal
+  // presented while another dismisses is swallowed on iOS.
+  const runPendingCreateAction = useCallback(() => {
+    if (pendingCreateAction === null) {
       return;
     }
-
-    // Wait for the chooser bottom-sheet modal to finish closing before opening
-    // the next sheet. Otherwise the closing modal can swallow the new one.
-    const timeoutId = setTimeout(() => {
-      if (pendingCreateAction.kind === "event") {
-        openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      } else {
-        openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
-      }
-      setPendingCreateAction(null);
-    }, 320);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [
-    createSlotSelection,
-    openCreateEventAt,
-    openCreateTaskAt,
-    pendingCreateAction,
-  ]);
+    if (pendingCreateAction.kind === "event") {
+      openCreateEventAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    } else {
+      openCreateTaskAt(pendingCreateAction.day, pendingCreateAction.minutes);
+    }
+    setPendingCreateAction(null);
+  }, [openCreateEventAt, openCreateTaskAt, pendingCreateAction]);
 
   const openEditTimedEvent = useCallback(
     (item: PositionedGoogleEvent) => {
@@ -817,32 +1446,18 @@ export default function CalendarTab() {
 
   const buildEventPayload = useCallback(
     (currentDraft: EventDraft) => {
-      let startPayload: { date?: string; dateTime?: string; timeZone?: string };
-      let endPayload: { date?: string; dateTime?: string; timeZone?: string };
-
-      if (currentDraft.allDay) {
-        startPayload = { date: currentDraft.startDate.toString() };
-        endPayload = { date: currentDraft.endDate.add({ days: 1 }).toString() };
-      } else {
-        const startZdt = combineDateTime(
-          currentDraft.startDate,
-          currentDraft.startTime ?? Temporal.PlainTime.from("09:00"),
-          timeZone
-        );
-        const endZdt = combineDateTime(
-          currentDraft.endDate,
-          currentDraft.endTime ?? Temporal.PlainTime.from("10:00"),
-          timeZone
-        );
-        startPayload = {
-          dateTime: startZdt.toInstant().toString(),
-          timeZone,
-        };
-        endPayload = {
-          dateTime: endZdt.toInstant().toString(),
-          timeZone,
-        };
-      }
+      // An existing event keeps its own zone (Google repeats a series in
+      // its start's zone); a new one takes the app's.
+      const zone = eventTimeZone(
+        currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined,
+        timeZone
+      );
+      const { end: endPayload, start: startPayload } = draftTimes(
+        currentDraft,
+        timeZone,
+        zone,
+        currentDraft.mode === "edit" ? currentDraft.sourceEvent : undefined
+      );
 
       return {
         colorId: currentDraft.colorId ?? undefined,
@@ -850,15 +1465,12 @@ export default function CalendarTab() {
         description: currentDraft.description.trim() || undefined,
         end: endPayload,
         location: currentDraft.location.trim() || undefined,
-        recurrence:
-          currentDraft.recurrence.length > 0
-            ? currentDraft.recurrence
-            : undefined,
+        recurrence: recurrenceToSend(currentDraft, masterRecurrence),
         start: startPayload,
         summary: currentDraft.summary.trim(),
       };
     },
-    [timeZone]
+    [masterRecurrence, timeZone]
   );
 
   const commitEventUpdate = useCallback(
@@ -868,12 +1480,33 @@ export default function CalendarTab() {
         draft.calendar.calendarId === sourceCalendar.calendarId
           ? null
           : draft.calendar.calendarId;
-      const eventPayload = buildEventPayload(draft);
+      const formPayload = buildEventPayload(draft);
+      // For the series, only what the user changed (a field left alone is
+      // left out): a rescheduled occurrence's own title doesn't spread to
+      // it, and a field changed elsewhere since the editor opened isn't
+      // written back from this copy.
+      const eventPayload =
+        scope === "this"
+          ? formPayload
+          : {
+              ...seriesEditFields({
+                edited: formPayload,
+                occurrence: draft.sourceEvent,
+              }),
+              recurrence: formPayload.recurrence,
+            };
       await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
+        // The editor holds on the save; the cache changes once it's in.
+        optimistic: false,
+        failureMessage: SAVE_FAILURE_MESSAGE,
+
         event: {
-          ...draft.sourceEvent,
+          // One occurrence keeps its other fields; a save for the series
+          // sends only its changes, so a field the editor never showed
+          // (guests, say) can't carry an old copy onto the series.
+          ...(scope === "this" ? draft.sourceEvent : { id: draft.eventId }),
           ...eventPayload,
           end: withEditedTime(draft.sourceEvent.end, eventPayload.end),
           start: withEditedTime(draft.sourceEvent.start, eventPayload.start),
@@ -888,6 +1521,9 @@ export default function CalendarTab() {
           calendarId: sourceCalendar.calendarId,
           destinationCalendarId,
           eventId: draft.eventId,
+          // The edits are in by now: a failed move mustn't say they aren't.
+          failureMessage: SAVED_NOT_MOVED_MESSAGE,
+
           scope,
         });
       }
@@ -897,6 +1533,42 @@ export default function CalendarTab() {
     [buildEventPayload, closeEventModal, moveEvent, updateEvent]
   );
 
+  /** What a save changes, for the scopes its dialog offers. */
+  const eventSaveChanges = useCallback(
+    (draft: EditEventDraft): EventSaveChanges => {
+      const occurrence = draft.sourceEvent;
+      const recurrence = recurrenceToSend(draft, masterRecurrence);
+      const originalDay =
+        occurrence.start.date ??
+        (occurrence.start.dateTime
+          ? Temporal.Instant.from(occurrence.start.dateTime)
+              .toZonedDateTimeISO(timeZone)
+              .toPlainDate()
+              .toString()
+          : undefined);
+      const dateMoved = draft.startDate.toString() !== originalDay;
+      return {
+        calendarMoved:
+          draft.calendar.calendarId !== draft.sourceCalendar.calendarId,
+        dateMoved,
+        patternChanged: recurrence !== undefined,
+        seriesRuleFailed: recurringMasterEvent.ruleFailed,
+        seriesRuleLoaded: Boolean(
+          occurrence.recurrence?.length || recurringMasterEvent.ruleReady
+        ),
+      };
+    },
+    [
+      masterRecurrence,
+      recurringMasterEvent.ruleFailed,
+      recurringMasterEvent.ruleReady,
+      timeZone,
+    ]
+  );
+
+  const isSavingEvent = [createEvent, updateEvent, moveEvent].some(
+    (mutation) => mutation.isPending
+  );
   const saveEvent = useCallback(
     async (draft: EventDraft) => {
       if (!draft.summary.trim()) {
@@ -907,14 +1579,18 @@ export default function CalendarTab() {
         await createEvent.mutateAsync({
           accountId: draft.calendar.accountId,
           calendarId: draft.calendar.calendarId,
+          failureMessage: EVENT_CREATE_FAILURE_MESSAGE,
+
           event: buildEventPayload(draft),
         });
         closeEventModal();
         return;
       }
 
-      const masterSeriesRecurrence =
-        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const masterSeriesRecurrence = savedSeriesRecurrence(
+        draft.sourceEvent,
+        masterRecurrence
+      );
       const recurring =
         isRecurringGoogleEvent({
           event: draft.sourceEvent,
@@ -922,19 +1598,21 @@ export default function CalendarTab() {
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
       if (recurring) {
-        // Google API doesn't allow moving individual recurring instances,
-        // so force scope to "all" when a calendar move is pending.
-        const hasCalendarChange =
-          draft.calendar.calendarId !== draft.sourceCalendar.calendarId;
-        const defaultScope = hasCalendarChange
-          ? "all"
-          : getDefaultRecurrenceScopeForEvent({
-              event: draft.sourceEvent,
-              masterRecurrence: masterSeriesRecurrence,
-            });
+        const changes = eventSaveChanges(draft);
+        const suggested = getDefaultRecurrenceScopeForEvent({
+          event: draft.sourceEvent,
+          masterRecurrence: masterSeriesRecurrence,
+        });
+        // The scope dialog opens over the editor, which stays open; it
+        // shows the nearest available to this until it's on.
         setPendingEventSaveDraft(draft);
-        setEventSaveScope(defaultScope);
-        setEventDraft(null);
+
+        setEventSavePreferred(
+          suggested === "this" && changes.patternChanged
+            ? "following"
+            : suggested
+        );
+        setEventSavePick(null);
         setEventDialog("save");
         return;
       }
@@ -946,29 +1624,44 @@ export default function CalendarTab() {
       closeEventModal,
       commitEventUpdate,
       createEvent,
+      eventSaveChanges,
       masterRecurrence,
     ]
   );
 
-  const confirmScopedEventSave = useCallback(async () => {
-    if (!pendingEventSaveDraft) {
-      return;
-    }
-    await commitEventUpdate(pendingEventSaveDraft, eventSaveScope);
-  }, [commitEventUpdate, eventSaveScope, pendingEventSaveDraft]);
+  const confirmScopedEventSave = useCallback(
+    async (scope: RecurrenceScope) => {
+      if (!pendingEventSaveDraft) {
+        return;
+      }
+      Keyboard.dismiss();
+
+      try {
+        // Closes the editor (and this dialog) when it saves.
+        await commitEventUpdate(pendingEventSaveDraft, scope);
+      } catch {
+        // Return to the sheet, keeping its draft and failure message.
+        setEventDialog(null);
+        setPendingEventSaveDraft(null);
+      }
+    },
+    [commitEventUpdate, pendingEventSaveDraft]
+  );
 
   const requestDeleteEvent = useCallback(
     (draft: EditEventDraft) => {
-      const recurringMasterRecurrence =
-        draft.recurrence.length > 0 ? draft.recurrence : masterRecurrence;
+      const recurringMasterRecurrence = savedSeriesRecurrence(
+        draft.sourceEvent,
+        masterRecurrence
+      );
       const recurring =
         isRecurringGoogleEvent({
           event: draft.sourceEvent,
           masterRecurrence: recurringMasterRecurrence,
         }) || Boolean(draft.sourceEvent.originalStartTime);
 
-      setPendingEventDeleteDraft(draft);
-      setEventDraft(null);
+      // The dialog opens over the editor, which stays open: Cancel goes back
+      // to it with the edits.
 
       if (recurring) {
         setEventDeleteScope(
@@ -986,28 +1679,38 @@ export default function CalendarTab() {
     [masterRecurrence]
   );
 
+  const isDeletingEvent = deleteEvent.isPending;
   const confirmEventDelete = useCallback(
     async (scope: RecurrenceScope) => {
-      if (!pendingEventDeleteDraft) {
+      if (!editingEventDraft) {
         return;
       }
 
-      await deleteEvent.mutateAsync({
-        accountId: pendingEventDeleteDraft.sourceCalendar.accountId,
-        calendarId: pendingEventDeleteDraft.sourceCalendar.calendarId,
-        eventId: pendingEventDeleteDraft.eventId,
-        scope,
-      });
-      closeEventModal();
+      try {
+        await deleteEvent.mutateAsync({
+          accountId: editingEventDraft.sourceCalendar.accountId,
+          calendarId: editingEventDraft.sourceCalendar.calendarId,
+          eventId: editingEventDraft.eventId,
+          failureMessage: DELETE_FAILURE_MESSAGE,
+
+          scope,
+        });
+        closeEventModal();
+      } catch {
+        // The mutation reports the error toast; keep the dialog open to retry.
+      }
     },
-    [closeEventModal, deleteEvent, pendingEventDeleteDraft]
+    [closeEventModal, deleteEvent, editingEventDraft]
   );
 
   const totalHeight = 24 * PIXELS_PER_HOUR;
   const scrollRef = useRef<ScrollViewInstance>(null);
 
   // Track scroll position so we can restore it after a pull-to-refresh.
-  const scrollOffsetRef = useRef(DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR);
+  // Stop a little above the hour so its whole gutter label shows.
+  const scrollOffsetRef = useRef(
+    DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR - HOUR_LABEL_CLEARANCE_PX
+  );
   const isRefreshingRef = useRef(false);
 
   const handleScroll = useCallback(
@@ -1030,6 +1733,7 @@ export default function CalendarTab() {
     queryClient.invalidateQueries({
       queryKey: GOOGLE_CALENDARS_QUERY_KEY,
     });
+    queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY });
 
     // Invalidate visible calendars; active month queries include preloaded days.
     for (const calendar of visibleCalendarIds) {
@@ -1043,7 +1747,8 @@ export default function CalendarTab() {
     tasksQuery.isFetching ||
     isFetchingGoogleEvents ||
     isFetchingAccounts > 0 ||
-    isFetchingCalendars > 0;
+    isFetchingCalendars > 0 ||
+    isFetchingWhoop > 0;
 
   // Clear the pull-to-refresh indicator and restore scroll position once
   // all fetches settle.
@@ -1058,7 +1763,7 @@ export default function CalendarTab() {
     isRefreshingRef.current = isRefreshing;
   }, [isRefreshing]);
 
-  // Defer the initial 8 AM scroll until the time grid has laid out.
+  // Defer the initial 7 AM scroll until the time grid has laid out.
   useEffect(() => {
     requestAnimationFrame(() => {
       scrollRef.current?.scrollTo({
@@ -1070,12 +1775,8 @@ export default function CalendarTab() {
 
   function dismissEventSaveDialog() {
     setEventDialog(null);
-    setPendingEventSaveDraft(null);
-  }
 
-  function dismissEventDeleteDialog() {
-    setEventDialog(null);
-    setPendingEventDeleteDraft(null);
+    setPendingEventSaveDraft(null);
   }
 
   return (
@@ -1095,7 +1796,7 @@ export default function CalendarTab() {
                 <Pressable
                   accessibilityLabel={`Show ${n} day${n > 1 ? "s" : ""}`}
                   className={`h-8 min-w-8 items-center justify-center rounded-full px-2.5 active:opacity-70 ${
-                    visibleDaysCount === n ? "bg-muted" : ""
+                    visibleDaysCount === n ? "bg-foreground/15" : ""
                   }`}
                   key={n}
                   onPress={() => setVisibleDaysCount(n)}
@@ -1103,8 +1804,8 @@ export default function CalendarTab() {
                   <Text
                     className={
                       visibleDaysCount === n
-                        ? "font-semibold text-foreground"
-                        : "text-muted-foreground"
+                        ? "font-sans-medium text-foreground"
+                        : "text-foreground"
                     }
                   >
                     {n}d
@@ -1138,6 +1839,9 @@ export default function CalendarTab() {
               </Pressable>
             </View>
           ),
+          // The tab already names the screen, and a phone's bar has no
+          // room for a title beside the view and paging controls.
+          headerTitle: "",
           title: "Calendar",
         }}
       />
@@ -1147,65 +1851,116 @@ export default function CalendarTab() {
           {/* Day headers */}
           <View className="flex-row border-border border-t border-b">
             <View
-              className="border-border border-r"
+              className="items-end justify-center border-border border-r pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
-            />
+            >
+              <Text
+                adjustsFontSizeToFit
+                className="text-[11px] text-muted-foreground"
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                numberOfLines={1}
+              >
+                {gutterMonths}
+              </Text>
+            </View>
             <View className="flex-1 flex-row">
               {visibleDays.map((day) => {
                 const isTodayHighlight = isToday(day, timeZone);
                 const { weekday, dayNumber } = formatDayHeader(day);
 
+                const whoop = whoopSummaries.get(day.toString());
+
                 return (
                   <View
-                    className={`flex-1 flex-row items-center justify-center gap-1.5 border-border border-r py-2 ${isTodayHighlight ? "bg-primary/5" : ""}`}
+                    accessibilityActions={[
+                      { label: "New event or task", name: "activate" },
+                    ]}
+                    accessibilityHint="Creates an event or task on this day"
+                    accessibilityLabel={dayHeaderLabel(
+                      day,
+                      whoop,
+                      isTodayHighlight
+                    )}
+                    accessibilityRole="button"
+                    accessible
+                    className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
                     key={day.toString()}
+                    // Fabric sends a VoiceOver double-tap to
+                    // onAccessibilityTap; the named action covers the
+                    // actions rotor.
+                    onAccessibilityAction={(event) => {
+                      if (event.nativeEvent.actionName === "activate") {
+                        openCreateChooserForDay(day);
+                      }
+                    }}
+                    onAccessibilityTap={() => openCreateChooserForDay(day)}
                   >
-                    <Text className="font-medium text-muted-foreground text-xs uppercase">
-                      {weekday}
-                    </Text>
-                    <View
-                      className={`size-6 items-center justify-center rounded-full ${isTodayHighlight ? "bg-primary" : ""}`}
-                    >
+                    <View className="flex-row items-center gap-1.5">
                       <Text
-                        className={`font-semibold text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                        className={`text-sm ${isTodayHighlight ? "font-sans-medium text-foreground" : "text-muted-foreground"}`}
+                        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                       >
-                        {dayNumber}
+                        {weekday}
                       </Text>
+                      <View
+                        className={`items-center justify-center rounded-full px-1 ${isTodayHighlight ? "bg-primary" : ""}`}
+                        // The circle grows with its number.
+                        style={{
+                          height: 24 * textScale,
+                          minWidth: 24 * textScale,
+                        }}
+                      >
+                        <Text
+                          className={`font-sans-medium text-sm ${isTodayHighlight ? "text-primary-foreground" : "text-foreground"}`}
+                          maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                        >
+                          {dayNumber}
+                        </Text>
+                      </View>
                     </View>
+                    {showWhoopRow ? <WhoopDayStats summary={whoop} /> : null}
                   </View>
                 );
               })}
             </View>
           </View>
 
-          {/* All-day events row */}
-          {hasAllDayEvents ? (
-            <View className="flex-row border-border border-b">
-              <View
-                className="border-border border-r"
-                style={{ width: TIME_GUTTER_WIDTH_PX }}
-              />
-              <View className="flex-1 flex-row">
-                {visibleDays.map((day) => {
-                  const items = allDayEventsByDay.get(day.toString()) ?? [];
-                  return (
-                    <View
-                      className="min-h-[38px] flex-1 gap-1 border-border border-r px-2 py-1.5"
-                      key={`${day.toString()}-allday`}
-                    >
-                      {items.slice(0, 3).map((e) => (
-                        <AllDayEventChip
-                          item={e}
-                          key={`${e.source.accountId}-${e.source.calendarId}-${e.source.event.id}`}
-                          onPress={() => openEditAllDayEvent(e)}
-                        />
-                      ))}
-                    </View>
-                  );
-                })}
-              </View>
+          {/* All-day events row; it always shows, so paging doesn't move the grid. */}
+          <View className="flex-row border-border border-b">
+            <View
+              className="items-end border-border border-r pt-1.5 pr-2"
+              style={{ width: TIME_GUTTER_WIDTH_PX }}
+            >
+              <Text
+                adjustsFontSizeToFit
+                className="text-[10px] text-muted-foreground"
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                numberOfLines={1}
+              >
+                All day
+              </Text>
             </View>
-          ) : null}
+            <View className="flex-1 flex-row">
+              {visibleDays.map((day) => {
+                const items = allDayEventsByDay.get(day.toString()) ?? [];
+                return (
+                  <View
+                    className="min-h-7 flex-1 gap-1 border-border border-r px-1 py-1"
+                    key={`${day.toString()}-allday`}
+                  >
+                    <AllDayCellItems
+                      items={items}
+                      onMore={() => {
+                        setPendingAllDayEdit(null);
+                        setAllDayListDay(day);
+                      }}
+                      onOpen={openEditAllDayEvent}
+                    />
+                  </View>
+                );
+              })}
+            </View>
+          </View>
 
           {/* Scrollable time grid */}
           <ScrollView
@@ -1220,6 +1975,10 @@ export default function CalendarTab() {
               />
             }
             scrollEventThrottle={16}
+            // iOS scrolls to the top on taps in the navigation bar, which
+            // here would jump the day to midnight whenever a header control
+            // is used.
+            scrollsToTop={false}
           >
             <View className="flex-row">
               {/* Time gutter */}
@@ -1235,7 +1994,10 @@ export default function CalendarTab() {
                   >
                     {hour === 0 ? null : (
                       <Text
+                        adjustsFontSizeToFit
                         className="text-right text-[10px] text-muted-foreground"
+                        maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                        numberOfLines={1}
                         style={{
                           transform: [
                             { translateY: -TIME_GUTTER_LABEL_OFFSET_PX },
@@ -1254,12 +2016,15 @@ export default function CalendarTab() {
                 {visibleDays.map((day) => {
                   const dayKey = day.toString();
                   const dayEvents = timedEventsByDay.get(dayKey) ?? [];
-                  const dayTasks = tasksByDay.get(dayKey) ?? [];
+                  const dayTasks = taskSegmentsByDay.get(dayKey) ?? [];
                   const isTodayColumn = isToday(day, timeZone);
                   const dayLayouts = collisionLayoutsByDay.get(dayKey);
 
                   return (
                     <Pressable
+                      // Not one accessibility element, so VoiceOver reaches
+                      // each block's own controls inside the column.
+                      accessible={false}
                       className="relative flex-1 border-border border-r"
                       key={dayKey}
                       onPress={(e) => {
@@ -1278,121 +2043,178 @@ export default function CalendarTab() {
                         />
                       ))}
 
-                      {/* Google events */}
-                      {dayEvents.map((evt) => {
-                        const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
-                        const layout = dayLayouts?.get(eventId);
-                        const startMinutes = minutesFromMidnight(evt.start);
-                        const durationMinutes = Math.max(
-                          MINUTES_STEP,
-                          Math.round(
-                            evt.end.since(evt.start).total({ unit: "minutes" })
-                          )
-                        );
-                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const height = Math.max(
-                          (durationMinutes / 60) * PIXELS_PER_HOUR,
-                          24
-                        );
-                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = Math.max(
-                          height - EVENT_BLOCK_INSET_PX,
-                          20
-                        );
-
-                        return (
-                          <TimedGoogleEventBlock
-                            columnIndex={layout?.columnIndex}
-                            columnSpan={layout?.columnSpan}
-                            durationMinutes={durationMinutes}
-                            height={adjustedHeight}
-                            item={evt}
-                            key={`${eventId}-${evt.start.toString()}`}
-                            onPress={() => openEditTimedEvent(evt)}
-                            top={adjustedTop}
-                            totalColumns={layout?.totalColumns}
-                            zIndex={layout?.zIndex}
-                          />
-                        );
-                      })}
-
-                      {/* Scheduled tasks */}
-                      {dayTasks.map((task) => {
-                        if (!(task.startDate && task.startTime)) {
-                          return null;
-                        }
-                        const layout = dayLayouts?.get(task.id);
-                        const start = task.startDate.toZonedDateTime({
-                          plainTime: task.startTime,
-                          timeZone,
-                        });
-                        const startMinutes = minutesFromMidnight(start);
-                        const durationMinutes = Math.max(
-                          MINUTES_STEP,
-                          task.durationMinutes
-                        );
-                        const top = (startMinutes / 60) * PIXELS_PER_HOUR;
-                        const height = Math.max(
-                          (durationMinutes / 60) * PIXELS_PER_HOUR,
-                          24
-                        );
-                        const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
-                        const adjustedHeight = Math.max(
-                          height - EVENT_BLOCK_INSET_PX,
-                          20
-                        );
-
-                        const columnIndex = layout?.columnIndex ?? 0;
-                        const totalColumns = layout?.totalColumns ?? 1;
-                        const columnSpan = layout?.columnSpan ?? 1;
-                        const zIndexValue = layout?.zIndex ?? 1;
-                        const singleColumnWidth = 100 / totalColumns;
-                        const columnWidthPercent =
-                          singleColumnWidth * columnSpan;
-                        const leftPercent = columnIndex * singleColumnWidth;
-                        const end = start.add({ minutes: durationMinutes });
-
-                        return (
-                          <Pressable
-                            className="absolute rounded-md bg-primary/90 px-1 py-1 shadow-black/5 shadow-sm"
-                            key={task.id}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              taskFlow.openEdit(task);
-                            }}
-                            style={{
-                              borderColor: EVENT_OUTLINE_COLOR,
-                              borderRadius: 6,
-                              borderWidth: EVENT_OUTLINE_WIDTH_PX,
-                              height: adjustedHeight,
-                              left: `${leftPercent}%`,
-                              top: adjustedTop,
-                              width: `${columnWidthPercent}%`,
-                              zIndex: zIndexValue,
-                            }}
-                          >
-                            <Text
-                              className="font-semibold text-[10px] text-primary-foreground"
-                              numberOfLines={1}
-                            >
-                              {task.title}
-                            </Text>
-                            {durationMinutes >= 30 ? (
-                              <Text
-                                className="text-[9px] text-primary-foreground/80"
-                                numberOfLines={1}
-                              >
-                                {formatTimeShort(start)} -{" "}
-                                {formatTimeShort(end)}
-                              </Text>
-                            ) : null}
-                          </Pressable>
-                        );
-                      })}
-
-                      {/* Current time indicator (today only) */}
                       {isTodayColumn ? (
-                        <CurrentTimeIndicator timeZone={timeZone} />
+                        <CurrentTimeIndicator part="line" timeZone={timeZone} />
+                      ) : null}
+
+                      {/* Blocks stop short of the right edge, so a slot
+                          is always free to tap for a new event. */}
+                      <View
+                        pointerEvents="box-none"
+                        style={{
+                          bottom: 0,
+                          left: 0,
+                          position: "absolute",
+                          right: createGutterPt(visibleDays.length),
+                          top: 0,
+                        }}
+                      >
+                        {/* Google events */}
+                        {dayEvents.map((evt) => {
+                          const eventId = `${evt.source.accountId}-${evt.source.calendarId}-${evt.source.event.id}`;
+                          const layout = dayLayouts?.get(eventId);
+                          const startMinutes = minutesFromMidnight(
+                            evt.segmentStart
+                          );
+                          const durationMinutes = Math.max(
+                            MINUTES_STEP,
+                            Math.round(
+                              evt.segmentEnd
+                                .since(evt.segmentStart)
+                                .total({ unit: "minutes" })
+                            )
+                          );
+                          const top = (startMinutes / 60) * PIXELS_PER_HOUR;
+                          const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                          const adjustedHeight = blockHeight(durationMinutes);
+
+                          return (
+                            <TimedGoogleEventBlock
+                              areaWidth={blockAreaWidth}
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              height={adjustedHeight}
+                              item={evt}
+                              key={`${eventId}-${evt.segmentStart.toString()}`}
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
+                                  day,
+                                  offsetY,
+                                  onOpen: () => openEditTimedEvent(evt),
+                                  title:
+                                    evt.source.event.summary || "(No title)",
+                                })
+                              }
+                              onPress={() => openEditTimedEvent(evt)}
+                              stackDepth={layout?.stackDepth}
+                              top={adjustedTop}
+                              totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
+
+                        {/* WHOOP workouts */}
+                        {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
+                          const layout = dayLayouts?.get(`whoop-${workout.id}`);
+                          const minutes = Math.round(
+                            workout.segmentEnd
+                              .since(workout.segmentStart)
+                              .total({ unit: "minutes" })
+                          );
+                          return (
+                            <EventBlock
+                              areaWidth={blockAreaWidth}
+                              color={
+                                isDarkColorScheme
+                                  ? WORKOUT_COLOR.dark
+                                  : WORKOUT_COLOR.light
+                              }
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              details={
+                                workout.strainScore === null
+                                  ? []
+                                  : [
+                                      {
+                                        icon: Activity,
+                                        label: `Strain ${workout.strainScore.toFixed(1)}`,
+                                        short: workout.strainScore.toFixed(1),
+                                      },
+                                    ]
+                              }
+                              end={workout.end}
+                              height={blockHeight(minutes)}
+                              key={workout.id}
+                              minutes={minutes}
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
+                                  day,
+                                  offsetY,
+                                  onOpen: () => setOpenWorkout(workout),
+                                  title: workout.sportName || "Workout",
+                                })
+                              }
+                              onPress={() => setOpenWorkout(workout)}
+                              stackDepth={layout?.stackDepth}
+                              start={workout.start}
+                              title={workout.sportName || "Workout"}
+                              top={
+                                (minutesFromMidnight(workout.segmentStart) /
+                                  60) *
+                                  PIXELS_PER_HOUR +
+                                EVENT_BLOCK_INSET_PX / 2
+                              }
+                              totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
+
+                        {/* Scheduled tasks */}
+                        {dayTasks.map((segment) => {
+                          const { end, start, task } = segment;
+                          const layout = dayLayouts?.get(task.id);
+                          const durationMinutes = Math.round(
+                            segment.segmentEnd
+                              .since(segment.segmentStart)
+                              .total({ unit: "minutes" })
+                          );
+                          const top =
+                            (minutesFromMidnight(segment.segmentStart) / 60) *
+                            PIXELS_PER_HOUR;
+                          const adjustedTop = top + EVENT_BLOCK_INSET_PX / 2;
+                          const adjustedHeight = blockHeight(durationMinutes);
+
+                          return (
+                            <TaskBlock
+                              areaWidth={blockAreaWidth}
+                              columnIndex={layout?.columnIndex}
+                              columnSpan={layout?.columnSpan}
+                              details={taskTagDetails(task)}
+                              done={task.status === "done"}
+                              end={end}
+                              height={adjustedHeight}
+                              key={`${task.id}-${segment.segmentStart.toString()}`}
+                              minutes={durationMinutes}
+                              onLongPressAt={(offsetY) =>
+                                showBlockMenu({
+                                  day,
+                                  done: task.status === "done",
+                                  offsetY,
+                                  onOpen: () => taskFlow.openEdit(task),
+                                  onToggleDone: () => toggleTaskDone(task),
+                                  title: task.title,
+                                })
+                              }
+                              onPress={() => taskFlow.openEdit(task)}
+                              onToggleDone={() => toggleTaskDone(task)}
+                              stackDepth={layout?.stackDepth}
+                              start={start}
+                              title={task.title}
+                              top={adjustedTop}
+                              totalColumns={layout?.totalColumns}
+                              uncoveredMinutes={layout?.uncoveredMinutes}
+                              zIndex={layout?.zIndex}
+                            />
+                          );
+                        })}
+                      </View>
+
+                      {isTodayColumn ? (
+                        <CurrentTimeIndicator part="dot" timeZone={timeZone} />
                       ) : null}
                     </Pressable>
                   );
@@ -1412,22 +2234,86 @@ export default function CalendarTab() {
         <EventEditorSheet
           calendarOptions={eventCalendarOptions}
           draft={eventDraft}
+          isSaving={isSavingEvent || isDeletingEvent}
+          masterFailed={recurringMasterEvent.ruleFailed}
+          masterLoading={recurringMasterEvent.ruleUnavailable}
+          masterRecurrence={masterRecurrence}
           onClose={closeEventModal}
           onDelete={requestDeleteEvent}
+          onRetryMaster={recurringMasterEvent.retry}
           onSubmit={(draft) => {
+            // The sheet holds ("Saving…") until the save ends; a failure
+            // leaves it open with the draft.
+            // Typing after this point wouldn't be saved: close the keyboard.
+            Keyboard.dismiss();
+
             saveEvent(draft).catch(() => null);
           }}
+          overlay={
+            <>
+              <EventDeleteDialogs
+                dialog={eventDialog}
+                onCancel={() => setEventDialog(null)}
+                onConfirm={(scope) => {
+                  confirmEventDelete(scope).catch(() => null);
+                }}
+                onScopeChange={setEventDeleteScope}
+                pending={isDeletingEvent}
+                scope={eventDeleteScope}
+              />
+              <EventSaveScopeDialog
+                changes={
+                  pendingEventSaveDraft
+                    ? eventSaveChanges(pendingEventSaveDraft)
+                    : null
+                }
+                isVisible={eventDialog === "save"}
+                onCancel={dismissEventSaveDialog}
+                onConfirm={(scope) => {
+                  confirmScopedEventSave(scope).catch(() => null);
+                }}
+                onPick={setEventSavePick}
+                pending={isSavingEvent}
+                pick={eventSavePick}
+                preferred={eventSavePreferred}
+              />
+            </>
+          }
         />
       ) : null}
+
+      <AllDayListSheet
+        day={allDayListDay}
+        itemsByDay={allDayEventsByDay}
+        onClose={() => setAllDayListDay(null)}
+        onDismissed={() => {
+          // Open the chosen event only once the list's modal is gone; a modal
+          // presented while another dismisses is swallowed on iOS.
+          if (pendingAllDayEdit) {
+            openEditAllDayEvent(pendingAllDayEdit);
+            setPendingAllDayEdit(null);
+          }
+        }}
+        onOpen={(e) => {
+          setPendingAllDayEdit(e);
+          setAllDayListDay(null);
+        }}
+      />
+
+      <WorkoutSheet
+        onClose={() => setOpenWorkout(null)}
+        workout={openWorkout}
+      />
 
       <BottomSheet
         isVisible={createSlotSelection !== null}
         onClose={closeCreateChooser}
+        onDismissed={runPendingCreateAction}
         snapPoints={[0.34, 0.42]}
         title="Create"
       >
         <Text className="mb-3 text-muted-foreground text-sm">
-          Create an event or a scheduled task for this time slot.
+          {createChooserCopy(shownCreateSlot, timeZone)}
         </Text>
         <View className="gap-3">
           <Button
@@ -1465,7 +2351,10 @@ export default function CalendarTab() {
           </Button>
           {defaultCalendar ? null : (
             <Text className="text-muted-foreground text-xs">
-              Event creation needs at least one writable calendar.
+              {eventCreationBlockedReason({
+                hasGoogleAccount: googleAccounts.length > 0,
+                loading: isLoadingCalendars,
+              })}
             </Text>
           )}
         </View>
@@ -1484,81 +2373,6 @@ export default function CalendarTab() {
         overlay={<TaskScopeDialogs flow={taskFlow} />}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
-      />
-
-      <AlertDialog
-        confirmText="Apply"
-        description={
-          pendingEventSaveDraft &&
-          pendingEventSaveDraft.calendar.calendarId !==
-            pendingEventSaveDraft.sourceCalendar.calendarId
-            ? "Moving to a different calendar applies to all events in the series."
-            : "This is a recurring event. Choose how broadly to apply these changes."
-        }
-        isVisible={eventDialog === "save"}
-        onCancel={dismissEventSaveDialog}
-        onClose={dismissEventSaveDialog}
-        onConfirm={() => {
-          confirmScopedEventSave().catch(() => null);
-        }}
-        title="Save recurring event"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) =>
-              setEventSaveScope(value as RecurrenceScope)
-            }
-            options={RECURRENCE_SCOPE_OPTIONS.map((option) => {
-              // Google can only move a whole series to another calendar, so
-              // "this" and "following" are disabled when the calendar changes.
-              const isMoving =
-                pendingEventSaveDraft != null &&
-                pendingEventSaveDraft.calendar.calendarId !==
-                  pendingEventSaveDraft.sourceCalendar.calendarId;
-              const disabled =
-                isMoving &&
-                (option.value === "this" || option.value === "following");
-              return {
-                disabled,
-                label: option.label,
-                value: option.value,
-              };
-            })}
-            value={eventSaveScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This is a recurring event. Choose what to delete."
-        isVisible={eventDialog === "delete"}
-        onClose={dismissEventDeleteDialog}
-        onConfirm={() => {
-          confirmEventDelete(eventDeleteScope).catch(() => null);
-        }}
-        title="Delete recurring event"
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) =>
-              setEventDeleteScope(value as RecurrenceScope)
-            }
-            options={RECURRENCE_SCOPE_OPTIONS}
-            value={eventDeleteScope}
-          />
-        </View>
-      </AlertDialog>
-
-      <AlertDialog
-        confirmText="Delete"
-        description="This action cannot be undone."
-        isVisible={eventDialog === "simple-delete"}
-        onClose={dismissEventDeleteDialog}
-        onConfirm={() => {
-          confirmEventDelete("this").catch(() => null);
-        }}
-        title="Delete event"
       />
     </View>
   );

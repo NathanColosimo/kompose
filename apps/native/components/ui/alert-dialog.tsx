@@ -40,6 +40,14 @@ export type AlertDialogProps = {
   onConfirm?: () => void;
   onCancel?: () => void;
   /**
+   * The confirm action is running: its button reads `pendingText`, and
+   * nothing closes the dialog until the caller hides it.
+   */
+  pending?: boolean;
+  pendingText?: string;
+  /** The confirm button is off (nothing to confirm yet). */
+  confirmDisabled?: boolean;
+  /**
    * False when the caller closes the dialog itself (by `isVisible`), as
    * after an async confirm.
    */
@@ -60,6 +68,9 @@ export function AlertDialog({
   cancelText = "Cancel",
   onConfirm,
   onCancel,
+  pending = false,
+  confirmDisabled = false,
+  pendingText = "Saving…",
   closeOnConfirm = true,
   dismissible = true,
   showCancelButton = true,
@@ -106,7 +117,7 @@ export function AlertDialog({
   };
 
   const handleBackdropPress = () => {
-    if (dismissible) {
+    if (dismissible && !pending) {
       animateClose();
       if (onCancel) onCancel();
     }
@@ -156,6 +167,7 @@ export function AlertDialog({
               <CardFooter>
                 {showCancelButton && (
                   <Button
+                    disabled={pending}
                     onPress={handleCancel}
                     variant="outline"
                   >
@@ -163,11 +175,12 @@ export function AlertDialog({
                   </Button>
                 )}
                 <Button
+                  disabled={pending || confirmDisabled}
                   onPress={handleConfirm}
                   style={{ flex: 1 }}
                   variant={confirmVariant}
                 >
-                  {confirmText}
+                  {pending ? pendingText : confirmText}
                 </Button>
               </CardFooter>
             </Card>

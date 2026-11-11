@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import {
   Dimensions,
+  Platform,
   Modal,
   ScrollView,
   TouchableWithoutFeedback,
@@ -127,6 +128,11 @@ const BottomSheetContent = ({
 type BottomSheetProps = {
   isVisible: boolean;
   onClose: () => void;
+  /**
+   * After the sheet's modal has fully gone. Open the next sheet here: iOS
+   * can't present a modal while another is still dismissing.
+   */
+  onDismissed?: () => void;
   children: React.ReactNode;
   snapPoints?: number[];
   enableBackdropDismiss?: boolean;
@@ -139,6 +145,7 @@ type BottomSheetProps = {
 export function BottomSheet({
   isVisible,
   onClose,
+  onDismissed,
   children,
   snapPoints = [0.3, 0.6, 0.9],
   enableBackdropDismiss = true,
@@ -159,6 +166,14 @@ export function BottomSheet({
   const defaultHeight = snapPointsHeights[0];
 
   const [modalVisible, setModalVisible] = React.useState(false);
+  const wasModalVisible = React.useRef(false);
+  useEffect(() => {
+    if (wasModalVisible.current && !modalVisible && Platform.OS !== "ios") {
+      onDismissed?.();
+    }
+    wasModalVisible.current = modalVisible;
+  }, [modalVisible, onDismissed]);
+
   useEffect(() => {
     if (isVisible) {
       setModalVisible(true);
@@ -279,6 +294,8 @@ export function BottomSheet({
   return (
     <Modal
       animationType="none"
+      // iOS reports the end of dismissal; Android has no dismissal to wait for.
+      onDismiss={onDismissed}
       onRequestClose={handleBackdropPress}
       statusBarTranslucent
       transparent
