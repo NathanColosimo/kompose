@@ -60,7 +60,7 @@ fields updates as you type. Typing `#` suggests your tags.
   worker boundary as Temporal objects. Every window and tab of a deploy
   shares one worker and one loaded model. If the worker's script can't load, its
   `error` event fails the load, and the command bar creates plain tasks.
-- Enter clears the submitted input immediately and creates the task optimistically. If the model has no parse yet, creation waits for it. A synchronous guard blocks duplicate submits; save completion never clears newer typing.
+- Enter clears the submitted input immediately and creates the task optimistically. If the model has no parse yet, creation waits for it. Clearing the input blocks a second submit; save completion never clears newer typing.
 
 ### URL detection
 

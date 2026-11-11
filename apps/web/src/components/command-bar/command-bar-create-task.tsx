@@ -194,12 +194,6 @@ export function CommandBarCreateTask({
   const parsed = draft(text, magic.parse.task);
   const smartClassName = smartFieldClassName(magic.parse);
   const [resolving, startResolving] = useTransition();
-  const submitting = useRef(false);
-  useEffect(() => {
-    if (!search) {
-      submitting.current = false;
-    }
-  }, [search]);
 
   // Links alone are enough to create a task — the title will come from metadata
   const isValid = parsed.title.length > 0 || parsed.links.length > 0;
@@ -297,10 +291,10 @@ export function CommandBarCreateTask({
   };
 
   const handleCreate = () => {
-    if (!isValid || submitting.current || resolving) {
+    if (!isValid || resolving) {
       return;
     }
-    submitting.current = true;
+    // Clearing the input removes this item before the next keypress.
     onCreated();
     if (magic.parse.status === "done") {
       createFrom(parsed);
