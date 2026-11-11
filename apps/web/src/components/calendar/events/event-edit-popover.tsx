@@ -5,15 +5,23 @@ import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import {
   normalizedGoogleColorsAtomFamily,
   pastelizeColor,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import {
-  dateToUntilRule,
-  untilRuleToDate,
+  buildGoogleEventRecurrenceRule,
+  type EventRecurrenceFrequency as Frequency,
+  parseGoogleEventRecurrenceRule,
+  pickRecurrenceFrequency,
+  type EventRecurrenceEnd as RecurrenceEnd,
+  recurrenceEndDay,
+  recurrenceUntilValue,
+  GOOGLE_EVENT_WEEKDAYS as WEEKDAYS,
 } from "@kompose/state/google-event-recurrence";
+import { withEditedTime } from "@kompose/state/google-event-times";
 import {
   type UpdateGoogleEventInput,
   useGoogleEventMutations,
@@ -93,20 +101,14 @@ import {
   formatPlainDate,
   formatTimeString,
   pickerDateToTemporal,
+  temporalToPickerDate,
 } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import type {
   CalendarCreateFormInterop,
   CalendarCreateSharedFields,
 } from "../event-creation/create-form-shared";
-import {
-  buildRecurrenceRule,
-  buildTemporalPayload,
-  type Frequency,
-  parseRecurrence,
-  type RecurrenceEnd,
-  WEEKDAYS,
-} from "./event-edit-utils";
+import { buildTemporalPayload } from "./event-edit-utils";
 
 interface EventEditPopoverProps {
   accountId: string;
@@ -259,13 +261,16 @@ function RecurrenceEditor({
   visible,
   recurrenceRule,
   onChange,
+  allDay,
 }: {
+  allDay: boolean;
   visible: boolean;
   recurrenceRule?: string;
   onChange: (rule: string | null) => void;
 }) {
+  const timeZone = useAtomValue(timezoneAtom);
   const parsedRecurrence = useMemo(
-    () => parseRecurrence(recurrenceRule),
+    () => parseGoogleEventRecurrenceRule(recurrenceRule),
     [recurrenceRule]
   );
 
@@ -283,10 +288,13 @@ function RecurrenceEditor({
   const emitChanges = (changes: Partial<RecurrenceEditorValues>) => {
     const nextValues = { ...values, ...changes };
     const end = buildRecurrenceEnd(nextValues);
-    const nextRule = buildRecurrenceRule(
-      nextValues.freq,
-      nextValues.byDay,
-      end
+    const nextRule = buildGoogleEventRecurrenceRule(
+      {
+        ...pickRecurrenceFrequency(parsedRecurrence, nextValues.freq),
+        byDay: nextValues.byDay,
+        end,
+      },
+      recurrenceRule
     );
     const normalizedNext = nextRule ?? null;
     if (normalizedNext === (recurrenceRule ?? null)) {
@@ -295,10 +303,8 @@ function RecurrenceEditor({
     onChange(nextRule);
   };
 
-  const untilDate = useMemo(
-    () => (values.untilRule ? untilRuleToDate(values.untilRule) : null),
-    [values.untilRule]
-  );
+  const untilDay = recurrenceEndDay(values.untilRule, timeZone);
+  const untilDate = untilDay ? temporalToPickerDate(untilDay) : undefined;
 
   if (!visible) {
     return null;
@@ -324,7 +330,7 @@ function RecurrenceEditor({
           onValueChange={(v) => {
             const nextFreq = v as Frequency;
             emitChanges({
-              byDay: nextFreq === "WEEKLY" ? values.byDay : [],
+              byDay: pickRecurrenceFrequency(parsedRecurrence, nextFreq).byDay,
               freq: nextFreq,
             });
           }}
@@ -396,8 +402,11 @@ function RecurrenceEditor({
               onClick={() => {
                 const fallback =
                   values.untilRule ||
-                  dateToUntilRule(new Date()) ||
-                  `${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`;
+                  recurrenceUntilValue(
+                    pickerDateToTemporal(new Date()),
+                    allDay,
+                    timeZone
+                  );
                 emitChanges({ endType: "until", untilRule: fallback });
               }}
               size="sm"
@@ -431,10 +440,12 @@ function RecurrenceEditor({
                         emitChanges({ endType: "none", untilRule: "" });
                         return;
                       }
-                      const rule = dateToUntilRule(date);
-                      if (rule) {
-                        emitChanges({ untilRule: rule });
-                      }
+                      const rule = recurrenceUntilValue(
+                        pickerDateToTemporal(date),
+                        allDay,
+                        timeZone
+                      );
+                      emitChanges({ untilRule: rule });
                     }}
                     selected={untilDate ?? undefined}
                   />
@@ -971,17 +982,11 @@ function buildEditPayload(
       colorId: values.colorId ?? undefined,
       conferenceData: ctx.conferenceData ?? undefined,
       description: values.description ?? "",
-      end: {
-        ...ctx.event?.end,
-        ...temporalPayload.endPayload,
-      },
+      end: withEditedTime(ctx.event?.end, temporalPayload.endPayload),
       id: ctx.event?.id ?? "",
       location: values.location ?? "",
       recurrence: values.recurrence ?? ctx.event?.recurrence,
-      start: {
-        ...ctx.event?.start,
-        ...temporalPayload.startPayload,
-      },
+      start: withEditedTime(ctx.event?.start, temporalPayload.startPayload),
       summary: values.summary.trim(),
     },
     eventId: ctx.event?.id ?? "",
@@ -1210,6 +1215,7 @@ function EventAllDayAndRecurrenceRow({
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[360px]">
             <RecurrenceEditor
+              allDay={allDay}
               onChange={onRecurrenceChange}
               recurrenceRule={recurrenceRule}
               visible

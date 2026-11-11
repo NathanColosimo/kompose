@@ -8,8 +8,9 @@ import { TASKS_QUERY_KEY } from "../atoms/tasks";
 import { useStateConfig } from "../config";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
+  GOOGLE_EVENT_MASTER_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
-  getGoogleEventsByCalendarQueryKey,
+  invalidateGoogleEventQueries,
 } from "../google-calendar-query-keys";
 
 const BASE_RECONNECT_DELAY_MS = 1000;
@@ -91,12 +92,14 @@ export function useRealtimeSync({
         });
       }
 
-      return queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey({
+      // A change from elsewhere (another device, Google itself) can be
+      // to a series: its loaded master is stale too.
+      return invalidateGoogleEventQueries(queryClient, [
+        {
           accountId: event.payload.accountId,
           calendarId: event.payload.calendarId,
-        }),
-      });
+        },
+      ]);
     },
     [queryClient]
   );
@@ -107,6 +110,9 @@ export function useRealtimeSync({
       // Include inactive calendar lists, as in invalidateGoogleCalendarQueries.
       queryClient.refetchQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
       queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY }),
+      queryClient.invalidateQueries({
+        queryKey: GOOGLE_EVENT_MASTER_QUERY_KEY,
+      }),
     ]);
   }, [invalidateTaskQueries, queryClient]);
 

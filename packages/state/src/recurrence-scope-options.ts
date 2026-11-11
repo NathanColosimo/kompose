@@ -9,12 +9,30 @@ export interface RecurrenceScopeOption<TValue extends string = string> {
   value: TValue;
 }
 
+// Narrowest first, the same order everywhere.
 export const RECURRENCE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<RecurrenceScope>[] =
   [
     { label: "Only this occurrence", value: "this" },
-    { label: "Entire series", value: "all" },
     { label: "This and following", value: "following" },
+    { label: "Entire series", value: "all" },
   ] as const;
+
+export const SCOPE_DIALOG_COPY = {
+  deleteEvent: { description: "Delete:", title: "Delete recurring event" },
+  deleteTask: { description: "Delete:", title: "Delete recurring task" },
+  deleteTaskAlone: {
+    description: "This can't be undone.",
+    title: "Delete task?",
+  },
+  saveEvent: {
+    description: "Apply your changes to:",
+    title: "Save recurring event",
+  },
+  saveTask: {
+    description: "Apply your changes to:",
+    title: "Save recurring task",
+  },
+} as const;
 
 // Task updates and deletes offer the same two scopes.
 const TASK_SCOPE_OPTIONS = [
@@ -27,3 +45,66 @@ export const TASK_UPDATE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<UpdateSco
 
 export const TASK_DELETE_SCOPE_OPTIONS: readonly RecurrenceScopeOption<DeleteScope>[] =
   TASK_SCOPE_OPTIONS;
+
+export interface EventSaveChanges {
+  calendarMoved: boolean;
+  dateMoved: boolean;
+  patternChanged: boolean;
+  seriesRuleFailed?: boolean;
+  seriesRuleLoaded: boolean;
+}
+
+/**
+ * Entire series keeps the series' date; one occurrence can't change its
+ * repeat; Google moves a series to another calendar only as a whole.
+ */
+export function eventSaveDisabledScopes(
+  changes: EventSaveChanges
+): Partial<Record<RecurrenceScope, boolean>> {
+  if (!changes.seriesRuleLoaded) {
+    return { all: true, following: true, this: true };
+  }
+  return {
+    ...(changes.patternChanged ? { this: true } : {}),
+    ...(changes.dateMoved ? { all: true } : {}),
+    ...(changes.calendarMoved ? { following: true, this: true } : {}),
+  };
+}
+
+export function eventSaveDescription(changes: EventSaveChanges): string {
+  if (!changes.seriesRuleLoaded) {
+    return changes.seriesRuleFailed
+      ? "Couldn't load the series. Try again."
+      : "Loading the series…";
+  }
+  if (changes.calendarMoved) {
+    return changes.dateMoved
+      ? "A new calendar applies to the entire series, which keeps its date. Save the new day and the new calendar separately."
+      : "A new calendar applies to the entire series.";
+  }
+  if (changes.dateMoved) {
+    return "Entire series keeps the series' date, so it can't apply a move to another day.";
+  }
+  if (changes.patternChanged) {
+    return "A new repeat applies from this occurrence on, or to the entire series.";
+  }
+  return SCOPE_DIALOG_COPY.saveEvent.description;
+}
+
+export function chosenScope(
+  pick: RecurrenceScope | null,
+  preferred: RecurrenceScope,
+  disabled: Partial<Record<RecurrenceScope, boolean>>
+): RecurrenceScope {
+  if (pick && !disabled[pick]) {
+    return pick;
+  }
+  if (!disabled[preferred]) {
+    return preferred;
+  }
+  // `preferred` when none is left: the dialog then says why and holds Save.
+  return (
+    RECURRENCE_SCOPE_OPTIONS.find((option) => !disabled[option.value])?.value ??
+    preferred
+  );
+}

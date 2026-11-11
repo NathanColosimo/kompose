@@ -1,32 +1,4 @@
-import {
-  buildGoogleEventRecurrenceRule,
-  type EventRecurrenceEnd,
-  type EventRecurrenceFrequency,
-  GOOGLE_EVENT_WEEKDAYS,
-  parseGoogleEventRecurrenceRule,
-} from "@kompose/state/google-event-recurrence";
-
 import { dateToDateString, pickerDateToTemporal } from "@/lib/temporal-utils";
-
-export type Frequency = EventRecurrenceFrequency;
-export type RecurrenceEnd = EventRecurrenceEnd;
-export const WEEKDAYS = GOOGLE_EVENT_WEEKDAYS;
-
-export function parseRecurrence(rule?: string): {
-  freq: Frequency;
-  byDay: string[];
-  end: RecurrenceEnd;
-} {
-  return parseGoogleEventRecurrenceRule(rule);
-}
-
-export function buildRecurrenceRule(
-  freq: Frequency,
-  byDay: string[],
-  end: RecurrenceEnd
-): string | null {
-  return buildGoogleEventRecurrenceRule(freq, byDay, end);
-}
 
 interface TemporalFormValues {
   allDay: boolean;
@@ -38,9 +10,6 @@ interface TemporalFormValues {
 
 interface TemporalPayload {
   endPayload: { date?: string; dateTime?: string; timeZone?: string };
-  isAllDay: boolean;
-  occurrenceStart: Date;
-  startDateTime: Date | null;
   startPayload: { date?: string; dateTime?: string; timeZone?: string };
 }
 
@@ -105,9 +74,6 @@ export function buildTemporalPayload(
 
   return {
     endPayload,
-    isAllDay: isAllDayEvent,
-    occurrenceStart: startDateTime ?? startDate,
-    startDateTime,
     startPayload,
   };
 }
