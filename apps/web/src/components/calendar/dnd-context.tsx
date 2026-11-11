@@ -263,6 +263,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
   const handleTaskMoveDrop = useCallback(
     (task: TaskSelectDecoded, startTime: Temporal.ZonedDateTime) => {
       const update = buildTaskMoveUpdate(task, startTime);
+      if (!update) {
+        return;
+      }
 
       // A dated series occurrence asks this-or-following; one moved to the
       // inbox has nothing following it.
@@ -354,6 +357,9 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
       start: Temporal.ZonedDateTime
     ) => {
       const update = buildGoogleMoveUpdate(data, start);
+      if (!update) {
+        return;
+      }
       if (data.event.recurringEventId) {
         setGooglePick(null);
         setPendingGoogleUpdate({ moved: true, occurrence: data.event, update });

@@ -19,10 +19,17 @@ export interface TaskDropUpdate {
   };
 }
 
+/** A drop back where the task already was changes nothing, so it returns null. */
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
   targetDateTime: Temporal.ZonedDateTime
-): TaskDropUpdate {
+): TaskDropUpdate | null {
+  if (
+    task.startDate?.equals(targetDateTime.toPlainDate()) &&
+    task.startTime?.equals(targetDateTime.toPlainTime())
+  ) {
+    return null;
+  }
   return {
     id: task.id,
     // Default scope; CalendarDndProvider asks for scope on recurring tasks.
@@ -60,7 +67,11 @@ export function buildTaskResizeUpdate({
     start: originalStart,
     target: targetDateTime,
   });
-  if (!range) {
+  if (
+    !range ||
+    (range.start.equals(originalStart) &&
+      durationInMinutes(range.start, range.end) === task.durationMinutes)
+  ) {
     return null;
   }
   return {
@@ -111,10 +122,14 @@ function buildGoogleUpdatePayload(
   };
 }
 
+/** A drop back where the event already was changes nothing, so it returns null. */
 export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
   start: Temporal.ZonedDateTime
-): UpdateGoogleEventInput {
+): UpdateGoogleEventInput | null {
+  if (start.equals(data.start)) {
+    return null;
+  }
   const durationMins = Math.round(
     data.end.since(data.start).total({ unit: "minutes" })
   );
@@ -142,7 +157,10 @@ export function buildGoogleResizeUpdate({
     start: data.start,
     target: targetDateTime,
   });
-  if (!range) {
+  if (
+    !range ||
+    (range.start.equals(data.start) && range.end.equals(data.end))
+  ) {
     return null;
   }
   return {
