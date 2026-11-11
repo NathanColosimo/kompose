@@ -48,6 +48,7 @@ Google events carry `start`/`end` as `ZonedDateTime` for duration calculations d
 
 - Body drag uses `task`/`google-event` types; the target time is `slotDateTime(getDropSlot(collisions))`.
 - Duration is preserved on move (end = start + duration).
+- A task's row and block drag only for a press that starts on them (`ownPresses` in `dnd/helpers.ts`). The task editor is rendered from them, and React bubbles a portal's events to its React parents, so a press inside the editor would otherwise start dragging the task.
 
 ## Resize behavior
 

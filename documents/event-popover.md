@@ -122,8 +122,8 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server.
 
 #### Error feedback
-- Failed saves, creates, moves and deletes use the app's normal error toast. A failed save keeps the editor and its draft open; a failed recurring delete keeps its scope dialog open.
-- The create popover (`EventCreationPopover`) closes on Save and creates in the background. With no calendar to write to, its Event tab says why and its Task tab works.
+- Failed saves, creates, moves and deletes use the app's normal error toast. A failure keeps the editor and its draft open; a failed recurring delete keeps its scope dialog open.
+- The create popover (`EventCreationPopover`) waits for event creates ("Saving…", read-only) and keeps failed event drafts. Task creates close immediately and use optimistic task mutations. With no calendar to write to, it opens on Task and its Event tab says why.
 
 ### Manual test checklist
 

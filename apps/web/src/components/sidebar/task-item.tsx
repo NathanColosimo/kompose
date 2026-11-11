@@ -2,24 +2,38 @@
 
 import { useDraggable } from "@dnd-kit/core";
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
-import { timezoneAtom } from "@kompose/state/atoms/current-date";
+import {
+  timezoneAtom,
+  todayPlainDateAtom,
+} from "@kompose/state/atoms/current-date";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
-import { formatDuration } from "@kompose/state/temporal-utils";
+import {
+  formatDuration,
+  formatScheduledAt,
+} from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarClock, CalendarDays, Clock } from "lucide-react";
 import { memo, useCallback } from "react";
-import { formatPlainDate, formatTime } from "@/lib/temporal-utils";
+import { Temporal } from "temporal-polyfill";
+import { ownPresses } from "@/components/calendar/dnd/helpers";
+import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
+import { tagIconMap } from "../tags/tag-icon-map";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
-import { Badge } from "../ui/badge";
 import { Checkbox } from "../ui/checkbox";
 
 interface TaskItemProps {
+  /** A tag not to show, because the list is already that tag's. */
+  hiddenTagId?: string;
   task: TaskSelectDecoded;
 }
 
-export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
+export const TaskItem = memo(function TaskItemInner({
+  hiddenTagId,
+  task,
+}: TaskItemProps) {
   const timeZone = useAtomValue(timezoneAtom);
+  const today = useAtomValue(todayPlainDateAtom);
 
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     data: {
@@ -31,18 +45,14 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
 
   const { updateTask } = useTasks();
 
-  const handleStatusToggle = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const newStatus = task.status === "done" ? "todo" : "done";
-      updateTask.mutate({
-        id: task.id,
-        scope: "this",
-        task: { status: newStatus },
-      });
-    },
-    [task.id, task.status, updateTask]
-  );
+  const handleStatusToggle = useCallback(() => {
+    const newStatus = task.status === "done" ? "todo" : "done";
+    updateTask.mutate({
+      id: task.id,
+      scope: "this",
+      task: { status: newStatus },
+    });
+  }, [task.id, task.status, updateTask]);
 
   const scheduledZdt =
     task.startDate && task.startTime
@@ -50,66 +60,96 @@ export const TaskItem = memo(function TaskItemInner({ task }: TaskItemProps) {
       : null;
 
   const isDone = task.status === "done";
+  const isPastDue =
+    !isDone &&
+    task.dueDate !== null &&
+    Temporal.PlainDate.compare(task.dueDate, today) < 0;
 
+  // The row drags (pointer only); its checkbox and the button that opens
+  // the editor sit side by side, so neither control holds the other. The
+  // button's ::after stretches over the row, so a click anywhere opens it,
+  // and the button reaches the row's right edge, where the editor opens.
   return (
-    <TaskEditPopover surface="sidebar" task={task}>
-      <div
-        className={cn(
-          "group flex cursor-grab items-start gap-3 border-b px-4 py-3 transition-colors last:border-b-0",
-          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          // Hide original when dragging - DragOverlay shows the preview
-          isDragging ? "opacity-0" : "",
-          scheduledZdt ? "opacity-60" : ""
-        )}
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-      >
-        <Checkbox
-          checked={isDone}
-          className="mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground/50 transition-colors group-hover:border-foreground"
-          onClick={handleStatusToggle}
-        />
+    <div
+      className={cn(
+        "group relative flex cursor-grab items-start gap-2.5 rounded-md py-2 pl-2 transition-colors",
+        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        // Hide original when dragging - DragOverlay shows the preview
+        isDragging ? "opacity-0" : ""
+      )}
+      ref={setNodeRef}
+      {...ownPresses(listeners)}
+    >
+      <Checkbox
+        aria-label={`Done: ${task.title}`}
+        checked={isDone}
+        className="z-10 mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground transition-colors group-hover:border-foreground"
+        onClick={handleStatusToggle}
+      />
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <TaskEditPopover surface="sidebar" task={task}>
+        <button
+          // dnd-kit's drag instructions (set on DndContext).
+          aria-describedby={attributes["aria-describedby"]}
+          className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 pr-2 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+          type="button"
+        >
           <span
             className={cn(
-              "font-medium text-sm leading-tight",
+              "text-sm leading-snug",
               isDone ? "text-muted-foreground line-through" : ""
             )}
           >
             {task.title}
           </span>
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="secondary">
+          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums">
+            <span className="flex items-center gap-1">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
-            </Badge>
+            </span>
+
+            {scheduledZdt ? (
+              <span className="flex items-center gap-1">
+                <CalendarClock className="size-3" />
+                {formatScheduledAt(scheduledZdt, today)}
+              </span>
+            ) : null}
 
             {task.dueDate ? (
-              <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="outline">
+              <span
+                className={cn(
+                  "flex items-center gap-1",
+                  isPastDue ? "text-destructive" : ""
+                )}
+              >
                 <CalendarDays className="size-3" />
+                Due{" "}
                 {formatPlainDate(task.dueDate, {
                   day: "numeric",
                   month: "short",
                 })}
-              </Badge>
+                {/* Tag and Inbox lists have no Overdue heading to say so. */}
+                {isPastDue ? <span className="sr-only">(overdue)</span> : null}
+              </span>
             ) : null}
-
-            {scheduledZdt ? (
-              <Badge className="h-5 gap-1 px-1.5 text-[10px]" variant="default">
-                <CalendarClock className="size-3" />
-                {formatTime(scheduledZdt, {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  weekday: "short",
-                })}
-              </Badge>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </TaskEditPopover>
+            {task.tags
+              .filter((tag) => tag.id !== hiddenTagId)
+              .map((tag) => {
+                const TagIcon = tagIconMap[tag.icon];
+                return (
+                  <span
+                    className="flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
+                    key={tag.id}
+                  >
+                    <TagIcon aria-hidden className="size-3 shrink-0" />
+                    <span className="truncate">{tag.name}</span>
+                  </span>
+                );
+              })}
+          </span>
+        </button>
+      </TaskEditPopover>
+    </div>
   );
 });

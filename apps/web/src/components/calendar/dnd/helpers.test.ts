@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { Temporal } from "temporal-polyfill";
-import { clipToDay, resizedRange } from "./helpers";
+import { clipToDay, ownPresses, resizedRange } from "./helpers";
 
 const zone = "America/New_York";
 const at = (date: string, time: string) =>
@@ -131,5 +131,29 @@ describe("clipToDay", () => {
         start: at("2026-11-10", "00:00"),
       })
     );
+  });
+});
+
+describe("ownPresses", () => {
+  // A row and what a press can land on: its own child, or an editor's
+  // content, which is rendered elsewhere on the page (a portal).
+  const child = {};
+  const inEditor = {};
+  const row = { contains: (other: unknown) => other === child };
+  const pressesReaching = (target: object) => {
+    const reached: unknown[] = [];
+    const listeners = ownPresses({
+      onPointerDown: (event: unknown) => reached.push(event),
+    });
+    listeners?.onPointerDown?.({ currentTarget: row, target });
+    return reached.length;
+  };
+
+  test("passes a press inside the element to its drag listener", () => {
+    expect(pressesReaching(child)).toBe(1);
+  });
+
+  test("drops a press that bubbled up from an editor's portal", () => {
+    expect(pressesReaching(inEditor)).toBe(0);
   });
 });

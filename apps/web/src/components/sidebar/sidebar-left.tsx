@@ -11,11 +11,13 @@ import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { useAtom, useAtomValue } from "jotai";
 import type { LucideIcon } from "lucide-react";
-import { CalendarClock, Inbox } from "lucide-react";
+import { CalendarClock, CalendarDays, Inbox } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import { type ComponentProps, useEffect, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +34,7 @@ import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import {
   defaultSidebarLeftViewSelection,
+  isNarrowViewportAtom,
   type SidebarLeftBaseViewId,
   sidebarLeftViewSelectionAtom,
 } from "@/state/sidebar";
@@ -118,20 +121,76 @@ function formatDateSidebarEmptyMessage(dateTitle: string) {
   return `Nothing for ${normalizedTitle}.`;
 }
 
-function renderEmptyMessage(message: string) {
-  return <div className="p-4 text-muted-foreground text-sm">{message}</div>;
+const ADD_OR_DROP_HINT =
+  "Use + above to add a task, or drag one here from the calendar.";
+
+function renderEmptyMessage(message: string, hint = ADD_OR_DROP_HINT) {
+  return (
+    <div className="px-4 py-6 text-muted-foreground text-sm">
+      <p>{message}</p>
+      <p className="mt-1 text-xs">{hint}</p>
+    </div>
+  );
 }
 
 function renderSidebarLoadingContent() {
   const loadingKeys = ["one", "two", "three", "four", "five", "six"] as const;
 
   return (
-    <div className="flex flex-col p-2">
+    <div aria-hidden className="flex flex-col gap-0.5 px-2 pt-2">
       {loadingKeys.map((key) => (
-        <div
-          className="mx-2 my-1.5 h-12 rounded-md bg-muted/40"
-          key={`sidebar-loading-${key}`}
-        />
+        <div className="flex items-start gap-3 px-2 py-2.5" key={key}>
+          <div className="mt-0.5 size-4 shrink-0 rounded-full bg-muted/60" />
+          <div className="flex flex-1 flex-col gap-1.5">
+            <div className="h-3.5 w-3/4 rounded-sm bg-muted/60" />
+            <div className="h-3 w-1/3 rounded-sm bg-muted/40" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface TaskSection {
+  label: string;
+  tasks: TaskSelectDecoded[];
+  tone?: "overdue";
+}
+
+function renderTaskSections({
+  emptyHint,
+  emptyMessage,
+  hiddenTagId,
+  sections,
+}: {
+  emptyHint?: string;
+  emptyMessage: string;
+  /** In a tag's own list, rows don't repeat that tag. */
+  hiddenTagId?: string;
+  sections: TaskSection[];
+}) {
+  const visibleSections = sections.filter(({ tasks }) => tasks.length > 0);
+  if (visibleSections.length === 0) {
+    return renderEmptyMessage(emptyMessage, emptyHint);
+  }
+
+  return (
+    <div className="flex flex-col gap-3 px-2 pt-2 pb-4">
+      {visibleSections.map(({ label, tasks, tone }) => (
+        <section aria-label={label} key={label}>
+          <h3
+            className={cn(
+              "flex items-baseline gap-1.5 px-2 pt-1 pb-1 font-medium text-xs",
+              tone === "overdue" ? "text-destructive" : "text-muted-foreground"
+            )}
+          >
+            {label}
+            <span className="font-normal tabular-nums">{tasks.length}</span>
+          </h3>
+          {tasks.map((task) => (
+            <TaskItem hiddenTagId={hiddenTagId} key={task.id} task={task} />
+          ))}
+        </section>
       ))}
     </div>
   );
@@ -139,9 +198,15 @@ function renderSidebarLoadingContent() {
 
 function renderInboxContent(inboxTasks: TaskSelectDecoded[]) {
   if (inboxTasks.length === 0) {
-    return renderEmptyMessage("No tasks in inbox.");
+    return renderEmptyMessage("Your inbox is empty.");
   }
-  return inboxTasks.map((task) => <TaskItem key={task.id} task={task} />);
+  return (
+    <div className="flex flex-col px-2 pt-2 pb-4">
+      {inboxTasks.map((task) => (
+        <TaskItem key={task.id} task={task} />
+      ))}
+    </div>
+  );
 }
 
 function renderTodayContent({
@@ -157,117 +222,39 @@ function renderTodayContent({
   doneTasks: TaskSelectDecoded[];
   unplannedTasks: TaskSelectDecoded[];
 }) {
-  const hasOverdue = overdueTasks.length > 0;
-  const hasPlanned = plannedTasks.length > 0;
-  const hasUnplanned = unplannedTasks.length > 0;
-  const hasDone = doneTasks.length > 0;
-
-  if (!(hasOverdue || hasPlanned || hasUnplanned || hasDone)) {
-    return renderEmptyMessage(formatDateSidebarEmptyMessage(dateTitle));
-  }
-
-  return (
-    <div className="flex flex-col">
-      {hasOverdue && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Overdue
-          </div>
-          {overdueTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
-      {hasUnplanned && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Unplanned
-          </div>
-          {unplannedTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
-      {hasPlanned && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Planned
-          </div>
-          {plannedTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
-      {hasDone && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Done
-          </div>
-          {doneTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return renderTaskSections({
+    emptyMessage: formatDateSidebarEmptyMessage(dateTitle),
+    sections: [
+      { label: "Overdue", tasks: overdueTasks, tone: "overdue" },
+      { label: "Unplanned", tasks: unplannedTasks },
+      { label: "Planned", tasks: plannedTasks },
+      { label: "Done", tasks: doneTasks },
+    ],
+  });
 }
 
 function renderTagContent({
   overdueTasks,
+  tagId,
   todoTasks,
   doneTasks,
 }: {
   overdueTasks: TaskSelectDecoded[];
+  tagId?: string;
   todoTasks: TaskSelectDecoded[];
   doneTasks: TaskSelectDecoded[];
 }) {
-  const hasOverdue = overdueTasks.length > 0;
-  const hasTodo = todoTasks.length > 0;
-  const hasDone = doneTasks.length > 0;
-
-  if (!(hasOverdue || hasTodo || hasDone)) {
-    return renderEmptyMessage("No tasks for this tag.");
-  }
-
-  return (
-    <div className="flex flex-col">
-      {hasOverdue && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Overdue
-          </div>
-          {overdueTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
-      {hasTodo && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Todo
-          </div>
-          {todoTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-
-      {hasDone && (
-        <div>
-          <div className="px-4 py-2 font-medium text-muted-foreground text-xs uppercase tracking-wide">
-            Done
-          </div>
-          {doneTasks.map((task) => (
-            <TaskItem key={task.id} task={task} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return renderTaskSections({
+    // Dropping on a tag list unschedules a task without tagging it.
+    emptyHint: "Use + above to add a task with this tag.",
+    emptyMessage: "No tasks with this tag yet.",
+    hiddenTagId: tagId,
+    sections: [
+      { label: "Overdue", tasks: overdueTasks, tone: "overdue" },
+      { label: "To do", tasks: todoTasks },
+      { label: "Done", tasks: doneTasks },
+    ],
+  });
 }
 
 function getSidebarContent({
@@ -307,7 +294,9 @@ function getSidebarContent({
 
   if (error) {
     return (
-      <div className="p-4 text-destructive text-sm">Failed to load tasks</div>
+      <p className="px-4 py-6 text-destructive text-sm" role="alert">
+        Couldn't load your tasks. Check your connection and reload.
+      </p>
     );
   }
 
@@ -315,6 +304,7 @@ function getSidebarContent({
     return renderTagContent({
       doneTasks: tagDoneTasks,
       overdueTasks: tagOverdueTasks,
+      tagId: activeItem.tagId,
       todoTasks: tagTodoTasks,
     });
   }
@@ -341,7 +331,10 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
   );
   const currentDate = useAtomValue(currentDateAtom);
   const today = useAtomValue(todayPlainDateAtom);
-  const { setOpen } = useSidebar();
+  const { open, setOpen } = useSidebar();
+  const isNarrow = useAtomValue(isNarrowViewportAtom);
+  const pathname = usePathname();
+  const { push } = useRouter();
   const { tagsQuery } = useTags();
   const dateTitle = useMemo(
     () => formatDateSidebarTitle(currentDate, today),
@@ -431,7 +424,10 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         activeItem,
         dateTitle,
         doneTasks,
-        error: tasksQuery.error,
+        // A failed refresh keeps the tasks already loaded (the query's error
+        // toast offers a retry); the error replaces the list only when
+        // there is nothing to show.
+        error: tasksQuery.data === undefined ? tasksQuery.error : null,
         inboxTasks,
         isLoading: isSidebarLoading,
         overdueTasks,
@@ -449,6 +445,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
       isSidebarLoading,
       overdueTasks,
       plannedTasks,
+      tasksQuery.data,
       tasksQuery.error,
       tagDoneTasks,
       tagOverdueTasks,
@@ -473,19 +470,36 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           <SidebarGroup>
             <SidebarGroupContent className="px-0">
               <SidebarMenu>
-                {navItems.map((item) => (
-                  <SidebarMenuItem key={item.id}>
+                {navItems.map((item, index) => (
+                  <SidebarMenuItem
+                    className={cn(
+                      item.type === "tag" &&
+                        navItems[index - 1]?.type === "base"
+                        ? "mt-2 border-sidebar-border border-t pt-2"
+                        : ""
+                    )}
+                    key={item.id}
+                  >
                     <SidebarMenuButton
-                      className="justify-center gap-0 px-0"
+                      className="justify-center gap-0 px-0 text-muted-foreground data-[active=true]:text-sidebar-accent-foreground"
                       isActive={activeItem?.id === item.id}
                       onClick={() => {
+                        // The open list's own icon hides the panel; any
+                        // other icon shows that list.
+                        if (open && activeItem?.id === item.id) {
+                          setOpen(false);
+                          return;
+                        }
                         setActiveViewSelection(
                           getSidebarSelectionFromNavItem(item)
                         );
                         setOpen(true);
                       }}
                       tooltip={{
-                        children: item.title,
+                        children:
+                          open && activeItem?.id === item.id
+                            ? `Hide ${item.title}`
+                            : item.title,
                         hidden: false,
                       }}
                     >
@@ -500,7 +514,14 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         </SidebarContent>
       </Sidebar>
 
-      <Sidebar className="min-w-0 flex-1" collapsible="none" mobile="inline">
+      {/* Folded, the panel is out of the tab order and hidden from screen
+          readers; the icon rail stays. */}
+      <Sidebar
+        className="min-w-0 flex-1"
+        collapsible="none"
+        inert={!open}
+        mobile="inline"
+      >
         <div
           className={cn(
             "flex size-full min-h-[200px] flex-1 flex-col transition-colors",
@@ -508,12 +529,12 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
           )}
           ref={setNodeRef}
         >
-          <SidebarHeader className="h-12 shrink-0 border-b">
-            <div className="flex size-full items-center justify-between gap-2 px-4">
-              <div className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
+          <SidebarHeader className="h-12 shrink-0 justify-center border-b p-0">
+            <div className="flex items-center justify-between gap-2 pr-2 pl-4">
+              <h2 className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
                 {activeItem?.title ??
                   (activeViewSelection.type === "tag" ? "Tag" : "Inbox")}
-              </div>
+              </h2>
               <CreateTaskForm
                 defaultStartDateString={
                   activeViewSelection.type === "base" &&
@@ -527,6 +548,24 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                     : []
                 }
               />
+              {/* In a narrow window the list fills the view; this is the
+                  visible way to the calendar, from any page. */}
+              {isNarrow ? (
+                <Button
+                  aria-label="Show calendar"
+                  className="size-8 text-muted-foreground"
+                  onClick={() => {
+                    setOpen(false);
+                    if (pathname !== "/dashboard") {
+                      push("/dashboard");
+                    }
+                  }}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <CalendarDays />
+                </Button>
+              ) : null}
             </div>
           </SidebarHeader>
           <SidebarContent className="flex-1">

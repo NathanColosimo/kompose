@@ -6,23 +6,38 @@ Unified command palette (`Cmd+K`) for quick actions in Kompose.
 
 | Action | Description |
 | ------ | ----------- |
-| Search Tasks | Search uncompleted, non-recurring tasks by title. Select to navigate and edit. |
-| Create Task | Quick task creation from free text, read by an on-device model |
+| Search tasks | Search open tasks by title or description. Select one to go to it and open its editor. |
+| Create task | Quick task creation from free text, read by an on-device model |
+| Create event | Opens the calendar's create popover, like the **c** key (shown as its shortcut); see [hotkeys.md](./hotkeys.md) for where it starts. In the in-page bar only: the desktop popup is a separate window from the calendar. |
+
+Picking Search tasks or Create task with the mouse keeps typing in the
+search field, so the page's shortcuts (such as **c**) don't take the keys.
 
 ## Search Tasks Behavior
 
-- Only searches uncompleted tasks (`status !== "done"`)
-- Excludes recurring tasks (no `seriesMasterId`)
-- Shows location indicator: Calendar (with date) or Inbox
+- Searches open tasks (`status !== "done"`) that do not belong to a series. Recurring tasks show on the calendar instead.
+- Each result shows where it opens: the calendar (with its date), Today (or
+  Tomorrow, Yesterday, a date), or Inbox.
 - Selecting a task:
-  - Resolves a single destination before opening anything:
+  - Resolves a single destination before opening anything
+    (`resolveTaskSearchDestination`). Every open task has one:
     - Calendar for tasks with both `startDate` and `startTime`
-    - Inbox for non-recurring tasks without `startDate`
+    - Inbox for tasks without `startDate`, including a series occurrence
+      moved there
     - Today for tasks with a start date but no start time, navigating to that date
-    - Today for other tasks matching its overdue, unplanned, or done sections
   - If scheduled on calendar: navigates to the task's date and opens only the calendar popover
   - If routed to sidebar: switches the left sidebar to the canonical base view and opens only the sidebar popover
-  - Tasks that are searchable but not currently mounted in Calendar, Inbox, or Today are treated as deferred edge cases and keep fallback behavior for now
+  - The editor scrolls its task into view as it opens and follows it, so a
+    task outside the calendar's visible hours or scrolled out of the list
+    still gets an editor on screen.
+
+### Narrow windows
+
+Below 768px an open task list fills the view and the calendar behind it is
+inert (see [task-popover.md](./task-popover.md#phone-widths)). "Create
+event", the **c** key, and opening a task on the calendar (from search or
+the desktop popup) fold the list first, so their popovers anchor on screen.
+Opening an Inbox or Today task opens that list.
 
 ## Create Task
 
