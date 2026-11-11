@@ -64,11 +64,11 @@ let quitting = false;
 let mainWasFocused = false;
 // Set when the popup opened over a hidden app and kept the main window out.
 let restoreMainOnActivate = false;
-// The popup loads hidden at startup; a shortcut press before its first paint
-// shows it once painted.
+// The popup loads hidden at startup; keep the requested visibility while it paints.
 let commandBarReady = false;
 let commandBarRequested = false;
 let pendingTask: DesktopTaskSelection | null = null;
+let taskListenerReady = false;
 let readyUpdate: string | null = null;
 let updater: AppUpdater | null = null;
 // Where the popup's top-left belongs while shown. Growing near the bottom of
@@ -280,17 +280,17 @@ function createMainWindow() {
     }
   });
   window.on("closed", () => {
+    taskListenerReady = false;
     mainWindow = null;
   });
-  window.webContents.on("did-finish-load", () => {
-    if (pendingTask) {
-      send(window, "onOpenTask", pendingTask);
-      pendingTask = null;
+  window.webContents.on(
+    "did-start-navigation",
+    (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) {
+        taskListenerReady = false;
+      }
     }
-    if (readyUpdate) {
-      send(window, "onUpdateReady", readyUpdate);
-    }
-  });
+  );
   return window;
 }
 
@@ -318,7 +318,6 @@ function createCommandWindow() {
   window.once("ready-to-show", () => {
     commandBarReady = true;
     if (commandBarRequested) {
-      commandBarRequested = false;
       window.show();
       window.focus();
     }
@@ -332,12 +331,14 @@ function createCommandWindow() {
     }
   });
   window.on("hide", () => {
+    commandBarRequested = false;
     if (commandBarDragged && commandBarAnchor) {
       settings.set("commandBarPosition", commandBarAnchor);
       commandBarDragged = false;
     }
   });
   window.on("closed", () => {
+    commandBarRequested = false;
     commandWindow = null;
   });
   return window;
@@ -372,10 +373,11 @@ function showMain() {
 }
 
 function hideCommandBar() {
+  commandBarRequested = false;
   commandWindow?.hide();
 }
 function toggleCommandBar() {
-  if (commandWindow?.isVisible()) {
+  if (commandBarRequested) {
     dismissCommandBar();
     return;
   }
@@ -400,11 +402,10 @@ function toggleCommandBar() {
           y: workArea.y + workArea.height * 0.25,
         };
   placeCommandBar(commandWindow, commandWindow.getBounds().height);
+  commandBarRequested = true;
   if (commandBarReady) {
     commandWindow.show();
     commandWindow.focus();
-  } else {
-    commandBarRequested = true;
   }
 }
 function dismissCommandBar() {
@@ -479,6 +480,17 @@ function registerBridge() {
     showMain();
   });
   handle("getShortcut", () => settings.get("shortcut"));
+  handle("getReadyUpdate", () => readyUpdate);
+  handle("setTaskListenerReady", (ready, window) => {
+    if (window !== mainWindow || typeof ready !== "boolean") {
+      return;
+    }
+    taskListenerReady = ready;
+    if (ready && pendingTask) {
+      send(window, "onOpenTask", pendingTask);
+      pendingTask = null;
+    }
+  });
   handle("setShortcut", (id) => applyShortcut(id));
   handle("dismissCommandBar", () => dismissCommandBar());
   handle("resizeCommandBar", (height, window) => {
@@ -495,10 +507,10 @@ function registerBridge() {
   handle("openTask", (selection) => {
     hideCommandBar();
     showMain();
-    if (!mainWindow || mainWindow.webContents.isLoading()) {
-      pendingTask = selection as DesktopTaskSelection;
-    } else {
+    if (mainWindow && taskListenerReady) {
       send(mainWindow, "onOpenTask", selection as DesktopTaskSelection);
+    } else {
+      pendingTask = selection as DesktopTaskSelection;
     }
   });
   handle("installUpdate", () => {

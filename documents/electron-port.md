@@ -24,12 +24,18 @@ development certificate works without extra setup.
 `apps/electron/release/mac-arm64` for local testing. Development runs use a
 separate `Kompose Dev` profile, so they never share a session with a release.
 
-## Bridge compatibility
+## Popup and event delivery
 
-Installed apps keep their preload until they update, while the web app always
-ships the latest code. Only add bridge members, and feature-detect new ones in
-the web app. Removing or changing one needs a desktop release that every user
-has installed first.
+The desktop and web apps are updated together; bridge methods are required.
+
+Shortcut presses toggle the popup's requested visibility, even before its first
+paint. Dismissal clears that request.
+
+Task selections wait for the dashboard to install its listener and call
+`setTaskListenerReady(true)`. Cleanup and main-frame navigation reset readiness.
+Only the latest pending selection is kept. Downloaded updates stay in the main
+process; the header subscribes to updates, then reads `getReadyUpdate()` so it
+also sees an update downloaded before it mounted.
 
 ## Releases
 

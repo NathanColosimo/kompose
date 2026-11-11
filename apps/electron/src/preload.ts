@@ -26,6 +26,7 @@ function subscribe<T>(
 
 const desktop: DesktopBridge = {
   dismissCommandBar: () => invoke("dismissCommandBar"),
+  getReadyUpdate: () => invoke("getReadyUpdate"),
   getShortcut: () => invoke("getShortcut"),
   installUpdate: () => invoke("installUpdate"),
   onOpenTask: (callback) => subscribe("onOpenTask", callback),
@@ -33,6 +34,7 @@ const desktop: DesktopBridge = {
   openTask: (selection) => invoke("openTask", selection),
   resizeCommandBar: (height) => invoke("resizeCommandBar", height),
   setShortcut: (id) => invoke("setShortcut", id),
+  setTaskListenerReady: (ready) => invoke("setTaskListenerReady", ready),
   showMainWindow: () => invoke("showMainWindow"),
 };
 contextBridge.exposeInMainWorld("komposeDesktop", desktop);
