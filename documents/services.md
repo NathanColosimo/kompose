@@ -394,7 +394,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 ### Caching
 
 - Per-day raw data cached in Redis via `WhoopCacheService`.
-- Today's data: 15-minute TTL. Past days: 7-day TTL.
+- Today, empty days, and unfinished WHOOP days: 15-minute TTL. Complete past days: 7-day TTL.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
 
 ### Errors (`Schema.TaggedError`)
