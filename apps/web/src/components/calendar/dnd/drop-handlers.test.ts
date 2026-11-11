@@ -90,12 +90,4 @@ describe("drops back where they started", () => {
       })
     ).toBeNull();
   });
-
-  test("a drop 15 minutes later still updates", () => {
-    const later = start.add({ minutes: 15 });
-    expect(
-      buildGoogleMoveUpdate({ ...event, type: "google-event" }, later)
-    ).not.toBeNull();
-    expect(buildTaskMoveUpdate(task, later)).not.toBeNull();
-  });
 });

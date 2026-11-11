@@ -69,7 +69,7 @@ export function buildTaskResizeUpdate({
   });
   if (
     !range ||
-    (range.start.epochNanoseconds === originalStart.epochNanoseconds &&
+    (range.start.equals(originalStart) &&
       durationInMinutes(range.start, range.end) === task.durationMinutes)
   ) {
     return null;
@@ -127,7 +127,7 @@ export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
   start: Temporal.ZonedDateTime
 ): UpdateGoogleEventInput | null {
-  if (start.epochNanoseconds === data.start.epochNanoseconds) {
+  if (start.equals(data.start)) {
     return null;
   }
   const durationMins = Math.round(
@@ -159,8 +159,7 @@ export function buildGoogleResizeUpdate({
   });
   if (
     !range ||
-    (range.start.epochNanoseconds === data.start.epochNanoseconds &&
-      range.end.epochNanoseconds === data.end.epochNanoseconds)
+    (range.start.equals(data.start) && range.end.equals(data.end))
   ) {
     return null;
   }
