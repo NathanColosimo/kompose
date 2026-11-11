@@ -21,12 +21,10 @@ export interface DesktopTaskSelection {
   taskId: string;
 }
 
-/**
- * Only add members and feature-detect them: installed apps can have older bridges.
- * See documents/electron-port.md for compatibility and release policy.
- */
+/** The desktop and web apps are updated together. */
 export interface DesktopBridge {
   dismissCommandBar: () => Promise<void>;
+  getReadyUpdate: () => Promise<string | null>;
   getShortcut: () => Promise<DesktopCommandBarShortcutPresetId>;
   installUpdate: () => Promise<void>;
   /** Delivers a command bar selection to the main window. */
@@ -38,6 +36,7 @@ export interface DesktopBridge {
   openTask: (selection: DesktopTaskSelection) => Promise<void>;
   resizeCommandBar: (height: number) => Promise<void>;
   setShortcut: (id: DesktopCommandBarShortcutPresetId) => Promise<void>;
+  setTaskListenerReady: (ready: boolean) => Promise<void>;
   showMainWindow: () => Promise<void>;
 }
 export type DesktopInvokeMethod = {

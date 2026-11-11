@@ -494,11 +494,19 @@ function CreateTagRow({
 /** Shown once the desktop app has downloaded an update. */
 function UpdatePromptButton() {
   const [readyVersion, setReadyVersion] = useState<string | null>(null);
-  useMountEffect(() =>
-    isDesktopRuntime()
-      ? desktopBridge().onUpdateReady(setReadyVersion)
-      : undefined
-  );
+  useMountEffect(() => {
+    if (!isDesktopRuntime()) {
+      return;
+    }
+    const bridge = desktopBridge();
+    const unsubscribe = bridge.onUpdateReady(setReadyVersion);
+    bridge.getReadyUpdate().then((version) => {
+      if (version) {
+        setReadyVersion(version);
+      }
+    });
+    return unsubscribe;
+  });
 
   if (!readyVersion) {
     return null;
