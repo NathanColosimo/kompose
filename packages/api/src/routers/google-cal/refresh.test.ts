@@ -72,6 +72,7 @@ const cachedAfter = <A, E>(
         Effect.ensuring(
           invalidateGoogleCalendarEvents({
             accountId: account,
+            linkedAccountId: account,
             eventId: occurrence,
             userId: user,
             ...params,

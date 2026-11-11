@@ -10,7 +10,7 @@
     }
   },
   "scripts": {
-    "test": "bun test src",
+    "test": "bun test --isolate src",
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {

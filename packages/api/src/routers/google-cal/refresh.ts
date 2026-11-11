@@ -7,13 +7,14 @@ export const invalidateGoogleCalendarEvents = Effect.fn(
   "invalidateGoogleCalendarEvents"
 )(function* (params: {
   accountId: string;
+  linkedAccountId: string;
   /** The event's calendar first, then any other the write touched. */
   calendarIds: [string, ...string[]];
   eventId?: string;
   recurringEventId?: string;
   userId: string;
 }) {
-  const { accountId, calendarIds, userId } = params;
+  const { accountId, calendarIds, linkedAccountId, userId } = params;
   const cache = yield* GoogleCalendarCacheService;
   const eventIds = [params.eventId, params.recurringEventId].filter(
     (id) => id !== undefined
@@ -21,10 +22,10 @@ export const invalidateGoogleCalendarEvents = Effect.fn(
   yield* Effect.all(
     [
       ...calendarIds.map((calendarId) =>
-        cache.invalidateEventLists(userId, accountId, calendarId)
+        cache.invalidateEventLists(userId, linkedAccountId, calendarId)
       ),
       ...eventIds.map((eventId) =>
-        cache.invalidateEvent(userId, accountId, calendarIds[0], eventId)
+        cache.invalidateEvent(userId, linkedAccountId, calendarIds[0], eventId)
       ),
     ],
     { concurrency: "unbounded", discard: true }

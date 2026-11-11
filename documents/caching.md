@@ -7,9 +7,11 @@ Google Calendar API data is cached in Redis to reduce latency. Webhooks handle r
 ```
 Client request
   ▼
-Cache lookup (Redis GET, key scoped to the user)
+getLinkedAccount (ownership + current linkage check)
+  ▼
+Cache lookup (Redis GET, key scoped to the user and local account row)
   ├── HIT  → return cached data
-  └── MISS → getGoogleCalendar (ownership check + access token)
+  └── MISS → getGoogleCalendar (access token)
              → fetch from Google API → populate cache → return
 ```
 
@@ -146,35 +148,30 @@ do {
 
 ## User-Scoped Keys
 
-Every cache key includes the user ID after its resource prefix (Google and WHOOP alike). An entry is written only after that user's own `getLinkedAccessToken` succeeded, which looks the account row up by user and so checks ownership. A hit therefore needs no ownership check or token, and a request for another user's account can only miss and then fail the lookup:
+Every cache key includes the user ID and the local linked account row ID. Each
+request resolves that row with `getLinkedAccount` before accessing Redis. Missing
+or ambiguous rows fail with `LinkedAccountError`, including on cache hits. A
+cache hit does not fetch or refresh an OAuth token.
 
-```ts
-// 1. Cache lookup (scoped to this user)
-const cached = yield* cache.getCachedCalendars(userId, accountId);
-if (Option.isSome(cached)) return cached.value;
-
-// 2. On a miss: ownership check + access token, then the API
-const google = yield* getGoogleCalendar(userId, accountId);
-const data = yield* google.listCalendars();
-
-// 3. Populate cache
-yield* cache.setCachedCalendars(userId, accountId, data);
-```
-
-Webhook invalidation uses the subscription's `userId`. If two users link the same Google account, each has their own entries.
+Unlink deletes the row, so later requests cannot read cached data. Relinking
+creates a new row ID and fresh cache keys. In-flight reads keep their original
+row ID when writing; they cannot fill the new account's cache. Old entries
+expire by TTL.
 
 ## Account ID Invariant
 
-Google Calendar cache keys use the Google provider account id (`account.account_id`),
-which is also the id used by client query keys and oRPC Google Calendar inputs.
-Better Auth 1.7 token, profile, and unlink selectors instead use the local
-`account.id`. `getLinkedAccessToken` (`packages/api/src/lib/linked-account.ts`)
-resolves the provider ID to the user's row before calling Better Auth; keep provider IDs in calendar
-preferences, bootstrap `accountId` fields, cache keys, and realtime events.
-Webhook subscription rows additionally store the Better Auth internal account row
-id (`webhook_subscription.account_id`) for database relations, but webhook cache
-invalidation and realtime payloads must use `webhook_subscription.provider_account_id`
-so they target the same keys as normal reads.
+Google Calendar inputs, preferences, bootstrap fields and realtime events use
+the Google provider account ID (`account.account_id`). Google and WHOOP cache
+methods instead receive the owned local row ID (`account.id`). In the key and
+method tables above, `{accountId}` denotes that local row ID.
+
+`getLinkedAccount` resolves the provider ID to the user's local row, then
+`getLinkedAccessToken` fetches a token for that exact linkage on a cache miss.
+Better Auth token, profile, and unlink selectors also use the local row ID.
+
+Webhook cache invalidation uses `webhook_subscription.account_id`, matching
+normal cache reads. Realtime payloads still use
+`webhook_subscription.provider_account_id`, matching client query keys.
 
 ---
 

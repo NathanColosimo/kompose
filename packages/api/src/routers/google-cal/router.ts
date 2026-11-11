@@ -4,7 +4,11 @@ import { implement } from "@orpc/server";
 import { Effect, Option } from "effect";
 import { requireAuth } from "../..";
 import type { Context } from "../../context";
-import { getLinkedAccessToken } from "../../lib/linked-account";
+import {
+  getLinkedAccessToken,
+  getLinkedAccount,
+  type LinkedAccount,
+} from "../../lib/linked-account";
 import { globalRateLimit } from "../../ratelimit";
 import { publishToUser } from "../../realtime/sync";
 import { GoogleCalendarCacheService } from "./cache";
@@ -13,14 +17,9 @@ import { NonEditableGoogleEventError } from "./errors";
 import { invalidateGoogleCalendarEvents } from "./refresh";
 
 const getGoogleCalendar = Effect.fn("getGoogleCalendar")(function* (
-  userId: string,
-  accountId: string
+  link: LinkedAccount
 ) {
-  const accessToken = yield* getLinkedAccessToken({
-    accountId,
-    providerId: "google",
-    userId,
-  });
+  const accessToken = yield* getLinkedAccessToken(link);
   return makeGoogleCalendarService(accessToken);
 });
 
@@ -67,12 +66,17 @@ const ensureGoogleEventEditable = (event: {
 export const googleCalRouter = os.router({
   calendars: {
     create: os.calendars.create.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
 
       const calendar = yield* google.createCalendar(input.calendar);
 
-      yield* cache.invalidateCalendars(context.user.id, input.accountId);
+      yield* cache.invalidateCalendars(context.user.id, link.id);
 
       yield* publishToUser(context.user.id, {
         payload: { accountId: input.accountId, calendarId: calendar.id },
@@ -83,19 +87,20 @@ export const googleCalRouter = os.router({
     }),
 
     delete: os.calendars.delete.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
 
       yield* google.deleteCalendar(input.calendarId);
 
       yield* Effect.all(
         [
-          cache.invalidateCalendars(context.user.id, input.accountId),
-          cache.invalidateAllEvents(
-            context.user.id,
-            input.accountId,
-            input.calendarId
-          ),
+          cache.invalidateCalendars(context.user.id, link.id),
+          cache.invalidateAllEvents(context.user.id, link.id, input.calendarId),
         ],
         { concurrency: "unbounded", discard: true }
       );
@@ -109,23 +114,28 @@ export const googleCalRouter = os.router({
     }),
 
     get: os.calendars.get.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
 
       const cached = yield* cache.getCachedCalendar(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId
       );
       if (Option.isSome(cached)) {
         return cached.value;
       }
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
       const calendar = yield* google.getCalendar(input.calendarId);
 
       yield* cache.setCachedCalendar(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId,
         calendar
       );
@@ -133,38 +143,41 @@ export const googleCalRouter = os.router({
       return calendar;
     }),
     list: os.calendars.list.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
 
-      const cached = yield* cache.getCachedCalendars(
-        context.user.id,
-        input.accountId
-      );
+      const cached = yield* cache.getCachedCalendars(context.user.id, link.id);
       if (Option.isSome(cached)) {
         return cached.value;
       }
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
       const calendars = yield* google.listCalendars();
 
-      yield* cache.setCachedCalendars(
-        context.user.id,
-        input.accountId,
-        calendars
-      );
+      yield* cache.setCachedCalendars(context.user.id, link.id, calendars);
 
       return calendars;
     }),
 
     update: os.calendars.update.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
 
       const calendar = yield* google.updateCalendar(
         input.calendarId,
         input.calendar
       );
 
-      yield* cache.invalidateCalendars(context.user.id, input.accountId);
+      yield* cache.invalidateCalendars(context.user.id, link.id);
 
       yield* publishToUser(context.user.id, {
         payload: { accountId: input.accountId, calendarId: input.calendarId },
@@ -177,20 +190,22 @@ export const googleCalRouter = os.router({
 
   colors: {
     list: os.colors.list.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
 
-      const cached = yield* cache.getCachedColors(
-        context.user.id,
-        input.accountId
-      );
+      const cached = yield* cache.getCachedColors(context.user.id, link.id);
       if (Option.isSome(cached)) {
         return cached.value;
       }
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
       const colors = yield* google.listColors();
 
-      yield* cache.setCachedColors(context.user.id, input.accountId, colors);
+      yield* cache.setCachedColors(context.user.id, link.id, colors);
 
       return colors;
     }),
@@ -198,10 +213,16 @@ export const googleCalRouter = os.router({
 
   events: {
     create: os.events.create.effect(function* ({ input, context }) {
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
+      const google = yield* getGoogleCalendar(link);
       return yield* google.createEvent(input.calendarId, input.event).pipe(
         Effect.ensuring(
           invalidateGoogleCalendarEvents({
+            linkedAccountId: link.id,
             accountId: input.accountId,
             calendarIds: [input.calendarId],
             userId: context.user.id,
@@ -211,7 +232,12 @@ export const googleCalRouter = os.router({
     }),
 
     delete: os.events.delete.effect(function* ({ input, context }) {
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
+      const google = yield* getGoogleCalendar(link);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
         input.eventId
@@ -223,6 +249,7 @@ export const googleCalRouter = os.router({
         .pipe(
           Effect.ensuring(
             invalidateGoogleCalendarEvents({
+              linkedAccountId: link.id,
               accountId: input.accountId,
               calendarIds: [input.calendarId],
               recurringEventId: currentEvent.recurringEventId,
@@ -236,11 +263,16 @@ export const googleCalRouter = os.router({
     }),
 
     get: os.events.get.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const cache = yield* GoogleCalendarCacheService;
 
       const cached = yield* cache.getCachedEvent(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId,
         input.eventId
       );
@@ -248,12 +280,12 @@ export const googleCalRouter = os.router({
         return cached.value;
       }
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
       const event = yield* google.getEvent(input.calendarId, input.eventId);
 
       yield* cache.setCachedEvent(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId,
         input.eventId,
         event
@@ -262,13 +294,18 @@ export const googleCalRouter = os.router({
       return event;
     }),
     list: os.events.list.effect(function* ({ input, context }) {
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
       const searchQuery = input.params.query?.toLowerCase();
 
       const cache = yield* GoogleCalendarCacheService;
 
       const cached = yield* cache.getCachedEvents(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId,
         input.params.timeMin,
         input.params.timeMax
@@ -280,7 +317,7 @@ export const googleCalRouter = os.router({
         return filterEventsBySearch(cached.value, searchQuery);
       }
 
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const google = yield* getGoogleCalendar(link);
       const events = yield* google.listEvents(
         input.calendarId,
         input.params.timeMin,
@@ -289,7 +326,7 @@ export const googleCalRouter = os.router({
 
       yield* cache.setCachedEvents(
         context.user.id,
-        input.accountId,
+        link.id,
         input.calendarId,
         input.params.timeMin,
         input.params.timeMax,
@@ -303,7 +340,12 @@ export const googleCalRouter = os.router({
     }),
 
     move: os.events.move.effect(function* ({ input, context }) {
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
+      const google = yield* getGoogleCalendar(link);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
         input.eventId
@@ -320,6 +362,7 @@ export const googleCalRouter = os.router({
         .pipe(
           Effect.ensuring(
             invalidateGoogleCalendarEvents({
+              linkedAccountId: link.id,
               accountId: input.accountId,
               calendarIds: [input.calendarId, input.destinationCalendarId],
               recurringEventId: currentEvent.recurringEventId,
@@ -333,7 +376,12 @@ export const googleCalRouter = os.router({
     }),
 
     update: os.events.update.effect(function* ({ input, context }) {
-      const google = yield* getGoogleCalendar(context.user.id, input.accountId);
+      const link = yield* getLinkedAccount({
+        accountId: input.accountId,
+        providerId: "google",
+        userId: context.user.id,
+      });
+      const google = yield* getGoogleCalendar(link);
       const currentEvent = yield* google.getEvent(
         input.calendarId,
         input.eventId
@@ -351,6 +399,7 @@ export const googleCalRouter = os.router({
         .pipe(
           Effect.ensuring(
             invalidateGoogleCalendarEvents({
+              linkedAccountId: link.id,
               accountId: input.accountId,
               calendarIds: [input.calendarId],
               recurringEventId: currentEvent.recurringEventId,

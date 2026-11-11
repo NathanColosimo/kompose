@@ -14,8 +14,8 @@ const CALENDARS_TTL_SECONDS = 24 * 60 * 60;
 const COLORS_TTL_SECONDS = 24 * 60 * 60;
 const EVENTS_TTL_SECONDS = 24 * 60 * 60;
 
-// Keys include the user ID so a hit can only reuse data fetched with that user's
-// token. See documents/caching.md for ownership and account ID invariants.
+// accountId is the owned local account row ID, checked before cache access.
+// Relinking creates a new row and therefore fresh cache keys.
 
 function calendarsKey(userId: string, accountId: string): string {
   return `${KEY_PREFIX}:cals:${userId}:${accountId}`;

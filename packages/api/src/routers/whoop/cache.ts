@@ -7,8 +7,8 @@ import { makeRedisJsonCache } from "../../lib/redis-cache";
 
 const KEY_PREFIX = "whoop";
 
-// User-scoped keys allow ownership-checked data to be reused without a token fetch.
-// See documents/caching.md for the shared ownership invariant.
+// accountId is the owned local account row ID, checked before cache access.
+// Relinking creates a new row and therefore fresh cache keys.
 function dayKey(userId: string, accountId: string, day: string): string {
   return `${KEY_PREFIX}:day:${userId}:${accountId}:${day}`;
 }
