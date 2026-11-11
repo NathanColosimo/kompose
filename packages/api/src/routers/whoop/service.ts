@@ -8,7 +8,10 @@ import type {
 } from "@kompose/whoop/schema";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
-import { getLinkedAccessToken } from "../../lib/linked-account";
+import {
+  getLinkedAccessToken,
+  getLinkedAccount,
+} from "../../lib/linked-account";
 import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary, WhoopProfile } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
@@ -359,10 +362,15 @@ export class WhoopService extends Context.Service<WhoopService>()(
             params.timeZone
           );
 
+          const link = yield* getLinkedAccount({
+            accountId: params.accountId,
+            providerId: "whoop",
+            userId: params.userId,
+          });
           const requestedDays = inclusiveDays(params.startDate, params.endDate);
           const cachedDays = yield* cache.getCachedDays(
             params.userId,
-            params.accountId,
+            link.id,
             requestedDays
           );
 
@@ -375,13 +383,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
           const missingEnd = missingDays.at(-1);
 
           if (missingStart && missingEnd) {
-            // Only fetch a token on a cache miss; user-scoped cache keys
-            // already keep one user from reading another's cached days.
-            const accessToken = yield* getLinkedAccessToken({
-              accountId: params.accountId,
-              providerId: "whoop",
-              userId: params.userId,
-            });
+            const accessToken = yield* getLinkedAccessToken(link);
             const client = createWhoopClient(accessToken);
 
             // Start 6 hours before midnight so WHOOP cycles/sleeps that
@@ -444,7 +446,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
               (payload) =>
                 cache.setCachedDay(
                   params.userId,
-                  params.accountId,
+                  link.id,
                   payload.day,
                   payload,
                   ttlForDay(payload, params.timeZone)
@@ -465,11 +467,12 @@ export class WhoopService extends Context.Service<WhoopService>()(
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
 
-          const accessToken = yield* getLinkedAccessToken({
+          const link = yield* getLinkedAccount({
             providerId: "whoop",
             accountId: params.accountId,
             userId: params.userId,
           });
+          const accessToken = yield* getLinkedAccessToken(link);
 
           const client = createWhoopClient(accessToken);
           const profile = yield* client.getProfileBasic();

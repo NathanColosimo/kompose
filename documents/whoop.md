@@ -24,9 +24,10 @@ callback route. Register `https://kompose.dev/api/auth/callback/whoop` in the
 `/api/auth/oauth2/callback/whoop` route is no longer used. PKCE stays enabled by
 default.
 
-The app's WHOOP RPC inputs and cache keys use the provider account ID
-(`account.accountId`). `getLinkedAccessToken` resolves that ID to an account row
-owned by the current user before calling Better Auth. Better Auth token,
+The app's WHOOP RPC inputs use the provider account ID (`account.accountId`).
+`getLinkedAccount` resolves it to an owned local row before cache access. Cache
+keys use that row's ID, so unlink blocks reads and relink starts fresh.
+`getLinkedAccessToken` uses the resolved row when calling Better Auth. Better Auth token,
 profile, and unlink APIs require the local row ID (`account.id`).
 
 `packages/auth/src/whoop.ts` identifies WHOOP from the owned account row rather
