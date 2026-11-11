@@ -14,8 +14,12 @@ export function eventColor(color: string | null | undefined) {
   return { "--event": color ?? "var(--foreground)" } as CSSProperties;
 }
 
-/** Secondary text on a tint, at AA contrast on Google's colors in both themes. */
-const META = "text-[11px] text-foreground/80 dark:text-foreground/70";
+/**
+ * Secondary text on a tint, at AA contrast on Google's colors in both themes.
+ * The line height rides on the size: tailwind-merge drops a separate
+ * leading-* that comes before a text-* size.
+ */
+const META = "text-[11px]/[14px] text-foreground/80 dark:text-foreground/70";
 
 export interface BlockDetail {
   icon: LucideIcon;
@@ -25,6 +29,8 @@ export interface BlockDetail {
 }
 
 interface BlockContentProps {
+  /** Free text under everything else, shown in whatever room is left. */
+  description?: string | null;
   /** Extra facts after the time, such as a meeting link, place, or tag. */
   details?: BlockDetail[];
   /** End of the visible part; with `start` it sets how much fits. */
@@ -58,6 +64,21 @@ function titleClampClass(isTall: boolean, hasTwoTitleLines: boolean) {
   return "@max-[5.5rem]:line-clamp-2 truncate @max-[5.5rem]:whitespace-normal";
 }
 
+/**
+ * An icon with its label beside it when the whole label fits. Its 12px
+ * basis keeps the icon on the line wherever the icon alone fits; it then
+ * grows toward its full width, and a label that doesn't fit beside the
+ * icon wraps onto a hidden second line.
+ */
+function InlineDetail({ icon: Icon, label }: BlockDetail) {
+  return (
+    <span className="flex h-[14px] max-w-fit grow basis-3 flex-wrap items-center gap-x-1 overflow-hidden">
+      <Icon aria-hidden className="size-3 shrink-0" />
+      <span className="whitespace-nowrap">{label}</span>
+    </span>
+  );
+}
+
 /** An icon with a short value, such as a workout's strain. */
 function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
   return (
@@ -72,10 +93,13 @@ function ShortDetail({ icon: Icon, label, short }: BlockDetail) {
 /**
  * The text inside a timed calendar block. How much shows depends on the
  * block's length: under 30 minutes is one line with the start time, under
- * an hour adds the time range and each detail as an icon, and longer
- * blocks give the title two lines and list the details in full.
+ * an hour adds the time range, and longer blocks give the title two lines
+ * and list the details one per line. Below an hour the details sit beside
+ * the time, labeled where they fit. From 30 minutes the description fills
+ * whatever room is left.
  */
 export function BlockContent({
+  description,
   details = [],
   end,
   shownEnd,
@@ -92,6 +116,13 @@ export function BlockContent({
     "min-w-0 font-medium text-xs leading-4",
     struck ? "text-muted-foreground line-through" : ""
   );
+  const detailsInline = details.map((detail) =>
+    detail.short ? (
+      <ShortDetail key={detail.label} {...detail} />
+    ) : (
+      <InlineDetail key={detail.label} {...detail} />
+    )
+  );
 
   if (minutes < 30) {
     return (
@@ -105,19 +136,10 @@ export function BlockContent({
             it doesn't fit beside the whole title, so the title wins. */}
         <div className="flex h-4 min-w-0 flex-1 flex-wrap items-center gap-x-1.5 overflow-hidden">
           <span className={cn(titleClass, "max-w-full truncate")}>{title}</span>
-          <span
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 tabular-nums",
-              META
-            )}
-          >
+          <span className={cn("shrink-0 tabular-nums", META)}>
             {formatTime(shownStart ?? start)}
-            {details
-              .filter((detail) => detail.short)
-              .map((detail) => (
-                <ShortDetail key={detail.label} {...detail} />
-              ))}
           </span>
+          <span className={cn("contents", META)}>{detailsInline}</span>
         </div>
       </div>
     );
@@ -127,18 +149,6 @@ export function BlockContent({
   const timeRange = formatTimeRange(shownStart ?? start, shownEnd ?? end);
   // From 45 minutes (60px) a two-line title still leaves room for the time.
   const hasTwoTitleLines = minutes >= 45;
-  const detailIcons = details.map((detail) =>
-    detail.short ? (
-      <ShortDetail key={detail.label} {...detail} />
-    ) : (
-      <detail.icon
-        aria-label={detail.label}
-        className="size-3 shrink-0"
-        key={detail.label}
-        role="img"
-      />
-    )
-  );
   const detailRows = details.map(({ icon: Icon, label }) => (
     <span className="flex min-w-0 items-center gap-1" key={label}>
       <Icon aria-hidden className="size-3 shrink-0" />
@@ -151,11 +161,12 @@ export function BlockContent({
   // the time shortens to the start ("10:25"). The full range is in the
   // hover text, and done is in the editor.
   return (
-    <div className="@container flex min-w-0 items-start gap-1.5">
+    <div className="@container flex h-full min-w-0">
       <div className="flex min-w-0 flex-1 flex-col gap-px">
         <span
           className={cn(
             titleClass,
+            "shrink-0",
             // Only soft hyphens break words (manual: the dictionary would
             // split ordinary words like "re-view"). A word that still can't
             // fit breaks anywhere rather than being clipped.
@@ -173,12 +184,12 @@ export function BlockContent({
           </span>
           <span className="@max-[4rem]:block hidden truncate">{title}</span>
         </span>
-        {/* The time comes first: icons that don't fit beside it wrap onto
-            a hidden second line. A tall block has room to wrap the range
+        {/* The time comes first: details that don't fit beside it wrap
+            onto a hidden second line. A tall block has room to wrap the range
             at its dash ("11:00 AM –" / "12:15 PM") instead of cutting it. */}
         <span
           className={cn(
-            "flex @max-[5.5rem]:hidden min-w-0 flex-wrap items-center gap-x-1.5 tabular-nums leading-[14px]",
+            "flex @max-[5.5rem]:hidden min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 tabular-nums",
             isTall ? null : "h-[14px] overflow-hidden",
             META
           )}
@@ -188,14 +199,14 @@ export function BlockContent({
           ) : (
             <span className="max-w-full truncate">{timeRange}</span>
           )}
-          {isTall ? null : detailIcons}
+          {isTall ? null : detailsInline}
         </span>
         {/* A narrow block's start time, once there's room under the title
             ("10:25"; the hour labels give AM or PM). */}
         {hasTwoTitleLines ? (
           <span
             className={cn(
-              "@max-[5.5rem]:block hidden truncate tabular-nums leading-[14px]",
+              "@max-[5.5rem]:block hidden shrink-0 truncate tabular-nums",
               META
             )}
           >
@@ -205,11 +216,26 @@ export function BlockContent({
         {isTall && detailRows.length > 0 ? (
           <span
             className={cn(
-              "flex @max-[5.5rem]:hidden min-w-0 flex-col gap-px leading-[14px]",
+              "flex @max-[5.5rem]:hidden min-w-0 shrink-0 flex-col gap-px",
               META
             )}
           >
             {detailRows}
+          </span>
+        ) : null}
+        {/* Takes the rest of the block, cut to whole 14px lines (META's
+            line height) so none shows in half. A later item drawn over the
+            block would hide it. */}
+        {description && !isCovered ? (
+          <span className="@max-[5.5rem]:hidden min-h-0 flex-1 [container-type:size]">
+            <span
+              className={cn(
+                "block max-h-[round(down,100cqh,14px)] overflow-hidden whitespace-pre-line [overflow-wrap:anywhere]",
+                META
+              )}
+            >
+              {description}
+            </span>
           </span>
         ) : null}
       </div>
