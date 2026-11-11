@@ -46,7 +46,8 @@ function buildInitialSharedFields(start: Date, end: Date) {
 
 /** See documents/event-popover.md for shared fields and tab-switch behavior. */
 export function EventCreationPopover() {
-  const { state, actions, popoverTimes } = useEventCreation();
+  const { state, actions, eventUnavailableReason, popoverTimes } =
+    useEventCreation();
   const { createEvent } = useGoogleEventMutations();
   const [mode, setMode] = useState<CreationMode>("event");
   const eventCloseSaveRequestRef = useRef<(() => CloseSaveRequest) | null>(
@@ -126,6 +127,10 @@ export function EventCreationPopover() {
     }
 
     const request = eventCloseSaveRequestRef.current?.() ?? { type: "none" };
+    if (request.type === "invalid") {
+      // The form says why ("Ends before it starts.").
+      return;
+    }
 
     actions.closePopover();
 
@@ -144,9 +149,7 @@ export function EventCreationPopover() {
     [handleSave, state.showPopover]
   );
 
-  if (
-    !(state.showPopover && popoverTimes && state.accountId && state.calendarId)
-  ) {
+  if (!(state.showPopover && popoverTimes)) {
     return null;
   }
 
@@ -192,7 +195,14 @@ export function EventCreationPopover() {
               >
                 Cancel
               </Button>
-              <Button onClick={handleSave} size="sm" type="button">
+              <Button
+                disabled={
+                  mode === "event" && !(state.accountId && state.calendarId)
+                }
+                onClick={handleSave}
+                size="sm"
+                type="button"
+              >
                 Save
               </Button>
             </div>
@@ -204,18 +214,24 @@ export function EventCreationPopover() {
             forceMount
             value="event"
           >
-            <EventEditForm
-              accountId={state.accountId}
-              calendarId={state.calendarId}
-              closeSaveRequestRef={eventCloseSaveRequestRef}
-              createInteropRef={eventInteropRef}
-              end={endDate}
-              mode="create"
-              onDelete={() => undefined}
-              onSave={handleSave}
-              open={state.showPopover}
-              start={startDate}
-            />
+            {state.accountId && state.calendarId ? (
+              <EventEditForm
+                accountId={state.accountId}
+                calendarId={state.calendarId}
+                closeSaveRequestRef={eventCloseSaveRequestRef}
+                createInteropRef={eventInteropRef}
+                end={endDate}
+                mode="create"
+                onDelete={() => undefined}
+                onSave={handleSave}
+                open
+                start={startDate}
+              />
+            ) : (
+              <p className="py-6 text-center text-muted-foreground text-sm">
+                {eventUnavailableReason}
+              </p>
+            )}
           </TabsContent>
 
           <TabsContent

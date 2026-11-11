@@ -1,73 +1,114 @@
 "use client";
 
 import { useDraggable } from "@dnd-kit/core";
-import {
-  type Event as GoogleEvent,
-  getGoogleEventEditBlockReason,
-  isGoogleEventEditable,
-} from "@kompose/google-cal/schema";
+import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
 } from "@kompose/state/atoms/google-colors";
 import { googleCalendarsDataAtom } from "@kompose/state/atoms/google-data";
 import type { ItemLayout } from "@kompose/state/collision-utils";
+import { calendarEventEditBlockReason } from "@kompose/state/google-event-editability";
+import { extractMeetingLink } from "@kompose/state/meeting";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
-import { Lock } from "lucide-react";
-import { memo } from "react";
+import { Lock, MapPin, Video } from "lucide-react";
+import { memo, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatTime, zonedDateTimeToDate } from "@/lib/temporal-utils";
+import { openOnEnterOrSpace } from "@/lib/keyboard";
+import {
+  isoStringToZonedDateTime,
+  zonedDateTimeToDate,
+} from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { PIXELS_PER_HOUR } from "../constants";
+import { googleItemKey, useIsItemMoving } from "../dnd/moving-item";
 import {
   BLOCK_RAISE_CLASS,
   blockHorizontalStyle,
   blockStackStyle,
   calculateEventPosition,
+  GRIP_PROPS,
 } from "../event-position";
+import { BlockContent, type BlockDetail, eventColor } from "./block-content";
 import { EventEditPopover } from "./event-edit-popover";
+
+/** The meeting provider, or else the place, shown under an event's time. */
+function eventDetails(event: GoogleEvent): BlockDetail[] {
+  const meeting = extractMeetingLink(event);
+  if (meeting) {
+    return [{ icon: Video, label: meeting.label }];
+  }
+  const place = event.location?.trim();
+  return place ? [{ icon: MapPin, label: place }] : [];
+}
 
 interface GoogleCalendarEventProps {
   accountId: string;
   calendarId: string;
   end: Temporal.ZonedDateTime;
   event: GoogleEvent;
+  /** Placement among overlapping items on its day. */
   layout?: ItemLayout;
   start: Temporal.ZonedDateTime;
 }
 
 export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
-  layout,
   event,
   start,
   end,
   accountId,
   calendarId,
+  layout,
 }: GoogleCalendarEventProps) {
   const durationMinutes = Math.max(
     1,
     Math.round(end.since(start).total({ unit: "minutes" }))
   );
-  const isShortEvent = durationMinutes <= 15;
-  const isEditable = isGoogleEventEditable(event);
-  const editBlockedReason = getGoogleEventEditBlockReason(event);
+  const calendars = useAtomValue(googleCalendarsDataAtom);
+  // The event's calendar: its colors, and whether the user can write to it.
+  const calendar = calendars.find(
+    (c) => c.accountId === accountId && c.calendar.id === calendarId
+  );
+  const accessRole = calendar?.calendar.accessRole;
+  const editBlockedReason = calendarEventEditBlockReason(event, accessRole);
+  const isEditable = editBlockedReason === null;
+  // An overnight event is drawn as one part per day (start/end). Its text,
+  // editor, and drags use the whole event's times, so editing or moving
+  // the second day's part never cuts the event at midnight.
+  const shownStart = event.start.dateTime
+    ? isoStringToZonedDateTime(event.start.dateTime, start.timeZoneId)
+    : start;
+  const shownEnd = event.end.dateTime
+    ? isoStringToZonedDateTime(event.end.dateTime, end.timeZoneId)
+    : end;
+  const hasStartEdge = start.equals(shownStart);
+  const hasEndEdge = end.equals(shownEnd);
+  // One per drawn day: dnd-kit keeps one node per id, so an overnight
+  // event's two parts need their own.
+  const dragId = `google-event-${accountId}-${calendarId}-${event.id}-${start.toPlainDate()}`;
 
+  const isMoving = useIsItemMoving(
+    googleItemKey(accountId, calendarId, event.id)
+  );
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    attributes: { roleDescription: "event" },
     data: {
       accountId,
       calendarId,
-      end,
+      end: shownEnd,
       event,
-      start,
+      grabOffsetMinutes: start.since(shownStart).total({ unit: "minutes" }),
+      start: shownStart,
       type: "google-event",
     },
     disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}`,
+    id: dragId,
   });
 
   const {
@@ -79,13 +120,13 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       accountId,
       calendarId,
       direction: "start",
-      end,
+      end: shownEnd,
       event,
-      start,
+      start: shownStart,
       type: "google-event-resize",
     },
-    disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}-resize-start`,
+    disabled: !(isEditable && hasStartEdge),
+    id: `${dragId}-resize-start`,
   });
 
   const {
@@ -97,13 +138,13 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       accountId,
       calendarId,
       direction: "end",
-      end,
+      end: shownEnd,
       event,
-      start,
+      start: shownStart,
       type: "google-event-resize",
     },
-    disabled: !isEditable,
-    id: `google-event-${calendarId}-${event.id}-resize-end`,
+    disabled: !(isEditable && hasEndEdge),
+    id: `${dragId}-resize-end`,
   });
 
   const { top, height } = calculateEventPosition(start, durationMinutes);
@@ -111,63 +152,79 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
   const normalizedPalette = useAtomValue(
     normalizedGoogleColorsAtomFamily(accountId)
   );
-  const calendars = useAtomValue(googleCalendarsDataAtom);
-
-  // Find the calendar this event belongs to, for fallback colors
-  const calendar = calendars.find(
-    (c) => c.accountId === accountId && c.calendar.id === calendarId
-  );
-
-  const { background: backgroundColor, foreground: foregroundColor } =
-    resolveGoogleEventColors({
-      calendarBackgroundColor: calendar?.calendar.backgroundColor,
-      calendarForegroundColor: calendar?.calendar.foregroundColor,
-      colorId: event.colorId,
-      palette: normalizedPalette?.event,
-    });
+  const { background: backgroundColor } = resolveGoogleEventColors({
+    calendarBackgroundColor: calendar?.calendar.backgroundColor,
+    calendarForegroundColor: calendar?.calendar.foregroundColor,
+    colorId: event.colorId,
+    palette: normalizedPalette?.event,
+  });
 
   const style: React.CSSProperties = {
-    height,
     ...blockHorizontalStyle(layout),
+    height,
     position: "absolute",
     top,
     ...blockStackStyle(layout?.zIndex),
   };
 
-  const fillStyle: React.CSSProperties = {
-    backgroundColor: backgroundColor ?? "hsl(var(--primary))",
-    color: foregroundColor ?? "hsl(var(--primary-foreground))",
-  };
+  const eventColorStyle = eventColor(backgroundColor);
+  const details = useMemo(() => eventDetails(event), [event]);
 
   const eventCard = (
+    // biome-ignore lint/a11y/useSemanticElements: a button can't hold the lock tooltip (see openOnEnterOrSpace)
     <div
       className={cn(
-        "group pointer-events-auto rounded-md bg-background p-px shadow-sm transition-shadow",
-        "relative",
+        "group pointer-events-auto relative rounded-md bg-background p-px",
         BLOCK_RAISE_CLASS,
-        isEditable
-          ? "cursor-grab hover:shadow-md"
-          : "cursor-default opacity-90",
-        isDragging ? "opacity-0" : ""
+        isEditable ? "cursor-grab" : "cursor-default opacity-90",
+        isDragging || isMoving ? "opacity-0" : ""
       )}
       ref={setNodeRef}
       style={style}
-      title={editBlockedReason ?? undefined}
+      // The full title and time on hover, for blocks too narrow to show them.
+      title={[
+        event.summary || "(No title)",
+        formatTimeRange(shownStart, shownEnd),
+        editBlockedReason,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
       {...attributes}
       {...listeners}
+      // A read-only event can't be dragged, but it still opens its details,
+      // so it isn't announced as unavailable.
+      aria-disabled={false}
+      onKeyDown={openOnEnterOrSpace}
+      role="button"
+      tabIndex={0}
     >
       <div
         className={cn(
-          "h-full rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
-          isShortEvent ? "flex items-center py-0" : ""
+          "event-surface h-full overflow-hidden rounded-[5px] pr-1.5 pl-2",
+          Math.min(
+            durationMinutes,
+            layout?.uncoveredMinutes ?? durationMinutes
+          ) < 30
+            ? "py-0"
+            : "py-1",
+          isEditable ? "" : "pr-5"
         )}
-        style={fillStyle}
+        style={eventColorStyle}
       >
+        <BlockContent
+          details={details}
+          end={end}
+          shownEnd={shownEnd}
+          shownStart={shownStart}
+          start={start}
+          title={event.summary || "(No title)"}
+          uncoveredMinutes={layout?.uncoveredMinutes}
+        />
         {!isEditable && editBlockedReason ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-black/15 text-current opacity-90"
+                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-background/70 text-foreground/70"
                 title=""
               >
                 <Lock className="size-2.5" />
@@ -179,31 +236,24 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
             </TooltipContent>
           </Tooltip>
         ) : null}
-        <div className="min-w-0 truncate font-medium text-xs">
-          {event.summary ?? "Google event"}
-        </div>
-        {/* Hide time for short events (<30min) to prevent overflow */}
-        {durationMinutes >= 30 && (
-          <div className="truncate text-[10px] opacity-85">
-            {formatTime(start)} - {formatTime(end)}
-          </div>
-        )}
       </div>
-      {isEditable ? (
-        <>
-          <div
-            className="absolute inset-x-0 -top-1 h-3 cursor-n-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-            ref={setStartHandleRef}
-            {...startAttributes}
-            {...startListeners}
-          />
-          <div
-            className="absolute inset-x-0 -bottom-1 h-3 cursor-s-resize rounded-sm bg-primary/60 opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-80"
-            ref={setEndHandleRef}
-            {...endAttributes}
-            {...endListeners}
-          />
-        </>
+      {isEditable && hasStartEdge ? (
+        <div
+          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setStartHandleRef}
+          {...startAttributes}
+          {...startListeners}
+          {...GRIP_PROPS}
+        />
+      ) : null}
+      {isEditable && hasEndEdge ? (
+        <div
+          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          ref={setEndHandleRef}
+          {...endAttributes}
+          {...endListeners}
+          {...GRIP_PROPS}
+        />
       ) : null}
     </div>
   );
@@ -212,11 +262,11 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     <EventEditPopover
       accountId={accountId}
       calendarId={calendarId}
-      end={zonedDateTimeToDate(end)}
+      end={zonedDateTimeToDate(shownEnd)}
       event={event}
       readOnly={!isEditable}
       readOnlyReason={editBlockedReason}
-      start={zonedDateTimeToDate(start)}
+      start={zonedDateTimeToDate(shownStart)}
     >
       {eventCard}
     </EventEditPopover>
@@ -244,24 +294,18 @@ export const GoogleCalendarEventPreview = memo(
     const calendar = calendars.find(
       (c) => c.accountId === accountId && c.calendar.id === calendarId
     );
-    const { background: backgroundColor, foreground: foregroundColor } =
-      resolveGoogleEventColors({
-        calendarBackgroundColor: calendar?.calendar.backgroundColor,
-        calendarForegroundColor: calendar?.calendar.foregroundColor,
-        colorId: event.colorId,
-        palette: normalizedPalette?.event,
-      });
+    const { background: backgroundColor } = resolveGoogleEventColors({
+      calendarBackgroundColor: calendar?.calendar.backgroundColor,
+      calendarForegroundColor: calendar?.calendar.foregroundColor,
+      colorId: event.colorId,
+      palette: normalizedPalette?.event,
+    });
     const durationMinutes = Math.max(
       1,
       Math.round(end.since(start).total({ unit: "minutes" }))
     );
     const isShortEvent = durationMinutes <= 15;
     const shortEventHeight = (15 / 60) * PIXELS_PER_HOUR;
-
-    const fillStyle: React.CSSProperties = {
-      backgroundColor: backgroundColor ?? "hsl(var(--primary))",
-      color: foregroundColor ?? "hsl(var(--primary-foreground))",
-    };
 
     return (
       <div
@@ -270,19 +314,16 @@ export const GoogleCalendarEventPreview = memo(
       >
         <div
           className={cn(
-            "rounded-[5px] border border-black/20 px-2 py-1 dark:border-white/30",
-            isShortEvent ? "flex h-full items-center py-0" : ""
+            "event-surface rounded-[5px] pr-1.5 pl-2",
+            isShortEvent ? "h-full py-0" : "py-1"
           )}
-          style={fillStyle}
+          style={eventColor(backgroundColor)}
         >
-          <div className="min-w-0 truncate font-medium text-xs">
-            {event.summary ?? "Google event"}
-          </div>
-          {isShortEvent ? null : (
-            <div className="truncate text-[10px] opacity-80">
-              {formatTime(start)}
-            </div>
-          )}
+          <BlockContent
+            end={end}
+            start={start}
+            title={event.summary || "(No title)"}
+          />
         </div>
       </div>
     );

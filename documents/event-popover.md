@@ -36,8 +36,17 @@ Unified inline editor for Google calendar events. Supports both **create** and *
 ### Save / Cancel behavior
 - Explicit **Save** / **Cancel** buttons at the bottom of the form (edit mode).
 - **Save**: builds a close-save request from the form, then processes mutations (update, move, create).
-- **Cancel**, **Escape**, or **click-outside**: discard unsaved changes and close without saving.
-- When `EventEditForm` is used inside `EventCreationPopover`, `onCancel` is not passed, so the form does not show its own action buttons — the creation popover header provides Save/Cancel instead.
+  - The editor stays open ("Saving…", fields read-only) until the save succeeds. A failure keeps it open with the edits and shows an error toast ("Couldn't save your changes. They're still here."). If the edits saved but the move to another calendar that followed didn't, it says that instead, and Save tries again.
+  - A recurring event asks for the scope in a dialog over the editor. Cancel goes back to the editor with the edits; Save there holds the editor the same way.
+  - A form that ends before it starts can't be saved by any path (Save, Cmd+Enter, Add Google Meet, the create popover's Save): the request is `invalid`, and the form shows "Ends before it starts."
+  - The repeat is sent only when the user changes it with the Repeat control. The editor parses and builds the primary rule, preserving unsupported parts and other recurrence lines. Custom rules are marked in the label.
+  - Moving the start does not rewrite weekdays, month days, UNTIL, COUNT, or exception dates.
+  - Series saves send only changed details, with the edited times directly. Unchanged occurrence-specific titles, guests, and other details stay out of the series payload.
+- **Cancel**, **Escape**, or **click-outside** discards edits. While saving, the editor remains read-only.
+- The scope dialog offers Only this occurrence, This and following, and Entire series. It waits for the series to load. A changed repeat disables Only this occurrence. A move to another day disables Entire series, which keeps the series date.
+- The server applies edited times to the series’ first event for Entire series. This and following ends the old series and starts a new one.
+- The repeat editor has daily, weekly, monthly, and yearly frequencies, interval, day choices, and never/date/count ends. End dates are encoded when picked; moves do not adjust them.
+- When used inside `EventCreationPopover`, the form uses the popover header’s Save and Cancel buttons.
 
 ### Create Mode
 
@@ -80,7 +89,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 #### Components
 - `DaysView` — Holds creation state (`useEventCreationState`) and provides `EventCreationContext`
 - `useEventCreation` — Reads creation state and actions from that context
-- `CreationPreview` — Visual preview during hover/drag
+- `CreationPreview` — Visual preview during hover/drag; a drag shows the time range it will create ("1:00 – 2:30 PM")
 - `EventCreationPopover` — Renders the shared create popover with `Event` / `Task` tabs and Save/Cancel buttons
 
 ### Edit Mode Behavior
@@ -89,12 +98,12 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Opening then closing without edits (via Cancel/Escape) does not call `events.update`.
 - "Edited" means any interaction (even if you change a value and change it back).
 
-#### Recurring scope selection (post-close) — Edit Mode Only
+#### Recurring scope selection — Edit Mode Only
 - Recurrence scope is no longer selected inline in the main popover.
 - If the event is recurring *and* the user clicks Save, a **scope dialog** (shadcn `RadioGroup`) appears with:
   - Only this occurrence
-  - Entire series
   - This and following
+  - Entire series
 
 #### Recurrence master hydration + prefetch — Edit Mode Only
 - Recurring instances often do not include the RRULE on the instance.
@@ -106,17 +115,15 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 #### Move to calendar flow — Edit Mode Only
 - Moving between calendars is handled via the calendar picker in the form.
 - If the user changes the calendar and clicks **Save**, the save flow handles both the data update and the calendar move.
-- Recurring moves select `all` and disable `this` / `following` in the scope dialog. The series master is moved.
+- A recurring event's new calendar applies to the entire series: Google moves a series to another calendar only as a whole, not one occurrence.
 - Non-recurring moves use `this`.
 
 #### Backend safety: partial failure recovery for `following`
-- `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server; the edit UI only offers `following` for updates.
+- `GoogleCalendar` in `packages/google-cal/src/client.ts` implements `following` updates and moves. If the master is truncated but creating the replacement series fails, it attempts a best-effort rollback of the master's recurrence. This runs on the server.
 
 #### Error feedback
-- Mutations surface failures via toast errors:
-  - `createEvent` (create mode)
-  - `updateEvent` (edit mode)
-  - `moveEvent` (move flow)
+- Failed saves, creates, moves and deletes use the app's normal error toast. A failed save keeps the editor and its draft open; a failed recurring delete keeps its scope dialog open.
+- The create popover (`EventCreationPopover`) closes on Save and creates in the background. With no calendar to write to, its Event tab says why and its Task tab works.
 
 ### Manual test checklist
 
@@ -126,6 +133,7 @@ See [hotkeys.md](./hotkeys.md#creation-forms) for the save shortcut.
 - Recurring event edit; click Save: scope dialog appears; each scope behaves correctly.
 - Recurrence editor: set Frequency to **None**; RRULE is cleared.
 - Recurrence editor: weekly BYDAY changes persist; UNTIL/COUNT modes work.
+- Recurrence editor: "every 2 weeks" and monthly "The 2nd Tue" save; an end date includes that day's occurrence; re-picking the current frequency changes nothing.
 - Click-outside: discards changes (no save).
 - Delete: confirmation dialog for non-recurring; scope dialog for recurring.
 

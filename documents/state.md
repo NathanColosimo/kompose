@@ -34,6 +34,7 @@
 - `hooks/use-tasks.ts`: Shared task query + optimistic mutations. Editors close immediately; failed writes roll back and use the app's error toast.
 - `hooks/use-today-tick.ts`: Keeps `todayPlainDateAtom` and `nowZonedDateTimeAtom` fresh by incrementing `todayTickAtom` every 60 seconds and on window focus/visibility change. Mounted in `StateProvider`.
 - `hooks/use-task-sections.ts`: Shared task sections (Inbox + Today with Overdue/Unplanned/Done) using reactive today/now atoms for correct overdue detection across midnight boundaries.
+- `google-event-editability.ts`: Calendar access-role checks for the UI, combined with Google event editability. Readers get read-only event details and cannot be selected as write destinations.
 - `google-event-times.ts`: The `EventTime` type and `withEditedTime`, which gives an event's start or end the edited time without the date form it no longer has.
 - `google-event-recurrence.ts`: The repeat editor model: parse and build rules, preserve parts the editor cannot show, select days and frequencies, and hydrate the occurrence repeat display. Moving an event does not rewrite its rule.
 - `recurrence-scope-options.ts`: The three Google event scopes and shared dialog wording. Saves wait for the series to load. A new repeat disables Only this occurrence; a move to another day disables Entire series because the server keeps the series date. A new calendar disables the other two: Google moves a series to another calendar only as a whole, and an occurrence can't move on its own.

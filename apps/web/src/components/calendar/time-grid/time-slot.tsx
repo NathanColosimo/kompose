@@ -45,9 +45,9 @@ export const TimeSlot = memo(function TimeSlotInner({
         rect.height
       );
       const minutesFromTop = (offsetY / PIXELS_PER_HOUR) * 60;
-      // Snap to the nearest grid step so hover/drag align with 15-min slots.
+      // The 15-minute slot under the pointer, so a click starts where it lands.
       const snappedMinutes =
-        Math.round(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
+        Math.floor(minutesFromTop / MINUTES_STEP) * MINUTES_STEP;
       const clampedMinutes = Math.min(
         Math.max(snappedMinutes, 0),
         24 * 60 - MINUTES_STEP
@@ -102,7 +102,10 @@ export const TimeSlot = memo(function TimeSlotInner({
   );
 
   return (
+    // Mouse-only: keyboard and screen readers create through "c" or the
+    // command bar (documents/hotkeys.md), not hundreds of empty slots.
     <button
+      aria-hidden
       className={cn(
         "block min-h-0 w-full min-w-0 appearance-none border-0 bg-transparent p-0 leading-none",
         isThirtyMinuteBoundary ? "border-border/50 border-t" : ""
@@ -114,6 +117,7 @@ export const TimeSlot = memo(function TimeSlotInner({
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       style={slotStyle}
+      tabIndex={-1}
       type="button"
     >
       {children}

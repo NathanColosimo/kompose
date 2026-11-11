@@ -5,14 +5,24 @@ import type {
 import type { Event as GoogleEvent } from "@kompose/google-cal/schema";
 import type { UpdateGoogleEventInput } from "@kompose/state/hooks/use-google-event-mutations";
 import type { Temporal } from "temporal-polyfill";
-import { isSameDay } from "@/lib/temporal-utils";
-import { clampResizeEnd, clampResizeStart, durationInMinutes } from "./helpers";
+import { durationInMinutes, resizedRange } from "./helpers";
 import type { DragData, DragDirection } from "./types";
+
+/** A task's drop: its new day, time and length. */
+export interface TaskDropUpdate {
+  id: string;
+  scope: UpdateScope;
+  task: {
+    durationMinutes: number;
+    startDate: Temporal.PlainDate;
+    startTime: Temporal.PlainTime;
+  };
+}
 
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
   targetDateTime: Temporal.ZonedDateTime
-): { id: string; task: object; scope: UpdateScope } {
+): TaskDropUpdate {
   return {
     id: task.id,
     // Default scope; CalendarDndProvider asks for scope on recurring tasks.
@@ -35,7 +45,7 @@ export function buildTaskResizeUpdate({
   targetDateTime: Temporal.ZonedDateTime;
   direction: DragDirection;
   timeZone: string;
-}): { id: string; task: object; scope: UpdateScope } | null {
+}): TaskDropUpdate | null {
   if (!(task.startDate && task.startTime)) {
     return null;
   }
@@ -44,39 +54,22 @@ export function buildTaskResizeUpdate({
     plainTime: task.startTime,
     timeZone,
   });
-  const originalEnd = originalStart.add({ minutes: task.durationMinutes });
-
-  if (!isSameDay(originalStart, targetDateTime)) {
+  const range = resizedRange({
+    direction,
+    end: originalStart.add({ minutes: task.durationMinutes }),
+    start: originalStart,
+    target: targetDateTime,
+  });
+  if (!range) {
     return null;
   }
-
-  if (direction === "start") {
-    const newStart = clampResizeStart(
-      targetDateTime,
-      originalStart,
-      originalEnd
-    );
-    const newDuration = durationInMinutes(newStart, originalEnd);
-    return {
-      id: task.id,
-      scope: "this",
-      task: {
-        durationMinutes: newDuration,
-        startDate: newStart.toPlainDate(),
-        startTime: newStart.toPlainTime(),
-      },
-    };
-  }
-
-  const newEnd = clampResizeEnd(targetDateTime, originalStart);
-  const newDuration = durationInMinutes(originalStart, newEnd);
   return {
     id: task.id,
     scope: "this",
     task: {
-      durationMinutes: newDuration,
-      startDate: originalStart.toPlainDate(),
-      startTime: originalStart.toPlainTime(),
+      durationMinutes: durationInMinutes(range.start, range.end),
+      startDate: range.start.toPlainDate(),
+      startTime: range.start.toPlainTime(),
     },
   };
 }
@@ -100,19 +93,20 @@ function buildGoogleUpdatePayload(
     organizer: _organizer,
     ...rest
   } = event.event;
+  const zone = event.event.start.timeZone ?? start.timeZoneId;
 
   return {
     id: event.event.id,
     ...rest,
     end: {
       date: undefined,
-      dateTime: toGoogleDateTime(end),
-      timeZone: end.timeZoneId,
+      dateTime: toGoogleDateTime(end.withTimeZone(zone)),
+      timeZone: zone,
     },
     start: {
       date: undefined,
-      dateTime: toGoogleDateTime(start),
-      timeZone: start.timeZoneId,
+      dateTime: toGoogleDateTime(start.withTimeZone(zone)),
+      timeZone: zone,
     },
   };
 }
@@ -142,34 +136,19 @@ export function buildGoogleResizeUpdate({
   data: Extract<DragData, { type: "google-event-resize" }>;
   targetDateTime: Temporal.ZonedDateTime;
 }) {
-  const originalStart = data.start;
-  const originalEnd = data.end;
-
-  if (!isSameDay(originalStart, targetDateTime)) {
+  const range = resizedRange({
+    direction: data.direction,
+    end: data.end,
+    start: data.start,
+    target: targetDateTime,
+  });
+  if (!range) {
     return null;
   }
-
-  if (data.direction === "start") {
-    const newStart = clampResizeStart(
-      targetDateTime,
-      originalStart,
-      originalEnd
-    );
-    const event = buildGoogleUpdatePayload(data, newStart, originalEnd);
-    return {
-      accountId: data.accountId,
-      calendarId: data.calendarId,
-      event,
-      eventId: data.event.id,
-    };
-  }
-
-  const newEnd = clampResizeEnd(targetDateTime, originalStart);
-  const event = buildGoogleUpdatePayload(data, originalStart, newEnd);
   return {
     accountId: data.accountId,
     calendarId: data.calendarId,
-    event,
+    event: buildGoogleUpdatePayload(data, range.start, range.end),
     eventId: data.event.id,
   };
 }

@@ -66,3 +66,9 @@ export function blockHorizontalStyle(
     width: `calc(${rest} * ${span / columns} - 2px)`,
   };
 }
+
+/**
+ * Resize grips are pointer-only; leave them out of the tab order so each
+ * block is one stop (its times are edited in the editor).
+ */
+export const GRIP_PROPS = { "aria-hidden": true, tabIndex: -1 } as const;

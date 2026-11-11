@@ -1,10 +1,11 @@
 "use client";
 
 import type { ItemLayout } from "@kompose/state/collision-utils";
+import { formatTimeRange } from "@kompose/state/temporal-utils";
+import { Activity } from "lucide-react";
 import { memo } from "react";
 import { Temporal } from "temporal-polyfill";
 import {
-  formatTime,
   isoStringToZonedDateTime,
   minutesFromMidnight,
 } from "@/lib/temporal-utils";
@@ -15,6 +16,9 @@ import {
   blockHorizontalStyle,
   blockStackStyle,
 } from "../event-position";
+import { BlockContent, eventColor } from "./block-content";
+
+const WORKOUT_COLOR = eventColor("var(--whoop-workout)");
 
 interface WhoopWorkoutEventProps {
   /** Calendar date this column represents — used for clamping cross-day workouts */
@@ -66,9 +70,6 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
     rawEndMinutes === 0 && startMinutes > 0 ? 1440 : rawEndMinutes;
   const durationMinutes = Math.max(15, endMinutes - startMinutes);
 
-  const displayStart = workoutStart;
-  const displayEnd = workoutEnd;
-
   const top = (startMinutes / 60) * PIXELS_PER_HOUR;
   const height = Math.max(20, (durationMinutes / 60) * PIXELS_PER_HOUR);
 
@@ -78,27 +79,50 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
     <div
       className={`pointer-events-auto absolute rounded-md bg-background p-px ${BLOCK_RAISE_CLASS}`}
       style={{
-        height: `${height}px`,
         ...blockHorizontalStyle(layout),
+        height: `${height}px`,
         top: `${top}px`,
         ...blockStackStyle(layout?.zIndex),
       }}
+      title={[
+        `WHOOP workout: ${label}`,
+        formatTimeRange(workoutStart, workoutEnd),
+        strainScore === null ? null : `strain ${strainScore.toFixed(1)}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
     >
       <div
         className={cn(
-          "h-full rounded-[5px] border border-teal-600/30 bg-teal-500/15 px-2 dark:border-teal-400/30 dark:bg-teal-400/10",
-          durationMinutes < 30 ? "flex items-center" : "py-1"
+          "event-surface h-full overflow-hidden rounded-[5px] pr-1.5 pl-2",
+          Math.min(
+            durationMinutes,
+            layout?.uncoveredMinutes ?? durationMinutes
+          ) < 30
+            ? "py-0"
+            : "py-1"
         )}
+        style={WORKOUT_COLOR}
       >
-        <div className="truncate font-medium text-teal-900 text-xs dark:text-teal-200">
-          {strainScore === null ? "" : `⚡${strainScore.toFixed(1)} · `}
-          {label}
-        </div>
-        {durationMinutes >= 30 ? (
-          <div className="truncate text-[10px] text-teal-700/80 dark:text-teal-300/70">
-            {formatTime(displayStart)} – {formatTime(displayEnd)}
-          </div>
-        ) : null}
+        <BlockContent
+          details={
+            strainScore === null
+              ? []
+              : [
+                  {
+                    icon: Activity,
+                    label: `Strain ${strainScore.toFixed(1)}`,
+                    short: strainScore.toFixed(1),
+                  },
+                ]
+          }
+          end={clampedEnd}
+          shownEnd={workoutEnd}
+          shownStart={workoutStart}
+          start={clampedStart}
+          title={label}
+          uncoveredMinutes={layout?.uncoveredMinutes}
+        />
       </div>
     </div>
   );
