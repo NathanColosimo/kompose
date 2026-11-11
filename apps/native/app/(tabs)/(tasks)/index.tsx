@@ -2,9 +2,19 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
-import { getSystemTimeZone } from "@kompose/state/temporal-utils";
+import {
+  formatDuration,
+  formatScheduledAt,
+  getSystemTimeZone,
+} from "@kompose/state/temporal-utils";
 import { Stack } from "expo-router/stack";
-import { Plus, Tag } from "lucide-react-native";
+import {
+  CalendarClock,
+  CalendarDays,
+  Clock,
+  Plus,
+  Tag,
+} from "lucide-react-native";
 import React from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
@@ -15,35 +25,31 @@ import {
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
 import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
 import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
+import { formatShortDate, spokenDuration } from "@/lib/time-format";
 
-function formatPlainDateLong(date: Temporal.PlainDate): string {
-  return new Intl.DateTimeFormat(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(plainDateToDate(date));
-}
-
-// Convert a plain date into a JS Date using the device's local timezone.
-function plainDateToDate(plainDate: Temporal.PlainDate): Date {
-  return new Date(`${plainDate.toString()}T00:00:00`);
-}
+/**
+ * Header text stops growing here, as iOS bar items do: past it the items
+ * outgrow the bar, and iOS folds them into a "More" button that can't show
+ * custom views, leaving Inbox, Today and New task unreachable.
+ */
+const HEADER_MAX_FONT_SCALE = 1.35;
 
 interface TaskSection {
   data: TaskSelectDecoded[];
   title: string;
+  tone?: "overdue";
 }
 
-type BaseTaskTab = "Inbox" | "Today";
+const BASE_TASK_TABS = ["Inbox", "Today"] as const;
+type BaseTaskTab = (typeof BASE_TASK_TABS)[number];
 
 type TaskListItem =
-  | { type: "header"; title: string }
+  | { count: number; title: string; tone?: "overdue"; type: "header" }
   | { type: "task"; task: TaskSelectDecoded };
 
 // Build the Today view sections to match the web Today view ordering.
@@ -55,7 +61,7 @@ function buildTodaySections(
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
-    sections.push({ data: overdueTasks, title: "Overdue" });
+    sections.push({ data: overdueTasks, title: "Overdue", tone: "overdue" });
   }
   if (unplannedTasks.length > 0) {
     sections.push({ data: unplannedTasks, title: "Unplanned" });
@@ -76,10 +82,10 @@ function buildTagSections(
 ): TaskSection[] {
   const sections: TaskSection[] = [];
   if (overdueTasks.length > 0) {
-    sections.push({ data: overdueTasks, title: "Overdue" });
+    sections.push({ data: overdueTasks, title: "Overdue", tone: "overdue" });
   }
   if (todoTasks.length > 0) {
-    sections.push({ data: todoTasks, title: "Todo" });
+    sections.push({ data: todoTasks, title: "To do" });
   }
   if (doneTasks.length > 0) {
     sections.push({ data: doneTasks, title: "Done" });
@@ -93,7 +99,12 @@ function buildSectionItems(sections: TaskSection[]): TaskListItem[] {
     if (section.data.length === 0) {
       continue;
     }
-    items.push({ title: section.title, type: "header" });
+    items.push({
+      count: section.data.length,
+      title: section.title,
+      tone: section.tone,
+      type: "header",
+    });
     for (const task of section.data) {
       items.push({ task, type: "task" });
     }
@@ -102,67 +113,119 @@ function buildSectionItems(sections: TaskSection[]): TaskListItem[] {
 }
 
 function TaskRow({
+  hiddenTagId,
   item,
   onPress,
   onToggleStatus,
+  timeZone,
+  today,
 }: {
+  /** In a tag's own list, rows don't repeat that tag. */
+  hiddenTagId: string | null;
   item: TaskSelectDecoded;
   onPress: (task: TaskSelectDecoded) => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
+  timeZone: string;
+  today: Temporal.PlainDate;
 }) {
-  const selectedTags = item.tags;
+  const tags = item.tags.filter((tag) => tag.id !== hiddenTagId);
+  const scheduled =
+    item.startDate && item.startTime
+      ? item.startDate.toZonedDateTime({
+          plainTime: item.startTime,
+          timeZone,
+        })
+      : null;
   const isDone = item.status === "done";
+  const isPastDue =
+    !isDone &&
+    item.dueDate !== null &&
+    Temporal.PlainDate.compare(item.dueDate, today) < 0;
 
   return (
-    <View className="flex-row items-start gap-3 border-border border-b py-3">
+    <View className="flex-row items-start gap-3 border-border/70 border-b py-3">
       <Checkbox
-        accessibilityLabel={isDone ? "Mark as todo" : "Mark as done"}
+        accessibilityLabel={`Done: ${item.title}`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: isDone }}
         checked={isDone}
         className="mt-0.5"
+        // 26 by 34pt. The slop makes 44pt inside the row (iOS clips slop at
+        // the parent's edge, and the row starts at the checkbox): up, down,
+        // and right over the title's edge, so it sits above the title.
+        hitSlop={{ bottom: 5, right: 18, top: 5 }}
         onCheckedChange={() => onToggleStatus(item)}
+        style={{ zIndex: 1 }}
       />
 
       <Pressable
-        className="flex-1 active:opacity-70"
+        accessibilityRole="button"
+        className="flex-1 gap-1.5 active:opacity-70"
         onPress={() => onPress(item)}
       >
-        <View className="flex-row items-center justify-between gap-3">
-          <Text
-            className={`flex-1 font-semibold text-base ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
-            numberOfLines={1}
-          >
-            {item.title}
-          </Text>
-          <Text className="text-muted-foreground text-xs">
-            {item.durationMinutes}m
-          </Text>
-        </View>
-        {item.dueDate ? (
-          <Text className="mt-1 text-muted-foreground text-xs">
-            Due {formatPlainDateLong(item.dueDate)}
-          </Text>
-        ) : null}
-        {selectedTags.length > 0 ? (
-          <View className="mt-1 flex-row flex-wrap gap-2">
-            {selectedTags.map((tag) => {
-              const IconComponent = tagIconMap[tag.icon];
-              return (
-                <Badge key={tag.id} variant="outline">
-                  <View className="flex-row items-center gap-1">
-                    <Icon
-                      as={IconComponent}
-                      className="text-muted-foreground"
-                      size={12}
-                    />
-                    <Text className="text-muted-foreground text-xs">
-                      {tag.name}
-                    </Text>
-                  </View>
-                </Badge>
-              );
-            })}
+        <Text
+          className={`text-base leading-snug ${isDone ? "text-muted-foreground line-through" : "text-foreground"}`}
+          numberOfLines={2}
+        >
+          {item.title}
+        </Text>
+        <View className="flex-row flex-wrap items-center gap-x-3 gap-y-1">
+          <View className="flex-row items-center gap-1">
+            <Icon as={Clock} className="text-muted-foreground" size={12} />
+            <Text
+              accessibilityLabel={spokenDuration(item.durationMinutes)}
+              className="text-muted-foreground text-xs"
+            >
+              {formatDuration(item.durationMinutes)}
+            </Text>
           </View>
-        ) : null}
+          {scheduled ? (
+            <View className="flex-row items-center gap-1">
+              <Icon
+                as={CalendarClock}
+                className="text-muted-foreground"
+                size={12}
+              />
+              <Text className="text-muted-foreground text-xs">
+                {formatScheduledAt(scheduled, today)}
+              </Text>
+            </View>
+          ) : null}
+          {item.dueDate ? (
+            <View className="flex-row items-center gap-1">
+              <Icon
+                as={CalendarDays}
+                className={
+                  isPastDue ? "text-destructive" : "text-muted-foreground"
+                }
+                size={12}
+              />
+              <Text
+                className={`text-xs ${isPastDue ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                Due {formatShortDate(item.dueDate)}
+              </Text>
+            </View>
+          ) : null}
+          {tags.map((tag) => (
+            <View
+              className="max-w-full flex-row items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5"
+              key={tag.id}
+            >
+              <Icon
+                as={tagIconMap[tag.icon]}
+                className="text-muted-foreground"
+                size={12}
+              />
+              <Text
+                className="shrink text-muted-foreground text-xs"
+                numberOfLines={1}
+              >
+                {tag.name}
+              </Text>
+            </View>
+          ))}
+        </View>
       </Pressable>
     </View>
   );
@@ -170,25 +233,30 @@ function TaskRow({
 
 interface TaskListProps {
   emptyMessage: string;
+  hiddenTagId: string | null;
   isLoading: boolean;
   isRefreshing: boolean;
   items: TaskListItem[];
   onPressTask: (task: TaskSelectDecoded) => void;
   onRefresh: () => void;
   onToggleStatus: (task: TaskSelectDecoded) => void;
+  timeZone: string;
   tintColor: string;
 }
 
 function TaskList({
   items,
   emptyMessage,
+  hiddenTagId,
   isLoading,
   isRefreshing,
+  timeZone,
   tintColor,
   onRefresh,
   onPressTask,
   onToggleStatus,
 }: TaskListProps) {
+  const today = Temporal.Now.plainDateISO(timeZone);
   return (
     <FlatList
       contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
@@ -199,7 +267,7 @@ function TaskList({
       }
       ListEmptyComponent={
         <Text className="pt-8 text-center text-muted-foreground">
-          {isLoading ? "Loading..." : emptyMessage}
+          {isLoading ? "Loading tasks…" : emptyMessage}
         </Text>
       }
       refreshControl={
@@ -211,14 +279,27 @@ function TaskList({
       }
       renderItem={({ item }) =>
         item.type === "header" ? (
-          <Text className="py-2 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
-            {item.title}
-          </Text>
+          <View
+            accessibilityLabel={`${item.title}, ${item.count} ${item.count === 1 ? "task" : "tasks"}`}
+            accessibilityRole="header"
+            accessible
+            className="flex-row items-baseline gap-1.5 pt-5 pb-1"
+          >
+            <Text
+              className={`font-sans-medium text-sm ${item.tone === "overdue" ? "text-destructive" : "text-muted-foreground"}`}
+            >
+              {item.title}
+            </Text>
+            <Text className="text-muted-foreground text-xs">{item.count}</Text>
+          </View>
         ) : (
           <TaskRow
+            hiddenTagId={hiddenTagId}
             item={item.task}
             onPress={onPressTask}
             onToggleStatus={onToggleStatus}
+            timeZone={timeZone}
+            today={today}
           />
         )
       }
@@ -319,15 +400,13 @@ export default function TasksScreen() {
   let emptyMessage: string;
   if (isTagView) {
     listItems = buildSectionItems(tagSections);
-    emptyMessage = selectedTag?.name
-      ? `No tasks for tag ${selectedTag.name}.`
-      : "No tasks for this tag.";
+    emptyMessage = "No tasks with this tag yet.";
   } else if (activeTab === "Today") {
     listItems = buildSectionItems(todaySections);
-    emptyMessage = "Nothing for today.";
+    emptyMessage = "Nothing planned for today.";
   } else {
     listItems = inboxTasks.map((task) => ({ task, type: "task" }));
-    emptyMessage = "No tasks in inbox.";
+    emptyMessage = "Your inbox is empty. Tap + to add a task.";
   }
 
   return (
@@ -337,56 +416,62 @@ export default function TasksScreen() {
           headerLeft: () => (
             <Pressable
               accessibilityLabel="Manage tags"
-              className="flex-row items-center gap-1.5 rounded-lg py-1.5 pr-3 pl-4 active:opacity-70"
+              accessibilityRole="button"
+              className="h-11 flex-row items-center gap-1.5 rounded-lg pr-3 pl-4 active:opacity-70"
               onPress={() => setIsTagManagerOpen(true)}
             >
               <Icon as={SelectedTagIcon} size={18} />
               {selectedTag ? (
-                <Text className="font-medium text-foreground text-sm">
+                <Text
+                  className="font-medium text-foreground text-sm"
+                  maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                >
                   {selectedTag.name}
                 </Text>
               ) : null}
             </Pressable>
           ),
           headerRight: () => (
-            <View className="flex-row items-center gap-1.5 pr-2">
-              <Pressable
-                accessibilityLabel="Show inbox tasks"
-                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Inbox" ? "bg-muted" : ""
-                }`}
-                onPress={() => selectBaseTab("Inbox")}
+            <View className="h-11 flex-row items-center gap-1.5 pr-2">
+              <View
+                // iOS has no tablist trait; "tabbar" makes VoiceOver say "tab, 1 of 2".
+                accessibilityRole="tabbar"
+                className="h-11 flex-row items-center gap-1.5"
               >
-                <Text
-                  className={
-                    !isTagView && activeTab === "Inbox"
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
-                  }
-                >
-                  Inbox
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Show today tasks"
-                className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
-                  !isTagView && activeTab === "Today" ? "bg-muted" : ""
-                }`}
-                onPress={() => selectBaseTab("Today")}
-              >
-                <Text
-                  className={
-                    !isTagView && activeTab === "Today"
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
-                  }
-                >
-                  Today
-                </Text>
-              </Pressable>
+                {BASE_TASK_TABS.map((tab) => {
+                  const selected = !isTagView && activeTab === tab;
+                  return (
+                    <Pressable
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected }}
+                      className={`h-8 min-w-16 items-center justify-center rounded-full px-3 active:opacity-70 ${
+                        selected ? "bg-foreground/15" : ""
+                      }`}
+                      // 32pt to sit in the header's glass; the slop makes 44pt.
+                      hitSlop={{ bottom: 6, top: 6 }}
+                      key={tab}
+                      onPress={() => selectBaseTab(tab)}
+                    >
+                      <Text
+                        className={
+                          selected
+                            ? "font-sans-medium text-foreground"
+                            : "text-foreground"
+                        }
+                        maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
+                      >
+                        {tab}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
               <Pressable
                 accessibilityLabel="New task"
+                accessibilityRole="button"
                 className="items-center justify-center rounded-lg p-1.5 active:opacity-70"
+                // 30pt square; the slop makes the target 44pt.
+                hitSlop={7}
                 onPress={() => taskFlow.openCreate(buildEmptyDraft(timeZone))}
               >
                 <Icon as={Plus} size={18} />
@@ -399,16 +484,19 @@ export default function TasksScreen() {
 
       <TaskList
         emptyMessage={emptyMessage}
+        hiddenTagId={selectedTagId}
         isLoading={tasksQuery.isLoading}
         isRefreshing={isRefreshing}
         items={listItems}
         onPressTask={taskFlow.openEdit}
         onRefresh={handleRefresh}
         onToggleStatus={handleToggleStatus}
+        timeZone={timeZone}
         tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
       />
 
       <TaskEditorSheet
+        canSave={taskFlow.canSave}
         draft={taskFlow.draft}
         isVisible={taskFlow.isEditorOpen}
         mode={taskFlow.editingTask ? "edit" : "create"}
@@ -416,11 +504,10 @@ export default function TasksScreen() {
         onDelete={taskFlow.editingTask ? taskFlow.requestDelete : undefined}
         onSave={taskFlow.save}
         onToggleDone={taskFlow.editingTask ? taskFlow.toggleDone : undefined}
+        overlay={<TaskScopeDialogs flow={taskFlow} />}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
       />
-
-      <TaskScopeDialogs flow={taskFlow} />
 
       <TagManagerPopover
         onChange={setSelectedTagId}

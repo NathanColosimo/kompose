@@ -4,7 +4,7 @@ import type { StateConfig } from "@kompose/state/config";
 import { errorMessage } from "@kompose/state/errors";
 import { StateProvider } from "@kompose/state/state-provider";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
 import { ActivityIndicator, Alert, View } from "react-native";
@@ -63,19 +63,23 @@ function RootLayoutContent() {
     );
   }
 
+  // The theme reaches every native header, so iOS draws header glass for
+  // the active scheme instead of always for light.
   return (
-    <View className="flex-1 bg-background">
-      <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
-      <Stack
-        screenOptions={{
-          contentStyle: { backgroundColor: theme.colors.background },
-          headerStyle: { backgroundColor: theme.colors.background },
-          headerTintColor: theme.colors.text,
-        }}
-      >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      </Stack>
-    </View>
+    <ThemeProvider value={theme}>
+      <View className="flex-1 bg-background">
+        <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
+        <Stack
+          screenOptions={{
+            contentStyle: { backgroundColor: theme.colors.background },
+            headerStyle: { backgroundColor: theme.colors.background },
+            headerTintColor: theme.colors.text,
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        </Stack>
+      </View>
+    </ThemeProvider>
   );
 }
 

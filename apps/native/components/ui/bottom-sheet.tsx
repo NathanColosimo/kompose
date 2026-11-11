@@ -159,7 +159,6 @@ export function BottomSheet({
   const defaultHeight = snapPointsHeights[0];
 
   const [modalVisible, setModalVisible] = React.useState(false);
-
   useEffect(() => {
     if (isVisible) {
       setModalVisible(true);
@@ -234,6 +233,9 @@ export function BottomSheet({
   };
 
   const gesture = Gesture.Pan()
+    // Turned off rather than unwrapped: swapping the tree would remount the
+    // content, and with it any dialog open over the sheet and its scroll.
+    .enabled(!disablePanGesture)
     .onStart(() => {
       context.value = { y: translateY.value };
     })
@@ -277,7 +279,7 @@ export function BottomSheet({
   return (
     <Modal
       animationType="none"
-      onRequestClose={animateClose}
+      onRequestClose={handleBackdropPress}
       statusBarTranslucent
       transparent
       visible={modalVisible}
@@ -293,7 +295,7 @@ export function BottomSheet({
             <Animated.View style={{ flex: 1 }} />
           </TouchableWithoutFeedback>
 
-          {disablePanGesture ? (
+          <GestureDetector gesture={gesture}>
             <BottomSheetContent
               cardColor={cardColor}
               children={children}
@@ -304,20 +306,7 @@ export function BottomSheet({
               style={style}
               title={title}
             />
-          ) : (
-            <GestureDetector gesture={gesture}>
-              <BottomSheetContent
-                cardColor={cardColor}
-                children={children}
-                headerRight={headerRight}
-                mutedColor={mutedColor}
-                onHandlePress={handlePress}
-                rBottomSheetStyle={rBottomSheetStyle}
-                style={style}
-                title={title}
-              />
-            </GestureDetector>
-          )}
+          </GestureDetector>
         </Animated.View>
       </GestureHandlerRootView>
     </Modal>
