@@ -129,7 +129,6 @@ export const DayHeader = memo(function DayHeaderInner({
           {whoopSummary?.sleep ? (
             <span aria-hidden className="flex items-center gap-1">
               <Moon className="size-3" />
-              {/* "7h12m": hours and minutes, without the space, to fit. */}
               {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
                 " ",
                 ""
