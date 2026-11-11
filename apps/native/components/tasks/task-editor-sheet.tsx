@@ -3,8 +3,8 @@ import type {
   LinkMeta,
   TaskRecurrence,
 } from "@kompose/api/routers/task/contract";
+import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTags } from "@kompose/state/hooks/use-tags";
-import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
   getLinkDurationMinutes,
@@ -734,7 +734,33 @@ export function TaskEditorSheet({
   timeZone,
 }: TaskEditorSheetProps) {
   const { tagsQuery } = useTags();
-  const { parseLink } = useTasks();
+  const linkQueries = useLinkMetadata(isVisible ? (draft?.links ?? []) : []);
+  React.useEffect(() => {
+    for (const { url, data } of linkQueries) {
+      if (!data) {
+        continue;
+      }
+      setDraft((current) => {
+        if (!current.links.some((link) => link.url === url && link !== data)) {
+          return current;
+        }
+        const next = {
+          ...current,
+          links: current.links.map((link) => (link.url === url ? data : link)),
+        };
+        if (current.links[0]?.url === url) {
+          if (data.title && !current.title.trim()) {
+            next.title = data.title;
+          }
+          const duration = getLinkDurationMinutes(data);
+          if (duration !== null) {
+            next.durationMinutes = duration;
+          }
+        }
+        return next;
+      });
+    }
+  }, [linkQueries, setDraft]);
   const tags = tagsQuery.data ?? [];
   const [isRecurrenceExpanded, setIsRecurrenceExpanded] = React.useState(false);
   const [isTagPickerExpanded, setIsTagPickerExpanded] = React.useState(false);
@@ -907,12 +933,10 @@ export function TaskEditorSheet({
       />
 
       <NativeLinkListEditor
-        isParsing={parseLink.isPending}
+        isParsing={linkQueries.some((query) => query.isPending)}
         linkInput={draft.linkInput}
         links={draft.links}
         onAddLink={(url) => {
-          const isFirstLink = draft.links.length === 0;
-
           // Insert placeholder immediately so the link survives a quick save
           setDraft((current) => ({
             ...current,
@@ -926,28 +950,6 @@ export function TaskEditorSheet({
               },
             ]),
           }));
-
-          parseLink.mutate(url, {
-            onSuccess: (meta) => {
-              setDraft((current) => {
-                const next = {
-                  ...current,
-                  links: dedupeLinks(
-                    current.links.map((l) => (l.url === url ? meta : l))
-                  ),
-                };
-                if (isFirstLink) {
-                  if (meta.title && !current.title.trim()) {
-                    next.title = meta.title;
-                  }
-                  if ("durationSeconds" in meta && meta.durationSeconds > 0) {
-                    next.durationMinutes = Math.ceil(meta.durationSeconds / 60);
-                  }
-                }
-                return next;
-              });
-            },
-          });
         }}
         onLinkInputChange={(value) =>
           setDraft((current) => ({ ...current, linkInput: value }))

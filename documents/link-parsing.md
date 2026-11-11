@@ -5,7 +5,7 @@ Server-side metadata extraction for URLs attached to tasks. Detects the content 
 ## How it works
 
 1. User pastes one or more URLs into the command bar input, web task edit popover, or mobile task editor sheet.
-2. Client calls `tasks.parseLink` for each URL.
+2. `useLinkMetadata` calls `tasks.parseLink` through one in-memory TanStack query per URL. Saved metadata is reused; placeholders are fetched. Requests share the cache by URL and stop being observed when their link is removed.
 3. `LinkParserService` detects the provider from URL patterns and dispatches to the matching provider parser.
 4. Provider parser fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object.
 5. Client auto-fills task fields from the **first** link's metadata:
@@ -115,7 +115,7 @@ The `LinkParserService` validates target URLs before fetching:
 
 - `parseTaskInput()` in `task-input-parser.ts` extracts all URLs from the input text into a `links: string[]` array
 - Links alone (no title text) are valid for task creation — the title comes from the first link's metadata
-- All URLs are parsed after a 500ms debounce; results are tracked in a `linkMetaMap` keyed by URL
+- All URLs are parsed after a 500ms debounce; metadata and pending state come from per-URL queries
 - Auto-fill (title, duration) uses the **first** link's metadata only
 - On creation, all parsed metadata is assembled into a `links: LinkMeta[]` array via `dedupeLinks`; unparsed URLs fall back to `unknown` provider
 - Each link is displayed as a separate badge showing its provider name
@@ -125,15 +125,15 @@ The `LinkParserService` validates target URLs before fetching:
 - Multi-link UI: `LinkListEditor` component receives clean callbacks (`onAddLink`, `onRemoveLink`) instead of form internals
 - Existing links are shown as `LinkMetaPreview` cards (with `next/image` for thumbnails) with remove buttons
 - An "Add link" input at the bottom accepts new URLs via paste, blur, or Enter; duplicate URLs are rejected
-- The parent `TaskEditForm` handles `parseLink` mutation, auto-fill, and deduplication via `dedupeLinks`
+- The shared `TaskFields` observes per-URL queries and applies metadata only to links still in the draft; auto-fill uses the current first link
 - Each link card is clickable to open the URL in a new tab
 
 ### Mobile task editor sheet
 
 - Multi-link UI via `NativeLinkListEditor` component (extracted to reduce `TaskEditorSheet` complexity)
 - Receives clean callbacks (`onAddLink`, `onRemoveLink`, `onLinkInputChange`)
-- "Add link" input at the bottom; `parseLink` fires on blur; duplicate URLs are rejected
-- The parent handles mutation, auto-fill (from first link), and deduplication via `dedupeLinks`
+- "Add link" input at the bottom; a per-URL query starts on blur; duplicate URLs are rejected
+- The parent observes per-URL queries while visible and applies metadata to links still in the draft; auto-fill uses the current first link
 - `canSave` allows saving with just links (no title required)
 
 ## Files
@@ -152,7 +152,7 @@ The `LinkParserService` validates target URLs before fetching:
 | `packages/api/src/routers/task/contract.ts` | `parseLink` oRPC procedure contract |
 | `packages/api/src/routers/task/router.ts` | `parseLink` handler |
 | `packages/state/src/link-meta-utils.ts` | Shared formatting, deduplication, and validation helpers |
-| `packages/state/src/hooks/use-tasks.ts` | `parseLink` mutation hook |
+| `packages/state/src/hooks/use-link-metadata.ts` | Per-URL metadata queries |
 | `packages/env/src/index.ts` | Optional `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `YOUTUBE_API_KEY` |
 | `apps/web/src/lib/task-input-parser.ts` | URL extraction from command bar input |
 | `apps/web/src/components/command-bar/command-bar-create-task.tsx` | Link-aware task creation flow |
