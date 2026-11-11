@@ -236,7 +236,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 Client note:
 
-- Shared state clients no longer invalidate broad task/calendar queries on the first successful SSE connect. They only run the broad recovery invalidation after an explicit `reconnect` event.
+- The server sends an initial keepalive after Redis subscribes. Clients leave the first connection quiet and refresh task/calendar queries on the first event of each replacement stream, covering changes missed during a disconnect. Browser blur/visibility loss and native backgrounding share the 30 s disconnect timer; returning reconnects. Closing a stream aborts its RPC request so a pending read cannot hold the connection open.
 
 ### Redis pub/sub functions
 
