@@ -74,7 +74,7 @@ import {
   nearestSlotMinutes,
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 // biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
 import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
@@ -895,19 +895,10 @@ export default function CalendarTab() {
   }, [googleCalendars]);
 
   const visibleCalendarIds = useAtomValue(resolvedVisibleCalendarIdsAtom);
-  const isFetchingAccounts = useIsFetching({
-    queryKey: LINKED_ACCOUNTS_QUERY_KEY,
+  const { events: googleEvents } = useGoogleEvents({
+    visibleCalendars: visibleCalendarIds,
+    windows,
   });
-  const isFetchingCalendars = useIsFetching({
-    queryKey: GOOGLE_CALENDARS_QUERY_KEY,
-  });
-  const isFetchingWhoop = useIsFetching({ queryKey: WHOOP_DAYS_QUERY_KEY });
-
-  const { events: googleEvents, isFetching: isFetchingGoogleEvents } =
-    useGoogleEvents({
-      visibleCalendars: visibleCalendarIds,
-      windows,
-    });
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
@@ -1495,7 +1486,7 @@ export default function CalendarTab() {
               }),
               recurrence: formPayload.recurrence,
             };
-      await updateEvent.mutateAsync({
+      const updatedEvent = await updateEvent.mutateAsync({
         accountId: sourceCalendar.accountId,
         calendarId: sourceCalendar.calendarId,
         // The editor holds on the save; the cache changes once it's in.
@@ -1520,7 +1511,7 @@ export default function CalendarTab() {
           accountId: sourceCalendar.accountId,
           calendarId: sourceCalendar.calendarId,
           destinationCalendarId,
-          eventId: draft.eventId,
+          eventId: updatedEvent.id,
           // The edits are in by now: a failed move mustn't say they aren't.
           failureMessage: SAVED_NOT_MOVED_MESSAGE,
 
@@ -1711,7 +1702,6 @@ export default function CalendarTab() {
   const scrollOffsetRef = useRef(
     DEFAULT_SCROLL_HOUR * PIXELS_PER_HOUR - HOUR_LABEL_CLEARANCE_PX
   );
-  const isRefreshingRef = useRef(false);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -1720,48 +1710,26 @@ export default function CalendarTab() {
     []
   );
 
-  // True only during an explicit pull-to-refresh, so background fetches
-  // (e.g. task mutations, realtime sync) don't trigger the RefreshControl spinner.
-  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
-
-  const refreshCalendarData = useCallback(() => {
-    setIsPullRefreshing(true);
-    tasksQuery.refetch();
-    queryClient.invalidateQueries({
-      queryKey: LINKED_ACCOUNTS_QUERY_KEY,
-    });
-    queryClient.invalidateQueries({
-      queryKey: GOOGLE_CALENDARS_QUERY_KEY,
-    });
-    queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY });
-
-    // Invalidate visible calendars; active month queries include preloaded days.
-    for (const calendar of visibleCalendarIds) {
-      queryClient.invalidateQueries({
-        queryKey: getGoogleEventsByCalendarQueryKey(calendar),
-      });
-    }
-  }, [queryClient, tasksQuery, visibleCalendarIds]);
-
-  const isRefreshing =
-    tasksQuery.isFetching ||
-    isFetchingGoogleEvents ||
-    isFetchingAccounts > 0 ||
-    isFetchingCalendars > 0 ||
-    isFetchingWhoop > 0;
-
-  // Clear the pull-to-refresh indicator and restore scroll position once
-  // all fetches settle.
-  useEffect(() => {
-    if (isRefreshingRef.current && !isRefreshing) {
-      setIsPullRefreshing(false);
+  const refresh = useMutation({
+    mutationFn: () =>
+      Promise.allSettled([
+        tasksQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY }),
+        ...visibleCalendarIds.map((calendar) =>
+          queryClient.invalidateQueries({
+            queryKey: getGoogleEventsByCalendarQueryKey(calendar),
+          })
+        ),
+      ]),
+    onSettled: () => {
       scrollRef.current?.scrollTo({
         animated: false,
         y: scrollOffsetRef.current,
       });
-    }
-    isRefreshingRef.current = isRefreshing;
-  }, [isRefreshing]);
+    },
+  });
 
   // Defer the initial 7 AM scroll until the time grid has laid out.
   useEffect(() => {
@@ -1969,8 +1937,12 @@ export default function CalendarTab() {
             ref={scrollRef}
             refreshControl={
               <RefreshControl
-                onRefresh={refreshCalendarData}
-                refreshing={isPullRefreshing}
+                onRefresh={() => {
+                  if (!refresh.isPending) {
+                    refresh.mutate();
+                  }
+                }}
+                refreshing={refresh.isPending}
                 tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
               />
             }

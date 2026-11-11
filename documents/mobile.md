@@ -132,6 +132,7 @@ A sheet or dialog close handler finishes its exit animation before notifying the
 - Layout: `apps/native/app/(tabs)/(calendar)/_layout.tsx`
 - Screen: `apps/native/app/(tabs)/(calendar)/index.tsx`
   - Includes time gutter, day columns, event/task blocks, and create/edit modals.
+  - Pull-to-refresh waits for its own requests to settle and restores the scroll position. Background fetches do not control its spinner or scroll restoration.
   - Reads directly from the normal granular task/account/calendar/event caches.
 
 ### Settings + Theming
