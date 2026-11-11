@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 function ConsentShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
-      <section className="w-full max-w-md space-y-6 rounded-3xl border border-border/60 bg-card/80 p-8 shadow-lg">
+      <section className="flex w-full max-w-sm flex-col gap-6 rounded-xl border bg-card p-6 shadow-sm sm:p-8">
         {children}
       </section>
     </main>

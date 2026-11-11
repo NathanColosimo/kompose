@@ -15,9 +15,9 @@ import {
   Settings,
   Tag as TagIcon,
   Trash2,
-  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -39,6 +39,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -77,16 +79,16 @@ export function AppHeader({ user }: { user: User }) {
     >
       <div className="flex w-full items-center">
         {/* Left: macOS traffic-light safe area. */}
-        <div className="w-[76px] shrink-0 select-none" />
+        <div className="w-(--window-controls-width) shrink-0 select-none" />
 
         <div className="flex flex-1 justify-center">
           <SearchButton />
         </div>
 
-        <div className="flex shrink-0 items-center justify-end gap-2 pr-1">
-          <RightSidebarToggleButton />
+        <div className="flex shrink-0 items-center justify-end gap-1 pr-1">
           <UpdatePromptButton />
           <TagsMenu />
+          <RightSidebarToggleButton />
           <UserMenu user={user} />
         </div>
       </div>
@@ -119,20 +121,15 @@ function RightSidebarToggleButton() {
 
   return (
     <Button
-      className="size-7"
+      aria-label="Right sidebar"
+      aria-pressed={isOpen}
+      className="text-muted-foreground aria-pressed:bg-muted aria-pressed:text-foreground"
       onClick={toggleRightSidebar}
       size="icon"
       type="button"
-      variant={isOpen ? "secondary" : "outline"}
+      variant="ghost"
     >
-      {isOpen ? (
-        <X className="size-3.5" />
-      ) : (
-        <PanelRight className="size-3.5" />
-      )}
-      <span className="sr-only">
-        {isOpen ? "Close right sidebar" : "Open right sidebar"}
-      </span>
+      <PanelRight className="size-4" />
     </Button>
   );
 }
@@ -143,14 +140,14 @@ function SearchButton() {
   return (
     <button
       className={cn(
-        "flex h-7 w-full max-w-md items-center gap-2 rounded-md border bg-muted/50 px-3 text-muted-foreground text-sm transition-colors",
-        "hover:bg-muted hover:text-foreground"
+        "flex h-7 w-full max-w-md items-center gap-2 rounded-md border border-border/70 bg-card/60 px-2.5 text-muted-foreground text-sm transition-colors",
+        "hover:border-border hover:bg-card hover:text-foreground"
       )}
       onClick={() => setCommandBarOpen(true)}
       type="button"
     >
-      <Search className="size-4 shrink-0" />
-      <span className="flex-1 text-left">Do Anything…</span>
+      <Search className="size-3.5 shrink-0" />
+      <span className="flex-1 truncate text-left">Type a command…</span>
       <Kbd>⌘K</Kbd>
     </button>
   );
@@ -160,6 +157,7 @@ function UserMenu({ user }: { user: User }) {
   const { push, replace } = useRouter();
   const queryClient = useQueryClient();
   const { refetch: refetchSession } = authClient.useSession();
+  const { theme, setTheme } = useTheme();
 
   const handleLogout = async () => {
     try {
@@ -194,7 +192,10 @@ function UserMenu({ user }: { user: User }) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+      <DropdownMenuTrigger
+        aria-label="Account"
+        className="ml-1 rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
         <Avatar className="size-7 cursor-pointer">
           <AvatarImage alt={user.name} src={avatarSrc} />
           <AvatarFallback className="text-xs">{initials}</AvatarFallback>
@@ -218,13 +219,22 @@ function UserMenu({ user }: { user: User }) {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => push("/dashboard/settings")}>
-            <Settings className="mr-2 size-4" />
+            <Settings />
             Settings
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-muted-foreground text-xs">
+          Theme
+        </DropdownMenuLabel>
+        <DropdownMenuRadioGroup onValueChange={setTheme} value={theme}>
+          <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
-          <LogOut className="mr-2 size-4" />
+          <LogOut />
           Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -240,27 +250,26 @@ function TagsMenu() {
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <Button size="icon" type="button" variant="ghost">
+        <Button
+          aria-label="Tags"
+          className="text-muted-foreground"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
           <TagIcon className="size-4" />
-          <span className="sr-only">Tags</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 p-0" sideOffset={8}>
-        <div className="px-3 pt-2.5 pb-1">
-          <span className="font-medium text-[11px] text-muted-foreground uppercase tracking-widest">
-            Tags
-          </span>
+      <PopoverContent align="end" className="w-72 gap-0 p-0" sideOffset={8}>
+        <div className="px-3 pt-3 pb-1">
+          <h2 className="font-medium text-sm">Tags</h2>
         </div>
 
         {tags.length === 0 ? (
-          <div className="flex flex-col items-center gap-1.5 px-3 py-5 text-center">
-            <div className="flex size-9 items-center justify-center rounded-full bg-muted/50">
-              <TagIcon className="size-4 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground text-xs">
-              Tags help you organize tasks
-            </p>
-          </div>
+          <p className="px-3 pb-3 text-muted-foreground text-xs">
+            Group tasks by project or area. Each tag gets its own list in the
+            sidebar.
+          </p>
         ) : (
           <ScrollArea className="max-h-[240px]">
             <div className="px-1.5 py-0.5">

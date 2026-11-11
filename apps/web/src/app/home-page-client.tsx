@@ -3,9 +3,11 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useState } from "react";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { isDesktopRuntime } from "@/lib/desktop";
+import { HomePreview } from "./home-preview";
 
 // Only the desktop app checks the session here, so browsers never download
 // the auth client on the landing page.
@@ -19,16 +21,16 @@ const DesktopHomeSessionGate = dynamic(
 
 const highlights = [
   {
-    body: "Plan deep work blocks, drag tasks into your day, and keep commitments realistic.",
-    title: "Calendar + tasks",
+    body: "Drag tasks from your inbox onto the calendar. Kompose blocks the time, so your plan matches what you can actually do.",
+    title: "Plan in the time you have",
   },
   {
-    body: "Google Calendar and WHOOP data sit alongside your tasks.",
-    title: "All your tools",
+    body: "Google Calendar events and WHOOP sleep and workouts sit next to your tasks, in one view.",
+    title: "Everything in one view",
   },
   {
-    body: "Desktop and mobile apps keep your calendar and tasks in sync.",
-    title: "Across your devices",
+    body: "The desktop and mobile apps stay in sync, and AI assistants like Claude and ChatGPT can manage tasks for you.",
+    title: "On every device",
   },
 ];
 
@@ -50,67 +52,39 @@ export default function HomePageClient() {
 
 function HomePageContent() {
   return (
-    <main className="bg-background text-foreground">
-      {/* Provide a drag handle on desktop (Electron) without affecting web behavior. */}
-      <div
-        aria-hidden
-        className="fixed inset-x-0 top-0 z-50 h-8 select-none"
-        data-desktop-drag-region
-      />
-      <section className="container mx-auto flex min-h-[calc(100svh-4rem)] flex-col gap-12 px-6 py-20 lg:flex-row lg:items-center">
-        <div className="space-y-8 text-center lg:text-left">
-          <p className="font-semibold text-muted-foreground text-sm uppercase tracking-[0.2em]">
-            compose every hour with intent
-          </p>
-          <div className="space-y-6">
-            <h1 className="font-serif text-4xl leading-tight sm:text-5xl lg:text-6xl">
+    <>
+      <SiteHeader />
+      <main>
+        <section className="mx-auto grid max-w-6xl items-center gap-14 px-6 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:pt-24">
+          <div className="flex flex-col gap-6">
+            <h1 className="text-balance font-serif text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
               One timeline for your calendar and tasks.
             </h1>
-            <p className="text-lg text-muted-foreground sm:text-xl">
-              Kompose merges events, tasks, and connected accounts so you can
-              plan a week in minutes and stay focused when plans change.
+            <p className="max-w-lg text-pretty text-lg text-muted-foreground">
+              Kompose puts your events and to-dos on the same calendar, so you
+              can plan a week in minutes and adjust when plans change.
             </p>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
-            <Button asChild size="lg">
+            <Button asChild className="h-10 self-start px-4 text-sm">
               <Link href="/login">Get started</Link>
             </Button>
-            <Button asChild size="lg" variant="ghost">
-              <Link href="#features">See how it works</Link>
-            </Button>
           </div>
-        </div>
-        <div
-          className="grid w-full gap-4 rounded-3xl border border-border/40 bg-card/40 p-6 shadow-xl lg:max-w-lg"
-          id="features"
-        >
-          {highlights.map((highlight) => (
-            <div
-              className="rounded-2xl border border-border/50 bg-background/60 p-4 text-left"
-              key={highlight.title}
-            >
-              <p className="font-semibold">{highlight.title}</p>
-              <p className="text-muted-foreground text-sm">{highlight.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-      <footer className="border-border/60 border-t">
-        <div className="container mx-auto flex flex-col gap-3 p-6 text-center text-muted-foreground text-sm sm:flex-row sm:items-center sm:justify-between lg:text-left">
-          <p>
-            Kompose helps you coordinate calendar, task, and connected account
-            workflows in one place.
-          </p>
-          <div className="flex items-center justify-center gap-4 sm:justify-end">
-            <a className="underline-offset-4 hover:underline" href="/privacy">
-              Privacy Policy
-            </a>
-            <a className="underline-offset-4 hover:underline" href="/terms">
-              Terms of Service
-            </a>
+          <HomePreview />
+        </section>
+
+        <section className="mx-auto max-w-6xl px-6 pb-24">
+          <div className="grid gap-10 border-t pt-10 sm:grid-cols-3 sm:gap-8">
+            {highlights.map((highlight) => (
+              <div className="flex flex-col gap-2" key={highlight.title}>
+                <h2 className="font-medium text-base">{highlight.title}</h2>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {highlight.body}
+                </p>
+              </div>
+            ))}
           </div>
-        </div>
-      </footer>
-    </main>
+        </section>
+      </main>
+      <SiteFooter />
+    </>
   );
 }
