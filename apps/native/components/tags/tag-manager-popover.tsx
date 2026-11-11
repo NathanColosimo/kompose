@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input";
 import { RadioButton } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import { useColor } from "@/hooks/use-color";
-import { type TagIconName, tagIconMap } from "./tag-icon-map";
+import { TagColorPicker } from "./tag-color-picker";
+import { TagGlyph } from "./tag-glyph";
+import type { TagIconName } from "./tag-icon-map";
 import { TagIconPicker } from "./tag-icon-picker";
 
 interface TagManagerPopoverProps {
@@ -32,11 +34,12 @@ export function TagManagerPopover({
   const [requestedEdit, setRequestedEdit] = React.useState(false);
   const [name, setName] = React.useState("");
   const [icon, setIcon] = React.useState<TagIconName>("Tag");
+  const [color, setColor] = React.useState<TagSelect["color"]>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<TagSelect | null>(
     null
   );
   const [tagEdits, setTagEdits] = React.useState<
-    Record<string, Partial<Pick<TagSelect, "icon" | "name">>>
+    Record<string, Partial<Pick<TagSelect, "color" | "icon" | "name">>>
   >({});
   const [iconPickerTagId, setIconPickerTagId] = React.useState<string | null>(
     null
@@ -53,6 +56,7 @@ export function TagManagerPopover({
     setRequestedEdit(false);
     setName("");
     setIcon("Tag");
+    setColor(null);
     setDeleteTarget(null);
     setTagEdits({});
     setIconPickerTagId(null);
@@ -65,7 +69,7 @@ export function TagManagerPopover({
       return;
     }
     createTag.mutate(
-      { icon, name: trimmed },
+      { color, icon, name: trimmed },
       {
         onSuccess: () => {
           setName("");
@@ -122,6 +126,9 @@ export function TagManagerPopover({
           if (current?.icon !== undefined && current.icon !== edits.icon) {
             remaining.icon = current.icon;
           }
+          if (current?.color !== undefined && current.color !== edits.color) {
+            remaining.color = current.color;
+          }
           const next = { ...previous };
           if (Object.keys(remaining).length === 0) {
             delete next[tag.id];
@@ -153,9 +160,10 @@ export function TagManagerPopover({
       <View className="gap-2">
         {tags.map((tag) => {
           const draft = { ...tag, ...tagEdits[tag.id] };
-          const IconComponent = tagIconMap[draft.icon];
           const hasChanges =
-            draft.name.trim() !== tag.name || draft.icon !== tag.icon;
+            draft.name.trim() !== tag.name ||
+            draft.icon !== tag.icon ||
+            draft.color !== tag.color;
           return (
             <View
               className="gap-1.5 rounded-md border border-border"
@@ -167,6 +175,7 @@ export function TagManagerPopover({
                 style={{ minHeight: 40 }}
               >
                 <Pressable
+                  accessibilityLabel={`Color and icon for ${tag.name}`}
                   className="h-7 w-7 items-center justify-center rounded-full"
                   onPress={() =>
                     setIconPickerTagId((current) =>
@@ -174,10 +183,10 @@ export function TagManagerPopover({
                     )
                   }
                 >
-                  <Icon
-                    as={IconComponent}
+                  <TagGlyph
                     className="text-muted-foreground"
                     size={15}
+                    tag={draft}
                   />
                 </Pressable>
                 <View
@@ -238,18 +247,32 @@ export function TagManagerPopover({
               </View>
 
               {iconPickerTagId === tag.id ? (
-                <TagIconPicker
-                  onChange={(nextIcon) =>
-                    setTagEdits((previous) => ({
-                      ...previous,
-                      [tag.id]: {
-                        ...previous[tag.id],
-                        icon: nextIcon,
-                      },
-                    }))
-                  }
-                  value={draft.icon}
-                />
+                <View className="gap-2">
+                  <TagColorPicker
+                    onChange={(nextColor) =>
+                      setTagEdits((previous) => ({
+                        ...previous,
+                        [tag.id]: {
+                          ...previous[tag.id],
+                          color: nextColor,
+                        },
+                      }))
+                    }
+                    value={draft.color}
+                  />
+                  <TagIconPicker
+                    onChange={(nextIcon) =>
+                      setTagEdits((previous) => ({
+                        ...previous,
+                        [tag.id]: {
+                          ...previous[tag.id],
+                          icon: nextIcon,
+                        },
+                      }))
+                    }
+                    value={draft.icon}
+                  />
+                </View>
               ) : null}
             </View>
           );
@@ -271,7 +294,6 @@ export function TagManagerPopover({
         </Pressable>
 
         {tags.map((tag) => {
-          const IconComponent = tagIconMap[tag.icon];
           const isSelected = value === tag.id;
           return (
             <Pressable
@@ -281,11 +303,7 @@ export function TagManagerPopover({
               key={tag.id}
               onPress={() => handleSelectTag(tag)}
             >
-              <Icon
-                as={IconComponent}
-                className="text-muted-foreground"
-                size={14}
-              />
+              <TagGlyph className="text-muted-foreground" size={14} tag={tag} />
               <Text className="flex-1 text-xs">{tag.name}</Text>
               <SelectionRadio selected={isSelected} />
             </Pressable>
@@ -326,6 +344,7 @@ export function TagManagerPopover({
                 placeholder="Tag name"
                 value={name}
               />
+              <TagColorPicker onChange={setColor} value={color} />
               <TagIconPicker onChange={setIcon} value={icon} />
               <Button
                 disabled={!name.trim() || createTag.isPending}

@@ -5,6 +5,7 @@ import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
 import { timezoneAtom } from "@kompose/state/atoms/current-date";
 import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
+import { taskTagSwatch } from "@kompose/state/tag-colors";
 import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
 import { CalendarCheck } from "lucide-react";
@@ -25,7 +26,22 @@ import {
   calculateEventPosition,
   GRIP_PROPS,
 } from "../event-position";
-import { BlockContent, type BlockDetail } from "./block-content";
+import { BlockContent, type BlockDetail, eventColor } from "./block-content";
+
+/**
+ * A task block's surface: tinted like an event when a tag gives it a color,
+ * otherwise a plain card.
+ */
+function taskSurface(task: TaskSelectDecoded) {
+  const swatch = taskTagSwatch(task.tags);
+  if (!swatch) {
+    return {
+      className:
+        "border border-foreground/20 bg-card pl-1.5 text-card-foreground dark:border-foreground/12",
+    };
+  }
+  return { className: "event-surface pl-2", style: eventColor(swatch) };
+}
 
 /** The task's first tag, plus a count of the rest, then its due date. */
 function taskDetails(task: TaskSelectDecoded): BlockDetail[] {
@@ -150,6 +166,7 @@ export const TaskEvent = memo(function TaskEventInner({
       segmentDurationMinutes,
       layout?.uncoveredMinutes ?? segmentDurationMinutes
     ) < 30;
+  const surface = taskSurface(task);
   const style: React.CSSProperties = {
     ...blockHorizontalStyle(layout),
     height,
@@ -183,9 +200,11 @@ export const TaskEvent = memo(function TaskEventInner({
     >
       <div
         className={cn(
-          "@container relative flex h-full gap-1.5 overflow-hidden rounded-[5px] border border-foreground/20 bg-card pr-1.5 pl-1.5 text-card-foreground dark:border-foreground/12",
+          "@container relative flex h-full gap-1.5 overflow-hidden rounded-[5px] pr-1.5",
+          surface.className,
           isShort ? "items-center py-0" : "items-start py-1"
         )}
+        style={surface.style}
       >
         {/* Narrow blocks give the checkbox's room to the title; the editor
             has Done too. */}
@@ -254,6 +273,7 @@ export const TaskEvent = memo(function TaskEventInner({
 
 export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
   const timeZone = useAtomValue(timezoneAtom);
+  const surface = taskSurface(task);
   const isShortTask = task.durationMinutes <= 15;
   const shortTaskHeight = (15 / 60) * PIXELS_PER_HOUR;
 
@@ -269,9 +289,11 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
     >
       <div
         className={cn(
-          "rounded-[5px] border border-foreground/20 bg-card px-1.5 text-card-foreground dark:border-foreground/12",
+          "rounded-[5px] pr-1.5",
+          surface.className,
           isShortTask ? "h-full py-0" : "py-1"
         )}
+        style={surface.style}
       >
         {startZdt ? (
           <BlockContent

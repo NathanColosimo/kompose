@@ -27,11 +27,29 @@ export const tagIconNames = [
 
 export const tagIconSchema = z.enum(tagIconNames);
 
+/** The tag palette. Each app maps a name to its swatch; see tag-colors.ts in @kompose/state. */
+export const tagColorNames = [
+  "rose",
+  "coral",
+  "apricot",
+  "butter",
+  "sage",
+  "mint",
+  "sky",
+  "periwinkle",
+  "lavender",
+  "mauve",
+] as const;
+
+const tagColorSchema = z.enum(tagColorNames);
+
 export const tagSelectSchemaWithIcon = tagSelectSchema.extend({
+  color: tagColorSchema.nullable(),
   icon: tagIconSchema,
 });
 
 const tagInsertSchemaWithIcon = tagInsertSchema.extend({
+  color: tagColorSchema.nullable().optional(),
   icon: tagIconSchema,
   name: z.string().min(1),
 });
@@ -49,6 +67,8 @@ export const createTag = oc
   .output(tagSelectSchemaWithIcon);
 
 const updateTagInputSchema = z.object({
+  /** null clears the color. */
+  color: tagColorSchema.nullable().optional(),
   icon: tagIconSchema.optional(),
   id: z.uuidv7(),
   name: z.string().min(1).optional(),
@@ -74,3 +94,4 @@ export const tagContract = {
 export type CreateTagInput = z.infer<typeof createTagInputSchema>;
 export type UpdateTagInput = z.infer<typeof updateTagInputSchema>;
 export type TagSelect = z.infer<typeof tagSelectSchemaWithIcon>;
+export type TagColorName = (typeof tagColorNames)[number];

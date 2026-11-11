@@ -18,7 +18,7 @@ import { Temporal } from "temporal-polyfill";
 import { ownPresses } from "@/components/calendar/dnd/helpers";
 import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
-import { tagIconMap } from "../tags/tag-icon-map";
+import { TagGlyph } from "../tags/tag-glyph";
 import { TaskEditPopover } from "../task-form/task-edit-popover";
 import { Checkbox } from "../ui/checkbox";
 
@@ -135,18 +135,15 @@ export const TaskItem = memo(function TaskItemInner({
             ) : null}
             {task.tags
               .filter((tag) => tag.id !== hiddenTagId)
-              .map((tag) => {
-                const TagIcon = tagIconMap[tag.icon];
-                return (
-                  <span
-                    className="flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
-                    key={tag.id}
-                  >
-                    <TagIcon aria-hidden className="size-3 shrink-0" />
-                    <span className="truncate">{tag.name}</span>
-                  </span>
-                );
-              })}
+              .map((tag) => (
+                <span
+                  className="flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
+                  key={tag.id}
+                >
+                  <TagGlyph className="size-3 shrink-0" tag={tag} />
+                  <span className="truncate">{tag.name}</span>
+                </span>
+              ))}
           </span>
         </button>
       </TaskEditPopover>

@@ -61,6 +61,8 @@
   --whoop-sleep: hsl(245 40% 62%);
   --whoop-sleep-foreground: hsl(245 45% 50%);
   --whoop-workout: hsl(178 45% 38%);
+  /* How much of a tag's pastel its icons keep; the rest is ink, so icons reach 3:1 on the paper. */
+  --tag-ink-mix: 50%;
   --font-sans: "Sentient", serif;
   --font-serif: "Sentient", serif;
   --font-mono: "JetBrains Mono", monospace;
@@ -124,6 +126,7 @@
   --whoop-sleep: hsl(245 40% 65%);
   --whoop-sleep-foreground: hsl(245 40% 72%);
   --whoop-workout: hsl(176 45% 50%);
+  --tag-ink-mix: 100%;
   --font-sans: "Sentient", serif;
   --font-serif: "Sentient", serif;
   --font-mono: "JetBrains Mono", monospace;

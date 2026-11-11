@@ -41,6 +41,7 @@ export const tagRouter = os.router({
   update: os.update.effect(function* ({ input, context }) {
     const tag = yield* TagService.use((service) =>
       service.updateTag(context.user.id, input.id, {
+        color: input.color,
         icon: input.icon,
         name: input.name,
       })

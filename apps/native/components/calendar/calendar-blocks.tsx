@@ -570,13 +570,16 @@ export function EventBlock({
 }
 
 interface TaskBlockProps extends BlockPosition, BlockTextProps {
+  /** Its tag's color; without one the task is a plain card. */
+  color: string | undefined;
   done: boolean;
   onPress: () => void;
   onToggleDone: () => void;
 }
 
-/** A scheduled task: a plain card with a checkbox, so only events carry color. */
+/** A scheduled task: a card with a checkbox, tinted like an event when its tag has a color. */
 export function TaskBlock({
+  color,
   details,
   done,
   end,
@@ -596,6 +599,7 @@ export function TaskBlock({
   const isCovered = textMinutes < drawn;
   const tight = isTight(textMinutes, drawn);
   const placement = positionStyle(position);
+  const surface = useEventSurface(color);
   const bodyTopRef = useRef(0);
   const narrow = placement.width < NARROW_BLOCK_PT;
   const longPressAt = (offsetInBlock: number) =>
@@ -614,7 +618,17 @@ export function TaskBlock({
       style={placement}
     >
       <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border border-foreground/20 bg-card px-1 ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
+        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border px-1 ${color ? "" : "border-foreground/20 bg-card"} ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
+        style={
+          color
+            ? {
+                backgroundColor: surface.fill,
+                borderColor: surface.border,
+                borderLeftColor: surface.bar,
+                borderLeftWidth: 3,
+              }
+            : undefined
+        }
       >
         {/* Narrow blocks give the checkbox's room to the title; done is in
             the editor and the long-press menu. */}

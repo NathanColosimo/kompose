@@ -10,12 +10,11 @@ import { useTagTaskSections } from "@kompose/state/hooks/use-tag-task-sections";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useTaskSections } from "@kompose/state/hooks/use-task-sections";
 import { useAtom, useAtomValue } from "jotai";
-import type { LucideIcon } from "lucide-react";
 import { CalendarClock, CalendarDays, Inbox } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { type ComponentProps, useEffect, useMemo } from "react";
+import { type ComponentProps, type ReactNode, useEffect, useMemo } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagGlyph } from "@/components/tags/tag-glyph";
 import { CreateTaskForm } from "@/components/task-form/create-task-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,7 +42,7 @@ import { TaskItem } from "./task-item";
 export const SIDEBAR_TASK_LIST_DROPPABLE_ID = "sidebar-task-list";
 
 interface SidebarNavItem {
-  icon: LucideIcon;
+  icon: ReactNode;
   id: string;
   tagId?: string;
   title: string;
@@ -52,13 +51,13 @@ interface SidebarNavItem {
 
 const navMain: SidebarNavItem[] = [
   {
-    icon: Inbox,
+    icon: <Inbox />,
     id: "inbox",
     title: "Inbox",
     type: "base",
   },
   {
-    icon: CalendarClock,
+    icon: <CalendarClock />,
     id: "today",
     title: "Today",
     type: "base",
@@ -362,7 +361,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
     );
     const tagItems =
       tagsQuery.data?.map((tag) => ({
-        icon: tagIconMap[tag.icon],
+        icon: <TagGlyph tag={tag} />,
         id: `tag-${tag.id}`,
         tagId: tag.id,
         title: tag.name,
@@ -503,7 +502,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                         hidden: false,
                       }}
                     >
-                      <item.icon />
+                      {item.icon}
                       <span className="sr-only">{item.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

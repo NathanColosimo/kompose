@@ -69,6 +69,7 @@ import {
   savedSeriesRecurrence,
   seriesEditFields,
 } from "@kompose/state/series-edit";
+import { taskTagSwatch } from "@kompose/state/tag-colors";
 import {
   formatTimeRange,
   nearestSlotMinutes,
@@ -2157,6 +2158,7 @@ export default function CalendarTab() {
                           return (
                             <TaskBlock
                               areaWidth={blockAreaWidth}
+                              color={taskTagSwatch(task.tags)}
                               columnIndex={layout?.columnIndex}
                               columnSpan={layout?.columnSpan}
                               details={taskTagDetails(task)}

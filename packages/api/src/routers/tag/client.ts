@@ -43,6 +43,7 @@ export class TagService extends Context.Service<TagService>()("TagService", {
       }
 
       const insertRow: TagInsertRow = {
+        color: input.color ?? null,
         icon: input.icon,
         id: uuidv7(),
         name,
@@ -65,7 +66,11 @@ export class TagService extends Context.Service<TagService>()("TagService", {
     ) {
       yield* Effect.annotateCurrentSpan("userId", userId);
       yield* Effect.annotateCurrentSpan("tagId", tagId);
-      if (input.name === undefined && input.icon === undefined) {
+      if (
+        input.name === undefined &&
+        input.icon === undefined &&
+        input.color === undefined
+      ) {
         return yield* Effect.fail(
           new InvalidTagError({ message: "No tag updates provided" })
         );
@@ -96,10 +101,10 @@ export class TagService extends Context.Service<TagService>()("TagService", {
         nextName = trimmed;
       }
 
-      const nextIcon = input.icon ?? existing.icon;
-
+      // Drizzle leaves out undefined fields, so unset ones keep their value.
       const [updated] = yield* dbUpdateTag(userId, tagId, {
-        icon: nextIcon,
+        color: input.color,
+        icon: input.icon,
         name: nextName,
         updatedAt: new Date().toISOString(),
       });
