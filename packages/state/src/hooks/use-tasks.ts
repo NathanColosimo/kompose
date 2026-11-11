@@ -215,5 +215,9 @@ export function useTasks(options: UseTasksOptions = {}) {
     },
   });
 
-  return { createTask, deleteTask, tasksQuery, updateTask };
+  const parseLink = useMutation({
+    mutationFn: async (url: string) => await orpc.tasks.parseLink({ url }),
+  });
+
+  return { createTask, deleteTask, parseLink, tasksQuery, updateTask };
 }

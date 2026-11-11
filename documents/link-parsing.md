@@ -5,7 +5,7 @@ Server-side metadata extraction for URLs attached to tasks. Detects the content 
 ## How it works
 
 1. User pastes one or more URLs into the command bar input, web task edit popover, or mobile task editor sheet.
-2. `useLinkMetadata` calls `tasks.parseLink` through one in-memory TanStack query per URL. Saved metadata is reused; placeholders are fetched. Requests share the cache by URL and stop being observed when their link is removed.
+2. The command bar calls `tasks.parseLink` through `useLinkMetadata`, one in-memory TanStack query per URL. The task editors call it from the add-link handler and await each call's own promise.
 3. `LinkParserService` detects the provider from URL patterns and dispatches to the matching provider parser.
 4. Provider parser fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object.
 5. Client auto-fills task fields from the **first** link's metadata:
@@ -125,15 +125,15 @@ The `LinkParserService` validates target URLs before fetching:
 - Multi-link UI: `LinkListEditor` component receives clean callbacks (`onAddLink`, `onRemoveLink`) instead of form internals
 - Existing links are shown as `LinkMetaPreview` cards (with `next/image` for thumbnails) with remove buttons
 - An "Add link" input at the bottom accepts new URLs via paste, blur, or Enter; duplicate URLs are rejected
-- The shared `TaskFields` observes per-URL queries and applies metadata only to links still in the draft; auto-fill uses the current first link
+- The shared `TaskFields` adds a placeholder, then replaces it with the `parseLink` result; auto-fill uses the first link
 - Each link card is clickable to open the URL in a new tab
 
 ### Mobile task editor sheet
 
 - Multi-link UI via `NativeLinkListEditor` component (extracted to reduce `TaskEditorSheet` complexity)
 - Receives clean callbacks (`onAddLink`, `onRemoveLink`, `onLinkInputChange`)
-- "Add link" input at the bottom; a per-URL query starts on blur; duplicate URLs are rejected
-- The parent observes per-URL queries while visible and applies metadata to links still in the draft; auto-fill uses the current first link
+- "Add link" input at the bottom; `parseLink` fires on blur; duplicate URLs are rejected
+- The parent handles the `parseLink` result, auto-fill (from first link), and deduplication via `dedupeLinks`
 - `canSave` allows saving with just links (no title required)
 
 ## Files
@@ -152,7 +152,8 @@ The `LinkParserService` validates target URLs before fetching:
 | `packages/api/src/routers/task/contract.ts` | `parseLink` oRPC procedure contract |
 | `packages/api/src/routers/task/router.ts` | `parseLink` handler |
 | `packages/state/src/link-meta-utils.ts` | Shared formatting, deduplication, and validation helpers |
-| `packages/state/src/hooks/use-link-metadata.ts` | Per-URL metadata queries |
+| `packages/state/src/hooks/use-link-metadata.ts` | Per-URL metadata queries for the command bar |
+| `packages/state/src/hooks/use-tasks.ts` | `parseLink` mutation for the task editors |
 | `packages/env/src/index.ts` | Optional `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `YOUTUBE_API_KEY` |
 | `apps/web/src/lib/task-input-parser.ts` | URL extraction from command bar input |
 | `apps/web/src/components/command-bar/command-bar-create-task.tsx` | Link-aware task creation flow |

@@ -10,7 +10,6 @@ import type {
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
 import { commandBarTaskOpenRequestAtom } from "@kompose/state/atoms/command-bar";
-import { useLinkMetadata } from "@kompose/state/hooks/use-link-metadata";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import {
   dedupeLinks,
@@ -819,39 +818,13 @@ function TaskFields({
 }: {
   form: UseFormReturn<TaskFormValues>;
 }) {
+  const { parseLink } = useTasks();
   const watchedValues = useWatch({ control });
   // Separate watch for startDate to preserve Temporal.PlainDate type (useWatch returns deeply partial)
   const startDate = useWatch({ control, name: "startDate" });
   // Separate watch for links to preserve array type
   const links = useWatch({ control, name: "links" });
   const recurrence = useWatch({ control, name: "recurrence" });
-  const linkQueries = useLinkMetadata(links);
-  useEffect(() => {
-    for (const { url, data } of linkQueries) {
-      const current = getValues("links");
-      if (
-        !(data && current.some((link) => link.url === url && link !== data))
-      ) {
-        continue;
-      }
-      setValue(
-        "links",
-        current.map((link) => (link.url === url ? data : link)),
-        {
-          shouldDirty: true,
-        }
-      );
-      if (current[0]?.url === url) {
-        if (data.title && !getValues("title").trim()) {
-          setValue("title", data.title, { shouldDirty: true });
-        }
-        const duration = getLinkDurationMinutes(data);
-        if (duration !== null) {
-          setValue("durationMinutes", duration, { shouldDirty: true });
-        }
-      }
-    }
-  }, [getValues, linkQueries, setValue]);
 
   return (
     <>
@@ -1063,7 +1036,7 @@ function TaskFields({
       <Separator />
 
       <LinkListEditor
-        isParsing={linkQueries.some((query) => query.isPending)}
+        isParsing={parseLink.isPending}
         links={links}
         onAddLink={(url) => {
           // Insert an unknown placeholder immediately so the link
@@ -1074,9 +1047,34 @@ function TaskFields({
             url,
           };
           const currentLinks = getValues("links") ?? [];
+          const isFirstLink = currentLinks.length === 0;
           setValue("links", dedupeLinks([...currentLinks, placeholder]), {
             shouldDirty: true,
           });
+
+          // mutate()'s onSuccess fires only for the latest call, so a second link
+          // would leave the first a placeholder. A failed parse keeps it too.
+          parseLink
+            .mutateAsync(url)
+            .then((meta) => {
+              const latest = getValues("links") ?? [];
+              setValue(
+                "links",
+                dedupeLinks(latest.map((l) => (l.url === url ? meta : l))),
+                { shouldDirty: true }
+              );
+
+              if (isFirstLink) {
+                if (meta.title && !getValues("title")?.trim()) {
+                  setValue("title", meta.title, { shouldDirty: true });
+                }
+                const duration = getLinkDurationMinutes(meta);
+                if (duration !== null) {
+                  setValue("durationMinutes", duration, { shouldDirty: true });
+                }
+              }
+            })
+            .catch(() => undefined);
         }}
         onRemoveLink={(index) => {
           setValue(
