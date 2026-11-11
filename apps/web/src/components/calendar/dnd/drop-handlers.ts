@@ -19,11 +19,6 @@ export interface TaskDropUpdate {
   };
 }
 
-/** Whether two times are the same instant, whatever their zones. */
-function sameInstant(a: Temporal.ZonedDateTime, b: Temporal.ZonedDateTime) {
-  return a.epochNanoseconds === b.epochNanoseconds;
-}
-
 /** A drop back where the task already was changes nothing, so it returns null. */
 export function buildTaskMoveUpdate(
   task: TaskSelectDecoded,
@@ -74,7 +69,7 @@ export function buildTaskResizeUpdate({
   });
   if (
     !range ||
-    (sameInstant(range.start, originalStart) &&
+    (range.start.epochNanoseconds === originalStart.epochNanoseconds &&
       durationInMinutes(range.start, range.end) === task.durationMinutes)
   ) {
     return null;
@@ -132,7 +127,7 @@ export function buildGoogleMoveUpdate(
   data: Extract<DragData, { type: "google-event" }>,
   start: Temporal.ZonedDateTime
 ): UpdateGoogleEventInput | null {
-  if (sameInstant(start, data.start)) {
+  if (start.epochNanoseconds === data.start.epochNanoseconds) {
     return null;
   }
   const durationMins = Math.round(
@@ -164,7 +159,8 @@ export function buildGoogleResizeUpdate({
   });
   if (
     !range ||
-    (sameInstant(range.start, data.start) && sameInstant(range.end, data.end))
+    (range.start.epochNanoseconds === data.start.epochNanoseconds &&
+      range.end.epochNanoseconds === data.end.epochNanoseconds)
   ) {
     return null;
   }
