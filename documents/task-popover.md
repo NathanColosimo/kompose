@@ -41,6 +41,7 @@ mutations come from `packages/state/src/hooks/use-tasks.ts`.
 ## Saving
 
 - Save, Mark done and task creation close the editor immediately. The shared task mutations update the cache optimistically where supported; failures roll back and use the app's normal error toast.
+- Repeated submits commit only once per editor opening. The standalone Create Task dialog also closes on submit, so an old save cannot reset a reopened draft.
 - Mark done includes unsaved edits in the same write, after choosing scope when needed.
 - Moving or resizing the task while its editor is open updates its date, time and duration and keeps other unsaved edits.
 

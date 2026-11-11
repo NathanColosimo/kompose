@@ -287,13 +287,15 @@ export function CommandBarCreateTask({
 
   const createFrom = (input: TaskDraft) => {
     const taskData = buildTaskDataFromParsed(input, linkMetaMap, firstLinkMeta);
-    createTask.mutate(taskData, { onSuccess: () => onCreated() });
+    createTask.mutate(taskData);
   };
 
   const handleCreate = () => {
-    if (!isValid || createTask.isPending || resolving) {
+    if (!isValid || resolving) {
       return;
     }
+    // Clearing the input removes this item before the next keypress.
+    onCreated();
     if (magic.parse.status === "done") {
       createFrom(parsed);
       return;

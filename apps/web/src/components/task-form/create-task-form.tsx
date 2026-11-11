@@ -4,7 +4,7 @@ import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
@@ -65,36 +65,42 @@ export function CreateTaskForm({
   defaultStartDateString?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const submitted = useRef(false);
 
   const { createTask } = useTasks();
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    reset,
-    setValue,
-    formState: { isSubmitting },
-  } = useForm<ClientTaskInsertDecoded>({
-    defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
-  });
+  const { register, handleSubmit, control, reset, setValue } =
+    useForm<ClientTaskInsertDecoded>({
+      defaultValues: buildDefaultValues(defaultTagIds, defaultStartDateString),
+    });
 
   const startDate = useWatch({ control, name: "startDate" });
+  const title = useWatch({ control, name: "title" });
+  const recurrence = useWatch({ control, name: "recurrence" });
+  const canSubmit = Boolean(title.trim() && (!recurrence || startDate));
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (nextOpen) {
+      submitted.current = false;
       reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
     }
   };
 
   const onSubmit = useCallback(
-    async (data: ClientTaskInsertDecoded) => {
-      await createTask.mutateAsync(data);
-      reset(buildDefaultValues(defaultTagIds, defaultStartDateString));
+    (data: ClientTaskInsertDecoded) => {
+      if (
+        submitted.current ||
+        !data.title.trim() ||
+        (data.recurrence && !data.startDate)
+      ) {
+        return;
+      }
+      submitted.current = true;
+      createTask.mutate(data);
       setOpen(false);
     },
-    [createTask, defaultStartDateString, defaultTagIds, reset]
+    [createTask]
   );
 
   useHotkeys(
@@ -331,8 +337,8 @@ export function CreateTaskForm({
             </div>
           </div>
           <div className="flex justify-end">
-            <Button disabled={isSubmitting} type="submit">
-              {isSubmitting ? "Creating..." : "Create"}
+            <Button disabled={!canSubmit} type="submit">
+              Create
             </Button>
           </div>
         </form>

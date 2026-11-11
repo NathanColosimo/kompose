@@ -390,6 +390,7 @@ function TaskEditForm({
   editorRef: RefObject<HTMLDivElement | null>;
   open: boolean;
 }) {
+  const committed = useRef(false);
   const { updateTask, deleteTask, tasksQuery } = useTasks();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTagScopeDialog, setShowTagScopeDialog] = useState(false);
@@ -413,6 +414,10 @@ function TaskEditForm({
 
   const confirmDelete = useCallback(
     (scope: DeleteScope) => {
+      if (committed.current) {
+        return;
+      }
+      committed.current = true;
       onClose();
       deleteTask.mutate({ id: task.id, scope });
     },
@@ -469,6 +474,10 @@ function TaskEditForm({
       scope: UpdateScope,
       extra: Partial<TaskUpdateDecoded> = {}
     ) => {
+      if (committed.current) {
+        return;
+      }
+      committed.current = true;
       const normalizedDuration =
         Number.isFinite(values.durationMinutes) && values.durationMinutes > 0
           ? Math.round(values.durationMinutes)
@@ -548,10 +557,14 @@ function TaskEditForm({
   // Mark done saves unsaved edits with it, so they're never dropped: in one
   // save where it can, through the scope dialog when the task repeats.
   const handleToggleDone = useCallback(() => {
+    if (committed.current) {
+      return;
+    }
     const status = task.status === "done" ? "todo" : "done";
     const values = getValues();
     const decision = isDirty ? scopeDecisionFor(values) : null;
     if (!decision) {
+      committed.current = true;
       updateTask.mutate({ id: task.id, scope: "this", task: { status } });
       onClose();
       return;
@@ -722,6 +735,7 @@ export function TaskCreateForm({
   /** Whether the create popover may close after submitting. */
   submitRef: React.Ref<() => boolean>;
 }) {
+  const submitted = useRef(false);
   const { createTask } = useTasks();
   const form = useForm<TaskFormValues>({
     defaultValues: buildTaskCreateValues(initialValues),
@@ -737,7 +751,10 @@ export function TaskCreateForm({
       if (!payload) {
         return true;
       }
-      createTask.mutate(payload);
+      if (!submitted.current) {
+        submitted.current = true;
+        createTask.mutate(payload);
+      }
       return true;
     },
     [createTask]
