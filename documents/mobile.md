@@ -35,6 +35,14 @@
   - Native oRPC requests must manually attach the Better Auth cookie from
     SecureStore **and** use `credentials: "omit"` so iOS/native cookie
     handling does not interfere with session resolution on `/api/rpc`.
+  - Sessions last 60 days and slide forward at most once a day. Only
+    `/get-session` extends them: the Expo client saves cookies from Better
+    Auth responses but not from `/api/rpc`, so `/api/rpc` reads the session
+    with `disableRefresh`. Otherwise an RPC call extends the session on the
+    server while the app's saved cookie keeps its old expiry and the app
+    signs out.
+  - A network error while checking the session keeps the signed-in state;
+    only a missing or expired session signs the app out.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).
 - **Styling**: Uniwind + Tailwind CSS v4 + BNA UI components.
 - **Theming**: see [mobile-theme.md](./mobile-theme.md) for tokens, fonts, switching, and persistence.

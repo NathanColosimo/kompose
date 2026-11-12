@@ -156,6 +156,10 @@ export const auth = betterAuth({
   /** Redis-backed storage for sessions and rate limit counters. */
   secondaryStorage: redisSecondaryStorage,
   session: {
+    // Stay signed in like other apps: the session lasts 60 days and slides
+    // forward (at most once a day, the default updateAge) whenever the app
+    // checks it, so only 60 days without opening the app signs you out.
+    expiresIn: 60 * 24 * 60 * 60,
     // The MCP OAuth provider links grants to session rows, so sessions are
     // also written to Postgres. Reads still hit Redis first.
     storeSessionInDatabase: true,
