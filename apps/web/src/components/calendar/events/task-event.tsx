@@ -41,6 +41,7 @@ function taskDetails(task: TaskSelectDecoded): BlockDetail[] {
     details.push({
       icon: CalendarCheck,
       label: `Due ${formatPlainDate(task.dueDate, { day: "numeric", month: "short" })}`,
+      needsLabel: true,
     });
   }
   return details;

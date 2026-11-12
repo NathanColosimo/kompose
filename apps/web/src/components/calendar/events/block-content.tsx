@@ -24,6 +24,11 @@ const META = "text-[11px]/[14px] text-foreground/80 dark:text-foreground/70";
 export interface BlockDetail {
   icon: LucideIcon;
   label: string;
+  /**
+   * Show only with the whole label: the icon alone says nothing (a due
+   * date's icon without its date).
+   */
+  needsLabel?: boolean;
   /** Text to keep beside the icon in short blocks, such as a strain score. */
   short?: string;
 }
@@ -65,17 +70,29 @@ function titleClampClass(isTall: boolean, hasTwoTitleLines: boolean) {
 }
 
 /**
- * An icon with its label beside it when the whole label fits. Its 12px
- * basis keeps the icon on the line wherever the icon alone fits; it then
- * grows toward its full width, and a label that doesn't fit beside the
- * icon wraps onto a hidden second line.
+ * A detail on a line that wraps onto a hidden second line, so anything that
+ * doesn't fit drops out whole, in order. The icon and label are separate
+ * items: the icon stays when only it fits, and the label shows only when
+ * all of it fits. A detail that needs its label is one item, shown whole or
+ * not at all. Once something drops, everything after it drops too, so
+ * nothing leaves a gap.
  */
-function InlineDetail({ icon: Icon, label }: BlockDetail) {
+function InlineDetail({ icon: Icon, label, needsLabel }: BlockDetail) {
+  const icon = <Icon aria-hidden className="size-3 shrink-0" />;
+  if (needsLabel) {
+    return (
+      <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+        {icon}
+        {label}
+      </span>
+    );
+  }
+  // -ml-0.5 pulls the label to 4px from its icon inside the line's 6px gap.
   return (
-    <span className="flex h-[14px] max-w-fit grow basis-3 flex-wrap items-center gap-x-1 overflow-hidden">
-      <Icon aria-hidden className="size-3 shrink-0" />
-      <span className="whitespace-nowrap">{label}</span>
-    </span>
+    <>
+      {icon}
+      <span className="-ml-0.5 shrink-0 whitespace-nowrap">{label}</span>
+    </>
   );
 }
 
