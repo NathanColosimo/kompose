@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { DesktopHandoff } from "@/components/auth/desktop-handoff";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import { SocialAccountButtons } from "@/components/auth/social-account-buttons";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ function DashboardRedirect() {
         );
       }
       authClient.ensureElectronRedirect();
+      return true;
     },
   });
 
@@ -52,6 +54,9 @@ function DashboardRedirect() {
       >
         Try again
       </Button>
+      {handoff.data ? (
+        <DesktopHandoff onStay={() => replace("/dashboard")} />
+      ) : null}
     </main>
   );
 }

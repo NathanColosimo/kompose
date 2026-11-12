@@ -71,6 +71,11 @@ is present after OAuth, or after transferring an already signed-in session from
 the desktop login URL. Transfer errors appear on the login page with a Try again
 button. The button also stays available after transfer in case the app does not open.
 
+After handing off, the browser waits for its tab to lose focus, which is when
+the app opens on top. It then counts down 10 seconds and calls `window.close()`.
+Browsers only allow that for a tab with one history entry, so after OAuth the
+page asks the user to close the tab instead.
+
 Account linking opens the normal settings page in the browser and uses Better
 Auth's standard `linkSocial`, including WHOOP's generic provider. Use the same
 Kompose account in that browser; linked accounts refresh when the app regains
