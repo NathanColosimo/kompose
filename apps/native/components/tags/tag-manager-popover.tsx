@@ -44,6 +44,14 @@ export function TagManagerPopover({
   const [iconPickerTagId, setIconPickerTagId] = React.useState<string | null>(
     null
   );
+  const editTag = (
+    tagId: string,
+    edit: Partial<Pick<TagSelect, "color" | "icon" | "name">>
+  ) =>
+    setTagEdits((previous) => ({
+      ...previous,
+      [tagId]: { ...previous[tagId], ...edit },
+    }));
   const borderColor = useColor("border");
   const textColor = useColor("text");
   const mutedColor = useColor("textMuted");
@@ -175,7 +183,6 @@ export function TagManagerPopover({
                 style={{ minHeight: 40 }}
               >
                 <Pressable
-                  accessibilityLabel={`Color and icon for ${tag.name}`}
                   className="h-7 w-7 items-center justify-center rounded-full"
                   onPress={() =>
                     setIconPickerTagId((current) =>
@@ -203,13 +210,7 @@ export function TagManagerPopover({
                 >
                   <TextInput
                     onChangeText={(nextName) =>
-                      setTagEdits((previous) => ({
-                        ...previous,
-                        [tag.id]: {
-                          ...previous[tag.id],
-                          name: nextName,
-                        },
-                      }))
+                      editTag(tag.id, { name: nextName })
                     }
                     onSubmitEditing={() => handleSaveEdit(tag)}
                     placeholder="Tag name"
@@ -250,26 +251,12 @@ export function TagManagerPopover({
                 <View className="gap-2">
                   <TagColorPicker
                     onChange={(nextColor) =>
-                      setTagEdits((previous) => ({
-                        ...previous,
-                        [tag.id]: {
-                          ...previous[tag.id],
-                          color: nextColor,
-                        },
-                      }))
+                      editTag(tag.id, { color: nextColor })
                     }
                     value={draft.color}
                   />
                   <TagIconPicker
-                    onChange={(nextIcon) =>
-                      setTagEdits((previous) => ({
-                        ...previous,
-                        [tag.id]: {
-                          ...previous[tag.id],
-                          icon: nextIcon,
-                        },
-                      }))
-                    }
+                    onChange={(nextIcon) => editTag(tag.id, { icon: nextIcon })}
                     value={draft.icon}
                   />
                 </View>

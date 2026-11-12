@@ -364,7 +364,6 @@ function TagRow({
         value={tag}
       >
         <Button
-          aria-label={`Color and icon for ${tag.name}`}
           className="text-muted-foreground"
           size="icon-sm"
           type="button"
@@ -479,7 +478,6 @@ function CreateTagRow({
         value={style}
       >
         <Button
-          aria-label="Color and icon for the new tag"
           className="text-muted-foreground"
           size="icon-sm"
           type="button"
