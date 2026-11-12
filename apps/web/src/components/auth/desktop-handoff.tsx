@@ -1,44 +1,56 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useMountEffect } from "@/hooks/use-mount-effect";
 
-const CLOSE_AFTER_SECONDS = 10;
+const CLOSE_AFTER_MS = 10_000;
 
 /**
- * True once this tab loses focus after handing sign-in to the desktop app,
- * which is when the app opens on top of the browser.
+ * Render once sign-in has been handed to the desktop app. When this tab loses
+ * focus, which is when the app opens on top of the browser, it covers the page
+ * with a countdown and then closes the tab.
  */
-export function useDesktopAppOpened(handedOff: boolean) {
+export function DesktopHandoff({ onStay }: { onStay: () => void }) {
   const [opened, setOpened] = useState(false);
-  useEffect(() => {
-    if (!handedOff) {
-      return;
-    }
+
+  useMountEffect(() => {
     const onBlur = () => setOpened(true);
     window.addEventListener("blur", onBlur);
     return () => window.removeEventListener("blur", onBlur);
-  }, [handedOff]);
-  return opened;
+  });
+
+  if (!opened) {
+    return null;
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
+      <CloseCountdown onStay={onStay} />
+    </div>
+  );
 }
 
 /**
- * Tells the user the desktop app opened, then closes the tab. Browsers
- * only let a page close a tab it has kept to one history entry, so after the
- * countdown the page asks the user to close it.
+ * Browsers only let a page close a tab it has kept to one history entry, so
+ * after the countdown the page asks the user to close it.
  */
-export function DesktopAppOpened({ onStay }: { onStay: () => void }) {
-  const [secondsLeft, setSecondsLeft] = useState(CLOSE_AFTER_SECONDS);
+function CloseCountdown({ onStay }: { onStay: () => void }) {
+  const [closeAt] = useState(() => Date.now() + CLOSE_AFTER_MS);
+  const [now, setNow] = useState(Date.now);
 
-  useEffect(() => {
-    if (secondsLeft === 0) {
-      window.close();
-      return;
-    }
-    const timeout = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
-    return () => clearTimeout(timeout);
-  }, [secondsLeft]);
+  useMountEffect(() => {
+    const interval = setInterval(() => {
+      const time = Date.now();
+      setNow(time);
+      if (time >= closeAt) {
+        clearInterval(interval);
+        window.close();
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  });
 
+  const secondsLeft = Math.max(0, Math.ceil((closeAt - now) / 1000));
   return (
     <div className="flex max-w-sm flex-col items-center gap-4 text-center">
       <h1 className="font-serif text-2xl">Kompose is open</h1>

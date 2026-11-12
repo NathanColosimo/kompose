@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useMountEffect } from "@/hooks/use-mount-effect";
 import { authClient } from "@/lib/auth-client";
 import { isDesktopRuntime } from "@/lib/desktop";
-import { DesktopAppOpened, useDesktopAppOpened } from "./auth/desktop-handoff";
+import { DesktopHandoff } from "./auth/desktop-handoff";
 
 function hasPendingHandoff() {
   // OAuth sets this cookie before redirecting back to the web app.
@@ -16,13 +16,12 @@ function hasPendingHandoff() {
 
 /**
  * In the browser, return to the desktop app once its sign-in completes, and
- * say so once the app opens. In the app, the main process stores the
- * session and reloads the window itself.
+ * say so once the app opens. In the app, the main process stores the session
+ * and reloads the window itself.
  */
 export function DesktopAuth() {
   const [handedOff] = useState(hasPendingHandoff);
   const [stayed, setStayed] = useState(false);
-  const opened = useDesktopAppOpened(handedOff);
 
   useMountEffect(() => {
     if (isDesktopRuntime()) {
@@ -34,13 +33,7 @@ export function DesktopAuth() {
     const timer = authClient.ensureElectronRedirect();
     return () => clearInterval(timer);
   });
-
-  if (!opened || stayed) {
-    return null;
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
-      <DesktopAppOpened onStay={() => setStayed(true)} />
-    </div>
-  );
+  return handedOff && !stayed ? (
+    <DesktopHandoff onStay={() => setStayed(true)} />
+  ) : null;
 }

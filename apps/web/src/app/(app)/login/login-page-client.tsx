@@ -4,10 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  DesktopAppOpened,
-  useDesktopAppOpened,
-} from "@/components/auth/desktop-handoff";
+import { DesktopHandoff } from "@/components/auth/desktop-handoff";
 import { SessionFeedback } from "@/components/auth/session-feedback";
 import { SocialAccountButtons } from "@/components/auth/social-account-buttons";
 import { Button } from "@/components/ui/button";
@@ -22,7 +19,7 @@ function DashboardRedirect() {
       const query = getElectronAuthQuery();
       if (!query) {
         replace("/dashboard");
-        return false;
+        return;
       }
       const { error } = await authClient.electron.transferUser({
         fetchOptions: { query },
@@ -36,19 +33,10 @@ function DashboardRedirect() {
       return true;
     },
   });
-  const opened = useDesktopAppOpened(handoff.data === true);
 
   useMountEffect(() => {
     handoff.mutate();
   });
-
-  if (opened) {
-    return (
-      <main className="flex min-h-svh items-center justify-center p-6">
-        <DesktopAppOpened onStay={() => replace("/dashboard")} />
-      </main>
-    );
-  }
 
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6 text-center text-sm">
@@ -66,6 +54,9 @@ function DashboardRedirect() {
       >
         Try again
       </Button>
+      {handoff.data ? (
+        <DesktopHandoff onStay={() => replace("/dashboard")} />
+      ) : null}
     </main>
   );
 }
