@@ -7,8 +7,10 @@ import type { ItemLayout } from "@kompose/state/collision-utils";
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { formatTimeRange } from "@kompose/state/temporal-utils";
 import { useAtomValue } from "jotai";
+import { CalendarCheck } from "lucide-react";
 import { memo, useCallback } from "react";
 import type { Temporal } from "temporal-polyfill";
+import { formatPlainDate } from "@/lib/temporal-utils";
 import { cn } from "@/lib/utils";
 import { tagIconMap } from "../../tags/tag-icon-map";
 import { TaskEditPopover } from "../../task-form/task-edit-popover";
@@ -25,18 +27,24 @@ import {
 } from "../event-position";
 import { BlockContent, type BlockDetail } from "./block-content";
 
-/** The task's first tag, plus a count of the rest. */
-function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+/** The task's first tag, plus a count of the rest, then its due date. */
+function taskDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const details: BlockDetail[] = [];
   const [first, ...rest] = task.tags;
-  if (!first) {
-    return [];
-  }
-  return [
-    {
+  if (first) {
+    details.push({
       icon: tagIconMap[first.icon],
       label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
-    },
-  ];
+    });
+  }
+  if (task.dueDate) {
+    details.push({
+      icon: CalendarCheck,
+      label: `Due ${formatPlainDate(task.dueDate, { day: "numeric", month: "short" })}`,
+      needsLabel: true,
+    });
+  }
+  return details;
 }
 
 type ScheduledTask = TaskSelectDecoded & {
@@ -209,7 +217,8 @@ export const TaskEvent = memo(function TaskEventInner({
             type="button"
           >
             <BlockContent
-              details={taskTagDetails(task)}
+              description={task.description}
+              details={taskDetails(task)}
               end={segmentEnd}
               shownEnd={taskStart.add({ minutes: task.durationMinutes })}
               shownStart={taskStart}
