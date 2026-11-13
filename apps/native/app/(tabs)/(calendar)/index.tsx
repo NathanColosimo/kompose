@@ -79,7 +79,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Activity, ChevronLeft, ChevronRight, Eye } from "lucide-react-native";
+import {
+  Activity,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+} from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionSheetIOS,
@@ -131,6 +137,7 @@ import { RadioGroup } from "@/components/ui/radio";
 import { Text } from "@/components/ui/text";
 import { useTaskEditorFlow } from "@/hooks/use-task-editor-flow";
 import { useColorScheme } from "@/lib/color-scheme-context";
+import { formatShortDate } from "@/lib/time-format";
 
 const PIXELS_PER_HOUR = 60;
 const MINUTES_STEP = 15;
@@ -568,18 +575,24 @@ function TimedGoogleEventBlock({
   );
 }
 
-/** The task's first tag, plus a count of the rest. */
-function taskTagDetails(task: TaskSelectDecoded): BlockDetail[] {
+/** The task's first tag, plus a count of the rest, then its due date. */
+function taskDetails(task: TaskSelectDecoded): BlockDetail[] {
+  const details: BlockDetail[] = [];
   const [first, ...rest] = task.tags;
-  if (!first) {
-    return [];
-  }
-  return [
-    {
+  if (first) {
+    details.push({
       icon: tagIconMap[first.icon],
       label: rest.length > 0 ? `${first.name} +${rest.length}` : first.name,
-    },
-  ];
+    });
+  }
+  if (task.dueDate) {
+    details.push({
+      icon: CalendarDays,
+      label: `Due ${formatShortDate(task.dueDate)}`,
+      needsLabel: true,
+    });
+  }
+  return details;
 }
 
 /** A day's first all-day chips, then "+N more" for the rest. */
@@ -2159,7 +2172,8 @@ export default function CalendarTab() {
                               areaWidth={blockAreaWidth}
                               columnIndex={layout?.columnIndex}
                               columnSpan={layout?.columnSpan}
-                              details={taskTagDetails(task)}
+                              description={task.description}
+                              details={taskDetails(task)}
                               done={task.status === "done"}
                               end={end}
                               height={adjustedHeight}
