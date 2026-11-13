@@ -7,7 +7,7 @@ import {
 } from "@kompose/state/temporal-utils";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
@@ -15,6 +15,7 @@ import { Text } from "@/components/ui/text";
 import { mixColor } from "@/lib/color-mix";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { THEME } from "@/lib/theme";
+import { fitBlockRest } from "./block-fit";
 
 /**
  * The calendar's grid text (blocks, day headers, the time gutter) grows
@@ -72,6 +73,11 @@ const COMPACT_MINUTES = 30;
 export interface BlockDetail {
   icon: LucideIcon;
   label: string;
+  /**
+   * Show only with the whole label: the icon alone says nothing (a due
+   * date's icon without its date).
+   */
+  needsLabel?: boolean;
   /** A value kept beside the title or time in short blocks, such as strain. */
   short?: string;
 }
@@ -157,6 +163,8 @@ function positionStyle({
 interface BlockTextProps {
   /** Short of room for AM/PM: the time reads "11:30 – 12:30". */
   clockTime?: boolean;
+  /** Free text under everything else, in whatever whole lines are left. */
+  description?: string | null;
   details?: BlockDetail[];
   end: Temporal.ZonedDateTime;
   /** Visible minutes, which set how much text fits. */
@@ -261,20 +269,21 @@ function titleLines(
 
 /** A block's title: one line in a short block, as many as fit when narrow. */
 function BlockTitle({
-  minutes,
+  maxLines,
   narrow,
   oneLine,
+  onLines,
   scale,
-  sliver,
   struck,
   tight,
   title,
 }: {
-  minutes: number;
+  maxLines: number;
   narrow: boolean;
   oneLine: boolean;
+  /** The lines the title takes, for fitting what goes under it. */
+  onLines?: (lines: number) => void;
   scale: number;
-  sliver: boolean;
   struck: boolean;
   tight: boolean;
   title: string;
@@ -287,7 +296,13 @@ function BlockTitle({
     <Text
       className={`font-sans-medium text-[11px] ${leading} ${oneLine ? "max-w-full" : "shrink"} ${color}`}
       maxFontSizeMultiplier={scale}
-      numberOfLines={titleLines(minutes, narrow, sliver, scale)}
+      numberOfLines={maxLines}
+      onTextLayout={
+        onLines
+          ? (event) =>
+              onLines(Math.min(event.nativeEvent.lines.length, maxLines))
+          : undefined
+      }
     >
       {/* Narrow blocks break long words at a soft hyphen ("Road-map")
           rather than cutting them to an ellipsis. */}
@@ -334,9 +349,99 @@ function BlockTimeRow({
   );
 }
 
-/** Title, then the time once there's room, then details on long blocks. */
+/**
+ * A block's details on a line that wraps onto a hidden second line, so
+ * whatever doesn't fit drops out whole, in order, leaving no gap. A tag's
+ * icon and name are separate items, so the icon stays when only it fits;
+ * a detail that needs its label is one item, shown whole or not at all. A
+ * detail with a short value (a workout's strain) shows the icon and value.
+ */
+function inlineDetails(details: BlockDetail[], meta: string, scale: number) {
+  const label = (text: string) => (
+    <Text
+      className={`text-[10px] leading-[13px] ${meta}`}
+      maxFontSizeMultiplier={scale}
+    >
+      {text}
+    </Text>
+  );
+  return details.flatMap(({ icon, label: text, needsLabel, short }) => {
+    if (short || needsLabel) {
+      return [
+        <View className="flex-row items-center gap-0.5" key={text}>
+          <Icon as={icon} className={meta} size={10} />
+          {label(short ?? text)}
+        </View>,
+      ];
+    }
+    return [
+      <View key={`${text}-icon`}>
+        <Icon as={icon} className={meta} size={10} />
+      </View>,
+      <View className="-ml-0.5" key={text}>
+        {label(text)}
+      </View>,
+    ];
+  });
+}
+
+/**
+ * Under the title and time: detail rows, then the description, each in
+ * whole lines, as many as `roomPt` holds.
+ */
+function BlockRest({
+  description,
+  details,
+  meta,
+  roomPt,
+  scale,
+}: {
+  description?: string | null;
+  /** The details that get rows; none below the detail-row height. */
+  details: BlockDetail[];
+  meta: string;
+  roomPt: number;
+  scale: number;
+}) {
+  const { descriptionLines, rows } = fitBlockRest({
+    detailCount: details.length,
+    roomPt,
+    scale,
+  });
+  return (
+    <>
+      {details.slice(0, rows).map(({ icon, label }) => (
+        <View className="mt-0.5 flex-row items-center gap-1" key={label}>
+          <Icon as={icon} className={meta} size={10} />
+          <Text
+            className={`flex-1 text-[10px] leading-[13px] ${meta}`}
+            maxFontSizeMultiplier={scale}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        </View>
+      ))}
+      {description && descriptionLines > 0 ? (
+        <Text
+          className={`mt-0.5 text-[10px] leading-[13px] ${meta}`}
+          maxFontSizeMultiplier={scale}
+          numberOfLines={descriptionLines}
+        >
+          {description}
+        </Text>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Title, then the time once there's room, then details on long blocks, and
+ * a task's description in the whole lines left.
+ */
 function BlockText({
   clockTime = false,
+  description,
   details = [],
   end,
   minutes,
@@ -366,36 +471,27 @@ function BlockText({
   const showsDetails =
     minutes >= minutesFor(DETAILS_MINUTES, 14 + 13 + 15, scale);
   const isShort = !(showsTime || narrow);
-  // Until details get their own lines, keep short values in view.
-  const shorts = details.flatMap(({ icon, label, short }) =>
-    short
-      ? [
-          <View className="flex-row items-center gap-0.5" key={label}>
-            <Icon as={icon} className={meta} size={10} />
-            <Text
-              className={`text-[10px] leading-[13px] ${meta}`}
-              maxFontSizeMultiplier={scale}
-            >
-              {short}
-            </Text>
-          </View>,
-        ]
-      : []
-  );
+  const maxTitleLines = titleLines(minutes, narrow, sliver, scale);
+  // Until the title is laid out, assume it takes all its lines.
+  const [titleLineCount, setTitleLineCount] = useState(maxTitleLines);
+  const fitsRest = showsTime && !narrow;
+  const inline = inlineDetails(details, meta, scale);
   return (
     <View className="min-w-0 flex-1">
-      {/* Short blocks keep one line: the time and strain wrap onto a hidden
-          second line when they don't fit beside the whole title. */}
+      {/* Short blocks keep one line: the time and details wrap onto a
+          hidden second line when they don't fit beside the whole title. */}
       <View
         className={`flex-row items-center gap-x-1 ${isShort ? "flex-wrap overflow-hidden" : ""}`}
         style={isShort ? { height: (tight ? 12 : 14) * scale } : undefined}
       >
         <BlockTitle
-          minutes={minutes}
+          maxLines={maxTitleLines}
           narrow={narrow}
           oneLine={isShort}
+          onLines={
+            fitsRest && maxTitleLines > 1 ? setTitleLineCount : undefined
+          }
           scale={scale}
-          sliver={sliver}
           struck={struck}
           tight={tight}
           title={title}
@@ -411,9 +507,9 @@ function BlockText({
             })}
           </Text>
         ) : null}
-        {isShort ? shorts : null}
+        {isShort ? inline : null}
       </View>
-      {showsTime && !narrow ? (
+      {fitsRest ? (
         <BlockTimeRow
           clockTime={clockTime}
           end={end}
@@ -421,23 +517,23 @@ function BlockText({
           scale={scale}
           start={start}
         >
-          {showsDetails ? null : shorts}
+          {showsDetails ? null : inline}
         </BlockTimeRow>
       ) : null}
-      {showsDetails && !narrow
-        ? details.map(({ icon, label }) => (
-            <View className="mt-0.5 flex-row items-center gap-1" key={label}>
-              <Icon as={icon} className={meta} size={10} />
-              <Text
-                className={`flex-1 text-[10px] leading-[13px] ${meta}`}
-                maxFontSizeMultiplier={scale}
-                numberOfLines={1}
-              >
-                {label}
-              </Text>
-            </View>
-          ))
-        : null}
+      {fitsRest ? (
+        <BlockRest
+          description={description}
+          details={showsDetails ? details : []}
+          meta={meta}
+          // What's left under the title and time (minutes are points).
+          roomPt={
+            minutes -
+            BLOCK_CHROME_PT -
+            (Math.min(titleLineCount, maxTitleLines) * 14 + 13) * scale
+          }
+          scale={scale}
+        />
+      ) : null}
     </View>
   );
 }
@@ -577,6 +673,7 @@ interface TaskBlockProps extends BlockPosition, BlockTextProps {
 
 /** A scheduled task: a plain card with a checkbox, so only events carry color. */
 export function TaskBlock({
+  description,
   details,
   done,
   end,
@@ -659,6 +756,7 @@ export function TaskBlock({
           <View className="min-w-0 flex-1" pointerEvents="none">
             <BlockText
               clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
+              description={description}
               details={details}
               end={end}
               minutes={textMinutes}
