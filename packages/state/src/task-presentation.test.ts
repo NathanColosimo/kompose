@@ -23,6 +23,7 @@ const now = Temporal.ZonedDateTime.from(
 );
 const context = { now, timeZone, today };
 const tag: TaskSelectDecoded["tags"][number] = {
+  color: null,
   createdAt: now.toInstant().toString(),
   icon: "Tag",
   id: "tag",

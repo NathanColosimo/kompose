@@ -18,7 +18,7 @@ import {
 import React from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
-import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagGlyph } from "@/components/tags/tag-glyph";
 import { TagManagerPopover } from "@/components/tags/tag-manager-popover";
 import {
   type TaskDraft,
@@ -212,11 +212,7 @@ function TaskRow({
               className="max-w-full flex-row items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5"
               key={tag.id}
             >
-              <Icon
-                as={tagIconMap[tag.icon]}
-                className="text-muted-foreground"
-                size={12}
-              />
+              <TagGlyph className="text-muted-foreground" size={12} tag={tag} />
               <Text
                 className="shrink text-muted-foreground text-xs"
                 numberOfLines={1}
@@ -393,7 +389,6 @@ export default function TasksScreen() {
     setActiveTab(tab);
   }, []);
 
-  const SelectedTagIcon = selectedTag ? tagIconMap[selectedTag.icon] : Tag;
   const isTagView = selectedTagId !== null;
 
   let listItems: TaskListItem[];
@@ -420,7 +415,11 @@ export default function TasksScreen() {
               className="h-11 flex-row items-center gap-1.5 rounded-lg pr-3 pl-4 active:opacity-70"
               onPress={() => setIsTagManagerOpen(true)}
             >
-              <Icon as={SelectedTagIcon} size={18} />
+              {selectedTag ? (
+                <TagGlyph size={18} tag={selectedTag} />
+              ) : (
+                <Icon as={Tag} size={18} />
+              )}
               {selectedTag ? (
                 <Text
                   className="font-medium text-foreground text-sm"

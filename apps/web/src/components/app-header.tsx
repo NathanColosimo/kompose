@@ -1,6 +1,10 @@
 "use client";
 
-import type { TagSelect } from "@kompose/api/routers/tag/contract";
+import type {
+  CreateTagInput,
+  TagSelect,
+  UpdateTagInput,
+} from "@kompose/api/routers/tag/contract";
 import { commandBarOpenAtom } from "@kompose/state/atoms/command-bar";
 import { useTags } from "@kompose/state/hooks/use-tags";
 import { useQueryClient } from "@tanstack/react-query";
@@ -62,8 +66,8 @@ import { authClient } from "@/lib/auth-client";
 import { desktopBridge, isDesktopRuntime } from "@/lib/desktop";
 import { cn } from "@/lib/utils";
 import { sidebarRightViewAtom, toggleSidebarRightAtom } from "@/state/sidebar";
-import { type TagIconName, tagIconMap } from "./tags/tag-icon-map";
-import { TagIconPickerPopover } from "./tags/tag-icon-picker";
+import { TagGlyph } from "./tags/tag-glyph";
+import { TagStylePickerPopover } from "./tags/tag-style-picker";
 
 export function AppHeader({ user }: { user: User }) {
   return (
@@ -280,7 +284,7 @@ function TagRow({
   onDelete,
 }: {
   tag: TagSelect;
-  onUpdate: (input: { id: string; name?: string; icon?: TagIconName }) => void;
+  onUpdate: (input: UpdateTagInput) => void;
   onDelete: (id: string) => Promise<unknown>;
 }) {
   const [editingName, setEditingName] = useState(false);
@@ -294,8 +298,6 @@ function TagRow({
       el.select();
     }
   }, []);
-
-  const Icon = tagIconMap[tag.icon];
 
   const saveName = () => {
     const trimmed = name.trim();
@@ -357,9 +359,9 @@ function TagRow({
 
   return (
     <div className="group flex h-8 items-center gap-1 rounded-md px-1.5 transition-colors duration-100 hover:bg-muted/50">
-      <TagIconPickerPopover
-        onChange={(icon) => onUpdate({ icon, id: tag.id })}
-        value={tag.icon}
+      <TagStylePickerPopover
+        onChange={(change) => onUpdate({ ...change, id: tag.id })}
+        value={tag}
       >
         <Button
           className="text-muted-foreground"
@@ -367,9 +369,9 @@ function TagRow({
           type="button"
           variant="ghost"
         >
-          <Icon className="size-3.5" />
+          <TagGlyph className="size-3.5" tag={tag} />
         </Button>
-      </TagIconPickerPopover>
+      </TagStylePickerPopover>
 
       {editingName ? (
         <Input
@@ -406,16 +408,19 @@ function TagRow({
   );
 }
 
+const NEW_TAG_STYLE = { color: null, icon: "Tag" } as const;
+
 function CreateTagRow({
   onCreate,
   isPending,
 }: {
-  onCreate: (input: { name: string; icon: TagIconName }) => Promise<unknown>;
+  onCreate: (input: CreateTagInput) => Promise<unknown>;
   isPending: boolean;
 }) {
   const [active, setActive] = useState(false);
   const [name, setName] = useState("");
-  const [icon, setIcon] = useState<TagIconName>("Tag");
+  const [style, setStyle] =
+    useState<Pick<TagSelect, "color" | "icon">>(NEW_TAG_STYLE);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const inputCallbackRef = useCallback((el: HTMLInputElement | null) => {
@@ -430,9 +435,9 @@ function CreateTagRow({
     if (!trimmed || isPending) {
       return;
     }
-    await onCreate({ icon, name: trimmed });
+    await onCreate({ ...style, name: trimmed });
     setName("");
-    setIcon("Tag");
+    setStyle(NEW_TAG_STYLE);
     inputRef.current?.focus();
   };
 
@@ -446,8 +451,6 @@ function CreateTagRow({
       setActive(false);
     }
   };
-
-  const SelectedIcon = tagIconMap[icon];
 
   if (!active) {
     return (
@@ -468,16 +471,21 @@ function CreateTagRow({
 
   return (
     <div className="flex h-8 items-center gap-1 rounded-md px-1.5">
-      <TagIconPickerPopover onChange={setIcon} value={icon}>
+      <TagStylePickerPopover
+        onChange={(change) =>
+          setStyle((current) => ({ ...current, ...change }))
+        }
+        value={style}
+      >
         <Button
           className="text-muted-foreground"
           size="icon-sm"
           type="button"
           variant="ghost"
         >
-          <SelectedIcon className="size-3.5" />
+          <TagGlyph className="size-3.5" tag={style} />
         </Button>
-      </TagIconPickerPopover>
+      </TagStylePickerPopover>
 
       <Input
         className="h-6 flex-1 bg-transparent"

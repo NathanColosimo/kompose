@@ -19,6 +19,8 @@ import { taskTable } from "./task";
 export const tagTable = pgTable(
   "tag",
   {
+    /** Palette key from the tag contract; null draws the tag's tasks plain. */
+    color: text("color"),
     createdAt: timestamp("created_at", { mode: "string" })
       .notNull()
       .defaultNow(),

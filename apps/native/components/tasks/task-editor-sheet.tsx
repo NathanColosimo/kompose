@@ -38,7 +38,7 @@ import {
 import React from "react";
 import { Linking, Pressable, useWindowDimensions, View } from "react-native";
 import { Temporal } from "temporal-polyfill";
-import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagGlyph } from "@/components/tags/tag-glyph";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -394,7 +394,6 @@ function TaskTagPill({
   action: "add" | "remove";
   onPress: () => void;
 }) {
-  const TagIcon = tagIconMap[tag.icon];
   const ActionIcon = action === "add" ? Plus : Minus;
 
   return (
@@ -407,7 +406,7 @@ function TaskTagPill({
       onPress={onPress}
     >
       <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2.5 py-2">
-        <Icon as={TagIcon} className="text-muted-foreground" size={12} />
+        <TagGlyph className="text-muted-foreground" size={12} tag={tag} />
         <Text className="text-foreground text-xs">{tag.name}</Text>
         <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
       </View>

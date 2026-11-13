@@ -12,7 +12,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { tagIconMap } from "./tag-icon-map";
+import { TagGlyph } from "./tag-glyph";
 
 interface TagPickerProps {
   onChange: (next: string[]) => void;
@@ -38,15 +38,12 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
     <div className="space-y-2">
       {selectedTags.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {selectedTags.map((tag) => {
-            const Icon = tagIconMap[tag.icon];
-            return (
-              <Badge className="gap-1.5" key={tag.id} variant="secondary">
-                <Icon className="size-3" />
-                {tag.name}
-              </Badge>
-            );
-          })}
+          {selectedTags.map((tag) => (
+            <Badge className="gap-1.5" key={tag.id} variant="secondary">
+              <TagGlyph className="size-3" tag={tag} />
+              {tag.name}
+            </Badge>
+          ))}
         </div>
       ) : (
         <div className="text-muted-foreground text-xs">No tags selected.</div>
@@ -66,7 +63,6 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
           ) : (
             <div className="space-y-1">
               {tags.map((tag) => {
-                const Icon = tagIconMap[tag.icon];
                 const isSelected = selectedTagIds.has(tag.id);
                 return (
                   <button
@@ -78,7 +74,10 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
                     onClick={() => toggleTag(tag)}
                     type="button"
                   >
-                    <Icon className="size-4 text-muted-foreground" />
+                    <TagGlyph
+                      className="size-4 text-muted-foreground"
+                      tag={tag}
+                    />
                     <span className="flex-1 truncate">{tag.name}</span>
                     {isSelected ? <Check className="size-4" /> : null}
                   </button>

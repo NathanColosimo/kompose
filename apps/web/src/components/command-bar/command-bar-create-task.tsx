@@ -34,7 +34,7 @@ import {
   useTransition,
 } from "react";
 import type { Temporal } from "temporal-polyfill";
-import { tagIconMap } from "@/components/tags/tag-icon-map";
+import { TagGlyph } from "@/components/tags/tag-glyph";
 import { Badge } from "@/components/ui/badge";
 import {
   CommandEmpty,
@@ -293,19 +293,16 @@ export function CommandBarCreateTask({
 
       {matchingTags.length > 0 && (
         <CommandGroup heading="Tags">
-          {matchingTags.map((tag) => {
-            const Icon = tagIconMap[tag.icon];
-            return (
-              <CommandItem
-                key={tag.id}
-                onSelect={() => handleTagSelect(tag)}
-                value={tag.name}
-              >
-                <Icon className="text-muted-foreground" />
-                <span>{tag.name}</span>
-              </CommandItem>
-            );
-          })}
+          {matchingTags.map((tag) => (
+            <CommandItem
+              key={tag.id}
+              onSelect={() => handleTagSelect(tag)}
+              value={tag.name}
+            >
+              <TagGlyph className="text-muted-foreground" tag={tag} />
+              <span>{tag.name}</span>
+            </CommandItem>
+          ))}
         </CommandGroup>
       )}
 
@@ -374,10 +371,9 @@ export function CommandBarCreateTask({
                   if (!tag) {
                     return null;
                   }
-                  const Icon = tagIconMap[tag.icon];
                   return (
                     <PreviewBadge className={smartClassName} key={tag.id}>
-                      <Icon className="size-3.5" />
+                      <TagGlyph className="size-3.5" tag={tag} />
                       {tag.name}
                     </PreviewBadge>
                   );
