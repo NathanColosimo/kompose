@@ -1,6 +1,4 @@
 @import "tailwindcss";
-@import "fumadocs-ui/css/shadcn.css";
-@import "fumadocs-ui/css/preset.css";
 
 @font-face {
   font-family: "Sentient";
@@ -19,10 +17,6 @@
 }
 
 @custom-variant dark (&:is(.dark *));
-
-#nd-docs-layout {
-  --fd-layout-width: 100vw;
-}
 
 :root {
   --background: hsl(42.3529 27.8689% 88.0392%);
