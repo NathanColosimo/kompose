@@ -25,10 +25,12 @@
     "@kompose/desktop": "workspace:*",
     "@kompose/env": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "@kompose/redis": "workspace:*",
     "better-auth": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
+    "uuidv7": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
