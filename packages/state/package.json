@@ -30,7 +30,7 @@
     "jotai-family": "catalog:",
     "jotai-tanstack-query": "catalog:",
     "react": "catalog:",
-    "rrule-temporal": "2.2.8",
+    "rrule-temporal": "2.2.9",
     "temporal-polyfill": "catalog:",
     "uuidv7": "catalog:"
   },
@@ -38,7 +38,7 @@
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
-    "@types/react-test-renderer": "19.1.0",
+    "@types/react-test-renderer": "19.3.1",
     "react-test-renderer": "19.3.1"
   }
 }
