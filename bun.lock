@@ -204,10 +204,12 @@
         "@kompose/desktop": "workspace:*",
         "@kompose/env": "workspace:*",
         "@kompose/google-cal": "workspace:*",
+        "@kompose/plugins": "workspace:*",
         "@kompose/redis": "workspace:*",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
+        "uuidv7": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
@@ -260,6 +262,14 @@
         "effect": "catalog:",
         "zod": "catalog:",
       },
+      "devDependencies": {
+        "@kompose/config": "workspace:*",
+        "@types/node": "catalog:",
+      },
+    },
+    "packages/plugins": {
+      "name": "@kompose/plugins",
+      "version": "0.0.0",
       "devDependencies": {
         "@kompose/config": "workspace:*",
         "@types/node": "catalog:",
@@ -877,6 +887,8 @@
     "@kompose/env": ["@kompose/env@workspace:packages/env"],
 
     "@kompose/google-cal": ["@kompose/google-cal@workspace:packages/google-cal"],
+
+    "@kompose/plugins": ["@kompose/plugins@workspace:packages/plugins"],
 
     "@kompose/redis": ["@kompose/redis@workspace:packages/redis"],
 
