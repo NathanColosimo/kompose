@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
 import { preload } from "react-dom";
-import "../index.css";
 import Providers from "@/components/providers";
 import sentientUprightUrl from "@/fonts/Sentient-Variable.woff2";
 
-export const metadata: Metadata = {
+export const rootMetadata: Metadata = {
   description:
     "Kompose merges your calendar, tasks, and integrations into one orchestration canvas for planning your day.",
   title: "kompose — calendar and tasks",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+/**
+ * The <html> shell shared by the two root layouts. /docs has its own
+ * (app/(docs)) so the Fumadocs styles load only there; moving between root
+ * layouts is a full page load, so that stylesheet never stays attached.
+ */
+export function RootDocument({ children }: { children: React.ReactNode }) {
   // Every page's text is Sentient (index.css), so fetch it with the HTML
   // instead of after the CSS is parsed. The import resolves to the same
   // content-hashed, immutable URL the stylesheet uses.

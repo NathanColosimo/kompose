@@ -1,0 +1,8 @@
+/* The site's stylesheet plus Fumadocs, so /docs loads one file. */
+@import "../../index.css";
+@import "fumadocs-ui/css/shadcn.css";
+@import "fumadocs-ui/css/preset.css";
+
+#nd-docs-layout {
+  --fd-layout-width: 100vw;
+}
