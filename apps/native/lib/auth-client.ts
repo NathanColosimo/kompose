@@ -4,7 +4,6 @@ import type { auth } from "@kompose/auth";
 import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import Constants from "expo-constants";
-// biome-ignore lint/performance/noNamespaceImport: SecureStore is a namespace object
 import * as SecureStore from "expo-secure-store";
 import { env } from "@/lib/env";
 

@@ -5,7 +5,6 @@ import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
 import { mcp } from "@better-auth/mcp";
 import { db } from "@kompose/db/legacy";
-// biome-ignore lint/performance/noNamespaceImport: Auth Schema
 import * as schema from "@kompose/db/schema/auth";
 import {
   ELECTRON_AUTH_CLIENT_ID,

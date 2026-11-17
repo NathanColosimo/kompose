@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "Privacy Policy",
 };
 
-const SECTION_HEADING_LINE_REGEX = /\n(?=\d+\.\s)/g;
+const SECTION_HEADING_LINE_REGEX = /\n(?=\d+\.\s)/gu;
 
 // Read the source legal doc at build time so the public page stays in sync.
 const privacySource = readFileSync(
@@ -17,24 +17,25 @@ const privacySource = readFileSync(
 );
 
 const updatedAt =
-  privacySource.match(/^Last Updated:\s*(.+)$/m)?.[1] ?? "2026-03-16";
+  privacySource.match(/^Last Updated:\s*(?<updatedAt>.+)$/mu)?.[1] ??
+  "2026-03-16";
 
 const privacyContent = privacySource
-  .replace(/^KOMPOSE PRIVACY POLICY\s*\n\s*\n/, "")
-  .replace(/^Last Updated:.*\n/, "")
-  .replace(/^Effective Date:.*\n/, "")
+  .replace(/^KOMPOSE PRIVACY POLICY\s*\n\s*\n/u, "")
+  .replace(/^Last Updated:.*\n/u, "")
+  .replace(/^Effective Date:.*\n/u, "")
   .replace(SECTION_HEADING_LINE_REGEX, "\n\n")
   .trim();
 
-const privacyBlocks = privacyContent.split(/\n\s*\n/).flatMap((block) => {
+const privacyBlocks = privacyContent.split(/\n\s*\n/u).flatMap((block) => {
   const trimmed = block.trim();
   return trimmed ? [trimmed] : [];
 });
 
-const sectionHeadingPattern = /^\d+\.\s/;
+const sectionHeadingPattern = /^\d+\.\s/u;
 
 function normalizeBlockText(block: string) {
-  return block.replace(/^\s+/gm, "").trim();
+  return block.replace(/^\s+/gmu, "").trim();
 }
 
 function getParagraphLines(block: string) {

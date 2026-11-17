@@ -59,8 +59,9 @@ function decodeEntity(entity: string): string {
 }
 
 export function decodeHtmlEntities(value: string): string {
-  return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (_, entity: string) =>
-    decodeEntity(entity)
+  return value.replace(
+    /&(?<entity>#x?[0-9a-fA-F]+|[a-zA-Z]+);/gu,
+    (_, entity: string) => decodeEntity(entity)
   );
 }
 

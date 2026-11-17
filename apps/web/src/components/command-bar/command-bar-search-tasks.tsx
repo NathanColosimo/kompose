@@ -59,7 +59,7 @@ function TaskLocationIndicator({
 }) {
   if (destination.kind === "calendar") {
     return (
-      <span className="flex items-center gap-1 text-muted-foreground text-sm">
+      <span className="text-muted-foreground flex items-center gap-1 text-sm">
         <CalendarIcon className="size-3.5" />
         {formatPlainDate(destination.date, {
           day: "numeric",
@@ -75,7 +75,7 @@ function TaskLocationIndicator({
       : "Today";
 
     return (
-      <span className="flex items-center gap-1 text-muted-foreground text-sm">
+      <span className="text-muted-foreground flex items-center gap-1 text-sm">
         <CalendarClockIcon className="size-3.5" />
         {label}
       </span>
@@ -83,7 +83,7 @@ function TaskLocationIndicator({
   }
 
   return (
-    <span className="flex items-center gap-1 text-muted-foreground text-sm">
+    <span className="text-muted-foreground flex items-center gap-1 text-sm">
       <InboxIcon className="size-3.5" />
       {destination.kind === "sidebar" && destination.view === "inbox"
         ? "Inbox"

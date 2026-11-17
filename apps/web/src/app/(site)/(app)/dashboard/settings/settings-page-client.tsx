@@ -217,13 +217,13 @@ export default function SettingsPageClient() {
             <ArrowLeft />
           </Link>
         </Button>
-        <h1 className="font-medium text-base">Settings</h1>
+        <h1 className="text-base font-medium">Settings</h1>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-2xl flex-col gap-10 px-6 py-8">
           {isDesktop ? (
-            <p className="rounded-lg border bg-card px-4 py-3 text-muted-foreground text-sm">
+            <p className="bg-card text-muted-foreground rounded-lg border px-4 py-3 text-sm">
               Accounts link in your browser. Sign in there with this Kompose
               account, then come back here.
             </p>

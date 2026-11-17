@@ -8,7 +8,7 @@ export const env = createEnv({
     NEXT_PUBLIC_WEB_URL: z
       .string()
       .min(1)
-      .regex(/^https?:\/\//),
+      .regex(/^https?:\/\//u),
   },
 
   experimental__runtimeEnv: clientEnv,

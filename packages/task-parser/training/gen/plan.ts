@@ -234,9 +234,9 @@ function pickMode(
 export type Focus = "all" | "weak";
 
 const WEAK_STYLE_PATTERN =
-  /voice dictation|typos|brain dump|ramble|autocorrect|run-on|sloppy|non-native|dense|forwarded|polite sentences/;
+  /voice dictation|typos|brain dump|ramble|autocorrect|run-on|sloppy|non-native|dense|forwarded|polite sentences/u;
 const WEAK_TWIST_PATTERN =
-  /deadline|due|start and a separate|work on it|tag|purpose|context|looks like a date|number that is not|duration-like|vague|correction/;
+  /deadline|due|start and a separate|work on it|tag|purpose|context|looks like a date|number that is not|duration-like|vague|correction/u;
 const WEAK_STYLES = STYLES.filter((style) => WEAK_STYLE_PATTERN.test(style));
 const WEAK_TWISTS = TWISTS.filter((twist) => WEAK_TWIST_PATTERN.test(twist));
 const WEAK_TAG_MODES = [

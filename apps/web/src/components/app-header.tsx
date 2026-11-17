@@ -74,7 +74,7 @@ export function AppHeader({ user }: { user: User }) {
     // The whole header drags the window; app-region is inherited, and the
     // index.css rule opts buttons and other controls out.
     <header
-      className="flex h-10 shrink-0 items-center border-b bg-background px-2"
+      className="bg-background flex h-10 shrink-0 items-center border-b px-2"
       data-desktop-drag-region
     >
       <div className="flex w-full items-center">
@@ -122,7 +122,7 @@ function SearchButton() {
   return (
     <button
       className={cn(
-        "flex h-7 w-full max-w-md items-center gap-2 rounded-md border border-border/70 bg-card/60 px-2.5 text-muted-foreground text-sm transition-colors",
+        "border-border/70 bg-card/60 text-muted-foreground flex h-7 w-full max-w-md items-center gap-2 rounded-md border px-2.5 text-sm transition-colors",
         "hover:border-border hover:bg-card hover:text-foreground"
       )}
       onClick={() => setCommandBarOpen(true)}
@@ -176,7 +176,7 @@ function UserMenu({ user }: { user: User }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="Account"
-        className="ml-1 rounded-full outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="ring-offset-background focus-visible:ring-ring ml-1 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
       >
         <Avatar className="size-7 cursor-pointer">
           <AvatarImage alt={user.name} src={avatarSrc} />
@@ -192,7 +192,7 @@ function UserMenu({ user }: { user: User }) {
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{user.name}</span>
-              <span className="truncate text-muted-foreground text-xs">
+              <span className="text-muted-foreground truncate text-xs">
                 {user.email}
               </span>
             </div>
@@ -244,11 +244,11 @@ function TagsMenu() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-72 gap-0 p-0" sideOffset={8}>
         <div className="px-3 pt-3 pb-1">
-          <h2 className="font-medium text-sm">Tags</h2>
+          <h2 className="text-sm font-medium">Tags</h2>
         </div>
 
         {tags.length === 0 ? (
-          <p className="px-3 pb-3 text-muted-foreground text-xs">
+          <p className="text-muted-foreground px-3 pb-3 text-xs">
             Group tasks by project or area. Each tag gets its own list in the
             sidebar.
           </p>
@@ -332,8 +332,8 @@ function TagRow({
 
   if (confirmDelete) {
     return (
-      <div className="flex h-8 items-center gap-1.5 rounded-md bg-destructive/10 px-2">
-        <span className="flex-1 truncate text-destructive/80 text-xs">
+      <div className="bg-destructive/10 flex h-8 items-center gap-1.5 rounded-md px-2">
+        <span className="text-destructive/80 flex-1 truncate text-xs">
           Delete &ldquo;{tag.name}&rdquo;?
         </span>
         <Button
@@ -358,7 +358,7 @@ function TagRow({
   }
 
   return (
-    <div className="group flex h-8 items-center gap-1 rounded-md px-1.5 transition-colors duration-100 hover:bg-muted/50">
+    <div className="group hover:bg-muted/50 flex h-8 items-center gap-1 rounded-md px-1.5 transition-colors duration-100">
       <TagStylePickerPopover
         onChange={(change) => onUpdate({ ...change, id: tag.id })}
         value={tag}
@@ -396,7 +396,7 @@ function TagRow({
       )}
 
       <Button
-        className="text-muted-foreground opacity-0 transition-[color,background-color,opacity] duration-100 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive opacity-0 transition-[color,background-color,opacity] duration-100 group-hover:opacity-100"
         onClick={() => setConfirmDelete(true)}
         size="icon-sm"
         type="button"
@@ -455,7 +455,7 @@ function CreateTagRow({
   if (!active) {
     return (
       <Button
-        className="w-full justify-start gap-1 px-1.5 text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground w-full justify-start gap-1 px-1.5"
         onClick={() => setActive(true)}
         size="lg"
         type="button"
@@ -533,7 +533,7 @@ function UpdatePromptButton() {
               variant="ghost"
             >
               <RotateCw className="size-4" />
-              <span className="absolute top-1 right-1 size-2 rounded-full bg-destructive" />
+              <span className="bg-destructive absolute top-1 right-1 size-2 rounded-full" />
             </Button>
           </AlertDialogTrigger>
         </TooltipTrigger>

@@ -32,10 +32,16 @@ export async function POST(request: Request): Promise<Response> {
             })
           ).pipe(
             Effect.catchTags({
-              WebhookRepositoryError: (error) =>
-                Effect.succeed(new Response(error.message, { status: 202 })),
-              WebhookValidationError: (error) =>
-                Effect.succeed(new Response(error.message, { status: 400 })),
+              WebhookRepositoryError(error) {
+                return Effect.succeed(
+                  new Response(error.message, { status: 202 })
+                );
+              },
+              WebhookValidationError(error) {
+                return Effect.succeed(
+                  new Response(error.message, { status: 400 })
+                );
+              },
             })
           )
         );

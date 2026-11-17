@@ -4,7 +4,11 @@ import { BaseRedisRateLimiter } from "@orpc/ratelimit/base-redis";
 import type { User } from "better-auth";
 
 class RedisRateLimiter extends BaseRedisRateLimiter {
-  protected evalScript(script: string, keys: string[], args: string[]) {
+  protected override evalScript(
+    script: string,
+    keys: string[],
+    args: string[]
+  ) {
     return redis.eval(script, keys.length, ...keys, ...args);
   }
 }

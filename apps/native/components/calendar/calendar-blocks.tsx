@@ -628,7 +628,7 @@ export function EventBlock({
       accessibilityRole={onPress ? "button" : undefined}
       // The background ring keeps whatever is underneath from showing
       // through the gap between side-by-side blocks.
-      className={`absolute rounded-md bg-background p-px ${onPress ? "active:opacity-80" : ""}`}
+      className={`bg-background absolute rounded-md p-px ${onPress ? "active:opacity-80" : ""}`}
       onLongPress={(event) =>
         onLongPressAt?.(position.top + event.nativeEvent.locationY)
       }
@@ -706,7 +706,7 @@ export function TaskBlock({
   return (
     <Pressable
       accessible={false}
-      className={`absolute rounded-md bg-background p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
+      className={`bg-background absolute rounded-md p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
       onLongPress={(event) => longPressAt(event.nativeEvent.locationY)}
       onPress={(event) => {
         event.stopPropagation();
@@ -811,7 +811,7 @@ export function AllDayBlock({
     >
       <Surface compact surface={surface}>
         <Text
-          className="font-sans-medium text-[10px] text-foreground leading-[13px]"
+          className="font-sans-medium text-foreground text-[10px] leading-[13px]"
           maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           numberOfLines={1}
         >

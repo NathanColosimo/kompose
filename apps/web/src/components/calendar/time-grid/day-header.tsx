@@ -72,7 +72,7 @@ export const DayHeader = memo(function DayHeaderInner({
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-col justify-center gap-0.5 border-border border-r px-2.5 last:border-r-0",
+        "border-border flex shrink-0 flex-col justify-center gap-0.5 border-r px-2.5 last:border-r-0",
         showWhoopRow ? "h-[3.75rem]" : "h-12",
         isTodayHighlight ? "bg-foreground/[0.03]" : ""
       )}
@@ -83,7 +83,7 @@ export const DayHeader = memo(function DayHeaderInner({
           className={cn(
             "text-sm",
             isTodayHighlight
-              ? "font-medium text-foreground"
+              ? "text-foreground font-medium"
               : "text-muted-foreground"
           )}
         >
@@ -91,9 +91,9 @@ export const DayHeader = memo(function DayHeaderInner({
         </span>
         <span
           className={cn(
-            "font-medium text-sm tabular-nums",
+            "text-sm font-medium tabular-nums",
             isTodayHighlight
-              ? "flex h-6 min-w-6 items-center justify-center rounded-full bg-primary px-1.5 text-primary-foreground dark:bg-foreground/15 dark:text-foreground"
+              ? "bg-primary text-primary-foreground dark:bg-foreground/15 dark:text-foreground flex h-6 min-w-6 items-center justify-center rounded-full px-1.5"
               : ""
           )}
         >
@@ -103,7 +103,7 @@ export const DayHeader = memo(function DayHeaderInner({
 
       {showWhoopRow ? (
         <div
-          className="flex h-4 min-w-0 flex-wrap items-center gap-x-2 overflow-hidden text-[11px] text-muted-foreground tabular-nums"
+          className="text-muted-foreground flex h-4 min-w-0 flex-wrap items-center gap-x-2 overflow-hidden text-[11px] tabular-nums"
           title={description || undefined}
         >
           {description ? <span className="sr-only">{description}</span> : null}
@@ -139,14 +139,14 @@ export const DayHeader = memo(function DayHeaderInner({
               className="@container flex min-w-[1.625rem] flex-1 items-center gap-1"
             >
               <Moon className="size-3 shrink-0" />
-              <span className="@max-[2rem]:hidden truncate">
+              <span className="truncate @max-[2rem]:hidden">
                 {formatSleep(whoopSummary.sleep.totalSleepMilliseconds).replace(
                   " ",
                   ""
                 )}
               </span>
               {/* Too narrow for even "8…": a clean "…", not a cut glyph. */}
-              <span className="@max-[2rem]:inline hidden">…</span>
+              <span className="hidden @max-[2rem]:inline">…</span>
             </span>
           ) : null}
         </div>

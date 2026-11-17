@@ -174,7 +174,7 @@ export function TagManagerPopover({
             draft.color !== tag.color;
           return (
             <View
-              className="gap-1.5 rounded-md border border-border"
+              className="border-border gap-1.5 rounded-md border"
               key={tag.id}
               style={{ paddingHorizontal: 10, paddingVertical: 6 }}
             >
@@ -272,7 +272,7 @@ export function TagManagerPopover({
         <Pressable
           accessibilityRole="radio"
           accessibilityState={{ selected: value === null }}
-          className="flex-row items-center gap-2 rounded-md border border-border px-2 py-1.5"
+          className="border-border flex-row items-center gap-2 rounded-md border px-2 py-1.5"
           onPress={handleShowAll}
         >
           <Icon as={TagIcon} className="text-muted-foreground" size={14} />
@@ -286,7 +286,7 @@ export function TagManagerPopover({
             <Pressable
               accessibilityRole="radio"
               accessibilityState={{ selected: isSelected }}
-              className="flex-row items-center gap-2 rounded-md border border-border px-2 py-1.5"
+              className="border-border flex-row items-center gap-2 rounded-md border px-2 py-1.5"
               key={tag.id}
               onPress={() => handleSelectTag(tag)}
             >
@@ -322,8 +322,8 @@ export function TagManagerPopover({
           {tagListContent}
 
           {isEditMode ? (
-            <View className="gap-2 border-border border-t pt-3">
-              <Text className="text-muted-foreground text-xs uppercase tracking-wide">
+            <View className="border-border gap-2 border-t pt-3">
+              <Text className="text-muted-foreground text-xs tracking-wide uppercase">
                 Create tag
               </Text>
               <Input

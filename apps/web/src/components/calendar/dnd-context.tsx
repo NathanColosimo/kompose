@@ -819,7 +819,7 @@ export function CalendarDndProvider({ children }: CalendarDndProviderProps) {
         {previewRect ? (
           <div
             aria-hidden
-            className="pointer-events-none fixed z-30 rounded-md border-2 border-primary/70 bg-primary/10"
+            className="border-primary/70 bg-primary/10 pointer-events-none fixed z-30 rounded-md border-2"
             style={{
               height: previewRect.height,
               left: previewRect.left,

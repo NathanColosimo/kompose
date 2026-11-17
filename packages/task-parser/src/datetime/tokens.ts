@@ -38,10 +38,10 @@ const TRANSLATION_PATTERNS = TRANSLATIONS.map(
       english,
     ] as const
 );
-const SPACES = /\s+/g;
-const POSSESSIVE = /'s?$/;
+const SPACES = /\s+/gu;
+const POSSESSIVE = /'s?$/u;
 const LETTERS_ONLY = /^\p{L}+$/u;
-const DIGIT_LED = /^\d/;
+const DIGIT_LED = /^\d/u;
 const GERMAN_HALF = new RegExp(
   `\\bhalb (\\d{1,2}|${Object.keys(GERMAN_HOURS).join("|")})\\b`,
   "gu"
@@ -60,7 +60,8 @@ const FOREIGN_HOUR = new RegExp(
   "gu"
 );
 /** 午後3時半, 3時5分, 15時: am/pm, the hour, then 半 (half) or minutes. */
-const JAPANESE_CLOCK = /(午前|午後)?(\d{1,2})時(?:(半)|(\d{1,2})分)?/gu;
+const JAPANESE_CLOCK =
+  /(?<period>午前|午後)?(?<hour>\d{1,2})時(?:(?<half>半)|(?<minute>\d{1,2})分)?/gu;
 const JAPANESE_MERIDIEMS: Record<string, string> = { 午前: "am", 午後: "pm" };
 
 /** Lowercase, other languages to English, curly quotes straightened. */
@@ -68,17 +69,17 @@ function normalizeText(text: string) {
   let result = ` ${text
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[’‘]/g, "'")
-    .replace(/\b([ap])\.m\b\.?/g, "$1m")
-    .replace(/-ish\b/g, "ish")
+    .replace(/[’‘]/gu, "'")
+    .replace(/\b(?<meridiem>[ap])\.m\b\.?/gu, "$1m")
+    .replace(/-ish\b/gu, "ish")
     .replace(
-      /\b(?:close of business|end of (?:the )?(?:business |work(?:ing)? )?day)\b/g,
+      /\b(?:close of business|end of (?:the )?(?:business |work(?:ing)? )?day)\b/gu,
       "eod"
     )
     // Separators typed instead of spaces: "oct+28", "next_tue".
     .replace(/(?<=[\p{L}\d])[+_](?=[\p{L}\d])/gu, " ")
     .replace(
-      /\b(twenty|thirty)[- ](first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/g,
+      /\b(?<tens>twenty|thirty)[- ](?<unit>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/gu,
       (_m, tens: string, unit: string) =>
         `${(tens === "twenty" ? 20 : 30) + (lookup(ORDINAL_WORDS, unit) ?? 0)}th`
     )} `;
@@ -101,10 +102,10 @@ function normalizeText(text: string) {
   });
   // German compounds: "montagvormittag", "freitagmittag".
   result = result.replace(
-    /(montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)(vormittag|nachmittag|abend|mittag|morgen|fr[üu]h)/gu,
+    /(?<weekday>montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)(?<dayPart>vormittag|nachmittag|abend|mittag|morgen|fr[üu]h)/gu,
     "$1 $2"
   );
-  result = result.replace(/\bel d[íi]a (\d{1,2})\b/gu, "the $1th");
+  result = result.replace(/\bel d[íi]a (?<day>\d{1,2})\b/gu, "the $1th");
   result = result.replace(
     FOREIGN_HOUR,
     (match, lead: string | undefined, hour: string, fraction?: string) => {
@@ -118,10 +119,10 @@ function normalizeText(text: string) {
   );
   // Spanish quarter and half hours: "a las 8 y media".
   result = result
-    .replace(/(\d{1,2}) y media\b/gu, "$1:30")
-    .replace(/(\d{1,2}) y cuarto\b/gu, "$1:15")
+    .replace(/(?<hour>\d{1,2}) y media\b/gu, "$1:30")
+    .replace(/(?<hour>\d{1,2}) y cuarto\b/gu, "$1:15")
     .replace(
-      /(\d{1,2}) menos cuarto\b/gu,
+      /(?<hour>\d{1,2}) menos cuarto\b/gu,
       (_m, hour: string) => `${Number(hour) === 1 ? 12 : Number(hour) - 1}:45`
     );
   for (const [pattern, english] of TRANSLATION_PATTERNS) {
@@ -129,7 +130,7 @@ function normalizeText(text: string) {
   }
   // "montag bis freitag": a span of days.
   result = result.replace(
-    /(monday|tuesday|wednesday|thursday|friday|saturday|sunday) by (monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gu,
+    /(?<startWeekday>monday|tuesday|wednesday|thursday|friday|saturday|sunday) by (?<endWeekday>monday|tuesday|wednesday|thursday|friday|saturday|sunday)/gu,
     "$1 through $2"
   );
   return result.replace(SPACES, " ").trim();
@@ -149,12 +150,12 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     [DIGIT_ALIASES, (m) => wordTokens(m[0])],
     // 2026-11-14, 2026/11/14
     [
-      /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?![\d])/y,
+      /(?<year>\d{4})[-/.](?<month>\d{1,2})[-/.](?<day>\d{1,2})(?![\d])/uy,
       (m) => dateToken(Number(m[3]), Number(m[2]), Number(m[1])),
     ],
     // 11/28/2026, 28.11.26, 11-28-2026: US month first unless impossible.
     [
-      /(\d{1,2})([-/.])(\d{1,2})\2(\d{4}|\d{2})(?![\d:])/y,
+      /(?<first>\d{1,2})(?<separator>[-/.])(?<second>\d{1,2})\2(?<year>\d{4}|\d{2})(?![\d:])/uy,
       (m) => {
         const year = Number(m[4]) + ((m[4] ?? "").length === 2 ? 2000 : 0);
         const [first, second] = [Number(m[1]), Number(m[3])];
@@ -166,7 +167,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     // 11/3; "3/11" stays month first.
     [
-      /(\d{1,2})\/(\d{1,2})(?![\d/])/y,
+      /(?<first>\d{1,2})\/(?<second>\d{1,2})(?![\d/])/uy,
       (m) => {
         const [first, second] = [Number(m[1]), Number(m[2])];
         return first > 12
@@ -176,7 +177,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     // European "3.11." with a closing dot.
     [
-      /(\d{1,2})\.(\d{1,2})\.(?!\d)/y,
+      /(?<day>\d{1,2})\.(?<month>\d{1,2})\.(?!\d)/uy,
       (m) => dateToken(Number(m[1]), Number(m[2]), null),
     ],
     // 10:30, 4:30pm, 15:30h, 10:30:00; "07:00" is a 24-hour clock.
@@ -200,7 +201,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     // 8.30, 2.15 (a clock: dates have a closing dot or a year)
     [
-      /(\d{1,2})\.([0-5]\d)(?![\d.])/y,
+      /(?<hour>\d{1,2})\.(?<minute>[0-5]\d)(?![\d.])/uy,
       (m) =>
         Number(m[1]) <= 23 ? timeToken(Number(m[1]), Number(m[2])) : null,
     ],
@@ -217,7 +218,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     // 9h30, 14h (French); "2h" alone may be a duration, so only with minutes or 13+.
     [
-      /(\d{1,2})h(\d{2})?(?![\p{L}\d])/uy,
+      /(?<hour>\d{1,2})h(?<minute>\d{2})?(?![\p{L}\d])/uy,
       (m) =>
         m[2] !== undefined || Number(m[1]) >= 13
           ? timeToken(Number(m[1]), Number(m[2] ?? 0))
@@ -225,7 +226,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     // 1st, 22nd, 3rd, 15th
     [
-      /(\d{1,2})(?:st|nd|rd|th)(?![\p{L}])/uy,
+      /(?<ordinal>\d{1,2})(?:st|nd|rd|th)(?![\p{L}])/uy,
       (m) => ({
         digits: m[1] ?? "",
         kind: "number",
@@ -234,7 +235,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
       }),
     ],
     [
-      /\d+/y,
+      /\d+/uy,
       (m) => ({
         digits: m[0],
         kind: "number",
@@ -244,7 +245,7 @@ const LEXEMES: [RegExp, (match: RegExpExecArray) => Token | Token[] | null][] =
     ],
     [/[\p{L}][\p{L}\p{N}'\p{M}]*/uy, (m) => wordTokens(m[0])],
     [
-      /[-–—/,:.+&@~()!?;]/y,
+      /[-–—/,:.+&@~()!?;]/uy,
       (m) => ({ kind: "symbol", text: m[0] === "—" ? "–" : m[0] }),
     ],
   ];

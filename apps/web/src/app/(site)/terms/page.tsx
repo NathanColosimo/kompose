@@ -14,18 +14,18 @@ const termsSource = readFileSync(
   "utf8"
 );
 
-const termsBlocks = termsSource.split(/\n\s*\n/).flatMap((block) => {
+const termsBlocks = termsSource.split(/\n\s*\n/u).flatMap((block) => {
   const trimmed = block.trim();
   return trimmed ? [trimmed] : [];
 });
 
 const updatedAt =
-  termsBlocks[1]?.replace(/^Last Updated:\s*/, "") ?? "2026-03-16";
+  termsBlocks[1]?.replace(/^Last Updated:\s*/u, "") ?? "2026-03-16";
 const contentBlocks = termsBlocks.slice(2);
-const sectionHeadingPattern = /^\d+\.\s/;
+const sectionHeadingPattern = /^\d+\.\s/u;
 
 function normalizeBlockText(block: string) {
-  return block.replace(/^\s+/gm, "").trim();
+  return block.replace(/^\s+/gmu, "").trim();
 }
 
 export default function TermsPage() {

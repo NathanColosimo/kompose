@@ -14,7 +14,7 @@ const pixels = (value: string | number | undefined) =>
     runInNewContext(
       String(value)
         .replaceAll("calc", "")
-        .replace(/([\d.]+)%/g, "($1 * columnWidth / 100)")
+        .replace(/(?<percentage>[\d.]+)%/gu, "($1 * columnWidth / 100)")
         .replaceAll("px", ""),
       { columnWidth: 200 }
     )

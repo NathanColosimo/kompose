@@ -137,7 +137,7 @@ export default function DesktopCommandBarClient() {
           selectionMode="desktop-popup"
         />
       ) : (
-        <div className="rounded-xl border bg-popover p-4 text-popover-foreground text-sm">
+        <div className="bg-popover text-popover-foreground rounded-xl border p-4 text-sm">
           {view === "feedback" ? (
             <SessionFeedback
               error={Boolean(sessionError)}

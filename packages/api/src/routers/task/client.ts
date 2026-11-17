@@ -38,7 +38,7 @@ function stripSystemManagedTaskFields<
 }
 
 /** Escape LIKE wildcards so a search for "50%" matches literally. */
-const escapeLike = (value: string) => value.replace(/[\\%_]/g, "\\$&");
+const escapeLike = (value: string) => value.replace(/[\\%_]/gu, "\\$&");
 
 /**
  * The user's tasks with their tags, newest first. Params left unset don't

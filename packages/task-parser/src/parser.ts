@@ -24,9 +24,9 @@ export interface ParsedTask extends TaskFields {
  */
 const TAG_THRESHOLD = 0.8;
 
-const TAG_WORD_PATTERN = /^(tags?\b:?|#|@)\s*|\s+tag$/giu;
+const TAG_WORD_PATTERN = /^(?:tags?\b:?|#|@)\s*|\s+tag$/giu;
 const NOT_NAME_PATTERN = /[^\p{L}\p{N}\s&/]/gu;
-const SEPARATOR_PATTERN = /[\s_-]+/g;
+const SEPARATOR_PATTERN = /[\s_-]+/gu;
 
 /** A tag name as typed: no emoji, "#", case, or "tag" word. */
 function tagKey(name: string) {

@@ -114,7 +114,7 @@ export function RecurrenceScopeDialog<S extends RecurrenceScope>({
           {subject || description ? (
             <DialogDescription className="space-y-1">
               {subject ? (
-                <span className="block font-medium text-foreground">
+                <span className="text-foreground block font-medium">
                   {subject.name}
                   {/* Read as "Retro, moved to Mon, Nov 9…" (or "now", for a
                       resize), not "right arrow". */}

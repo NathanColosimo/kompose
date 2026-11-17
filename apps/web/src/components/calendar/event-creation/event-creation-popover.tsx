@@ -309,7 +309,7 @@ function CreationChooser({
                   start={startDate}
                 />
               ) : (
-                <p className="py-6 text-center text-muted-foreground text-sm">
+                <p className="text-muted-foreground py-6 text-center text-sm">
                   {eventUnavailableReason}
                 </p>
               )}

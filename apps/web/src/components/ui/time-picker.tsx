@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 interface TimePickerProps {
+  id?: string;
   /** "HH:mm" string or empty */
   value: string;
   onChange: (value: string) => void;
@@ -57,6 +58,7 @@ function formatTimeDisplay(value: string): string {
 const ITEM_HEIGHT = 36;
 
 export function TimePicker({
+  id,
   value,
   onChange,
   step = 15,
@@ -117,6 +119,7 @@ export function TimePicker({
             className
           )}
           disabled={disabled}
+          id={id}
           type="button"
           variant="outline"
         >

@@ -5,8 +5,9 @@
 
 type Rgb = [number, number, number];
 
-const HEX_PATTERN = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
-const HSL_PATTERN = /^hsl\(\s*([\d.]+)[\s,]+([\d.]+)%[\s,]+([\d.]+)%\s*\)$/i;
+const HEX_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu;
+const HSL_PATTERN =
+  /^hsl\(\s*(?<hue>[\d.]+)[\s,]+(?<saturation>[\d.]+)%[\s,]+(?<lightness>[\d.]+)%\s*\)$/iu;
 
 function parseHex(hex: string): Rgb {
   const digits =

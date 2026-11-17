@@ -106,8 +106,8 @@ export const CreationPreview = memo(function CreationPreviewComponent({
       className={cn(
         "pointer-events-none absolute right-0 left-0 z-10 mx-0.5 rounded-md transition-all",
         type === "hover"
-          ? "border border-primary/30 bg-primary/5"
-          : "border-2 border-primary/50 bg-primary/15"
+          ? "border-primary/30 bg-primary/5 border"
+          : "border-primary/50 bg-primary/15 border-2"
       )}
       ref={previewRef}
       style={{
@@ -117,7 +117,7 @@ export const CreationPreview = memo(function CreationPreviewComponent({
     >
       {/* What a drag will create, as it grows: "1:00 – 2:30 PM". */}
       {type === "creating" ? (
-        <span className="block truncate px-1.5 text-[11px] text-foreground/80 tabular-nums leading-[18px]">
+        <span className="text-foreground/80 block truncate px-1.5 text-[11px] leading-[18px] tabular-nums">
           {formatTimeRange(start, end)}
         </span>
       ) : null}

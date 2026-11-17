@@ -172,11 +172,11 @@ const FREQUENCY_WORDS: Record<string, [RepeatSpec["freq"], number]> = {
   yearly: ["YEARLY", 1],
 };
 const WORKDAYS = [1, 2, 3, 4, 5];
-const QUARTER = /^q([1-4])$/;
+const QUARTER = /^q(?<quarter>[1-4])$/u;
 /** "q2", "q3d", "q14d": a clinical-style repeat interval. */
-const CLINICAL_REPEAT = /^q(\d+)(d|w|wk|m)?$/;
+const CLINICAL_REPEAT = /^q(?<interval>\d+)(?<unit>d|w|wk|m)?$/u;
 /** "x10": a repeat count. */
-const TIMES_SHORTHAND = /^x(\d+)$/;
+const TIMES_SHORTHAND = /^x(?<count>\d+)$/u;
 const RANGE_WORDS = new Set(["to", "until", "through", "-", "–", "and"]);
 const START_WORDS = new Set([
   "starting",
@@ -721,7 +721,7 @@ function ordinalListAt(tokens: Token[], i: number): Read<number[]> {
     is(token, "final") ? -1 : ordinalAt(token, true);
   let at = i;
   const nths: number[] = [];
-  for (;;) {
+  while (true) {
     const nth = nthAt(tokens[at]);
     if (nth === null || nth > 31) {
       break;
@@ -1111,7 +1111,7 @@ function withMeridiemWord(
   let total = length;
   let value = spec;
   // "4:30 pm", "nine am", "1700 hours"
-  for (;;) {
+  while (true) {
     const text = word(tokens[i + total]) ?? "";
     if (
       !(CLOCK_MARKS.has(text) || (text === "hours" && value.meridiem === "24"))
@@ -1236,7 +1236,7 @@ function readDaySet(tokens: Token[], i: number): Read<number[]> {
   // m/w/f, t/th, m-f
   const days: number[] = [];
   let at = i;
-  for (;;) {
+  while (true) {
     const day = lookup(DAY_LETTERS, word(tokens[at]));
     if (day === undefined) {
       break;

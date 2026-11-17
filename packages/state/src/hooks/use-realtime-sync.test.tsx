@@ -37,6 +37,11 @@ afterEach(async () => {
   }
 });
 
+function Harness(options: RealtimeSyncOptions) {
+  useRealtimeSync({ userId: "test", ...options });
+  return null;
+}
+
 async function setup() {
   vi.useFakeTimers();
   queryClient = new QueryClient();
@@ -76,10 +81,6 @@ async function setup() {
     },
     orpc: createORPCClient<AppRouterClient>({ call }),
   });
-  function Harness(options: RealtimeSyncOptions) {
-    useRealtimeSync({ userId: "test", ...options });
-    return null;
-  }
   const render = async (options: RealtimeSyncOptions = {}) => {
     const tree = (
       <Provider store={store}>

@@ -82,6 +82,9 @@
   --shadow-2xl: 0px 4px 10px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0.01em;
   --spacing: 0.25rem;
+  /* macOS draws the window buttons over the top-left of the desktop window
+     (hiddenInset title bar), in about this much width. */
+  --window-controls-width: 76px;
 }
 
 .dark {
@@ -255,18 +258,13 @@
   *,
   *::before,
   *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
   }
 }
 
-/* macOS draws the window buttons over the top-left of the desktop window
-   (hiddenInset title bar), in about this much width. */
-:root {
-  --window-controls-width: 76px;
-}
 /* A site header's centered max-w-6xl row starts clear of them: its own
    1.5rem padding, or more once the window is too narrow for the row's
    centering margin to cover them. A padding's 100% is the header's width,
@@ -295,12 +293,12 @@
 }
 /* Open overlays are portaled above the header; keep them clickable there. */
 [data-desktop-runtime="electron"]
-:is(
-  [data-radix-popper-content-wrapper],
-  [role="dialog"],
-  [role="alertdialog"],
-  [data-slot$="-overlay"]
-) {
+  :is(
+    [data-radix-popper-content-wrapper],
+    [role="dialog"],
+    [role="alertdialog"],
+    [data-slot$="-overlay"]
+  ) {
   -webkit-app-region: no-drag;
 }
 

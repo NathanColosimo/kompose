@@ -113,7 +113,7 @@ export function DesktopShortcutSettings() {
           const isSelected = preset.id === selectedPresetId;
           return (
             <label
-              className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50"
+              className="hover:bg-muted/50 has-focus-visible:bg-muted/50 flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm transition-colors"
               key={preset.id}
             >
               <input
@@ -126,7 +126,7 @@ export function DesktopShortcutSettings() {
               />
               <Check className={cn("size-4", isSelected ? "" : "invisible")} />
               <span className="flex-1">{preset.label}</span>
-              <span className="font-mono text-muted-foreground text-xs">
+              <span className="text-muted-foreground font-mono text-xs">
                 {preset.accelerator}
               </span>
             </label>

@@ -14,7 +14,7 @@ import {
   toggleTaskRecurrenceDay,
 } from "@kompose/state/task-recurrence";
 import { CalendarIcon, Repeat, X } from "lucide-react";
-import { useCallback, useMemo, useReducer, useState } from "react";
+import { useCallback, useId, useMemo, useReducer, useState } from "react";
 import type { Temporal } from "temporal-polyfill";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -79,6 +79,7 @@ function recurrenceReducer(
 }
 
 interface RecurrenceEditorProps {
+  id?: string;
   onChange: (recurrence: TaskRecurrence | null) => void;
   /** Reference date for defaults (typically the task's startDate) */
   referenceDate?: Temporal.PlainDate | null;
@@ -86,6 +87,7 @@ interface RecurrenceEditorProps {
 }
 
 export function RecurrenceEditor({
+  id,
   value,
   onChange,
   referenceDate,
@@ -99,9 +101,10 @@ export function RecurrenceEditor({
       <PopoverTrigger asChild>
         <Button
           className={cn(
-            "justify-start gap-2 text-left font-medium text-xs",
+            "justify-start gap-2 text-left text-xs font-medium",
             !value && "text-muted-foreground"
           )}
+          id={id}
           variant="outline"
         >
           <Repeat className="size-4 shrink-0" />
@@ -126,6 +129,7 @@ function RecurrenceForm({
   onClose,
   referenceDate,
 }: RecurrenceEditorProps & { onClose: () => void }) {
+  const frequencyId = useId();
   const initialFields = useMemo(
     () => getTaskRecurrenceEditorState(value, referenceDate),
     [referenceDate, value]
@@ -147,14 +151,16 @@ function RecurrenceForm({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Label className="text-muted-foreground text-xs">Repeat</Label>
+        <Label className="text-muted-foreground text-xs" htmlFor={frequencyId}>
+          Repeat
+        </Label>
         <Select
           onValueChange={(v) =>
             dispatch({ freq: v as TaskRecurrenceFrequency, type: "set-freq" })
           }
           value={freq}
         >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
+          <SelectTrigger className="h-8 w-[120px] text-xs" id={frequencyId}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -340,7 +346,7 @@ function RecurrenceForm({
 
       <div className="flex justify-between border-t pt-3">
         <Button
-          className="gap-1 text-destructive"
+          className="text-destructive gap-1"
           onClick={handleClear}
           size="sm"
           type="button"

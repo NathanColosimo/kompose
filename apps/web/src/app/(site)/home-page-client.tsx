@@ -57,10 +57,10 @@ function HomePageContent() {
       <main>
         <section className="mx-auto grid max-w-6xl items-center gap-14 px-6 pt-12 pb-20 sm:pt-16 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:pt-24">
           <div className="flex flex-col gap-6">
-            <h1 className="text-balance font-serif text-4xl leading-[1.1] sm:text-5xl lg:text-6xl">
+            <h1 className="font-serif text-4xl leading-[1.1] text-balance sm:text-5xl lg:text-6xl">
               One timeline for your calendar and tasks.
             </h1>
-            <p className="max-w-lg text-pretty text-lg text-muted-foreground">
+            <p className="text-muted-foreground max-w-lg text-lg text-pretty">
               Kompose puts your events and to-dos on the same calendar, so you
               can plan a week in minutes and adjust when plans change.
             </p>
@@ -75,7 +75,7 @@ function HomePageContent() {
           <div className="grid gap-10 border-t pt-10 sm:grid-cols-3 sm:gap-8">
             {highlights.map((highlight) => (
               <div className="flex flex-col gap-2" key={highlight.title}>
-                <h2 className="font-medium text-base">{highlight.title}</h2>
+                <h2 className="text-base font-medium">{highlight.title}</h2>
                 <p className="text-muted-foreground text-sm leading-relaxed">
                   {highlight.body}
                 </p>

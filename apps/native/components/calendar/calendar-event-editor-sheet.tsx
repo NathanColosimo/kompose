@@ -201,13 +201,13 @@ function RecurrenceRow({
         accessibilityRole="button"
         accessibilityState={{ disabled, expanded: isExpanded }}
         accessibilityValue={{ text: said }}
-        className="mb-2.5 min-h-[38px] flex-row items-center gap-2 rounded-full border border-border px-3"
+        className="border-border mb-2.5 min-h-[38px] flex-row items-center gap-2 rounded-full border px-3"
         disabled={disabled}
         onPress={onToggle}
         style={{ opacity: disabled ? 0.5 : 1 }}
       >
         <Icon as={Repeat2} className="text-muted-foreground" size={14} />
-        <Text className="flex-1 text-[13px] text-foreground" numberOfLines={1}>
+        <Text className="text-foreground flex-1 text-[13px]" numberOfLines={1}>
           {said}
         </Text>
         <Icon
@@ -245,7 +245,7 @@ function RepeatSection({
       {hasRule ? editor : null}
       {/* What failed beside a short action, wrapping at large text. */}
       <View className="mb-2.5 flex-row flex-wrap items-center gap-x-3 gap-y-1.5">
-        <Text className="shrink text-muted-foreground text-sm">
+        <Text className="text-muted-foreground shrink text-sm">
           {hasRule ? "The repeat didn't refresh." : "The repeat didn't load."}
         </Text>
         <Button
@@ -303,7 +303,7 @@ function RecurrenceEditorSection({
       : [weekdayCodeOf(startDate)];
   const weekdaysOnly = weekOrdered(shownDays).join() === WORKWEEK.join();
   return (
-    <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
+    <View className="border-border mb-2.5 rounded-md border px-3 py-2.5">
       {/* Chips at their own width, wrapping (3 + 2 on a phone), as in the
           task editor. */}
       <View className="flex-row flex-wrap gap-2">
@@ -705,7 +705,7 @@ function CountInput({
   );
 }
 
-const NON_DIGITS = /\D/g;
+const NON_DIGITS = /\D/gu;
 
 function EventMeetingButton({
   meetingLink,
@@ -739,7 +739,7 @@ function EventMeetingButton({
 
   if (isConferencePending) {
     return (
-      <Text className="text-right text-muted-foreground text-xs">
+      <Text className="text-muted-foreground text-right text-xs">
         Meet on save
       </Text>
     );
@@ -775,7 +775,7 @@ function readOnlyReasonFor(
 
 function EndsBeforeStartNote({ endsEarly }: { endsEarly: boolean }) {
   return endsEarly ? (
-    <Text className="-mt-1 mb-2.5 text-destructive text-xs">
+    <Text className="text-destructive -mt-1 mb-2.5 text-xs">
       Ends before it starts.
     </Text>
   ) : null;
@@ -854,9 +854,9 @@ function ReadOnlyEventView({
     source?.eventType === "birthday" ? "Birthdays" : calendarLabel;
   return (
     <View className="gap-3">
-      <View className="flex-row items-center gap-2 rounded-lg bg-muted px-3 py-2.5">
+      <View className="bg-muted flex-row items-center gap-2 rounded-lg px-3 py-2.5">
         <Icon as={Lock} className="text-muted-foreground" size={14} />
-        <Text className="flex-1 text-muted-foreground text-sm">{reason}</Text>
+        <Text className="text-muted-foreground flex-1 text-sm">{reason}</Text>
       </View>
       <View className="gap-1">
         <Text className="font-sans-medium text-foreground text-lg" selectable>
@@ -871,7 +871,7 @@ function ReadOnlyEventView({
         {calendarName ? (
           <View className="flex-row items-center gap-1.5">
             <View
-              className="size-2 rounded-full bg-muted-foreground"
+              className="bg-muted-foreground size-2 rounded-full"
               style={calendarColor ? { backgroundColor: calendarColor } : null}
             />
             <Text className="text-muted-foreground text-sm">
@@ -907,10 +907,10 @@ function ReadOnlyEventView({
         >
           <Icon
             as={MapPin}
-            className="mt-0.5 text-muted-foreground"
+            className="text-muted-foreground mt-0.5"
             size={14}
           />
-          <Text className="flex-1 text-foreground text-sm underline">
+          <Text className="text-foreground flex-1 text-sm underline">
             {location}
           </Text>
         </Pressable>
@@ -939,7 +939,7 @@ function EventEditorHeaderRight({
   submitLabel: string;
 }) {
   if (isSaving) {
-    return <Text className="px-2 text-muted-foreground text-sm">Saving…</Text>;
+    return <Text className="text-muted-foreground px-2 text-sm">Saving…</Text>;
   }
   return (
     <View className="flex-row items-center gap-2">
@@ -999,11 +999,11 @@ function EventAllDayAndMeetingRow({
     >
       <View
         className={cn(
-          "flex-row items-center justify-between rounded-full border border-border px-3 py-2.5",
+          "border-border flex-row items-center justify-between rounded-full border px-3 py-2.5",
           stacked ? null : "flex-1"
         )}
       >
-        <Text className="font-medium text-foreground text-sm">All day</Text>
+        <Text className="text-foreground text-sm font-medium">All day</Text>
         <RNSwitch
           accessibilityLabel="All day"
           onValueChange={onToggleAllDay}
@@ -1136,7 +1136,7 @@ function EventLocationInput({
       </View>
 
       {showLocationSuggestions ? (
-        <View className="absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-md border border-border bg-background shadow-lg">
+        <View className="border-border bg-background absolute top-full right-0 left-0 z-50 mt-1 overflow-hidden rounded-md border shadow-lg">
           {locationSuggestions.map((suggestion: LocationSuggestion, index) => {
             const isLast = index === locationSuggestions.length - 1;
             return (

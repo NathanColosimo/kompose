@@ -24,7 +24,8 @@ const youtubeVideosResponse = z.object({
   items: z.array(youtubeVideoItem),
 });
 
-const ISO_DURATION_PATTERN = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+const ISO_DURATION_PATTERN =
+  /PT(?:(?<hours>\d+)H)?(?:(?<minutes>\d+)M)?(?:(?<seconds>\d+)S)?/u;
 
 /** Parse YouTube's hours/minutes/seconds duration form, e.g. PT1H2M10S. */
 function parseIsoDuration(iso: string): number {

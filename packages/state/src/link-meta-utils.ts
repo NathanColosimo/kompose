@@ -30,4 +30,4 @@ export function dedupeLinks(links: LinkMeta[]): LinkMeta[] {
   return [...map.values()];
 }
 
-export const URL_REGEX = /^https?:\/\/\S+$/;
+export const URL_REGEX = /^https?:\/\/\S+$/u;

@@ -4,7 +4,7 @@ import type { ClientTaskInsertDecoded } from "@kompose/api/routers/task/contract
 import { useTasks } from "@kompose/state/hooks/use-tasks";
 import { todayPlainDate } from "@kompose/state/temporal-utils";
 import { CalendarIcon, Plus, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Temporal } from "temporal-polyfill";
@@ -64,6 +64,7 @@ export function CreateTaskForm({
   defaultTagIds?: string[];
   defaultStartDateString?: string;
 }) {
+  const fieldId = useId();
   const [open, setOpen] = useState(false);
   const submitted = useRef(false);
 
@@ -131,13 +132,14 @@ export function CreateTaskForm({
             <Input id="title" placeholder="Task title" {...register("title")} />
           </div>
           <div className="grid gap-2">
-            <Label>Duration</Label>
+            <Label htmlFor={`${fieldId}-duration`}>Duration</Label>
             <Controller
               control={control}
               name="durationMinutes"
               render={({ field }) => (
                 <DurationPicker
                   className="w-full"
+                  id={`${fieldId}-duration`}
                   onChange={(minutes) => field.onChange(minutes)}
                   value={field.value}
                 />
@@ -153,12 +155,13 @@ export function CreateTaskForm({
             />
           </div>
           <div className="grid gap-2">
-            <Label>Tags</Label>
+            <Label htmlFor={`${fieldId}-tags`}>Tags</Label>
             <Controller
               control={control}
               name="tagIds"
               render={({ field }) => (
                 <TagPicker
+                  id={`${fieldId}-tags`}
                   onChange={field.onChange}
                   value={field.value ?? []}
                 />
@@ -167,7 +170,7 @@ export function CreateTaskForm({
           </div>
           <div className="grid gap-4">
             <div className="grid gap-2">
-              <Label>Start Date</Label>
+              <Label htmlFor={`${fieldId}-start-date`}>Start Date</Label>
               <Controller
                 control={control}
                 name="startDate"
@@ -178,6 +181,7 @@ export function CreateTaskForm({
                         className={`w-full justify-start text-left font-normal ${
                           !field.value && "text-muted-foreground"
                         }`}
+                        id={`${fieldId}-start-date`}
                         variant="outline"
                       >
                         <CalendarIcon className="mr-2 size-4" />
@@ -205,7 +209,7 @@ export function CreateTaskForm({
                       {field.value && (
                         <div className="border-t p-2">
                           <Button
-                            className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                            className="hover:bg-accent hover:text-accent-foreground w-full gap-2"
                             onClick={() => {
                               field.onChange(null);
                               setValue("startTime", null, {
@@ -227,7 +231,7 @@ export function CreateTaskForm({
               />
             </div>
             <div className="grid gap-2">
-              <Label>Start Time</Label>
+              <Label htmlFor={`${fieldId}-start-time`}>Start Time</Label>
               <Controller
                 control={control}
                 name="startTime"
@@ -241,6 +245,7 @@ export function CreateTaskForm({
                   return (
                     <TimePicker
                       className="w-full"
+                      id={`${fieldId}-start-time`}
                       onChange={(nextValue) => {
                         if (!nextValue) {
                           field.onChange(null);
@@ -267,7 +272,7 @@ export function CreateTaskForm({
               />
             </div>
             <div className="grid gap-2">
-              <Label>Due Date</Label>
+              <Label htmlFor={`${fieldId}-due-date`}>Due Date</Label>
               <Controller
                 control={control}
                 name="dueDate"
@@ -278,6 +283,7 @@ export function CreateTaskForm({
                         className={`w-full justify-start text-left font-normal ${
                           !field.value && "text-muted-foreground"
                         }`}
+                        id={`${fieldId}-due-date`}
                         variant="outline"
                       >
                         <CalendarIcon className="mr-2 size-4" />
@@ -305,7 +311,7 @@ export function CreateTaskForm({
                       {field.value && (
                         <div className="border-t p-2">
                           <Button
-                            className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                            className="hover:bg-accent hover:text-accent-foreground w-full gap-2"
                             onClick={() => field.onChange(null)}
                             size="sm"
                             type="button"
@@ -322,12 +328,13 @@ export function CreateTaskForm({
               />
             </div>
             <div className="grid gap-2">
-              <Label>Repeat</Label>
+              <Label htmlFor={`${fieldId}-repeat`}>Repeat</Label>
               <Controller
                 control={control}
                 name="recurrence"
                 render={({ field }) => (
                   <RecurrenceEditor
+                    id={`${fieldId}-repeat`}
                     onChange={field.onChange}
                     referenceDate={startDate}
                     value={field.value ?? null}

@@ -63,14 +63,14 @@ const postByIdResponseSchema = z.object({
   publication: PublicationSchema,
 });
 
-const SUBSTACK_SLUG_PATTERN = /\/p\/([a-z0-9-]+)/;
-const INBOX_POST_ID_PATTERN = /\/inbox\/post\/(\d+)/;
-const HOME_POST_ID_PATTERN = /\/home\/post\/p-(\d+)/;
+const SUBSTACK_SLUG_PATTERN = /\/p\/(?<slug>[a-z0-9-]+)/u;
+const INBOX_POST_ID_PATTERN = /\/inbox\/post\/(?<postId>\d+)/u;
+const HOME_POST_ID_PATTERN = /\/home\/post\/p-(?<postId>\d+)/u;
 const HTML_POST_ID_PATTERNS = [
-  /\\?"post_id\\?":\s*(\d+)/,
-  /\\?"postId\\?":\s*(\d+)/,
-  /post_preview\/(\d+)\//,
-  /\/i\/(\d+)\?img=/,
+  /\\?"post_id\\?":\s*(?<postId>\d+)/u,
+  /\\?"postId\\?":\s*(?<postId>\d+)/u,
+  /post_preview\/(?<postId>\d+)\//u,
+  /\/i\/(?<postId>\d+)\?img=/u,
 ] as const;
 const WORDS_PER_MINUTE = 238;
 

@@ -30,7 +30,7 @@ const PROVIDER_PRIORITY: MeetingProvider[] = [
   "other",
 ];
 
-const URL_REGEX = /https?:\/\/[^\s<>]+/gi;
+const URL_REGEX = /https?:\/\/[^\s<>]+/giu;
 
 function providerFromHost(hostname: string): MeetingProvider {
   const host = hostname.toLowerCase();

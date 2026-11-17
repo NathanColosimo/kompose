@@ -60,6 +60,43 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/native/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": {
+              "level": "error",
+              "options": {
+                "labelComponents": []
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/api/src/routers/maps/errors.ts",
+        "packages/api/src/routers/tag/errors.ts",
+        "packages/api/src/routers/task/errors.ts",
+        "packages/api/src/services/link-parser/types.ts",
+        "packages/google-cal/src/client.ts",
+        "packages/whoop/src/errors.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "useThisInClassMethods": {
+              "level": "error",
+              "options": {
+                "ignoreMethods": ["publicError"]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "linter": {
@@ -71,7 +108,13 @@
         "noJsxPropsBind": "off"
       },
       "style": {
-        "useDestructuring": "off"
+        "useDestructuring": "off",
+        "useThisInClassMethods": {
+          "level": "error",
+          "options": {
+            "ignoreOverrideMethods": true
+          }
+        }
       },
       "suspicious": {
         "noEqualsToNull": "off",

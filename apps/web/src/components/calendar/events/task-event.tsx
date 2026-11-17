@@ -183,7 +183,7 @@ export const TaskEvent = memo(function TaskEventInner({
     // editor opens.
     <div
       className={cn(
-        "group pointer-events-auto relative cursor-grab rounded-md bg-background p-px",
+        "group bg-background pointer-events-auto relative cursor-grab rounded-md p-px",
         BLOCK_RAISE_CLASS,
         // The editor's trigger is the inner button, so raise on its state.
         "has-[:focus-visible]:z-50 has-[[data-state=open]]:z-50",
@@ -210,14 +210,14 @@ export const TaskEvent = memo(function TaskEventInner({
             has Done too. */}
         <span
           className={cn(
-            "relative z-10 flex @max-[5.5rem]:hidden shrink-0",
+            "relative z-10 flex shrink-0 @max-[5.5rem]:hidden",
             isShort ? null : "mt-px"
           )}
         >
           <Checkbox
             aria-label={`Done: ${task.title}`}
             checked={isDone}
-            className="size-3.5 cursor-pointer border-foreground/60"
+            className="border-foreground/60 size-3.5 cursor-pointer"
             onClick={handleStatusToggle}
           />
         </span>
@@ -232,7 +232,7 @@ export const TaskEvent = memo(function TaskEventInner({
             // button centers its content); a short block centers its own.
             // dnd-kit's drag instructions (set on DndContext).
             aria-describedby={attributes["aria-describedby"]}
-            className="flex h-full min-w-0 flex-1 cursor-grab flex-col text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+            className="focus-visible:after:ring-ring/60 flex h-full min-w-0 flex-1 cursor-grab flex-col text-left after:absolute after:inset-0 after:rounded-[5px] focus-visible:outline-none focus-visible:after:ring-2"
             type="button"
           >
             <BlockContent
@@ -251,7 +251,7 @@ export const TaskEvent = memo(function TaskEventInner({
       </div>
       {isFirstSegment ? (
         <div
-          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          className="after:bg-foreground/45 absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 after:h-1 after:w-6 after:rounded-full after:content-['']"
           ref={setStartHandleRef}
           {...startAttributes}
           {...startListeners}
@@ -260,7 +260,7 @@ export const TaskEvent = memo(function TaskEventInner({
       ) : null}
       {isLastSegment ? (
         <div
-          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          className="after:bg-foreground/45 absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 after:h-1 after:w-6 after:rounded-full after:content-['']"
           ref={setEndHandleRef}
           {...endAttributes}
           {...endListeners}
@@ -284,7 +284,7 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
 
   return (
     <div
-      className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg"
+      className="bg-background w-48 cursor-grabbing rounded-md p-px shadow-lg"
       style={isShortTask ? { height: shortTaskHeight } : undefined}
     >
       <div
@@ -302,7 +302,7 @@ export function TaskEventPreview({ task }: { task: TaskSelectDecoded }) {
             title={task.title}
           />
         ) : (
-          <div className="truncate font-medium text-xs">{task.title}</div>
+          <div className="truncate text-xs font-medium">{task.title}</div>
         )}
       </div>
     </div>

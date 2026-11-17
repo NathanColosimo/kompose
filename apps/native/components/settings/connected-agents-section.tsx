@@ -41,7 +41,7 @@ export function ConnectedAgentsSection() {
       title="AI agents"
     >
       <View className="px-4 py-3">
-        <Text className="font-mono text-foreground text-xs" selectable>
+        <Text className="text-foreground font-mono text-xs" selectable>
           {MCP_URL}
         </Text>
       </View>

@@ -4,7 +4,7 @@ name: Release
 # target last shipped: migrations and web first, then mobile and desktop.
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   # Retry a failed run. Targets only ship what changed since their last
   # successful release, so rerunning is always safe.
   workflow_dispatch:
@@ -160,7 +160,7 @@ jobs:
     name: Mobile
     permissions:
       contents: write
-    needs: [changes, web]
+    needs: [ changes, web ]
     if: ${{ !cancelled() && (needs.web.result == 'success' || needs.web.result == 'skipped') && needs.changes.outputs.mobile == 'true' }}
     # OTA updates don't need macOS, and Linux runners start sooner.
     runs-on: ${{ needs.changes.outputs.ios-build == 'true' && 'macos-26' || 'ubuntu-latest' }}
@@ -258,7 +258,7 @@ jobs:
     name: Desktop
     permissions:
       contents: write
-    needs: [changes, web]
+    needs: [ changes, web ]
     if: ${{ !cancelled() && (needs.web.result == 'success' || needs.web.result == 'skipped') && needs.changes.outputs.desktop == 'true' }}
     runs-on: macos-26
     environment: production

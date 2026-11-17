@@ -74,7 +74,7 @@ export function SocialAccountButtons() {
         </Button>
       ))}
       {lastUsed ? (
-        <p className="text-center text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-center text-xs">
           You last signed in with {lastUsed.name}.
         </p>
       ) : null}

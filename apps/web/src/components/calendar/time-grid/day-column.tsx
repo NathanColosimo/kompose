@@ -48,7 +48,7 @@ export const DayColumn = memo(function DayColumnInner({
 
   return (
     <div
-      className="relative flex shrink-0 flex-col border-border border-r last:border-r-0"
+      className="border-border relative flex shrink-0 flex-col border-r last:border-r-0"
       data-day-column
       style={{ scrollSnapAlign: "start", width }}
     >
@@ -124,7 +124,7 @@ function DayColumnDropTarget({
     <div className="pointer-events-none absolute inset-0" ref={setNodeRef}>
       {highlightIndex === null ? null : (
         <div
-          className="absolute inset-x-0 bg-primary/10"
+          className="bg-primary/10 absolute inset-x-0"
           style={{ height: SLOT_HEIGHT, top: highlightIndex * SLOT_HEIGHT }}
         />
       )}

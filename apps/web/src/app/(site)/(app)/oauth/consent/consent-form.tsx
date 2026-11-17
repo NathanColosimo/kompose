@@ -50,11 +50,11 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
             {client.name.slice(0, 2).toUpperCase()}
           </AvatarFallback>
         </Avatar>
-        <h1 className="text-balance font-serif text-2xl">
+        <h1 className="font-serif text-2xl text-balance">
           Allow {client.name} to use Kompose?
         </h1>
         {client.uri ? (
-          <p className="break-all text-muted-foreground text-xs">
+          <p className="text-muted-foreground text-xs break-all">
             {client.uri}
           </p>
         ) : null}
@@ -63,11 +63,11 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
         </p>
       </div>
       <div className="flex flex-col gap-2 border-t pt-5">
-        <p className="font-medium text-sm">It will be able to:</p>
+        <p className="text-sm font-medium">It will be able to:</p>
         <ul className="flex flex-col gap-2 text-sm">
           {scopes.map((scope) => (
             <li className="flex items-start gap-2" key={scope}>
-              <Check className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <Check className="text-muted-foreground mt-0.5 size-4 shrink-0" />
               {SCOPE_DESCRIPTIONS[scope] ?? scope}
             </li>
           ))}

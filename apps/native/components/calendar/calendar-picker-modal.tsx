@@ -109,7 +109,7 @@ export function CalendarPickerModal({
 
       <ScrollView style={{ maxHeight: 520 }}>
         {googleAccounts.length === 0 ? (
-          <Text className="py-2 text-muted-foreground">
+          <Text className="text-muted-foreground py-2">
             No Google accounts linked.
           </Text>
         ) : (
@@ -190,7 +190,7 @@ function CalendarAccountSection({
   return (
     <View className="mb-4">
       <View className="mb-2 gap-0.5">
-        <Text className="font-bold text-foreground" numberOfLines={1}>
+        <Text className="text-foreground font-bold" numberOfLines={1}>
           {accountTitle}
         </Text>
         {accountSubtitle ? (
@@ -200,7 +200,7 @@ function CalendarAccountSection({
         ) : null}
       </View>
       {accountCalendars.length === 0 ? (
-        <Text className="py-2 text-muted-foreground">
+        <Text className="text-muted-foreground py-2">
           No calendars found for this account.
         </Text>
       ) : (
@@ -219,7 +219,7 @@ function CalendarAccountSection({
 
           return (
             <Pressable
-              className="mb-2 flex-row items-center gap-2.5 rounded-md border border-border px-3 py-2.5 active:bg-card"
+              className="border-border active:bg-card mb-2 flex-row items-center gap-2.5 rounded-md border px-3 py-2.5"
               key={`${account.accountId}-${calendar.id}`}
               onPress={() =>
                 setVisibleCalendars((prev) => {
@@ -254,7 +254,7 @@ function CalendarAccountSection({
                 }}
               />
               <Text
-                className="flex-1 font-semibold text-foreground"
+                className="text-foreground flex-1 font-semibold"
                 numberOfLines={1}
                 style={calendarColor ? { color: calendarColor } : undefined}
               >

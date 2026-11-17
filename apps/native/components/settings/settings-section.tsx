@@ -26,7 +26,7 @@ export function SettingsSection({
       <View className="gap-0.5 px-1">
         <Text
           accessibilityRole="header"
-          className="font-sans-medium text-base text-foreground"
+          className="font-sans-medium text-foreground text-base"
         >
           {title}
         </Text>
@@ -36,7 +36,7 @@ export function SettingsSection({
           </Text>
         ) : null}
       </View>
-      <View className="overflow-hidden rounded-xl border border-border bg-card">
+      <View className="border-border bg-card overflow-hidden rounded-xl border">
         {children}
       </View>
     </View>
@@ -82,7 +82,7 @@ export function SettingsRow({
         // initials stay at their size, and VoiceOver skips them.
         <View
           accessibilityElementsHidden
-          className="size-8 items-center justify-center rounded-full bg-muted"
+          className="bg-muted size-8 items-center justify-center rounded-full"
           importantForAccessibility="no-hide-descendants"
         >
           <Text
@@ -134,7 +134,7 @@ export function RowAction({
       accessibilityRole="button"
       // Inline, a fixed width keeps "Unlink" and "Unlinking…" the same size;
       // stacked under the name, the label starts where the text does.
-      className={`rounded-md px-2.5 py-1.5 active:bg-muted ${stacked ? "items-start" : "min-w-24 items-center"} ${disabled ? "opacity-50" : ""}`}
+      className={`active:bg-muted rounded-md px-2.5 py-1.5 ${stacked ? "items-start" : "min-w-24 items-center"} ${disabled ? "opacity-50" : ""}`}
       disabled={disabled}
       hitSlop={6}
       onPress={onPress}
@@ -158,7 +158,7 @@ export function SettingsNote({
 }) {
   return (
     <Text
-      className={`px-4 py-3 text-muted-foreground text-sm ${first ? "" : "border-border border-t"}`}
+      className={`text-muted-foreground px-4 py-3 text-sm ${first ? "" : "border-border border-t"}`}
     >
       {children}
     </Text>

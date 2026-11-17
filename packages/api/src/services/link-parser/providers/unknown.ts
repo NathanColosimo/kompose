@@ -6,7 +6,7 @@ import { LinkParseError } from "../types";
 function extractMeta(html: string, attr: string): string | undefined {
   const regex = new RegExp(
     `<meta\\s+(?:[^>]*?(?:property|name)=["']${attr}["'][^>]*?content=["']([^"']*?)["']|[^>]*?content=["']([^"']*?)["'][^>]*?(?:property|name)=["']${attr}["'])`,
-    "i"
+    "iu"
   );
   const match = html.match(regex);
   return match?.[1] ?? match?.[2];

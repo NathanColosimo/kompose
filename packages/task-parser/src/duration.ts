@@ -112,13 +112,13 @@ const UNITS: Record<string, number> = {
   wks: WEEK,
 };
 
-const WHITESPACE_PATTERN = /\s+/;
+const WHITESPACE_PATTERN = /\s+/u;
 /** "2 1/2", "3/4": a whole number and a half, third or quarter. */
 const FRACTION =
-  /(?:(?<![\d/.])(\d+)\s+)?(?<![\d/.])([1-3])\/([2-4])(?![\d/])/g;
+  /(?:(?<![\d/.])(?<whole>\d+)\s+)?(?<![\d/.])(?<numerator>[1-3])\/(?<denominator>[2-4])(?![\d/])/gu;
 const ARTICLES = new Set(["a", "an"]);
-const CLOCK_PATTERN = /^(\d{1,2}):(\d{2})$/;
-const NUMBER_PATTERN = /^\d+(?:\.\d+)?$/;
+const CLOCK_PATTERN = /^(?<hours>\d{1,2}):(?<minutes>\d{2})$/u;
+const NUMBER_PATTERN = /^\d+(?:\.\d+)?$/u;
 
 function amountOf(token: string): number | null {
   if (NUMBER_PATTERN.test(token)) {
@@ -137,11 +137,11 @@ function normalize(phrase: string) {
     .toLowerCase()
     .replaceAll("½", " half ")
     .replace(FRACTION, decimal)
-    .replace(/(\d)([a-z])/g, "$1 $2")
-    .replace(/([a-z])(\d)/g, "$1 $2")
-    .replace(/(\d)\s*[-–]\s*(\d)/g, "$1 to $2")
-    .replace(/[-–]/g, " ")
-    .replace(/[^a-z0-9.: ]/g, " ")
+    .replace(/(?<digit>\d)(?<letter>[a-z])/gu, "$1 $2")
+    .replace(/(?<letter>[a-z])(?<digit>\d)/gu, "$1 $2")
+    .replace(/(?<lower>\d)\s*[-–]\s*(?<upper>\d)/gu, "$1 to $2")
+    .replace(/[-–]/gu, " ")
+    .replace(/[^a-z0-9.: ]/gu, " ")
     .split(WHITESPACE_PATTERN)
     .filter((word) => word && !FILLER.has(word))
     .filter(

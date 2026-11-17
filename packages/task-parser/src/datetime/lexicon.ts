@@ -478,10 +478,16 @@ export const TRANSLATIONS: [string, string][] = [
 export const JAPANESE: [RegExp, string][] = [
   [/毎月末/gu, " the last day of every month "],
   [/月末/gu, " end of month "],
-  [/来月の?第(\d)([月火水木金土日])曜日?/gu, " the $1th $2曜 of next month "],
-  [/毎月第(\d)([月火水木金土日])曜日?/gu, " every $1th $2曜 of the month "],
-  [/(\d{1,2})月(\d{1,2})日/gu, " $1/$2 "],
-  [/第(\d)/gu, " the $1th "],
+  [
+    /来月の?第(?<ordinal>\d)(?<weekday>[月火水木金土日])曜日?/gu,
+    " the $1th $2曜 of next month ",
+  ],
+  [
+    /毎月第(?<ordinal>\d)(?<weekday>[月火水木金土日])曜日?/gu,
+    " every $1th $2曜 of the month ",
+  ],
+  [/(?<month>\d{1,2})月(?<day>\d{1,2})日/gu, " $1/$2 "],
+  [/第(?<ordinal>\d)/gu, " the $1th "],
   [/明後日/gu, " day after tomorrow "],
   [/明日|あした/gu, " tomorrow "],
   [/今日|きょう/gu, " today "],

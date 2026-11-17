@@ -6,6 +6,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createStore, Provider } from "jotai";
 import { renderToString } from "react-dom/server";
 
+function Previews({
+  urls,
+  onChange,
+}: {
+  urls: string[];
+  onChange: (value: ReturnType<typeof useLinkMetadata>) => void;
+}) {
+  onChange(useLinkMetadata(urls));
+  return null;
+}
+
 // Render the real hook to register its queries without a browser or DOM shim.
 test("two link previews settle independently when the second finishes first", async () => {
   const first = Promise.withResolvers<LinkMeta>();
@@ -36,15 +47,16 @@ test("two link previews settle independently when the second finishes first", as
   });
   const client = new QueryClient();
   let previews: ReturnType<typeof useLinkMetadata> = [];
-  function Previews() {
-    previews = useLinkMetadata(urls);
-    return null;
-  }
   const render = () =>
     renderToString(
       <Provider store={store}>
         <QueryClientProvider client={client}>
-          <Previews />
+          <Previews
+            onChange={(value) => {
+              previews = value;
+            }}
+            urls={urls}
+          />
         </QueryClientProvider>
       </Provider>
     );

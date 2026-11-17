@@ -125,7 +125,7 @@ const ADD_OR_DROP_HINT =
 
 function renderEmptyMessage(message: string, hint = ADD_OR_DROP_HINT) {
   return (
-    <div className="px-4 py-6 text-muted-foreground text-sm">
+    <div className="text-muted-foreground px-4 py-6 text-sm">
       <p>{message}</p>
       <p className="mt-1 text-xs">{hint}</p>
     </div>
@@ -139,10 +139,10 @@ function renderSidebarLoadingContent() {
     <div aria-hidden className="flex flex-col gap-0.5 px-2 pt-2">
       {loadingKeys.map((key) => (
         <div className="flex items-start gap-3 px-2 py-2.5" key={key}>
-          <div className="mt-0.5 size-4 shrink-0 rounded-full bg-muted/60" />
+          <div className="bg-muted/60 mt-0.5 size-4 shrink-0 rounded-full" />
           <div className="flex flex-1 flex-col gap-1.5">
-            <div className="h-3.5 w-3/4 rounded-sm bg-muted/60" />
-            <div className="h-3 w-1/3 rounded-sm bg-muted/40" />
+            <div className="bg-muted/60 h-3.5 w-3/4 rounded-sm" />
+            <div className="bg-muted/40 h-3 w-1/3 rounded-sm" />
           </div>
         </div>
       ))}
@@ -179,7 +179,7 @@ function renderTaskSections({
         <section aria-label={label} key={label}>
           <h3
             className={cn(
-              "flex items-baseline gap-1.5 px-2 pt-1 pb-1 font-medium text-xs",
+              "flex items-baseline gap-1.5 px-2 pt-1 pb-1 text-xs font-medium",
               tone === "overdue" ? "text-destructive" : "text-muted-foreground"
             )}
           >
@@ -293,7 +293,7 @@ function getSidebarContent({
 
   if (error) {
     return (
-      <p className="px-4 py-6 text-destructive text-sm" role="alert">
+      <p className="text-destructive px-4 py-6 text-sm" role="alert">
         Couldn't load your tasks. Check your connection and reload.
       </p>
     );
@@ -474,13 +474,13 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
                     className={cn(
                       item.type === "tag" &&
                         navItems[index - 1]?.type === "base"
-                        ? "mt-2 border-sidebar-border border-t pt-2"
+                        ? "border-sidebar-border mt-2 border-t pt-2"
                         : ""
                     )}
                     key={item.id}
                   >
                     <SidebarMenuButton
-                      className="justify-center gap-0 px-0 text-muted-foreground data-[active=true]:text-sidebar-accent-foreground"
+                      className="text-muted-foreground data-[active=true]:text-sidebar-accent-foreground justify-center gap-0 px-0"
                       isActive={activeItem?.id === item.id}
                       onClick={() => {
                         // The open list's own icon hides the panel; any
@@ -530,7 +530,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
         >
           <SidebarHeader className="h-12 shrink-0 justify-center border-b p-0">
             <div className="flex items-center justify-between gap-2 pr-2 pl-4">
-              <h2 className="min-w-0 flex-1 truncate font-medium text-base text-foreground">
+              <h2 className="text-foreground min-w-0 flex-1 truncate text-base font-medium">
                 {activeItem?.title ??
                   (activeViewSelection.type === "tag" ? "Tag" : "Inbox")}
               </h2>
@@ -552,7 +552,7 @@ export function SidebarLeft({ ...props }: ComponentProps<typeof Sidebar>) {
               {isNarrow ? (
                 <Button
                   aria-label="Show calendar"
-                  className="size-8 text-muted-foreground"
+                  className="text-muted-foreground size-8"
                   onClick={() => {
                     setOpen(false);
                     if (pathname !== "/dashboard") {

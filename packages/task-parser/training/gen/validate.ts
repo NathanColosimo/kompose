@@ -12,17 +12,17 @@ import { resolveWhen } from "../../src/when";
 import { jsonFiles, REFERENCE_NOW as now, ROOT, writeJsonl } from "./common";
 
 const LEADING_CUE =
-  /^(by|due|due on|due by|before|for|on|at|starting|from|until|takes|about|around)\s+/i;
-const TRAILING_PUNCT = /[\s.,;:!?]+$/;
-const DETACHED_MARK = /[#@]\s?$/;
-const LEADING_JUNK = /^[\s\-–—:;,.>•*)]+/;
-const MERIDIEM = /^\s?(a\.m\.|p\.m\.|am|pm)\b/i;
+  /^(?:by|due|due on|due by|before|for|on|at|starting|from|until|takes|about|around)\s+/iu;
+const TRAILING_PUNCT = /[\s.,;:!?]+$/u;
+const DETACHED_MARK = /[#@]\s?$/u;
+const LEADING_JUNK = /^[\s\-–—:;,.>•*)]+/u;
+const MERIDIEM = /^\s?(?:a\.m\.|p\.m\.|am|pm)\b/iu;
 const CONNECTORS = new Set(
   "a an the and or but so to for of on at in by with from due before after until till about around also then just maybe probably when if is it i me my we our you your this that this next please pls thx thanks ok okay hey um uh like".split(
     " "
   )
 );
-const LINK = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i;
+const LINK = /^(?:https?:\/\/)?[\w-]+(?:\.[\w-]+)+(?:\/\S*)?$/iu;
 
 /**
  * Move cue words out of date and duration spans, punctuation off span edges,

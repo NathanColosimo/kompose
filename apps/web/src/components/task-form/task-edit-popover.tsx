@@ -45,6 +45,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -856,7 +857,7 @@ function TaskFields({
               <PopoverTrigger asChild>
                 <Button
                   className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
+                    "justify-start gap-2 text-left text-xs font-medium",
                     !field.value && "text-muted-foreground"
                   )}
                   variant="outline"
@@ -904,7 +905,7 @@ function TaskFields({
                 {field.value && (
                   <div className="border-t p-2">
                     <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                      className="hover:bg-accent hover:text-accent-foreground w-full gap-2"
                       onClick={() => {
                         field.onChange(null);
                         setValue("startTime", null, { shouldDirty: true });
@@ -970,7 +971,7 @@ function TaskFields({
               <PopoverTrigger asChild>
                 <Button
                   className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
+                    "justify-start gap-2 text-left text-xs font-medium",
                     !field.value && "text-muted-foreground"
                   )}
                   variant="outline"
@@ -999,7 +1000,7 @@ function TaskFields({
                 {field.value && (
                   <div className="border-t p-2">
                     <Button
-                      className="w-full gap-2 hover:bg-accent hover:text-accent-foreground"
+                      className="hover:bg-accent hover:text-accent-foreground w-full gap-2"
                       onClick={() => field.onChange(null)}
                       size="sm"
                       type="button"
@@ -1108,7 +1109,7 @@ function LinkMetaPreview({
   const wordCount = getLinkWordCount(meta);
 
   return (
-    <div className="group flex items-start gap-2 rounded-md border bg-muted/50 p-2">
+    <div className="group bg-muted/50 flex items-start gap-2 rounded-md border p-2">
       {meta.thumbnailUrl && (
         <Image
           alt={meta.title ?? "Link thumbnail"}
@@ -1124,10 +1125,10 @@ function LinkMetaPreview({
         onClick={() => window.open(meta.url, "_blank", "noopener,noreferrer")}
         type="button"
       >
-        <p className="truncate font-medium text-xs">
+        <p className="truncate text-xs font-medium">
           {meta.title ?? "Untitled"}
         </p>
-        <div className="flex items-center gap-2 text-muted-foreground text-xs">
+        <div className="text-muted-foreground flex items-center gap-2 text-xs">
           <span>{label}</span>
           {durationMinutes !== null && <span>{durationMinutes}m</span>}
           {wordCount !== null && (
@@ -1138,7 +1139,7 @@ function LinkMetaPreview({
       {onRemove && (
         <button
           aria-label={`Remove ${meta.title ?? "link"}`}
-          className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          className="text-muted-foreground hover:text-foreground shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           onClick={onRemove}
           type="button"
         >
@@ -1160,6 +1161,7 @@ function LinkListEditor({
   onAddLink: (url: string) => void;
   onRemoveLink: (index: number) => void;
 }) {
+  const linkInputId = useId();
   const [linkInput, setLinkInput] = useState("");
 
   const submitUrl = (raw: string) => {
@@ -1180,7 +1182,12 @@ function LinkListEditor({
 
   return (
     <div className="space-y-2">
-      <Label className="font-medium text-muted-foreground text-xs">Links</Label>
+      <Label
+        className="text-muted-foreground text-xs font-medium"
+        htmlFor={linkInputId}
+      >
+        Links
+      </Label>
 
       {links.map((meta, index) => (
         <LinkMetaPreview
@@ -1193,12 +1200,13 @@ function LinkListEditor({
       <div className="relative">
         <span
           aria-hidden
-          className="absolute top-1/2 left-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground"
+          className="text-muted-foreground absolute top-1/2 left-2 -translate-y-1/2 rounded p-0.5"
         >
           <Link2 className="size-4" />
         </span>
         <Input
           className="pl-8"
+          id={linkInputId}
           onBlur={() => submitUrl(linkInput)}
           onChange={(e) => setLinkInput(e.target.value)}
           onKeyDown={(e) => {
@@ -1219,7 +1227,7 @@ function LinkListEditor({
           value={linkInput}
         />
         {isParsing && (
-          <Loader2 className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          <Loader2 className="text-muted-foreground absolute top-1/2 right-2.5 size-4 -translate-y-1/2 animate-spin" />
         )}
       </div>
     </div>

@@ -38,7 +38,7 @@ function RootLayoutContent() {
 
   if (isSessionPending) {
     return (
-      <View className="flex-1 items-center justify-center bg-background">
+      <View className="bg-background flex-1 items-center justify-center">
         <ActivityIndicator size="large" />
       </View>
     );
@@ -46,14 +46,14 @@ function RootLayoutContent() {
 
   if (!sessionUser) {
     return (
-      <View className="flex-1 items-center justify-center bg-background p-6">
+      <View className="bg-background flex-1 items-center justify-center p-6">
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <View className="gap-6">
           <View className="items-center gap-2">
-            <Text className="font-bold text-2xl text-foreground">
+            <Text className="text-foreground text-2xl font-bold">
               Welcome to Kompose
             </Text>
-            <Text className="text-center text-muted-foreground">
+            <Text className="text-muted-foreground text-center">
               Sign in to access your calendar and tasks
             </Text>
           </View>
@@ -67,7 +67,7 @@ function RootLayoutContent() {
   // the active scheme instead of always for light.
   return (
     <ThemeProvider value={theme}>
-      <View className="flex-1 bg-background">
+      <View className="bg-background flex-1">
         <StatusBar style={isDarkColorScheme ? "light" : "dark"} />
         <Stack
           screenOptions={{

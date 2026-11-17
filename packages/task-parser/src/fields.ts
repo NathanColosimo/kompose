@@ -15,27 +15,27 @@ export interface TaskFields {
   title: string;
 }
 
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
-const TRAILING_PUNCTUATION_PATTERN = /[.,;:!?)]+$/;
+const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
+const TRAILING_PUNCTUATION_PATTERN = /[.,;:!?)]+$/u;
 
 /** What may sit between two pieces of one field and stay in it. */
 const JOINER_PATTERN =
-  /^(\s*[,;:.&+/\u2013\u2014-]+\s*|\s+(and|then|&|\+)\s+)$/i;
+  /^(?:\s*[,;:.&+/\u2013\u2014-]+\s*|\s+(?:and|then|&|\+)\s+)$/iu;
 /**
  * Punctuation and linking words left dangling where a date or duration was
  * cut out ("stretch for [10 minutes]"). "in"/"on" stay: they're often part
  * of the verb ("check in", "follow up on").
  */
 const TRAILING_JOINER_PATTERN =
-  /(?:[\s,;:&+/\u2013\u2014-]|\s(?:for|at|by|from|until|till|starting|due|every|before|and|or)\b)+$/i;
+  /(?:[\s,;:&+/\u2013\u2014-]|\s(?:for|at|by|from|until|till|starting|due|every|before|and|or)\b)+$/iu;
 
 /** "to" left over from "remind me to …" when the filler span stops early. */
-const LEADING_TO_PATTERN = /^to\s+(?!do\b)(?=\S+\s+\S)/i;
+const LEADING_TO_PATTERN = /^to\s+(?!do\b)(?=\S+\s+\S)/iu;
 const CORRECTION_PATTERN =
-  /\b(?:actually|make (?:it|that)|no wait|instead|i mean|scratch that|change (?:it|that) to)\b/i;
-const BARE_CLOCK_PATTERN = /^(?:at |around |about )?\d{1,2}(?::\d{2})?$/i;
-const MORNING_PATTERN = /\b(?:morning|a\.?m)\b/i;
-const EVENING_PATTERN = /\b(?:tonight|evening|night|afternoon|p\.?m)\b/i;
+  /\b(?:actually|make (?:it|that)|no wait|instead|i mean|scratch that|change (?:it|that) to)\b/iu;
+const BARE_CLOCK_PATTERN = /^(?:at |around |about )?\d{1,2}(?::\d{2})?$/iu;
+const MORNING_PATTERN = /\b(?:morning|a\.?m)\b/iu;
+const EVENING_PATTERN = /\b(?:tonight|evening|night|afternoon|p\.?m)\b/iu;
 
 /**
  * The text of every `label` span. Neighbouring pieces keep what separated
@@ -179,7 +179,7 @@ export function resolveFields({
   };
 }
 
-const ALTERNATIVE_PATTERN = /\b(?:or|either)\b/i;
+const ALTERNATIVE_PATTERN = /\b(?:or|either)\b/iu;
 
 /**
  * A start that lists several weekdays ("gym mon wed fri at 6am") repeats
@@ -197,7 +197,7 @@ function weekdayList(startText: string, now: Temporal.ZonedDateTime) {
 }
 
 const UNTIL_GAP_PATTERN =
-  /\b(?:until|till|til|thru|through|ending(?: on)?)\s*$/i;
+  /\b(?:until|till|til|thru|through|ending(?: on)?)\s*$/iu;
 
 /** Whether the first due span follows "until"/"through" (a repeat's end). */
 function endsRepeat(spans: Span[], text?: string) {

@@ -328,9 +328,13 @@ export function makeGoogleCalendarService(
     const items: unknown[] = [];
     let pageToken: string | undefined;
     do {
+      const currentPageToken = pageToken;
       const response = yield* Effect.tryPromise({
         try: () =>
-          client.users.me.calendarList.list({ maxResults: 250, pageToken }),
+          client.users.me.calendarList.list({
+            maxResults: 250,
+            pageToken: currentPageToken,
+          }),
         catch: (cause) => new GoogleApiError({ cause }),
       });
       items.push(...(response.items ?? []));
@@ -517,6 +521,7 @@ export function makeGoogleCalendarService(
     const items: unknown[] = [];
     let pageToken: string | undefined;
     do {
+      const currentPageToken = pageToken;
       const response = yield* Effect.tryPromise({
         try: () =>
           client.calendars.events.list(calendarId, {
@@ -525,7 +530,7 @@ export function makeGoogleCalendarService(
             singleEvents: true,
             orderBy: "startTime",
             maxResults: 2500,
-            pageToken,
+            pageToken: currentPageToken,
           }),
         catch: (cause) => new GoogleApiError({ cause }),
       });

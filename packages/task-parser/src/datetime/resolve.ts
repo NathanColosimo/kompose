@@ -54,7 +54,7 @@ function nthDayOf(year: number, month: number, nth: number, business: boolean) {
   let day = dateIn(year, month, nth > 0 ? 1 : 31);
   let found = 0;
   const step = nth > 0 ? 1 : -1;
-  for (;;) {
+  while (true) {
     if (day.dayOfWeek <= 5) {
       found += 1;
       if (found === Math.abs(nth)) {

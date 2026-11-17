@@ -35,10 +35,10 @@ const TLDS =
 const URL_CHAR = '[^ \\t\\n\\r\\f\\v<>"]';
 const LINK_PATTERN = new RegExp(
   `(?:https?://|www\\.)${URL_CHAR}+|\\b[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:${TLDS})\\b(?:/${URL_CHAR}*)?`,
-  "gi"
+  "giu"
 );
-const TRAILING_LINK_PUNCT = /[.,;:!?)\]'"]+$/;
-const WHITESPACE = /^\s$/;
+const TRAILING_LINK_PUNCT = /[.,;:!?)\]'"]+$/u;
+const WHITESPACE = /^\s$/u;
 const DIGIT = /^\p{Nd}$/u;
 const LETTER = /^\p{L}$/u;
 const UPPER = /^\p{Lu}$/u;
@@ -219,10 +219,11 @@ export function viterbi(encoded: Encoded, logits: Float32Array): number[] {
   for (const position of positions) {
     const row = logProbs(position);
     const pointers: number[] = [];
+    const previousScores = best;
     best = row.map((score, tag) => {
       let choice = 0;
       let value = Number.NEGATIVE_INFINITY;
-      best.forEach((previous, from) => {
+      previousScores.forEach((previous, from) => {
         if (previous > value && allowed(from, tag)) {
           choice = from;
           value = previous;
