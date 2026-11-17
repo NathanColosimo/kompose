@@ -2,11 +2,7 @@ import { auth } from "@kompose/auth";
 import { Database, DatabaseLive } from "@kompose/db";
 import { account } from "@kompose/db/schema/auth";
 import type { WebhookSubscriptionSelect } from "@kompose/db/schema/webhook-subscription";
-import {
-  type WebhookSubscriptionProvider,
-  webhookSubscriptionTable,
-} from "@kompose/db/schema/webhook-subscription";
-import { env } from "@kompose/env";
+import { webhookSubscriptionTable } from "@kompose/db/schema/webhook-subscription";
 import {
   GoogleCalendar,
   makeGoogleCalendarService,
@@ -21,7 +17,6 @@ import {
   formatUnknownCause,
   WebhookAuthError,
   WebhookRepositoryError,
-  WebhookValidationError,
 } from "./errors";
 import { GOOGLE_PROVIDER } from "./google-cal/constants";
 import type {
@@ -37,8 +32,11 @@ export interface RefreshAllWebhooksInput {
   userId: string;
 }
 
-export interface HandleGoogleNotificationInput {
-  headers: Headers;
+/** The `X-Goog-*` headers of a push notification, already checked. */
+interface GoogleChannelNotification {
+  channelId: string;
+  resourceId: string;
+  resourceState: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -74,16 +72,12 @@ function pickMostRecent<T extends WebhookSubscriptionSelect>(
   return candidateUpdatedAt >= currentUpdatedAt ? candidate : current;
 }
 
-const getAccountsByProvider = (params: {
-  accountId?: string;
-  providerId: string;
-  userId: string;
-}) =>
+const getGoogleAccounts = (params: { accountId?: string; userId: string }) =>
   Effect.gen(function* () {
     const db = yield* Database;
     const conditions = [
       eq(account.userId, params.userId),
-      eq(account.providerId, params.providerId),
+      eq(account.providerId, GOOGLE_PROVIDER),
     ];
 
     if (params.accountId) {
@@ -96,22 +90,18 @@ const getAccountsByProvider = (params: {
       .where(and(...conditions));
   });
 
-const listSubscriptionsForUser = (params: {
-  provider?: WebhookSubscriptionProvider;
-  userId: string;
-}) =>
+const listGoogleSubscriptions = (userId: string) =>
   Effect.gen(function* () {
     const db = yield* Database;
-    const conditions = [eq(webhookSubscriptionTable.userId, params.userId)];
-
-    if (params.provider) {
-      conditions.push(eq(webhookSubscriptionTable.provider, params.provider));
-    }
-
     return yield* db
       .select()
       .from(webhookSubscriptionTable)
-      .where(and(...conditions));
+      .where(
+        and(
+          eq(webhookSubscriptionTable.userId, userId),
+          eq(webhookSubscriptionTable.provider, GOOGLE_PROVIDER)
+        )
+      );
   });
 
 const findActiveSubById = (params: { id: string }) =>
@@ -267,12 +257,10 @@ export class WebhookService extends Context.Service<WebhookService>()(
             ),
           ];
 
-          if (effects.length > 0) {
-            yield* Effect.all(effects, {
-              concurrency: "unbounded",
-              discard: true,
-            });
-          }
+          yield* Effect.all(effects, {
+            concurrency: "unbounded",
+            discard: true,
+          });
         });
 
         yield* accountWebhookProgram.pipe(
@@ -291,15 +279,11 @@ export class WebhookService extends Context.Service<WebhookService>()(
         // Independent lookups; both only need the user id.
         const [accounts, existingSubscriptions] = yield* Effect.all(
           [
-            getAccountsByProvider({
+            getGoogleAccounts({
               accountId: params.accountId,
-              providerId: GOOGLE_PROVIDER,
               userId: params.userId,
             }),
-            listSubscriptionsForUser({
-              provider: GOOGLE_PROVIDER,
-              userId: params.userId,
-            }),
+            listGoogleSubscriptions(params.userId),
           ],
           { concurrency: "unbounded" }
         );
@@ -331,39 +315,20 @@ export class WebhookService extends Context.Service<WebhookService>()(
       });
 
       /**
-       * Process an incoming Google push notification webhook.
-       * Yields WebhookValidationError for invalid headers/token.
+       * Process a Google push notification whose headers were checked.
        * Yields WebhookRepositoryError if subscription is not found.
        */
       const handleGoogleNotification = Effect.fn(
         "WebhookService.handleGoogleNotification"
-      )(function* (params: HandleGoogleNotificationInput) {
-        const channelId = params.headers.get("x-goog-channel-id");
-        const channelToken = params.headers.get("x-goog-channel-token");
-        const resourceId = params.headers.get("x-goog-resource-id");
-        const resourceState = params.headers.get("x-goog-resource-state");
-
-        // Annotate span with extracted webhook header values
-        if (channelId) {
-          yield* Effect.annotateCurrentSpan("channelId", channelId);
-        }
-        if (resourceId) {
-          yield* Effect.annotateCurrentSpan("resourceId", resourceId);
-        }
+      )(function* ({
+        channelId,
+        resourceId,
+        resourceState,
+      }: GoogleChannelNotification) {
+        yield* Effect.annotateCurrentSpan("channelId", channelId);
+        yield* Effect.annotateCurrentSpan("resourceId", resourceId);
         if (resourceState) {
           yield* Effect.annotateCurrentSpan("resourceState", resourceState);
-        }
-
-        if (!(channelId && resourceId)) {
-          return yield* new WebhookValidationError({
-            message: "Missing required Google channel headers",
-          });
-        }
-
-        if (channelToken !== env.GOOGLE_WEBHOOK_TOKEN) {
-          return yield* new WebhookValidationError({
-            message: "Invalid Google channel token",
-          });
         }
 
         const subscription = yield* findActiveSubById({

@@ -15,8 +15,6 @@ The plugin system is only the part every such service needs:
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
-Status: the list, the `connection` table, the Settings list, and tokens are built. Next: the webhook route.
-
 ## The rule for shared code
 
 Shared code needs two users. A feature with one implementation stays plain code, and the shared shape is designed from the two real cases when the second one arrives.
@@ -82,17 +80,46 @@ Better Auth then answers the request. It refreshes only within 5 seconds of expi
 
 ## Webhooks
 
-One route receives every outside service's calls: `/api/webhooks/<source>`. For a plugin, `<source>` is its ID. A service that isn't a plugin can have a handler too.
+One route receives every outside service's calls: `/api/webhooks/<source>` (`apps/web/src/app/api/webhooks/[source]/route.ts`). For a plugin, `<source>` is its ID. A service that isn't a plugin can have a handler too.
 
-A handler is one function that gets the raw `Request`, checks it, and returns the reply to send at once plus the slow work to run after the reply is sent.
+A handler is one function, listed in `webhookHandlers` in `packages/api/src/webhooks/receive.ts`:
+
+```ts
+type WebhookHandler = (request: Request) => WebhookResult | Promise<WebhookResult>;
+
+interface WebhookResult {
+  /** Sent to the service right away. */
+  response: Response;
+  /** Runs after the response is sent. */
+  work?: Effect.Effect<void, unknown, AppServices>;
+}
+```
+
+- **The handler gets the raw `Request`.** Services sign the exact bytes of the body, so the route never parses it first.
+- **It checks the call and returns the reply.** Some services need a particular reply, such as a challenge echoed back.
+- **Slow work goes in `work`.** The route runs it after the reply is sent, because services stop waiting after a few seconds (Microsoft after about three) and send the call again.
+- **`GET` and `POST` both reach the handler.** Some services verify a new URL with a `GET`.
+
+The route does the rest, the same way for every source: an unknown source gets a 404, and `work` runs in its own trace (a `Webhook.work` span) with its failures logged as `WEBHOOK_WORK_FAILED`.
+
+Handlers today:
+
+| Source | Checks | Work |
+| --- | --- | --- |
+| `google-calendar` | The channel token header | Finds the watched calendar, clears its cache, and tells the user's clients to refetch |
+
+Work usually ends with `publishToUser`, which sends a realtime event to the user's open clients. Each kind of data has its own event type in `packages/api/src/realtime/events.ts`.
+
+Not built, because nothing needs them yet: a shared signature check (add it beside the first handler that verifies one), and a per-connection URL (Google and Microsoft name the subscription in the call itself).
 
 ## Adding a plugin
 
 1. Add its entry to `packages/plugins/src/index.ts`.
 2. Add its OAuth provider to Better Auth in `packages/auth/src/index.ts`.
-3. Write its router, state, and components like any other feature.
+3. If the service sends webhooks, write a handler and add it to `webhookHandlers`.
+4. Write its router, state, and components like any other feature.
 
-Settings, connections, encryption, and token refresh need no changes.
+Settings, connections, encryption, token refresh, and the webhook route need no changes.
 
 ## Later: one table per kind of data
 
