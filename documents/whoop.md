@@ -30,20 +30,13 @@ keys use that row's ID, so unlink blocks reads and relink starts fresh.
 `getLinkedAccessToken` uses the resolved row when calling Better Auth. Better Auth token,
 profile, and unlink APIs require the local row ID (`account.id`).
 
-`packages/auth/src/whoop.ts` identifies WHOOP from the owned account row rather
-than a request `providerId`. An access token request first reads the row
-without a transaction or lock; a stored token more than 30 seconds from expiry
-is returned as is, so concurrent requests don't queue on the row. Otherwise it
-locks the row (`SELECT … FOR UPDATE`), checks the token again in case a
-concurrent request just refreshed it, then refreshes and saves the rotated
-tokens, preserving the stored granted scopes. WHOOP refresh tokens are
-single-use, so only the lock holder refreshes, with the refresh token it read
-under the lock. `whoop.test.ts` covers both paths against a real Postgres; it
-skips without `DATABASE_URL`, so it only runs locally. HTTP callers must have a
-current session; explicit `userId` is only a fallback for trusted server calls.
-The account-info hook also refreshes under this lock before Better Auth fetches
-the profile, because 1.7 can otherwise refresh internally without calling the
-token endpoint.
+WHOOP refresh tokens work once. `packages/auth/src/oauth-tokens.ts` refreshes
+every plugin account's tokens under a row lock, so two requests can't spend the
+same one; see [Tokens in `plugins.md`](./plugins.md#tokens). A WHOOP refresh
+must also ask for `scope=offline` to get a new refresh token, which is
+`refreshTokenParams` on the WHOOP provider in `packages/auth/src/index.ts`.
+`oauth-tokens.test.ts` covers the lock against a real Postgres; it skips without
+`DATABASE_URL`, so it only runs locally.
 
 ## Packages
 
