@@ -291,6 +291,18 @@
   :is(button, input, textarea, select, a, [role="button"]) {
   -webkit-app-region: no-drag;
 }
+/* A drag region's clicks go to the window, not the page, so they can't close a
+   popover or menu or move focus off a control. While either is happening, the
+   region takes clicks; dragging resumes once that click lands. */
+[data-desktop-runtime="electron"]
+  body:has(
+    [data-radix-popper-content-wrapper] > :not([data-slot="tooltip-content"])
+  )
+  [data-desktop-drag-region],
+[data-desktop-runtime="electron"]
+  [data-desktop-drag-region]:has(:focus-visible) {
+  -webkit-app-region: no-drag;
+}
 /* Open overlays are portaled above the header; keep them clickable there. */
 [data-desktop-runtime="electron"]
   :is(
