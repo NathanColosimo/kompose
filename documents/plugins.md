@@ -15,7 +15,7 @@ The plugin system is only the part every such service needs:
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
-Status: the list and the `connection` table are built. Next, in this order: the Settings list, tokens, the webhook route.
+Status: the list, the `connection` table, and the Settings list are built. Next, in this order: tokens, the webhook route.
 
 ## The rule for shared code
 
@@ -52,7 +52,12 @@ Columns are added by the first plugin that needs them.
 
 ## Settings
 
-Web and native draw one section per plugin from the list, with the accounts linked to it: link an account, unlink one, and reconnect one that is `needs-reauth`.
+Web (`plugin-connections-settings.tsx`) and native (`plugin-connections-section.tsx`) draw one section per plugin from the list, with the accounts linked to it. Both use `usePluginConnections` in `@kompose/state`.
+
+- `plugins.connections` returns each connection with the account's name, email, and picture from Better Auth's `accountInfo`.
+- **Link account** calls `linkSocial` with the plugin's provider. A plugin that allows one account hides it once it has one.
+- **Unlink** unlinks the Better Auth account.
+- **Reconnect** (with tokens) shows on a connection that is `needs-reauth`.
 
 ## Tokens
 
