@@ -64,7 +64,7 @@ push to main
   which gets Vercel's bytecode caching on cold starts; Bun's function runtime
   doesn't. Bun is still the package manager and runs the tooling and tests.
   Without `bunVersion`, Vercel's default Bun is 1.3, so `installCommand`
-  runs `bunx bun@1.4.3 install` (Vercel's documented way to pin it). Bump it
+  runs `bunx bun@1.4.4 install` (Vercel's documented way to pin it). Bump it
   together with `packageManager` in the root `package.json`.
   Server packages (`api`, `auth`, `db`, `env`, `google-cal`, `whoop`, `redis`)
   type-check against Node's types only, so a Bun-only API there fails
