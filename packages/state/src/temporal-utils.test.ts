@@ -32,7 +32,7 @@ function expectDated(text: string, start: string[], end: string[]) {
 
 /** ICU uses narrow and thin spaces; compare with plain ones. */
 const range = (start: string, end: string) =>
-  formatTimeRange(at(start), at(end)).replace(/\s/g, " ");
+  formatTimeRange(at(start), at(end)).replace(/\s/gu, " ");
 
 describe("formatTimeRange", () => {
   test("drops minutes when both ends are on the hour", () => {
@@ -90,7 +90,7 @@ describe("formatTimeRange edge cases", () => {
       at("2026-11-07T09:30"),
       "ko"
     );
-    expect(text.match(/오전/g)?.length).toBe(2);
+    expect(text.match(/오전/gu)?.length).toBe(2);
   });
 });
 

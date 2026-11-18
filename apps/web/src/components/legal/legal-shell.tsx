@@ -23,7 +23,7 @@ export function LegalShell({
         <article className="mx-auto max-w-3xl px-6 pt-10 pb-20 sm:pt-16">
           <header className="flex flex-col gap-3 border-b pb-8">
             <h1 className="font-serif text-4xl sm:text-5xl">{title}</h1>
-            <p className="max-w-2xl text-pretty text-lg text-muted-foreground">
+            <p className="text-muted-foreground max-w-2xl text-lg text-pretty">
               {summary}
             </p>
             <p className="text-muted-foreground text-sm">

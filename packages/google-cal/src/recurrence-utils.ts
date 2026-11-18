@@ -1,9 +1,9 @@
 import type { CreateEvent, Event } from "./schema";
 
-const STRIP_TIME_SEPARATORS = /[-:]/g;
-const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/;
-const UNTIL_REGEX = /;?UNTIL=[^;]+/;
-const COUNT_REGEX = /;?COUNT=[^;]+/;
+const STRIP_TIME_SEPARATORS = /[-:]/gu;
+const STRIP_MILLIS_SUFFIX = /\.\d{3}Z$/u;
+const UNTIL_REGEX = /;?UNTIL=[^;]+/u;
+const COUNT_REGEX = /;?COUNT=[^;]+/u;
 
 export function truncateRecurrenceForFollowing(
   recurrence: string[],

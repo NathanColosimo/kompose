@@ -174,7 +174,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
     // biome-ignore lint/a11y/useSemanticElements: a button can't hold the lock tooltip (see openOnEnterOrSpace)
     <div
       className={cn(
-        "group pointer-events-auto relative rounded-md bg-background p-px",
+        "group bg-background pointer-events-auto relative rounded-md p-px",
         BLOCK_RAISE_CLASS,
         isEditable ? "cursor-grab" : "cursor-default opacity-90",
         isDragging || isMoving ? "opacity-0" : ""
@@ -224,7 +224,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                className="absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full bg-background/70 text-foreground/70"
+                className="bg-background/70 text-foreground/70 absolute top-1 right-1 inline-flex size-4 items-center justify-center rounded-full"
                 title=""
               >
                 <Lock className="size-2.5" />
@@ -239,7 +239,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       </div>
       {isEditable && hasStartEdge ? (
         <div
-          className="absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          className="after:bg-foreground/45 absolute inset-x-0 -top-1 flex h-3 cursor-n-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 after:h-1 after:w-6 after:rounded-full after:content-['']"
           ref={setStartHandleRef}
           {...startAttributes}
           {...startListeners}
@@ -248,7 +248,7 @@ export const GoogleCalendarEvent = memo(function GoogleCalendarEventInner({
       ) : null}
       {isEditable && hasEndEdge ? (
         <div
-          className="absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity after:h-1 after:w-6 after:rounded-full after:bg-foreground/45 after:content-[''] group-hover:opacity-100"
+          className="after:bg-foreground/45 absolute inset-x-0 -bottom-1 flex h-3 cursor-s-resize items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 after:h-1 after:w-6 after:rounded-full after:content-['']"
           ref={setEndHandleRef}
           {...endAttributes}
           {...endListeners}
@@ -309,7 +309,7 @@ export const GoogleCalendarEventPreview = memo(
 
     return (
       <div
-        className="w-48 cursor-grabbing rounded-md bg-background p-px shadow-lg"
+        className="bg-background w-48 cursor-grabbing rounded-md p-px shadow-lg"
         style={isShortEvent ? { height: shortEventHeight } : undefined}
       >
         <div

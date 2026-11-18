@@ -29,9 +29,9 @@ function plainText(marked: string) {
     return parseMarkup(marked).text;
   } catch {
     return marked
-      .replace(/\[[A-Z]:/g, "")
-      .replace(/\]/g, "")
-      .replace(/\(([A-Z]):/g, "(");
+      .replace(/\[[A-Z]:/gu, "")
+      .replace(/\]/gu, "")
+      .replace(/\((?<label>[A-Z]):/gu, "(");
   }
 }
 
@@ -90,7 +90,7 @@ ${items
 // Follow the generator: keep picking up new raw batches until it's done and
 // nothing is left (the generator writes data/raw/<name>.done when finished).
 const failed = new Set<string>();
-for (;;) {
+while (true) {
   const generatorDone = existsSync(`${ROOT}data/raw/${name}.done`);
   const files = existsSync(rawDir) ? await jsonFiles(rawDir) : [];
   const todo = files.filter(

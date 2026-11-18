@@ -627,11 +627,11 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   return (
     <div className="flex h-full">
       {/* Fixed time gutter column */}
-      <div className="flex w-16 shrink-0 flex-col border-r bg-background">
+      <div className="bg-background flex w-16 shrink-0 flex-col border-r">
         {/* Corner above the gutter: the time zone, and a label for the
             all-day row. Its height matches the header block. */}
         <div
-          className="flex shrink-0 flex-col border-b text-[10px] text-muted-foreground"
+          className="text-muted-foreground flex shrink-0 flex-col border-b text-[10px]"
           style={{ height: headerHeight }}
         >
           <span
@@ -658,7 +658,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Header row */}
         <div
-          className="sticky top-0 z-10 shrink-0 overflow-hidden border-b bg-background"
+          className="bg-background sticky top-0 z-10 shrink-0 overflow-hidden border-b"
           ref={(node) => {
             headerContainerRef.current = node;
           }}
@@ -679,14 +679,14 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
               })}
             </div>
 
-            <div className="flex border-border border-t bg-background/80">
+            <div className="border-border bg-background/80 flex border-t">
               {visibleDays.map((day) => {
                 const dayKey = day.toString();
                 const dayAllDay = allDayEventsByDay.get(dayKey) ?? [];
 
                 return (
                   <div
-                    className="flex min-h-7 flex-col items-start gap-1 overflow-hidden border-border border-r py-1 pl-px last:border-r-0"
+                    className="border-border flex min-h-7 flex-col items-start gap-1 overflow-hidden border-r py-1 pl-px last:border-r-0"
                     key={`${dayKey}-all-day`}
                     // Same edges as the timed blocks below (blockHorizontalStyle).
                     style={{
@@ -719,7 +719,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
 
         {/* Scrollable day columns - vertical only */}
         <div
-          className="scrollbar-none min-h-0 flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden"
+          className="min-h-0 flex-1 scrollbar-none overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:hidden"
           ref={scrollRef}
         >
           <div className="flex w-full">
@@ -903,14 +903,14 @@ function AllDayOverflow({
     <Popover>
       <PopoverTrigger asChild>
         <button
-          className="rounded-sm px-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:bg-muted hover:text-foreground rounded-sm px-1 text-[11px]"
           type="button"
         >
           +{items.length - MAX_ALL_DAY_EVENTS} more
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 gap-1.5 p-2">
-        <p className="px-1 font-medium text-muted-foreground text-xs">
+        <p className="text-muted-foreground px-1 text-xs font-medium">
           {day.toLocaleString(undefined, {
             day: "numeric",
             month: "long",
@@ -982,7 +982,7 @@ function AllDayEventChip({
       start={zonedDateTimeToDate(startZdt)}
     >
       <button
-        className="event-surface block w-full max-w-full truncate rounded-[4px] py-0.5 pr-1.5 pl-2 text-left font-medium text-[11px] leading-4"
+        className="event-surface block w-full max-w-full truncate rounded-[4px] py-0.5 pr-1.5 pl-2 text-left text-[11px] leading-4 font-medium"
         style={eventColor(backgroundColor)}
         title={item.event.summary || "(No title)"}
         type="button"

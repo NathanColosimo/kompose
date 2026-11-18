@@ -45,8 +45,8 @@ import { formatPlainDate } from "@/lib/temporal-utils";
 import { type MagicParse, useMagicTask } from "@/lib/use-magic-task";
 import { cn } from "@/lib/utils";
 
-const TAG_QUERY_PATTERN = /#([^#]*)$/;
-const URL_PATTERN = /https?:\/\/\S+/g;
+const TAG_QUERY_PATTERN = /#(?<tagQuery>[^#]*)$/u;
+const URL_PATTERN = /https?:\/\/\S+/gu;
 const EMPTY_TAGS: TagSelect[] = [];
 
 function fallbackTitle(link: string): string {
@@ -144,7 +144,7 @@ function PreviewBadge({
 }) {
   return (
     <Badge
-      className={cn("h-6 gap-1.5 px-2 font-normal text-[11px]", className)}
+      className={cn("h-6 gap-1.5 px-2 text-[11px] font-normal", className)}
       variant="secondary"
     >
       {children}
@@ -315,7 +315,7 @@ export function CommandBarCreateTask({
               {parsed.description && (
                 <span
                   className={cn(
-                    "line-clamp-2 text-muted-foreground text-xs",
+                    "text-muted-foreground line-clamp-2 text-xs",
                     smartClassName
                   )}
                 >

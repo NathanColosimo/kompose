@@ -130,7 +130,7 @@ export function BlockContent({
   const minutes = Math.min(drawnMinutes, uncoveredMinutes ?? drawnMinutes);
   const isCovered = minutes < drawnMinutes;
   const titleClass = cn(
-    "min-w-0 font-medium text-xs leading-4",
+    "min-w-0 text-xs leading-4 font-medium",
     struck ? "text-muted-foreground line-through" : ""
   );
   const detailsInline = details.map((detail) =>
@@ -187,7 +187,7 @@ export function BlockContent({
             // Only soft hyphens break words (manual: the dictionary would
             // split ordinary words like "re-view"). A word that still can't
             // fit breaks anywhere rather than being clipped.
-            "hyphens-manual [overflow-wrap:break-word]",
+            "[overflow-wrap:break-word] hyphens-manual",
             titleClampClass(isTall, hasTwoTitleLines)
           )}
         >
@@ -196,17 +196,17 @@ export function BlockContent({
               read as "Roa-d-…" and a clamped second line loses its
               ellipsis): one line, cut with an ellipsis ("Revi…"). */}
           <span className="@max-[5.5rem]:hidden">{title}</span>
-          <span className="@max-[5.5rem]:inline @max-[4rem]:hidden hidden">
+          <span className="hidden @max-[5.5rem]:inline @max-[4rem]:hidden">
             {withSoftHyphens(title)}
           </span>
-          <span className="@max-[4rem]:block hidden truncate">{title}</span>
+          <span className="hidden truncate @max-[4rem]:block">{title}</span>
         </span>
         {/* The time comes first: details that don't fit beside it wrap
             onto a hidden second line. A tall block has room to wrap the range
             at its dash ("11:00 AM –" / "12:15 PM") instead of cutting it. */}
         <span
           className={cn(
-            "flex @max-[5.5rem]:hidden min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 tabular-nums",
+            "flex min-w-0 shrink-0 flex-wrap items-center gap-x-1.5 tabular-nums @max-[5.5rem]:hidden",
             isTall ? null : "h-[14px] overflow-hidden",
             META
           )}
@@ -223,7 +223,7 @@ export function BlockContent({
         {hasTwoTitleLines ? (
           <span
             className={cn(
-              "@max-[5.5rem]:block hidden shrink-0 truncate tabular-nums",
+              "hidden shrink-0 truncate tabular-nums @max-[5.5rem]:block",
               META
             )}
           >
@@ -236,7 +236,7 @@ export function BlockContent({
             half. A later item drawn over the block would hide the
             description. */}
         {isTall || description ? (
-          <span className="@max-[5.5rem]:hidden min-h-0 flex-1 [container-type:size]">
+          <span className="[container-type:size] min-h-0 flex-1 @max-[5.5rem]:hidden">
             <span
               className={cn(
                 "flex max-h-[round(down,100cqh,14px)] min-w-0 flex-col overflow-hidden",
@@ -245,7 +245,7 @@ export function BlockContent({
             >
               {isTall ? detailRows : null}
               {description && !isCovered ? (
-                <span className="whitespace-pre-line [overflow-wrap:anywhere]">
+                <span className="[overflow-wrap:anywhere] whitespace-pre-line">
                   {description}
                 </span>
               ) : null}

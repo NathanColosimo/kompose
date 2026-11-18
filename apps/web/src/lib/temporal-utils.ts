@@ -1,7 +1,7 @@
 import { endOfDayZoned, startOfDayZoned } from "@kompose/state/temporal-utils";
 import { Temporal } from "temporal-polyfill";
 
-const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/;
+const TIMEZONE_OFFSET_PATTERN = /[+-]\d{2}:\d{2}$/u;
 
 /**
  * Parse a timestamp string to ZonedDateTime.

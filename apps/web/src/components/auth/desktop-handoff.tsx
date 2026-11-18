@@ -24,7 +24,7 @@ export function DesktopHandoff({ onStay }: { onStay: () => void }) {
     return null;
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background p-6">
+    <div className="bg-background fixed inset-0 z-50 flex items-center justify-center p-6">
       <CloseCountdown onStay={onStay} />
     </div>
   );

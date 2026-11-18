@@ -21,8 +21,8 @@ import { env } from "@/lib/env";
 
 /** Correlate server traces without a native OTel SDK; see documents/otel.md. */
 function generateTraceparent(): string {
-  const traceId = uuidv7().replace(/-/g, "");
-  const parentId = uuidv7().replace(/-/g, "").slice(0, 16);
+  const traceId = uuidv7().replace(/-/gu, "");
+  const parentId = uuidv7().replace(/-/gu, "").slice(0, 16);
   return `00-${traceId}-${parentId}-01`;
 }
 

@@ -79,7 +79,7 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 rounded-sm bg-whoop-sleep/8 dark:bg-whoop-sleep/15"
+      className="bg-whoop-sleep/8 dark:bg-whoop-sleep/15 pointer-events-none absolute inset-x-0 rounded-sm"
       style={{
         height: `${height}px`,
         top: `${top}px`,
@@ -88,7 +88,7 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
     >
       {isLargerSegment ? (
         <div className="@container flex h-full items-center justify-center overflow-hidden p-1.5">
-          <div className="flex min-w-0 max-w-full items-center gap-1.5 rounded-md bg-background/75 px-2 py-1 text-[11px] text-whoop-sleep-foreground leading-[14px] backdrop-blur-sm">
+          <div className="bg-background/75 text-whoop-sleep-foreground flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] leading-[14px] backdrop-blur-sm">
             <Moon aria-hidden className="size-3 shrink-0" />
             <span className="truncate">
               <span className="font-medium">

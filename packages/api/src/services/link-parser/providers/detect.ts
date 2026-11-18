@@ -1,13 +1,13 @@
 import type { LinkProvider } from "../types";
 
 const SPOTIFY_PATTERN =
-  /^https?:\/\/open\.spotify\.com\/(track|episode|show|album)\//;
-const YOUTUBE_WATCH_PATTERN = /^https?:\/\/(www\.)?youtube\.com\/watch/;
-const YOUTUBE_SHORT_URL_PATTERN = /^https?:\/\/youtu\.be\//;
-const YOUTUBE_SHORTS_PATTERN = /^https?:\/\/(www\.)?youtube\.com\/shorts\//;
-const SUBSTACK_PATTERN = /^https?:\/\/[a-z0-9-]+\.substack\.com\//;
-const SUBSTACK_INBOX_PATTERN = /^https?:\/\/substack\.com\/inbox\/post\//;
-const SUBSTACK_HOME_POST_PATTERN = /^https?:\/\/substack\.com\/home\/post\/p-/;
+  /^https?:\/\/open\.spotify\.com\/(?:track|episode|show|album)\//u;
+const YOUTUBE_WATCH_PATTERN = /^https?:\/\/(?:www\.)?youtube\.com\/watch/u;
+const YOUTUBE_SHORT_URL_PATTERN = /^https?:\/\/youtu\.be\//u;
+const YOUTUBE_SHORTS_PATTERN = /^https?:\/\/(?:www\.)?youtube\.com\/shorts\//u;
+const SUBSTACK_PATTERN = /^https?:\/\/[a-z0-9-]+\.substack\.com\//u;
+const SUBSTACK_INBOX_PATTERN = /^https?:\/\/substack\.com\/inbox\/post\//u;
+const SUBSTACK_HOME_POST_PATTERN = /^https?:\/\/substack\.com\/home\/post\/p-/u;
 
 /** Known custom domains that host Substack publications */
 const SUBSTACK_CUSTOM_DOMAINS = [
@@ -40,10 +40,11 @@ function isSubstackCustomDomain(url: string): boolean {
 }
 
 const SPOTIFY_URL_PARSE =
-  /open\.spotify\.com\/(track|episode|show|album)\/([a-zA-Z0-9]+)/;
-const YOUTUBE_WATCH_ID = /[?&]v=([a-zA-Z0-9_-]{11})/;
-const YOUTUBE_SHORT_URL_ID = /youtu\.be\/([a-zA-Z0-9_-]{11})/;
-const YOUTUBE_SHORTS_ID = /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/;
+  /open\.spotify\.com\/(?<resourceType>track|episode|show|album)\/(?<id>[a-zA-Z0-9]+)/u;
+const YOUTUBE_WATCH_ID = /[?&]v=(?<videoId>[a-zA-Z0-9_-]{11})/u;
+const YOUTUBE_SHORT_URL_ID = /youtu\.be\/(?<videoId>[a-zA-Z0-9_-]{11})/u;
+const YOUTUBE_SHORTS_ID =
+  /youtube\.com\/shorts\/(?<videoId>[a-zA-Z0-9_-]{11})/u;
 
 /** Detect provider from URL hostname/path patterns */
 export function detectProvider(url: string): LinkProvider {

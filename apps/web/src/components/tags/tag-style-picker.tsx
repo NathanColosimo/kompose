@@ -114,16 +114,16 @@ function ColorSwatch({
   return (
     <button
       aria-pressed={isActive}
-      className="flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors duration-100 hover:bg-muted"
+      className="hover:bg-muted flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors duration-100"
       onClick={onSelect}
       title={label}
       type="button"
     >
       <span
         className={cn(
-          "flex size-4.5 items-center justify-center rounded-full border border-foreground/15",
+          "border-foreground/15 flex size-4.5 items-center justify-center rounded-full border",
           isActive
-            ? "ring-2 ring-foreground/70 ring-offset-1 ring-offset-popover"
+            ? "ring-foreground/70 ring-offset-popover ring-2 ring-offset-1"
             : ""
         )}
         style={{ backgroundColor: swatch }}

@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
 import { TagGlyph } from "./tag-glyph";
 
 interface TagPickerProps {
+  id?: string;
   onChange: (next: string[]) => void;
   value: string[];
 }
 
-export function TagPicker({ value, onChange }: TagPickerProps) {
+export function TagPicker({ id: triggerId, value, onChange }: TagPickerProps) {
   const { tagsQuery } = useTags();
   const tags = tagsQuery.data ?? [];
   const selectedTagIds = useMemo(() => new Set(value), [value]);
@@ -51,13 +52,13 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
 
       <Popover>
         <PopoverTrigger asChild>
-          <Button size="sm" type="button" variant="outline">
+          <Button id={triggerId} size="sm" type="button" variant="outline">
             Add tags
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-60 p-2">
           {tags.length === 0 ? (
-            <div className="p-2 text-muted-foreground text-xs">
+            <div className="text-muted-foreground p-2 text-xs">
               Create a tag in the header to get started.
             </div>
           ) : (
@@ -67,7 +68,7 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
                 return (
                   <button
                     className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted",
+                      "hover:bg-muted flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
                       isSelected ? "bg-muted" : ""
                     )}
                     key={tag.id}
@@ -75,7 +76,7 @@ export function TagPicker({ value, onChange }: TagPickerProps) {
                     type="button"
                   >
                     <TagGlyph
-                      className="size-4 text-muted-foreground"
+                      className="text-muted-foreground size-4"
                       tag={tag}
                     />
                     <span className="flex-1 truncate">{tag.name}</span>

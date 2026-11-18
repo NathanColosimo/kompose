@@ -34,12 +34,12 @@ test("int8 logits stay close to the dequantized PyTorch model", () => {
       decodedDifferently += 1;
     }
     expect(logits.spans.length).toBe(expected.spans.length);
-    expected.spans.forEach((value, i) => {
+    for (const [i, value] of expected.spans.entries()) {
       worst = Math.max(worst, Math.abs(value - (logits.spans[i] as number)));
-    });
-    expected.tags.forEach((value, i) => {
+    }
+    for (const [i, value] of expected.tags.entries()) {
       worst = Math.max(worst, Math.abs(value - (logits.tags[i] as number)));
-    });
+    }
   }
   expect(worst).toBeLessThan(1);
   expect(decodedDifferently).toBeLessThan(cases.length * 0.05);

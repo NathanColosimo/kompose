@@ -194,7 +194,7 @@ export const FOCUS_CALLS = FOCUS.flatMap(([focus, count]) =>
   Array.from({ length: count }, () => focus)
 );
 
-const BRACKET = /[[\]]/;
+const BRACKET = /[[\]]/u;
 
 /** gpt-6.1-sol writes one input per item in that person's voice. */
 export async function writeInputs(

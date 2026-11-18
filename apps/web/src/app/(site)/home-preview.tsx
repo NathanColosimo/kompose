@@ -85,12 +85,12 @@ export function HomePreview() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none w-full select-none overflow-hidden rounded-xl border bg-background shadow-[0_24px_60px_-24px_rgb(0_0_0/0.25)]"
+      className="bg-background pointer-events-none w-full overflow-hidden rounded-xl border shadow-[0_24px_60px_-24px_rgb(0_0_0/0.25)] select-none"
     >
       {/* Two days on phones, three from sm up; --days drives the block math. */}
       <div className="flex text-[11px] [--days:2] sm:[--days:3]">
-        <div className="flex w-28 shrink-0 flex-col border-r bg-sidebar sm:w-40">
-          <div className="flex h-11 items-center border-b px-3 font-medium text-xs">
+        <div className="bg-sidebar flex w-28 shrink-0 flex-col border-r sm:w-40">
+          <div className="flex h-11 items-center border-b px-3 text-xs font-medium">
             Inbox
           </div>
           <div className="flex flex-col gap-0.5 p-1.5">
@@ -102,7 +102,7 @@ export function HomePreview() {
                 )}
                 key={title}
               >
-                <span className="mt-px size-3 shrink-0 rounded-full border border-muted-foreground/50" />
+                <span className="border-muted-foreground/50 mt-px size-3 shrink-0 rounded-full border" />
                 <span className="leading-snug">{title}</span>
               </div>
             ))}
@@ -123,7 +123,7 @@ export function HomePreview() {
               >
                 {label}
                 {index === 0 ? (
-                  <span className="flex items-center gap-2 whitespace-nowrap font-normal text-[10px] text-muted-foreground">
+                  <span className="text-muted-foreground flex items-center gap-2 text-[10px] font-normal whitespace-nowrap">
                     <span className="flex items-center gap-1">
                       <span className="size-1.5 rounded-full bg-emerald-500" />
                       {WHOOP_DAY.recovery}
@@ -143,7 +143,7 @@ export function HomePreview() {
             <div className="w-10 shrink-0">
               {HOURS.map((hour) => (
                 <div
-                  className="pr-1.5 text-right text-[10px] text-muted-foreground"
+                  className="text-muted-foreground pr-1.5 text-right text-[10px]"
                   key={hour}
                   style={{ height: ROW }}
                 >
@@ -187,12 +187,12 @@ export function HomePreview() {
                   }}
                 >
                   {block.kind === "task" ? (
-                    <span className="mt-px size-2.5 shrink-0 rounded-[3px] border border-foreground/60" />
+                    <span className="border-foreground/60 mt-px size-2.5 shrink-0 rounded-[3px] border" />
                   ) : null}
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate font-medium">{block.title}</span>
                     {block.meta ? (
-                      <span className="truncate text-[10px] text-foreground/65">
+                      <span className="text-foreground/65 truncate text-[10px]">
                         {block.meta}
                       </span>
                     ) : null}
@@ -201,7 +201,7 @@ export function HomePreview() {
               ))}
               {/* The task being dragged in from the inbox. */}
               <div
-                className="absolute rounded-[5px] border border-foreground/40 border-dashed"
+                className="border-foreground/40 absolute rounded-[5px] border border-dashed"
                 style={{
                   height: ROW * 0.75 - 3,
                   left: "calc(100% / var(--days) + 3px)",
@@ -210,7 +210,7 @@ export function HomePreview() {
                 }}
               />
               <div
-                className="absolute flex rotate-[-2deg] items-start gap-1 rounded-[5px] border border-foreground/20 bg-card px-1.5 py-1 font-medium leading-tight shadow-[0_10px_20px_-6px_rgb(0_0_0/0.25)] motion-safe:animate-[preview-drop_600ms_cubic-bezier(0.23,1,0.32,1)_300ms_both]"
+                className="border-foreground/20 bg-card absolute flex rotate-[-2deg] items-start gap-1 rounded-[5px] border px-1.5 py-1 leading-tight font-medium shadow-[0_10px_20px_-6px_rgb(0_0_0/0.25)] motion-safe:animate-[preview-drop_600ms_cubic-bezier(0.23,1,0.32,1)_300ms_both]"
                 style={{
                   height: ROW * 0.75 - 3,
                   left: "calc(100% / var(--days) + 9px)",
@@ -218,7 +218,7 @@ export function HomePreview() {
                   width: "calc(100% / var(--days) - 14px)",
                 }}
               >
-                <span className="mt-px size-2.5 shrink-0 rounded-[3px] border border-foreground/60 max-sm:hidden" />
+                <span className="border-foreground/60 mt-px size-2.5 shrink-0 rounded-[3px] border max-sm:hidden" />
                 <span className="truncate">{INBOX[0]}</span>
               </div>
             </div>

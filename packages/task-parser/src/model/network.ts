@@ -9,7 +9,7 @@ import type { Matrix, Weights } from "./weights";
 
 const EPSILON = 1e-12;
 const GELU_C = Math.sqrt(2 / Math.PI);
-const WEIGHT_SUFFIX = /weight$/;
+const WEIGHT_SUFFIX = /weight$/u;
 
 interface Logits {
   /** [tokens, TAG_NAMES.length] */

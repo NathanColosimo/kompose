@@ -79,6 +79,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useImperativeHandle,
   useMemo,
   useReducer,
@@ -289,7 +290,7 @@ function CountField({
   );
 }
 
-const NON_DIGITS = /\D/g;
+const NON_DIGITS = /\D/gu;
 
 const UNIT_WORDS: Record<
   Exclude<Frequency, "none" | "custom">,
@@ -343,7 +344,7 @@ function RecurrenceEditor({
     <div className="space-y-3">
       {/* The rule in words, wrapping, so a long one reads in full. */}
       <div className="flex items-start gap-2 text-xs">
-        <Repeat className="mt-px size-3.5 shrink-0 text-muted-foreground" />
+        <Repeat className="text-muted-foreground mt-px size-3.5 shrink-0" />
         <span className={summary ? "" : "text-muted-foreground"}>
           {summary ?? "Doesn't repeat"}
         </span>
@@ -1221,9 +1222,9 @@ function MeetingSection({
   if (meetingLink) {
     return (
       <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-xs leading-none font-medium">
           Meeting
-        </Label>
+        </p>
         <Button asChild size="sm" type="button" variant="outline">
           <a href={meetingLink.url} rel="noreferrer" target="_blank">
             <Video className="size-3" />
@@ -1237,9 +1238,9 @@ function MeetingSection({
   if (isConferencePending) {
     return (
       <div className="space-y-2">
-        <Label className="font-medium text-muted-foreground text-xs">
+        <p className="text-muted-foreground text-xs leading-none font-medium">
           Meeting
-        </Label>
+        </p>
         <div className="text-muted-foreground text-xs">
           Google Meet will be created when you save.
         </div>
@@ -1249,9 +1250,9 @@ function MeetingSection({
 
   return (
     <div className="space-y-2">
-      <Label className="font-medium text-muted-foreground text-xs">
+      <p className="text-muted-foreground text-xs leading-none font-medium">
         Meeting
-      </Label>
+      </p>
       <Button
         onClick={onCreateMeeting}
         size="sm"
@@ -1310,7 +1311,7 @@ function EventColorAndTitleRow({
                   aria-label={`Color ${colorKey}`}
                   className={cn(
                     "size-7 rounded-full border-2 transition",
-                    isSelected ? "ring-2 ring-primary ring-offset-2" : ""
+                    isSelected ? "ring-primary ring-2 ring-offset-2" : ""
                   )}
                   key={colorKey}
                   onClick={(e) => {
@@ -1347,9 +1348,9 @@ function EventColorAndTitleRow({
   );
 }
 
-const REPEATS_PREFIX = /^Repeats /;
-const FIRST_LETTER = /^./;
-const WEEKLY_ON = /^Weekly on /;
+const REPEATS_PREFIX = /^Repeats /u;
+const FIRST_LETTER = /^./u;
+const WEEKLY_ON = /^Weekly on /u;
 
 /** "Repeats weekly on Mon" as the Repeat button says it: "Weekly on Mon". */
 function repeatRuleLabel(
@@ -1618,7 +1619,7 @@ function EventAllDayAndRecurrenceRow({
       <span
         className={
           recurrenceWaitReason
-            ? "flex h-8 min-w-0 shrink-0 items-center gap-1.5 text-muted-foreground text-xs"
+            ? "text-muted-foreground flex h-8 min-w-0 shrink-0 items-center gap-1.5 text-xs"
             : "sr-only"
         }
         role="status"
@@ -1640,7 +1641,7 @@ function EventAllDayAndRecurrenceRow({
         />
       ) : null}
       <Select onValueChange={onCalendarChange} value={calendarValue}>
-        <SelectTrigger className="ml-auto h-8 w-auto min-w-28 max-w-44 shrink-0 gap-1.5 px-2 text-xs">
+        <SelectTrigger className="ml-auto h-8 w-auto max-w-44 min-w-28 shrink-0 gap-1.5 px-2 text-xs">
           <SelectValue placeholder="Calendar" />
         </SelectTrigger>
         <SelectContent>
@@ -1692,9 +1693,13 @@ function EventLocationCombobox({
   onValueChange: (value: string | null) => void;
   onFocusInput: () => void;
 }) {
+  const locationId = useId();
   return (
     <div className="space-y-2">
-      <Label className="font-medium text-muted-foreground text-xs">
+      <Label
+        className="text-muted-foreground text-xs font-medium"
+        htmlFor={locationId}
+      >
         Location
       </Label>
       <Combobox
@@ -1708,6 +1713,7 @@ function EventLocationCombobox({
           <div className="flex-1">
             <ComboboxInput
               className="w-full"
+              id={locationId}
               onFocus={onFocusInput}
               placeholder="Where?"
               showClear={Boolean(location)}
@@ -1730,7 +1736,7 @@ function EventLocationCombobox({
                 value={suggestion.description}
               >
                 <div className="flex flex-col">
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {suggestion.primary}
                   </span>
                   {suggestion.secondary ? (
@@ -1884,19 +1890,19 @@ function ReadOnlyEventDetails({
   return (
     <div className="space-y-3 text-sm">
       {reason ? (
-        <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs">
-          <Lock className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+        <div className="bg-muted/40 flex items-start gap-2 rounded-md border px-3 py-2 text-xs">
+          <Lock className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
           <p className="text-muted-foreground">{reason}</p>
         </div>
       ) : null}
       <div className="space-y-1">
-        <p className="font-medium text-base">{summary || "(No title)"}</p>
+        <p className="text-base font-medium">{summary || "(No title)"}</p>
         <p className="text-muted-foreground">
           {describeEventWhen(event, start, end, timeZone)}
         </p>
         {repeats ? <p className="text-muted-foreground">{repeats}</p> : null}
         {calendarName ? (
-          <p className="flex items-center gap-1.5 text-muted-foreground">
+          <p className="text-muted-foreground flex items-center gap-1.5">
             <span
               aria-hidden
               className="size-2 rounded-full"
@@ -1916,7 +1922,7 @@ function ReadOnlyEventDetails({
       ) : null}
       {place ? (
         <p className="flex items-start gap-1.5">
-          <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+          <MapPin className="text-muted-foreground mt-0.5 size-3.5 shrink-0" />
           {mapsUrl ? (
             <a
               className="underline underline-offset-2"
@@ -1935,7 +1941,7 @@ function ReadOnlyEventDetails({
       {/* Close stays in view while long notes scroll (the popover's p-4
           is offset so nothing shows beneath it). */}
       {onClose ? (
-        <div className="sticky -bottom-4 -mx-4 -mb-4 flex justify-end bg-popover px-4 pt-2 pb-4">
+        <div className="bg-popover sticky -bottom-4 -mx-4 -mb-4 flex justify-end px-4 pt-2 pb-4">
           <Button onClick={onClose} size="sm" type="button" variant="ghost">
             Close
           </Button>
@@ -2026,7 +2032,7 @@ function EventFormActionRow({
       <div className="flex items-center gap-2">
         {isCreateMode ? null : (
           <Button
-            className="gap-1.5 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            className="text-destructive hover:bg-destructive hover:text-destructive-foreground gap-1.5"
             onClick={onDelete}
             size="sm"
             type="button"
@@ -2626,7 +2632,7 @@ export function EventEditForm({
               <PopoverTrigger asChild>
                 <Button
                   className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
+                    "justify-start gap-2 text-left text-xs font-medium",
                     !field.value && "text-muted-foreground"
                   )}
                   variant="outline"
@@ -2674,7 +2680,7 @@ export function EventEditForm({
               <PopoverTrigger asChild>
                 <Button
                   className={cn(
-                    "justify-start gap-2 text-left font-medium text-xs",
+                    "justify-start gap-2 text-left text-xs font-medium",
                     !field.value && "text-muted-foreground"
                   )}
                   variant="outline"

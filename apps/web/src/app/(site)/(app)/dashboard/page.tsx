@@ -66,7 +66,7 @@ function DashboardCalendarToolbar() {
   }, [navigationStep, setCurrentDate]);
 
   return (
-    <header className="@container z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b bg-background px-3 py-2">
+    <header className="bg-background @container z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-1 border-b px-3 py-2">
       {/* Keeps the date title beside the arrows that change it when the toolbar wraps. */}
       <div className="flex min-w-0 items-center gap-1">
         <Button onClick={goToToday} size="lg" variant="outline">
@@ -119,7 +119,7 @@ function DashboardCalendarGrid() {
 
 function CalendarGridPlaceholder() {
   return (
-    <div className="h-full overflow-hidden bg-background">
+    <div className="bg-background h-full overflow-hidden">
       <div className="flex h-full">
         <div className="w-16 shrink-0 border-r" />
         <div className="flex-1">
@@ -157,7 +157,7 @@ function withMutedYears(parts: Intl.DateTimeRangeFormatPart[]) {
     part.type === "year" ? (
       // Parts never reorder, so the index is a stable key.
       // biome-ignore lint/suspicious/noArrayIndexKey: see above
-      <span className="font-normal text-muted-foreground" key={index}>
+      <span className="text-muted-foreground font-normal" key={index}>
         {part.value}
       </span>
     ) : (
@@ -201,17 +201,17 @@ function DatePopover() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <Button
-          className="min-w-0 shrink gap-1.5 px-2 font-medium text-base"
+          className="min-w-0 shrink gap-1.5 px-2 text-base font-medium"
           size="lg"
           variant="ghost"
         >
           {/* Narrow toolbars use short month names so the range end stays visible. */}
-          <span className="@md:inline hidden truncate" title={visibleMonths}>
+          <span className="hidden truncate @md:inline" title={visibleMonths}>
             {withMutedYears(
               monthYearFormat.formatRangeToParts(selectedDate, lastVisibleDate)
             )}
           </span>
-          <span className="@md:hidden truncate" title={visibleMonths}>
+          <span className="truncate @md:hidden" title={visibleMonths}>
             {withMutedYears(
               shortMonthYearFormat.formatRangeToParts(
                 selectedDate,
@@ -219,7 +219,7 @@ function DatePopover() {
               )
             )}
           </span>
-          <ChevronDown className="size-3.5 text-muted-foreground" />
+          <ChevronDown className="text-muted-foreground size-3.5" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

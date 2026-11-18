@@ -64,7 +64,7 @@ const validateUrlTarget = Effect.fn("LinkParserService.validateUrl")(function* (
 
   // Block IP literals directly (e.g. http://127.0.0.1, http://[::1])
   if (net.isIP(hostname) || hostname.startsWith("[")) {
-    const raw = hostname.replace(/^\[|\]$/g, "");
+    const raw = hostname.replace(/^\[|\]$/gu, "");
     if (isPrivateIp(raw)) {
       return yield* new LinkParseError({
         message: "URL targets a private/internal address",

@@ -7,20 +7,20 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ title: "Oops!" }} />
       <ScrollView
-        className="flex-1 bg-background"
+        className="bg-background flex-1"
         contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
         contentInsetAdjustmentBehavior="automatic"
       >
         <View className="items-center p-4">
           <Text className="mb-4 text-5xl">🤔</Text>
-          <Text className="mb-2 text-center font-bold text-foreground text-xl">
+          <Text className="text-foreground mb-2 text-center text-xl font-bold">
             Page Not Found
           </Text>
-          <Text className="mb-6 text-center text-muted-foreground text-sm">
+          <Text className="text-muted-foreground mb-6 text-center text-sm">
             Sorry, the page you're looking for doesn't exist.
           </Text>
           <Link asChild href="/">
-            <Text className="bg-primary/10 p-3 text-primary">Go to Home</Text>
+            <Text className="bg-primary/10 text-primary p-3">Go to Home</Text>
           </Link>
         </View>
       </ScrollView>

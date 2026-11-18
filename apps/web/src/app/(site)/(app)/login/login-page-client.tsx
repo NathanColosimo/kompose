@@ -128,13 +128,13 @@ export default function LoginPageClient() {
   }
 
   return (
-    <div className="flex min-h-svh flex-col bg-background text-foreground">
+    <div className="bg-background text-foreground flex min-h-svh flex-col">
       <header data-desktop-drag-region>
         <div
           className="mx-auto flex h-16 max-w-6xl items-center px-6"
           data-window-controls-inset
         >
-          <Link className="font-medium font-serif text-lg" href="/">
+          <Link className="font-serif text-lg font-medium" href="/">
             Kompose
           </Link>
         </div>
@@ -150,7 +150,7 @@ export default function LoginPageClient() {
             )}
           </div>
           {isDesktop ? <DesktopSignIn /> : <SocialAccountButtons />}
-          <p className="text-pretty text-muted-foreground text-xs leading-relaxed">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
             By continuing you agree to the{" "}
             <a className="underline underline-offset-4" href="/terms">
               Terms of Service

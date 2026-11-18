@@ -94,7 +94,7 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView
-      className="flex-1 bg-background"
+      className="bg-background flex-1"
       contentInsetAdjustmentBehavior="automatic"
     >
       <View className="px-4 pt-4 pb-10">
@@ -142,11 +142,11 @@ export default function SettingsScreen() {
             )}
             <Pressable
               accessibilityRole="button"
-              className="flex-row items-center gap-3 border-border border-t px-4 py-3 active:bg-muted"
+              className="border-border active:bg-muted flex-row items-center gap-3 border-t px-4 py-3"
               disabled={isLinking}
               onPress={handleLinkAnotherGoogleAccount}
             >
-              <View className="size-8 items-center justify-center rounded-full border border-border border-dashed">
+              <View className="border-border size-8 items-center justify-center rounded-full border border-dashed">
                 <Icon as={Plus} className="text-muted-foreground" size={15} />
               </View>
               <Text className="text-foreground text-sm">{linkLabel}</Text>

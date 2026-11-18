@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 
 interface DurationPickerProps {
+  id?: string;
   /** Duration in minutes */
   value: number | undefined;
   onChange: (minutes: number) => void;
@@ -34,6 +35,7 @@ const PRESETS = [
 ] as const;
 
 export function DurationPicker({
+  id,
   value,
   onChange,
   disabled = false,
@@ -73,6 +75,7 @@ export function DurationPicker({
             className
           )}
           disabled={disabled}
+          id={id}
           type="button"
           variant="outline"
         >

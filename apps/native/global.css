@@ -30,6 +30,7 @@
 }
 
 @layer theme {
+  /* biome-ignore lint/suspicious/noDuplicateSelectors: The earlier roots are in separate Uniwind platform media blocks. */
   :root {
     @variant light {
       --color-background: hsl(42.3529 27.8689% 88.0392%);

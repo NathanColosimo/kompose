@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const TRAILING_SLASHES_PATTERN = /\/+$/;
+const TRAILING_SLASHES_PATTERN = /\/+$/u;
 
 const serverUrlSchema = z.url().refine(
   (value) => {

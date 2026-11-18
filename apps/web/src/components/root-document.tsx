@@ -27,7 +27,7 @@ export function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <Providers>
-          <div className="min-h-svh bg-background text-foreground">
+          <div className="bg-background text-foreground min-h-svh">
             {children}
           </div>
         </Providers>

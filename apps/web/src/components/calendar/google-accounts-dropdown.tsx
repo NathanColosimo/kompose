@@ -143,14 +143,14 @@ export function GoogleAccountsDropdown({
         <Button className="gap-1.5" size="lg" variant="ghost">
           {/* A narrow toolbar (below @md) shows an icon, so the button
               doesn't wrap it; the name stays for screen readers. */}
-          <CalendarRange aria-hidden className="@md:hidden size-4" />
+          <CalendarRange aria-hidden className="size-4 @md:hidden" />
           <span className="sr-only @md:not-sr-only">Calendars</span>
           {visibleCount < totalCount ? (
             <span className="text-muted-foreground tabular-nums">
               {visibleCount}/{totalCount}
             </span>
           ) : null}
-          <ChevronDown className="size-3.5 text-muted-foreground" />
+          <ChevronDown className="text-muted-foreground size-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
@@ -233,7 +233,7 @@ function AccountCalendarsSection({
     <div>
       <div className="flex items-center px-2 py-1.5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate font-medium text-sm">
+          <span className="truncate text-sm font-medium">
             {account.isLoading ? (
               <RefreshCw className="inline size-3 animate-spin" />
             ) : (
@@ -246,7 +246,7 @@ function AccountCalendarsSection({
       <div className="ml-3 border-l pl-2">
         {calendarItems}
         {calendars.length === 0 && (
-          <span className="px-2 py-1.5 text-muted-foreground text-xs">
+          <span className="text-muted-foreground px-2 py-1.5 text-xs">
             No calendars found
           </span>
         )}

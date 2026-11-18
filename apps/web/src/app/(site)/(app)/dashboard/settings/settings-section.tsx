@@ -27,12 +27,12 @@ export function SettingsSection({
     <section className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="font-medium text-base">{title}</h2>
+          <h2 className="text-base font-medium">{title}</h2>
           <p className="text-muted-foreground text-sm">{description}</p>
         </div>
         {action}
       </div>
-      <div className="divide-y overflow-hidden rounded-lg border bg-card">
+      <div className="bg-card divide-y overflow-hidden rounded-lg border">
         {children}
       </div>
     </section>
@@ -59,7 +59,7 @@ export function SettingsRow({
       </Avatar>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm">{name}</p>
-        <p className="truncate text-muted-foreground text-xs">{detail}</p>
+        <p className="text-muted-foreground truncate text-xs">{detail}</p>
       </div>
       {action}
     </div>
@@ -80,5 +80,5 @@ export function SettingsRowSkeleton() {
 }
 
 export function SettingsEmpty({ children }: { children: ReactNode }) {
-  return <p className="px-4 py-3 text-muted-foreground text-sm">{children}</p>;
+  return <p className="text-muted-foreground px-4 py-3 text-sm">{children}</p>;
 }

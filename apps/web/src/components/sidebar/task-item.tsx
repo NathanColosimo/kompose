@@ -83,7 +83,7 @@ export const TaskItem = memo(function TaskItemInner({
       <Checkbox
         aria-label={`Done: ${task.title}`}
         checked={isDone}
-        className="z-10 mt-0.5 size-4 shrink-0 cursor-pointer rounded-full border-muted-foreground transition-colors group-hover:border-foreground"
+        className="border-muted-foreground group-hover:border-foreground z-10 mt-0.5 size-4 shrink-0 cursor-pointer rounded-full transition-colors"
         onClick={handleStatusToggle}
       />
 
@@ -91,7 +91,7 @@ export const TaskItem = memo(function TaskItemInner({
         <button
           // dnd-kit's drag instructions (set on DndContext).
           aria-describedby={attributes["aria-describedby"]}
-          className="flex min-w-0 flex-1 cursor-grab flex-col gap-1 pr-2 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring/60"
+          className="focus-visible:after:ring-ring/60 flex min-w-0 flex-1 cursor-grab flex-col gap-1 pr-2 text-left after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:ring-2"
           type="button"
         >
           <span
@@ -103,7 +103,7 @@ export const TaskItem = memo(function TaskItemInner({
             {task.title}
           </span>
 
-          <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground text-xs tabular-nums">
+          <span className="text-muted-foreground flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs tabular-nums">
             <span className="flex items-center gap-1">
               <Clock className="size-3" />
               {formatDuration(task.durationMinutes)}
@@ -137,7 +137,7 @@ export const TaskItem = memo(function TaskItemInner({
               .filter((tag) => tag.id !== hiddenTagId)
               .map((tag) => (
                 <span
-                  className="flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-foreground/[0.06] px-1.5 leading-5"
+                  className="bg-foreground/[0.06] flex max-w-full min-w-0 items-center gap-1 rounded-sm px-1.5 leading-5"
                   key={tag.id}
                 >
                   <TagGlyph className="size-3 shrink-0" tag={tag} />

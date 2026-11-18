@@ -1,6 +1,6 @@
 import z from "zod";
 
-const whoopDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const whoopDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 const whoopDateTimeSchema = z.iso.datetime({ offset: true });
 /**
  * SCORED means the cycle was scored and the measurement values will be present.

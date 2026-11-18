@@ -105,7 +105,7 @@ function splitPoint(
   crowded: PositionedItem
 ): number | null {
   let start = crowded.startMinutes;
-  for (;;) {
+  while (true) {
     if (start <= group.start) {
       return null;
     }

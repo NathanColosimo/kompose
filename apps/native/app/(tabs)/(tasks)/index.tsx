@@ -143,7 +143,7 @@ function TaskRow({
     Temporal.PlainDate.compare(item.dueDate, today) < 0;
 
   return (
-    <View className="flex-row items-start gap-3 border-border/70 border-b py-3">
+    <View className="border-border/70 flex-row items-start gap-3 border-b py-3">
       <Checkbox
         accessibilityLabel={`Done: ${item.title}`}
         accessibilityRole="checkbox"
@@ -209,12 +209,12 @@ function TaskRow({
           ) : null}
           {tags.map((tag) => (
             <View
-              className="max-w-full flex-row items-center gap-1 rounded bg-foreground/[0.06] px-1.5 py-0.5"
+              className="bg-foreground/[0.06] max-w-full flex-row items-center gap-1 rounded px-1.5 py-0.5"
               key={tag.id}
             >
               <TagGlyph className="text-muted-foreground" size={12} tag={tag} />
               <Text
-                className="shrink text-muted-foreground text-xs"
+                className="text-muted-foreground shrink text-xs"
                 numberOfLines={1}
               >
                 {tag.name}
@@ -262,7 +262,7 @@ function TaskList({
         item.type === "header" ? `header-${item.title}` : item.task.id
       }
       ListEmptyComponent={
-        <Text className="pt-8 text-center text-muted-foreground">
+        <Text className="text-muted-foreground pt-8 text-center">
           {isLoading ? "Loading tasks…" : emptyMessage}
         </Text>
       }
@@ -405,7 +405,7 @@ export default function TasksScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="bg-background flex-1">
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -422,7 +422,7 @@ export default function TasksScreen() {
               )}
               {selectedTag ? (
                 <Text
-                  className="font-medium text-foreground text-sm"
+                  className="text-foreground text-sm font-medium"
                   maxFontSizeMultiplier={HEADER_MAX_FONT_SCALE}
                 >
                   {selectedTag.name}

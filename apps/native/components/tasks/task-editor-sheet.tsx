@@ -270,11 +270,11 @@ function TaskRecurrenceEditor({
   updateRecurrence: (patch: Partial<TaskRecurrenceEditorState>) => void;
 }) {
   return (
-    <View className="mb-2.5 rounded-md border border-border px-3 py-3">
-      <Text className="font-semibold text-foreground text-sm">Repeat</Text>
+    <View className="border-border mb-2.5 rounded-md border px-3 py-3">
+      <Text className="text-foreground text-sm font-semibold">Repeat</Text>
       {/* The pattern in words; with no repeat, "None" below says it. */}
       {hasRecurrence ? (
-        <Text className="mt-0.5 text-muted-foreground text-xs">
+        <Text className="text-muted-foreground mt-0.5 text-xs">
           {recurrenceSummary}
         </Text>
       ) : null}
@@ -405,7 +405,7 @@ function TaskTagPill({
       className="-my-1.5 py-1.5"
       onPress={onPress}
     >
-      <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2.5 py-2">
+      <View className="border-border flex-row items-center gap-1.5 rounded-full border px-2.5 py-2">
         <TagGlyph className="text-muted-foreground" size={12} tag={tag} />
         <Text className="text-foreground text-xs">{tag.name}</Text>
         <Icon as={ActionIcon} className="text-muted-foreground" size={12} />
@@ -430,9 +430,9 @@ function TaskTagPicker({
   onRemove: (tagId: string) => void;
 }) {
   return (
-    <View className="mb-2.5 rounded-md border border-border px-3 py-2.5">
+    <View className="border-border mb-2.5 rounded-md border px-3 py-2.5">
       <View className="flex-row items-center justify-between">
-        <Text className="font-semibold text-foreground text-sm">Tags</Text>
+        <Text className="text-foreground text-sm font-semibold">Tags</Text>
         <Button
           accessibilityLabel={isExpanded ? "Hide tags" : "Add tags"}
           accessibilityState={{ expanded: isExpanded }}
@@ -466,7 +466,7 @@ function TaskTagPicker({
 
       {isExpanded ? (
         <>
-          <View className="mt-2 border-border border-t" />
+          <View className="border-border mt-2 border-t" />
           <View className="mt-2 flex-row flex-wrap gap-2">
             {availableTags.length > 0 ? (
               availableTags.map((tag) => (
@@ -847,7 +847,7 @@ export function TaskEditorSheet({
         />
       ) : null}
       {draft.recurrence && !draft.startDate ? (
-        <Text className="mb-2.5 text-destructive text-xs">
+        <Text className="text-destructive mb-2.5 text-xs">
           Pick a start date to repeat this task.
         </Text>
       ) : null}
@@ -1020,7 +1020,7 @@ function NativeLinkListEditor({
         const wordCount = getLinkWordCount(meta);
         return (
           <View
-            className="mb-1.5 flex-row items-start gap-2 rounded-md border border-border px-3 py-2.5"
+            className="border-border mb-1.5 flex-row items-start gap-2 rounded-md border px-3 py-2.5"
             key={meta.url}
           >
             {meta.thumbnailUrl ? (
@@ -1060,12 +1060,12 @@ function NativeLinkListEditor({
               onPress={() => Linking.openURL(meta.url)}
             >
               <Text
-                className="font-semibold text-foreground text-sm"
+                className="text-foreground text-sm font-semibold"
                 numberOfLines={1}
               >
                 {meta.title ?? "Untitled"}
               </Text>
-              <Text className="mt-0.5 text-muted-foreground text-xs">
+              <Text className="text-muted-foreground mt-0.5 text-xs">
                 {providerLabel}
                 {durationMinutes === null ? "" : ` · ${durationMinutes}m`}
                 {wordCount === null

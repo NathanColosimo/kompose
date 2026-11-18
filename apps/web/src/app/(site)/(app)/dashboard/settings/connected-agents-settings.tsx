@@ -38,7 +38,7 @@ export function ConnectedAgentsSettings() {
       <div className="flex items-center gap-3 px-4 py-2.5">
         {/* Wraps rather than truncates: the /api/mcp end is what tells it
             apart from the site's own URL. */}
-        <code className="min-w-0 flex-1 break-all font-mono text-xs">
+        <code className="min-w-0 flex-1 font-mono text-xs break-all">
           {MCP_URL}
         </code>
         <Button onClick={copyUrl} size="sm" type="button" variant="outline">

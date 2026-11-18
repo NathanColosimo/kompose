@@ -15,8 +15,8 @@ export const metadata: Metadata = {
  */
 function ConsentShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
-      <section className="flex w-full max-w-sm flex-col gap-6 rounded-xl border bg-card p-6 shadow-sm sm:p-8">
+    <main className="bg-background text-foreground flex min-h-svh items-center justify-center p-6">
+      <section className="bg-card flex w-full max-w-sm flex-col gap-6 rounded-xl border p-6 shadow-sm sm:p-8">
         {children}
       </section>
     </main>
@@ -26,7 +26,7 @@ function ConsentShell({ children }: { children: React.ReactNode }) {
 function ConsentError({ message }: { message: string }) {
   return (
     <ConsentShell>
-      <p className="text-center text-muted-foreground text-sm">{message}</p>
+      <p className="text-muted-foreground text-center text-sm">{message}</p>
     </ConsentShell>
   );
 }

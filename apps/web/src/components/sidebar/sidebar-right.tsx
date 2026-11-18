@@ -20,7 +20,7 @@ export function SidebarRight({
     return (
       <div
         aria-hidden={!overlayOpen}
-        className="fixed top-(--header-height,0) right-0 z-40 h-[calc(100svh-var(--header-height,0px))] w-screen border-l bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-linear"
+        className="bg-sidebar text-sidebar-foreground fixed top-(--header-height,0) right-0 z-40 h-[calc(100svh-var(--header-height,0px))] w-screen border-l transition-transform duration-200 ease-linear"
         style={{
           pointerEvents: overlayOpen ? "auto" : "none",
           transform: overlayOpen ? "translateX(0%)" : "translateX(100%)",

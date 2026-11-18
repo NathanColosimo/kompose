@@ -30,8 +30,8 @@ export const GOOGLE_EVENT_WEEKDAYS: Array<{ value: string; label: string }> = [
 
 const RULE_REFERENCE =
   Temporal.PlainDate.from("2000-01-01").toZonedDateTime("UTC");
-const UNTIL_PART = /(?:^|;)UNTIL=([^;]+)/;
-const SERIALIZED_UNTIL = /UNTIL=[^;]+/;
+const UNTIL_PART = /(?:^|;)UNTIL=(?<until>[^;]+)/u;
+const SERIALIZED_UNTIL = /UNTIL=[^;]+/u;
 
 /** What the repeat editors set on a rule; the rest of it is kept as is. */
 export interface EventRecurrencePattern {
@@ -94,7 +94,7 @@ export function parseGoogleEventRecurrenceRule(
   }
 }
 
-const PLAIN_WEEKDAY = /^[A-Z]{2}$/;
+const PLAIN_WEEKDAY = /^[A-Z]{2}$/u;
 
 /** A plain BYDAY weekday ("TU"), not a weekday of the month ("2TU"). */
 export function isPlainWeekday(code: string): boolean {
@@ -206,8 +206,8 @@ export function lastWeekdayOf(date: Temporal.PlainDate): string | null {
   return date.day + 7 > date.daysInMonth ? `-1${weekdayCodeOf(date)}` : null;
 }
 
-const BY_SET_POS = /(?:^|;)BYSETPOS=(-?\d)(?:;|$)/;
-const HAS_SET_POS = /(?:^|;)BYSETPOS=/;
+const BY_SET_POS = /(?:^|;)BYSETPOS=(?<position>-?\d)(?:;|$)/u;
+const HAS_SET_POS = /(?:^|;)BYSETPOS=/u;
 
 /**
  * The BYSETPOS a rule picks with, when it's one position ("-1"); null when
@@ -363,7 +363,8 @@ function sortedRuleParts(line: string): string {
   return `${line.slice(0, colon + 1)}${parts.join(";")}`;
 }
 
-const RECURRENCE_DATE = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z)?$/;
+const RECURRENCE_DATE =
+  /^(?<year>\d{4})(?<month>\d{2})(?<day>\d{2})(?:T(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})Z)?$/u;
 
 /** Read an UNTIL date for the repeat editor and label. */
 export function recurrenceEndDay(
@@ -387,7 +388,7 @@ export function recurrenceEndDay(
   }
 }
 
-const DATE_SEPARATORS = /[-:]/g;
+const DATE_SEPARATORS = /[-:]/gu;
 /** Encode the end date picked in the repeat editor. */
 export function recurrenceUntilValue(
   day: Temporal.PlainDate,

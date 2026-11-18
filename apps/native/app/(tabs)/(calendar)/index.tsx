@@ -76,7 +76,6 @@ import {
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-// biome-ignore lint/performance/noNamespaceImport: expo-haptics is a namespace of functions
 import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
@@ -496,7 +495,7 @@ function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
             className={`size-1.5 rounded-full ${recoveryColor(summary.recoveryScore)}`}
           />
           <Text
-            className="text-[10px] text-muted-foreground"
+            className="text-muted-foreground text-[10px]"
             maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           >
             {summary.recoveryScore}%
@@ -507,7 +506,7 @@ function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
         <View className="flex-row items-center gap-0.5">
           <Icon as={Activity} className="text-muted-foreground" size={10} />
           <Text
-            className="text-[10px] text-muted-foreground"
+            className="text-muted-foreground text-[10px]"
             maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           >
             {summary.strainScore.toFixed(1)}
@@ -618,12 +617,12 @@ function AllDayCellItems({
       {items.length > MAX_ALL_DAY_CHIPS ? (
         <Pressable
           accessibilityRole="button"
-          className="rounded px-1 active:bg-muted"
+          className="active:bg-muted rounded px-1"
           hitSlop={6}
           onPress={onMore}
         >
           <Text
-            className="text-[10px] text-muted-foreground"
+            className="text-muted-foreground text-[10px]"
             maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           >
             +{items.length - MAX_ALL_DAY_CHIPS} more
@@ -1762,7 +1761,7 @@ export default function CalendarTab() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="bg-background flex-1">
       <Stack.Screen
         options={{
           headerLeft: () => (
@@ -1803,7 +1802,7 @@ export default function CalendarTab() {
                 className="rounded-lg px-3 py-1.5 active:opacity-70"
                 onPress={goToToday}
               >
-                <Text className="font-medium text-foreground">Today</Text>
+                <Text className="text-foreground font-medium">Today</Text>
               </Pressable>
               <Pressable
                 accessibilityLabel="Previous days"
@@ -1831,14 +1830,14 @@ export default function CalendarTab() {
       <GestureDetector gesture={swipeGesture}>
         <View className="flex-1">
           {/* Day headers */}
-          <View className="flex-row border-border border-t border-b">
+          <View className="border-border flex-row border-t border-b">
             <View
-              className="items-end justify-center border-border border-r pr-2"
+              className="border-border items-end justify-center border-r pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
             >
               <Text
                 adjustsFontSizeToFit
-                className="text-[11px] text-muted-foreground"
+                className="text-muted-foreground text-[11px]"
                 maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                 numberOfLines={1}
               >
@@ -1865,7 +1864,7 @@ export default function CalendarTab() {
                     )}
                     accessibilityRole="button"
                     accessible
-                    className={`flex-1 items-center justify-center gap-0.5 border-border border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
+                    className={`border-border flex-1 items-center justify-center gap-0.5 border-r py-2 ${isTodayHighlight ? "bg-foreground/[0.03]" : ""}`}
                     key={day.toString()}
                     // Fabric sends a VoiceOver double-tap to
                     // onAccessibilityTap; the named action covers the
@@ -1908,14 +1907,14 @@ export default function CalendarTab() {
           </View>
 
           {/* All-day events row; it always shows, so paging doesn't move the grid. */}
-          <View className="flex-row border-border border-b">
+          <View className="border-border flex-row border-b">
             <View
-              className="items-end border-border border-r pt-1.5 pr-2"
+              className="border-border items-end border-r pt-1.5 pr-2"
               style={{ width: TIME_GUTTER_WIDTH_PX }}
             >
               <Text
                 adjustsFontSizeToFit
-                className="text-[10px] text-muted-foreground"
+                className="text-muted-foreground text-[10px]"
                 maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                 numberOfLines={1}
               >
@@ -1927,7 +1926,7 @@ export default function CalendarTab() {
                 const items = allDayEventsByDay.get(day.toString()) ?? [];
                 return (
                   <View
-                    className="min-h-7 flex-1 gap-1 border-border border-r py-1 pl-px"
+                    className="border-border min-h-7 flex-1 gap-1 border-r py-1 pl-px"
                     key={`${day.toString()}-allday`}
                     // Same edges as the timed cards below, inside their 1pt ring.
                     style={{
@@ -1985,7 +1984,7 @@ export default function CalendarTab() {
                     {hour === 0 ? null : (
                       <Text
                         adjustsFontSizeToFit
-                        className="text-right text-[10px] text-muted-foreground"
+                        className="text-muted-foreground text-right text-[10px]"
                         maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
                         numberOfLines={1}
                         style={{
@@ -2015,7 +2014,7 @@ export default function CalendarTab() {
                       // Not one accessibility element, so VoiceOver reaches
                       // each block's own controls inside the column.
                       accessible={false}
-                      className="relative flex-1 border-border border-r"
+                      className="border-border relative flex-1 border-r"
                       key={dayKey}
                       onPress={(e) => {
                         const y = e.nativeEvent.locationY;
@@ -2027,7 +2026,7 @@ export default function CalendarTab() {
                       {/* Hour lines */}
                       {HOURS.map((hour) => (
                         <View
-                          className="absolute right-0 left-0 border-border border-t"
+                          className="border-border absolute right-0 left-0 border-t"
                           key={`${dayKey}-line-${hour}`}
                           style={{ top: hour * PIXELS_PER_HOUR }}
                         />
@@ -2304,7 +2303,7 @@ export default function CalendarTab() {
         snapPoints={[0.34, 0.42]}
         title="Create"
       >
-        <Text className="mb-3 text-muted-foreground text-sm">
+        <Text className="text-muted-foreground mb-3 text-sm">
           {createChooserCopy(shownCreateSlot, timeZone)}
         </Text>
         <View className="gap-3">

@@ -13,7 +13,7 @@ services:
     volumes:
       - kompose_postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,9 +25,9 @@ services:
       - "6379:6379"
     volumes:
       - kompose_redis_data:/data
-    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    command: [ "redis-server", "--save", "60", "1", "--loglevel", "warning" ]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
