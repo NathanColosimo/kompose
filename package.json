@@ -98,9 +98,9 @@
     "@effect/language-service": "^0.87.5",
     "@types/bun": "^1.4.4",
     "knip": "^6.45.1",
-    "turbo": "^2.11.11",
+    "turbo": "^2.11.12",
     "typescript": "catalog:",
-    "ultracite": "8.2.1"
+    "ultracite": "8.3.0"
   },
   "packageManager": "bun@1.4.4",
   "trustedDependencies": [
