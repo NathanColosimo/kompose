@@ -38,7 +38,7 @@
     "fumadocs-mdx": "^15.6.3",
     "fumadocs-ui": "^16.19.4",
     "jotai": "catalog:",
-    "lucide-react": "^1.74.0",
+    "lucide-react": "^1.75.0",
     "next": "catalog:",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.8.1",
