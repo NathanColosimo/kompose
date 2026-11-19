@@ -1,9 +1,16 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
-import { Schema } from "effect";
+import { type Effect, Schema } from "effect";
 import type { PublicError } from "../../errors";
 
-/** Identifies which provider a URL belongs to */
-export type LinkProvider = LinkMeta["provider"];
+/**
+ * Turns the URLs of one site into link metadata. `LinkParserService` asks
+ * each resolver in turn and falls back to the page's Open Graph tags.
+ * See documents/link-parsing.md.
+ */
+export interface LinkResolver {
+  matches: (url: URL) => boolean;
+  resolve: (url: string) => Effect.Effect<LinkMeta, LinkParseError>;
+}
 
 export class LinkParseError extends Schema.TaggedError<LinkParseError>()(
   "LinkParseError",

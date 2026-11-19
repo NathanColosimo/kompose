@@ -14,6 +14,7 @@
     "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
+    "@better-auth/core": "catalog:",
     "@better-auth/mcp": "catalog:",
     "@effect/opentelemetry": "catalog:",
     "@kompose/auth": "workspace:*",
@@ -42,6 +43,7 @@
     "effect": "catalog:",
     "next": "catalog:",
     "temporal-polyfill": "catalog:",
+    "undici": "^8.10.0",
     "uuidv7": "catalog:",
     "zod": "catalog:"
   },
