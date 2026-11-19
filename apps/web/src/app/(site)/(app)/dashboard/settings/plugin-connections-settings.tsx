@@ -1,6 +1,7 @@
 "use client";
 
 import { clientEnv } from "@kompose/env/client";
+import type { Plugin } from "@kompose/plugins";
 import { usePluginConnections } from "@kompose/state/hooks/use-plugin-connections";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -45,6 +46,9 @@ export function PluginConnectionsSettings({
     return () => window.removeEventListener("focus", refresh);
   });
 
+  const linkPlugin = (plugin: Plugin) =>
+    link.mutate(plugin, { onError: (error) => toast.error(error.message) });
+
   return sections.map(({ canLink, connections, plugin }) => {
     let linkLabel = isDesktop ? "Link in browser" : "Link account";
     if (link.isPending && link.variables.id === plugin.id) {
@@ -56,11 +60,7 @@ export function PluginConnectionsSettings({
           canLink ? (
             <Button
               disabled={link.isPending}
-              onClick={() =>
-                link.mutate(plugin, {
-                  onError: (error) => toast.error(error.message),
-                })
-              }
+              onClick={() => linkPlugin(plugin)}
               variant="outline"
             >
               <Plus />
@@ -82,30 +82,53 @@ export function PluginConnectionsSettings({
         ) : null}
         {connections.map((connection) => {
           const name = connection.name || `${plugin.name} account`;
+          const needsReauth = connection.status === "needs-reauth";
           return (
             <SettingsRow
               action={
-                <Button
-                  className="hover:bg-destructive/10 hover:text-destructive"
-                  disabled={unlink.isPending || link.isPending}
-                  onClick={() =>
-                    unlink.mutate(connection.accountId, {
-                      onError: (error) => toast.error(error.message),
-                      onSuccess: () =>
-                        toast.success(`${plugin.name} account unlinked.`),
-                    })
-                  }
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  {unlink.isPending && unlink.variables === connection.accountId
-                    ? "Unlinking…"
-                    : "Unlink"}
-                  <span className="sr-only"> {connection.email || name}</span>
-                </Button>
+                <>
+                  {needsReauth ? (
+                    <Button
+                      disabled={link.isPending}
+                      onClick={() => linkPlugin(plugin)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Reconnect
+                      <span className="sr-only">
+                        {" "}
+                        {connection.email || name}
+                      </span>
+                    </Button>
+                  ) : null}
+                  <Button
+                    className="hover:bg-destructive/10 hover:text-destructive"
+                    disabled={unlink.isPending || link.isPending}
+                    onClick={() =>
+                      unlink.mutate(connection.accountId, {
+                        onError: (error) => toast.error(error.message),
+                        onSuccess: () =>
+                          toast.success(`${plugin.name} account unlinked.`),
+                      })
+                    }
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    {unlink.isPending &&
+                    unlink.variables === connection.accountId
+                      ? "Unlinking…"
+                      : "Unlink"}
+                    <span className="sr-only"> {connection.email || name}</span>
+                  </Button>
+                </>
               }
-              detail={connection.email || "Email unavailable"}
+              detail={
+                needsReauth
+                  ? "Kompose lost access. Reconnect to keep syncing."
+                  : connection.email || "Email unavailable"
+              }
               image={connection.image}
               key={connection.id}
               name={name}
