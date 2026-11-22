@@ -4,8 +4,32 @@ import { Effect, Redacted } from "effect";
 import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
 import { fetchJson } from "../fetch";
-import { LinkParseError, roundToNearest15Min } from "../types";
-import { parseYoutubeVideoId } from "./detect";
+import {
+  LinkParseError,
+  type LinkResolver,
+  roundToNearest15Min,
+} from "../types";
+
+// ============================================================================
+// Zod schemas for YouTube Data API v3 responses
+// ============================================================================
+
+const YOUTUBE_VIDEO_ID_PATTERNS = [
+  /^https?:\/\/(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=(?<videoId>[a-zA-Z0-9_-]{11})/u,
+  /^https?:\/\/youtu\.be\/(?<videoId>[a-zA-Z0-9_-]{11})/u,
+  /^https?:\/\/(?:www\.)?youtube\.com\/shorts\/(?<videoId>[a-zA-Z0-9_-]{11})/u,
+];
+
+/** The video ID in a watch, youtu.be, or Shorts URL */
+function parseYoutubeVideoId(url: string): string | null {
+  for (const pattern of YOUTUBE_VIDEO_ID_PATTERNS) {
+    const id = url.match(pattern)?.[1];
+    if (id) {
+      return id;
+    }
+  }
+  return null;
+}
 
 const youtubeVideoItem = z.object({
   contentDetails: z.object({
@@ -41,7 +65,8 @@ function parseIsoDuration(iso: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
-export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
+/** Fetch metadata for a YouTube video via Data API v3 */
+const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
   url: string
 ) {
   const videoId = parseYoutubeVideoId(url);
@@ -103,3 +128,8 @@ export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
 
   return result;
 });
+
+export const youtubeResolver: LinkResolver = {
+  matches: (url) => parseYoutubeVideoId(url.href) !== null,
+  resolve: parseYoutubeLink,
+};

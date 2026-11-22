@@ -1,38 +1,32 @@
 import { Context, Effect, Layer } from "effect";
-import { detectProvider } from "./providers/detect";
-import { parseSpotifyLink } from "./providers/spotify";
-import { parseSubstackLink } from "./providers/substack";
+import { spotifyResolver } from "./providers/spotify";
+import { substackResolver } from "./providers/substack";
 import { parseUnknownLink } from "./providers/unknown";
-import { parseYoutubeLink } from "./providers/youtube";
-import { LinkParseError, normalizeLinkMetaText } from "./types";
+import { youtubeResolver } from "./providers/youtube";
+import { type LinkResolver, normalizeLinkMetaText } from "./types";
+
+/** Tried in this order; the first whose `matches` accepts the URL resolves it. */
+const linkResolvers: readonly LinkResolver[] = [
+  spotifyResolver,
+  youtubeResolver,
+  substackResolver,
+];
 
 /**
- * Detect provider from URL and fetch metadata. Every fetch goes through the
- * SSRF-checked helpers in `fetch.ts`.
+ * Metadata from the first resolver that matches, else the page's Open Graph
+ * tags. Every fetch goes through the SSRF-checked helpers in `fetch.ts`.
  */
 const parseLink = Effect.fn("LinkParserService.parseLink")(function* (
   url: string
 ) {
   yield* Effect.log("Parsing link", { url });
 
-  const provider = detectProvider(url);
-  yield* Effect.log("Detected provider", { provider, url });
-
-  switch (provider) {
-    case "spotify":
-      return normalizeLinkMetaText(yield* parseSpotifyLink(url));
-    case "youtube":
-      return normalizeLinkMetaText(yield* parseYoutubeLink(url));
-    case "substack":
-      return normalizeLinkMetaText(yield* parseSubstackLink(url));
-    case "unknown":
-      return normalizeLinkMetaText(yield* parseUnknownLink(url));
-    default:
-      return yield* new LinkParseError({
-        message: `Unsupported provider: ${provider as string}`,
-        url,
-      });
-  }
+  const parsed = new URL(url);
+  const resolver = linkResolvers.find((candidate) => candidate.matches(parsed));
+  const meta = resolver
+    ? yield* resolver.resolve(url)
+    : yield* parseUnknownLink(url);
+  return normalizeLinkMetaText(meta);
 });
 
 export class LinkParserService extends Context.Service<LinkParserService>()(

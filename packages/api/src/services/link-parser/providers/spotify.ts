@@ -3,12 +3,33 @@ import { Effect } from "effect";
 import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
 import { fetchJson } from "../fetch";
-import { LinkParseError, roundToNearest15Min } from "../types";
-import { parseSpotifyUrl } from "./detect";
+import {
+  LinkParseError,
+  type LinkResolver,
+  roundToNearest15Min,
+} from "../types";
 
 // ============================================================================
 // Zod schemas for Spotify API responses
 // ============================================================================
+
+const SPOTIFY_URL =
+  /^https?:\/\/open\.spotify\.com\/(?<resourceType>track|episode|show|album)\/(?<id>[a-zA-Z0-9]+)/u;
+
+/** The resource type and ID in an open.spotify.com URL */
+function parseSpotifyUrl(url: string): {
+  resourceType: "track" | "episode" | "show" | "album";
+  id: string;
+} | null {
+  const match = url.match(SPOTIFY_URL);
+  if (!(match?.[1] && match[2])) {
+    return null;
+  }
+  return {
+    id: match[2],
+    resourceType: match[1] as "track" | "episode" | "show" | "album",
+  };
+}
 
 const spotifyTokenResponse = z.object({
   access_token: z.string(),
@@ -67,7 +88,7 @@ const getSpotifyAccessToken = Effect.fn("Spotify.getAccessToken")(function* () {
 });
 
 /** Fetch metadata for a Spotify track, episode, or show */
-export const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
+const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
   url: string
 ) {
   const parsed = parseSpotifyUrl(url);
@@ -137,3 +158,8 @@ export const parseSpotifyLink = Effect.fn("Spotify.parseLink")(function* (
     url,
   };
 });
+
+export const spotifyResolver: LinkResolver = {
+  matches: (url) => parseSpotifyUrl(url.href) !== null,
+  resolve: parseSpotifyLink,
+};
