@@ -15,7 +15,7 @@ import type { PluginProvider } from "@kompose/plugins";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
-import { connectLinkedAccount } from "./connections";
+import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
 import { redisSecondaryStorage } from "./redis-storage";
@@ -56,6 +56,7 @@ export const auth = betterAuth({
           });
         },
       },
+      update: { after: reactivateConnection },
     },
   },
   disabledPaths: [
