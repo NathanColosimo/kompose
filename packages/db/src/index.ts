@@ -38,7 +38,7 @@ export const DatabaseLive = Layer.effect(Database, databaseEffect).pipe(
 
 /**
  * Pass to every `ManagedRuntime` in the process (`appRuntime` in
- * `@kompose/api`, the WHOOP token hook in `@kompose/auth`). Runtimes that
+ * `@kompose/api`, the OAuth token hook in `@kompose/auth`). Runtimes that
  * share it build a shared layer such as `DatabaseLive` once, so they share one
  * Postgres pool.
  */

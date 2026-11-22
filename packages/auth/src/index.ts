@@ -17,9 +17,9 @@ import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
 import { connectLinkedAccount } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
+import { pluginOAuthTokens } from "./oauth-tokens";
 import { redisSecondaryStorage } from "./redis-storage";
 import { stopAccountWatches } from "./webhook-cleanup";
-import { whoopOAuthTokens } from "./whoop";
 
 export const auth = betterAuth({
   account: {
@@ -56,8 +56,12 @@ export const auth = betterAuth({
       },
     },
   },
-  // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
-  disabledPaths: ["/token"],
+  disabledPaths: [
+    // jwt() adds a session-to-JWT endpoint we don't use; MCP tokens come from /oauth2/token.
+    "/token",
+    // Forces a provider token refresh without the lock in oauth-tokens.ts. Nothing calls it.
+    "/refresh-token",
+  ],
   emailAndPassword: {
     enabled: false,
   },
@@ -120,6 +124,8 @@ export const auth = betterAuth({
             };
           },
           providerId: "whoop" satisfies PluginProvider,
+          // WHOOP only returns a new refresh token when the refresh asks for `offline`.
+          refreshTokenParams: { scope: "offline" },
           scopes: [
             "read:profile",
             "read:sleep",
@@ -132,7 +138,7 @@ export const auth = betterAuth({
         },
       ],
     }),
-    whoopOAuthTokens(),
+    pluginOAuthTokens(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
     jwt(),
     mcp({

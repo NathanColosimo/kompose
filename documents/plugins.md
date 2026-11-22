@@ -15,7 +15,7 @@ The plugin system is only the part every such service needs:
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
-Status: the list, the `connection` table, and the Settings list are built. Next, in this order: tokens, the webhook route.
+Status: the list, the `connection` table, the Settings list, and locked token refresh are built. Next, in this order: token encryption, `needs-reauth`, the webhook route.
 
 ## The rule for shared code
 
@@ -72,7 +72,22 @@ Web (`plugin-connections-settings.tsx`) and native (`plugin-connections-section.
 
 ## Tokens
 
-Each account's tokens are encrypted, and refreshed under a row lock so two refreshes can't run at once. When the provider says access was revoked, the connection becomes `needs-reauth`.
+Better Auth stores each account's tokens and refreshes them when a caller asks for one with `auth.api.getAccessToken`. Kompose adds one thing:
+
+- **A lock on refresh:** Better Auth's refresh takes no lock ([better-auth#11561](https://github.com/better-auth/better-auth/issues/11561)). Two requests that find an expired token both refresh with the same refresh token. WHOOP's refresh tokens work once, so it refuses the second request.
+
+`pluginOAuthTokens` (`packages/auth/src/oauth-tokens.ts`) is a Better Auth plugin that adds it for every plugin provider. It runs before Better Auth's `/get-access-token` and `/account-info`:
+
+1. An access token more than 30 seconds from expiry is left alone, without a lock.
+2. Otherwise it locks the account row, checks again, and refreshes with the provider's own `refreshAccessToken` from Better Auth. The token URL, client credentials, and extra parameters all come from the provider's Better Auth config, so a new plugin adds nothing here.
+
+Better Auth then answers the request. It refreshes only within 5 seconds of expiry, so it finds a valid token and returns it.
+
+- **`/refresh-token` is in `disabledPaths`.** It always refreshes, without the lock. Don't call `auth.api.refreshToken` on the server either.
+- **A failed refresh is a `BAD_REQUEST` `APIError`.** `getLinkedAccessToken` turns any of them into the same "reconnect it in Settings" error.
+- **When the Better Auth issue is fixed,** delete `oauth-tokens.ts`.
+
+Not built yet: encrypting the tokens, and marking a connection `needs-reauth` when the provider says access was revoked.
 
 ## Webhooks
 
@@ -85,6 +100,8 @@ A handler is one function that gets the raw `Request`, checks it, and returns th
 1. Add its ID to `pluginIds`, its provider to `pluginProviders`, and its entry to `plugins`, all in `packages/plugins/src/index.ts`.
 2. Add its OAuth provider to Better Auth in `packages/auth/src/index.ts`.
 3. Write its router, state, and components like any other feature.
+
+Settings, connections, and token refresh need no changes.
 
 ## Later: one table per kind of data
 
