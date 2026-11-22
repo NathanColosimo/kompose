@@ -1,3 +1,4 @@
+import { pluginIds } from "@kompose/plugins";
 import {
   index,
   pgEnum,
@@ -30,8 +31,8 @@ export const connectionTable = pgTable(
       .notNull()
       .defaultNow(),
     id: uuid("id").primaryKey(),
-    /** A plugin ID from @kompose/plugins. */
-    pluginId: text("plugin_id").notNull(),
+    /** Text, not a Postgres enum, so a new plugin needs no migration. */
+    pluginId: text("plugin_id", { enum: pluginIds }).notNull(),
     status: connectionStatusEnum("status").notNull().default("active"),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()

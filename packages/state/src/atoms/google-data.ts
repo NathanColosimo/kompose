@@ -2,6 +2,7 @@ import type {
   Calendar,
   Event as GoogleEvent,
 } from "@kompose/google-cal/schema";
+import { getPluginForProvider } from "@kompose/plugins";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
@@ -33,7 +34,8 @@ export const linkedAccountsDataAtom = atom<Account[]>(
 
 export const googleAccountsDataAtom = atom<Account[]>((get) =>
   get(linkedAccountsDataAtom).filter(
-    (account) => account.providerId === "google"
+    (account) =>
+      getPluginForProvider(account.providerId)?.id === "google-calendar"
   )
 );
 
@@ -115,7 +117,10 @@ export const resolvedVisibleCalendarIdsAtom = atom<CalendarIdentifier[]>(
 
     const linkedAccountIds = new Set(
       (accountsQuery.data ?? [])
-        .filter((account) => account.providerId === "google")
+        .filter(
+          (account) =>
+            getPluginForProvider(account.providerId)?.id === "google-calendar"
+        )
         .map((account) => account.accountId)
     );
     const accountFiltered = stored.filter((calendar) =>

@@ -1,4 +1,4 @@
-import type { WebhookSubscriptionProvider } from "@kompose/db/schema/webhook-subscription";
+import { pluginProviderSchema } from "@kompose/plugins";
 import { Schema } from "effect";
 
 export function formatUnknownCause(cause: unknown): string {
@@ -32,11 +32,9 @@ export class WebhookProviderError extends Schema.TaggedError<WebhookProviderErro
   {
     message: Schema.String,
     operation: Schema.String,
-    provider: Schema.String,
+    provider: Schema.Literals(pluginProviderSchema.options),
   }
-) {
-  declare readonly provider: WebhookSubscriptionProvider;
-}
+) {}
 
 export class WebhookAuthError extends Schema.TaggedError<WebhookAuthError>()(
   "WebhookAuthError",

@@ -25,6 +25,7 @@
   "dependencies": {
     "@effect/sql-pg": "catalog:",
     "@kompose/env": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "postgres": "^4.1.1",

@@ -160,6 +160,7 @@
         "@kompose/db": "workspace:*",
         "@kompose/env": "workspace:*",
         "@kompose/google-cal": "workspace:*",
+        "@kompose/plugins": "workspace:*",
         "@kompose/redis": "workspace:*",
         "@kompose/whoop": "workspace:*",
         "@modelcontextprotocol/server": "catalog:",
@@ -226,6 +227,7 @@
       "dependencies": {
         "@effect/sql-pg": "catalog:",
         "@kompose/env": "workspace:*",
+        "@kompose/plugins": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
         "postgres": "^4.1.1",
@@ -270,6 +272,9 @@
     "packages/plugins": {
       "name": "@kompose/plugins",
       "version": "0.0.0",
+      "dependencies": {
+        "zod": "catalog:",
+      },
       "devDependencies": {
         "@kompose/config": "workspace:*",
         "@types/node": "catalog:",

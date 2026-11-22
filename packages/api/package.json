@@ -20,6 +20,7 @@
     "@kompose/db": "workspace:*",
     "@kompose/env": "workspace:*",
     "@kompose/google-cal": "workspace:*",
+    "@kompose/plugins": "workspace:*",
     "@kompose/redis": "workspace:*",
     "@kompose/whoop": "workspace:*",
     "@modelcontextprotocol/server": "catalog:",
