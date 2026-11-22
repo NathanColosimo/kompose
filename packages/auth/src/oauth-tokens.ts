@@ -8,6 +8,7 @@ import {
   getSessionFromCtx,
   isStateful,
 } from "better-auth/api";
+import { decryptOAuthToken, setTokenUtil } from "better-auth/oauth2";
 import { and, eq } from "drizzle-orm";
 import { Effect, ManagedRuntime } from "effect";
 import { z } from "zod";
@@ -51,7 +52,7 @@ function isExpiring(account: typeof accountTable.$inferSelect): boolean {
 interface RefreshRequest {
   /** The local Better Auth account row ID. */
   accountId: string;
-  /** Better Auth's context, for its providers. */
+  /** Better Auth's context, for its providers and token encryption. */
   authContext: AuthContext;
   userId: string;
 }
@@ -91,10 +92,13 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
       if (!(account && isExpiring(account))) {
         return;
       }
-      const { refreshToken } = account;
-      if (!refreshToken) {
+      const storedRefreshToken = account.refreshToken;
+      if (!storedRefreshToken) {
         return yield* Effect.fail(tokenError("Account has no refresh token"));
       }
+      const refreshToken = yield* Effect.promise(async () =>
+        decryptOAuthToken(storedRefreshToken, request.authContext)
+      );
 
       const tokens = yield* Effect.tryPromise({
         catch: (cause) => tokenError("Token refresh failed", cause),
@@ -106,16 +110,20 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
         );
       }
 
+      const encrypt = (token: string) =>
+        Effect.promise(
+          async () => (await setTokenUtil(token, request.authContext)) ?? token
+        );
       // The same columns Better Auth's refresh writes. It leaves `scope`
       // alone too: a refresh can grant fewer scopes than the first consent.
       yield* tx
         .update(accountTable)
         .set({
-          accessToken: tokens.accessToken,
+          accessToken: yield* encrypt(tokens.accessToken),
           accessTokenExpiresAt: tokens.accessTokenExpiresAt ?? null,
           idToken: tokens.idToken ?? account.idToken,
           // Google keeps the refresh token it already issued and sends none.
-          refreshToken: tokens.refreshToken ?? refreshToken,
+          refreshToken: yield* encrypt(tokens.refreshToken ?? refreshToken),
           refreshTokenExpiresAt:
             tokens.refreshTokenExpiresAt ?? account.refreshTokenExpiresAt,
           updatedAt: new Date(),
