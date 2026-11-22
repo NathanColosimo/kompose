@@ -1,3 +1,4 @@
+import { clientHost } from "@kompose/auth/mcp";
 import { Database } from "@kompose/db";
 import {
   oauthAccessToken,
@@ -31,7 +32,7 @@ export const agentsRouter = os.router({
       clientId: client.clientId,
       connectedAt: consent.createdAt.toISOString(),
       icon: client.icon,
-      name: client.name ?? client.uri ?? client.clientId,
+      name: client.name ?? clientHost(client.clientId) ?? client.clientId,
     }));
   }),
 

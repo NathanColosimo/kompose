@@ -1,5 +1,6 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { auth } from "@kompose/auth";
+import { clientHost } from "@kompose/auth/mcp";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -68,13 +69,15 @@ export default async function ConsentPage({
     return <ConsentError message="This app isn't registered with Kompose." />;
   }
 
+  const host = clientHost(clientId);
+
   return (
     <ConsentShell>
       <ConsentForm
         client={{
           icon: client.logo_uri ?? null,
-          name: client.client_name ?? client.client_uri ?? clientId,
-          uri: client.client_uri ?? null,
+          name: client.client_name ?? host ?? clientId,
+          host,
         }}
         scopes={query.get("scope")?.split(" ").filter(Boolean) ?? []}
         userEmail={session.user.email}
