@@ -1,5 +1,3 @@
-import dns from "node:dns/promises";
-import net from "node:net";
 import { Context, Effect, Layer } from "effect";
 import { detectProvider } from "./providers/detect";
 import { parseSpotifyLink } from "./providers/spotify";
@@ -8,105 +6,14 @@ import { parseUnknownLink } from "./providers/unknown";
 import { parseYoutubeLink } from "./providers/youtube";
 import { LinkParseError, normalizeLinkMetaText } from "./types";
 
-// RFC 1918, loopback, link-local, and other reserved IPv4/IPv6 ranges
-const PRIVATE_IP_PREFIXES = [
-  "10.",
-  "172.16.",
-  "172.17.",
-  "172.18.",
-  "172.19.",
-  "172.20.",
-  "172.21.",
-  "172.22.",
-  "172.23.",
-  "172.24.",
-  "172.25.",
-  "172.26.",
-  "172.27.",
-  "172.28.",
-  "172.29.",
-  "172.30.",
-  "172.31.",
-  "192.168.",
-  "127.",
-  "0.",
-  "169.254.",
-];
-const PRIVATE_IPV6 = ["::1", "fe80:", "fc00:", "fd00:"];
-
-function isPrivateIp(ip: string): boolean {
-  const lower = ip.toLowerCase();
-  return (
-    PRIVATE_IP_PREFIXES.some((p) => lower.startsWith(p)) ||
-    PRIVATE_IPV6.some((p) => lower.startsWith(p))
-  );
-}
-
-/** Reject URLs that target private/internal hosts (SSRF protection) */
-const validateUrlTarget = Effect.fn("LinkParserService.validateUrl")(function* (
-  url: string
-) {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return yield* new LinkParseError({ message: "Invalid URL", url });
-  }
-
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return yield* new LinkParseError({
-      message: "Only http/https URLs are supported",
-      url,
-    });
-  }
-
-  const { hostname } = parsed;
-
-  // Block IP literals directly (e.g. http://127.0.0.1, http://[::1])
-  if (net.isIP(hostname) || hostname.startsWith("[")) {
-    const raw = hostname.replace(/^\[|\]$/gu, "");
-    if (isPrivateIp(raw)) {
-      return yield* new LinkParseError({
-        message: "URL targets a private/internal address",
-        url,
-      });
-    }
-  }
-
-  // Resolve hostname to IPs — fail closed if resolution fails
-  const addresses = yield* Effect.tryPromise({
-    catch: () =>
-      new LinkParseError({
-        message: "DNS resolution failed — cannot verify URL target",
-        url,
-      }),
-    try: () => dns.resolve4(hostname),
-  });
-
-  if (addresses.length === 0) {
-    return yield* new LinkParseError({
-      message: "DNS resolution returned no addresses",
-      url,
-    });
-  }
-
-  for (const addr of addresses) {
-    if (isPrivateIp(addr)) {
-      return yield* new LinkParseError({
-        message: "URL targets a private/internal address",
-        url,
-      });
-    }
-  }
-});
-
-/** Detect provider from URL and fetch metadata */
+/**
+ * Detect provider from URL and fetch metadata. Every fetch goes through the
+ * SSRF-checked helpers in `fetch.ts`.
+ */
 const parseLink = Effect.fn("LinkParserService.parseLink")(function* (
   url: string
 ) {
   yield* Effect.log("Parsing link", { url });
-
-  yield* validateUrlTarget(url);
 
   const provider = detectProvider(url);
   yield* Effect.log("Detected provider", { provider, url });

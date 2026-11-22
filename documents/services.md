@@ -88,6 +88,7 @@ list: os.list.effect(function* ({ context }) {
 |------|---------|
 | `services/link-parser/service.ts` | `LinkParserService` (Effect.Service) — provider detection and metadata fetching |
 | `services/link-parser/types.ts` | Zod discriminated union for `linkMeta` (provider variants) |
+| `services/link-parser/fetch.ts` | SSRF-checked fetch helpers every provider parser uses |
 | `services/link-parser/providers/*.ts` | Provider-specific parsers (Spotify, YouTube, Substack, unknown fallback) |
 
 ### LinkParserService
