@@ -68,13 +68,18 @@ export default async function ConsentPage({
     return <ConsentError message="This app isn't registered with Kompose." />;
   }
 
+  // A CIMD client_id is the URL of the app's own metadata, so its host is
+  // the one domain the app has proven it controls. client_uri is
+  // self-declared and may name any domain, so it's never shown.
+  const host = URL.canParse(clientId) ? new URL(clientId).host : null;
+
   return (
     <ConsentShell>
       <ConsentForm
         client={{
           icon: client.logo_uri ?? null,
-          name: client.client_name ?? client.client_uri ?? clientId,
-          uri: client.client_uri ?? null,
+          name: client.client_name ?? host ?? clientId,
+          host,
         }}
         scopes={query.get("scope")?.split(" ").filter(Boolean) ?? []}
         userEmail={session.user.email}

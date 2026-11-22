@@ -16,7 +16,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
 };
 
 interface ConsentFormProps {
-  client: { icon: string | null; name: string; uri: string | null };
+  client: { icon: string | null; name: string; host: string | null };
   scopes: string[];
   userEmail: string;
 }
@@ -53,9 +53,9 @@ export function ConsentForm({ client, scopes, userEmail }: ConsentFormProps) {
         <h1 className="font-serif text-2xl text-balance">
           Allow {client.name} to use Kompose?
         </h1>
-        {client.uri ? (
+        {client.host ? (
           <p className="text-muted-foreground text-xs break-all">
-            {client.uri}
+            {client.host}
           </p>
         ) : null}
         <p className="text-muted-foreground text-sm">

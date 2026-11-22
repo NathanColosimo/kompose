@@ -35,7 +35,7 @@ OpenID discovery stays at `/api/auth/.well-known/openid-configuration`, which MC
 
 ### Consent page
 
-`apps/web/src/app/(app)/oauth/consent/page.tsx` verifies the signed query with `verifyOAuthQueryParams` on the server, loads the client's public name and logo, and lists what each scope allows. Allow and Cancel call `authClient.oauth2.consent`; `oauthProviderClient()` in the web auth client attaches the signed query.
+`apps/web/src/app/(site)/(app)/oauth/consent/page.tsx` verifies the signed query with `verifyOAuthQueryParams` on the server, loads the client's public name and logo, and lists what each scope allows. Under the name it shows the host of the `client_id` URL, not the self-declared `client_uri`: since Better Auth 1.7.27, CIMD allows `client_uri` on any domain (draft-03 §4.4), so it could claim to be another app. Allow and Cancel call `authClient.oauth2.consent`; `oauthProviderClient()` in the web auth client attaches the signed query.
 
 ### Revoking
 
