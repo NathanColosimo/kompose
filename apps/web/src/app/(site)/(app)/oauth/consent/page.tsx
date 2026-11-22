@@ -1,5 +1,6 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import { auth } from "@kompose/auth";
+import { clientHost } from "@kompose/auth/mcp";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -68,10 +69,7 @@ export default async function ConsentPage({
     return <ConsentError message="This app isn't registered with Kompose." />;
   }
 
-  // A CIMD client_id is the URL of the app's own metadata, so its host is
-  // the one domain the app has proven it controls. client_uri is
-  // self-declared and may name any domain, so it's never shown.
-  const host = URL.canParse(clientId) ? new URL(clientId).host : null;
+  const host = clientHost(clientId);
 
   return (
     <ConsentShell>
