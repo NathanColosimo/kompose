@@ -9,15 +9,6 @@ const whoopDateTimeSchema = z.iso.datetime({ offset: true });
  */
 const whoopScoreStateSchema = z.enum(["SCORED", "PENDING_SCORE", "UNSCORABLE"]);
 
-export const whoopProfileBasicSchema = z
-  .object({
-    email: z.email(),
-    first_name: z.string(),
-    last_name: z.string(),
-    user_id: z.number().int(),
-  })
-  .loose();
-
 export const whoopCycleScoreSchema = z
   .object({
     average_heart_rate: z.number().int().nullable().optional(),
@@ -185,7 +176,6 @@ export const whoopCachedDayRawSchema = z.object({
 
 export const whoopCachedDayRawArraySchema = z.array(whoopCachedDayRawSchema);
 
-export type WhoopProfileBasic = z.infer<typeof whoopProfileBasicSchema>;
 export type WhoopCycle = z.infer<typeof whoopCycleSchema>;
 export type WhoopRecovery = z.infer<typeof whoopRecoverySchema>;
 export type WhoopSleep = z.infer<typeof whoopSleepSchema>;

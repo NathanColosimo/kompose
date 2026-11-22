@@ -6,6 +6,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+import { createSelectSchema } from "drizzle-orm/zod";
 import { account, user } from "./auth";
 
 /** `needs-reauth`: the provider rejected our refresh token; Settings shows Reconnect. */
@@ -42,3 +43,5 @@ export const connectionTable = pgTable(
   },
   (table) => [index("connection_user_idx").on(table.userId)]
 );
+
+export const connectionSelectSchema = createSelectSchema(connectionTable);

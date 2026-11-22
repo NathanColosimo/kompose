@@ -38,24 +38,11 @@ export const whoopDaysListInputSchema = z.object({
   timeZone: z.string().min(1),
 });
 
-export const whoopProfileOutputSchema = z.object({
-  email: z.string(),
-  firstName: z.string(),
-  lastName: z.string(),
-});
-
-export type WhoopProfile = z.infer<typeof whoopProfileOutputSchema>;
-
 export const whoopContract = {
   days: {
     list: oc
       .input(whoopDaysListInputSchema)
       .output(z.array(whoopDaySummarySchema)),
-  },
-  profile: {
-    get: oc
-      .input(z.object({ accountId: z.string().min(1) }))
-      .output(whoopProfileOutputSchema),
   },
 };
 

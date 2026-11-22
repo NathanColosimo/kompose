@@ -24,14 +24,4 @@ export const whoopRouter = os.router({
       );
     }),
   },
-  profile: {
-    get: os.profile.get.effect(function* ({ context, input }) {
-      return yield* WhoopService.use((service) =>
-        service.getProfile({
-          accountId: input.accountId,
-          userId: context.user.id,
-        })
-      );
-    }),
-  },
 });
