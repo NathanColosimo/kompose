@@ -96,13 +96,13 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.8",
     "@effect/language-service": "^0.87.5",
-    "@types/bun": "^1.4.4",
+    "@types/bun": "^1.4.5",
     "knip": "^6.45.1",
     "turbo": "^2.11.12",
     "typescript": "catalog:",
     "ultracite": "8.3.0"
   },
-  "packageManager": "bun@1.4.4",
+  "packageManager": "bun@1.4.5",
   "trustedDependencies": [
     "electron"
   ]
