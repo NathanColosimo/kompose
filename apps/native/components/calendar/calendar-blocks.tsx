@@ -671,6 +671,8 @@ interface TaskDrag
   onEnd: (move: TaskMove | null) => void;
   /** The task is picked up. */
   onStart: () => void;
+  /** How far the grid is scrolled, in points from midnight. */
+  scrollTop: number;
 }
 
 interface TaskBlockProps extends BlockPosition, BlockTextProps {
@@ -838,26 +840,55 @@ export function TaskBlock({
           </Pressable>
         </View>
         {/* Short and narrow blocks leave the time out, so a dragged task
-            names the time it would drop at above itself. */}
+            names the time it would drop at beside itself. */}
         {move ? (
-          <View
-            className="absolute left-0 items-start"
-            pointerEvents="none"
-            style={{ top: -DRAG_TIME_TAG_PT, width: DRAG_TIME_TAG_WIDTH_PT }}
-          >
-            <View className="bg-foreground rounded px-1">
-              <Text
-                className="text-background text-[11px]"
-                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
-                numberOfLines={1}
-              >
-                {formatTimeRange(shownStart, shownEnd)}
-              </Text>
-            </View>
-          </View>
+          <DragTimeTag
+            blockHeight={placement.height}
+            end={shownEnd}
+            start={shownStart}
+            visibleTop={position.top + move.minutes - drag.scrollTop}
+          />
         ) : null}
       </Pressable>
     </GestureDetector>
+  );
+}
+
+/**
+ * The time a dragged task would drop at: a tag above the task, or below it
+ * at the top of the visible grid, where one above would be cut off.
+ */
+function DragTimeTag({
+  blockHeight,
+  end,
+  start,
+  visibleTop,
+}: {
+  blockHeight: number;
+  end: Temporal.ZonedDateTime;
+  start: Temporal.ZonedDateTime;
+  /** The task's top, in points below the top of the visible grid. */
+  visibleTop: number;
+}) {
+  return (
+    <View
+      className="absolute left-0 items-start"
+      pointerEvents="none"
+      style={{
+        top: visibleTop < DRAG_TIME_TAG_PT ? blockHeight : -DRAG_TIME_TAG_PT,
+        width: DRAG_TIME_TAG_WIDTH_PT,
+      }}
+    >
+      <View className="bg-foreground rounded px-1">
+        <Text
+          className="text-background text-[11px]"
+          maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+          numberOfLines={1}
+        >
+          {formatTimeRange(start, end)}
+        </Text>
+      </View>
+    </View>
   );
 }
 

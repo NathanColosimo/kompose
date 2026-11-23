@@ -1298,8 +1298,12 @@ export default function CalendarTab() {
     [updateTask]
   );
 
-  // The day a task is being dragged from; the grid holds still meanwhile.
-  const [dragDay, setDragDay] = useState<string | null>(null);
+  // The day a task is being dragged from, and where the grid was scrolled;
+  // the grid holds still meanwhile.
+  const [taskDrag, setTaskDrag] = useState<{
+    day: string;
+    scrollTop: number;
+  } | null>(null);
   // A recurring task's drop waits for its scope, as the editor's save does.
   const [pendingTaskMove, setPendingTaskMove] = useState<
     Parameters<typeof updateTask.mutate>[0] | null
@@ -1941,7 +1945,7 @@ export default function CalendarTab() {
                 tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
               />
             }
-            scrollEnabled={dragDay === null}
+            scrollEnabled={taskDrag === null}
             scrollEventThrottle={16}
             // iOS scrolls to the top on taps in the navigation bar, which
             // here would jump the day to midnight whenever a header control
@@ -2003,7 +2007,7 @@ export default function CalendarTab() {
                       // A task dragged out of its day stays over the others.
                       style={{
                         height: totalHeight,
-                        zIndex: dragDay === dayKey ? 1 : 0,
+                        zIndex: taskDrag?.day === dayKey ? 1 : 0,
                       }}
                     >
                       {/* Hour lines */}
@@ -2147,12 +2151,17 @@ export default function CalendarTab() {
                                 daysAfter: visibleDays.length - 1 - dayIndex,
                                 daysBefore: dayIndex,
                                 onEnd: (move) => {
-                                  setDragDay(null);
+                                  setTaskDrag(null);
                                   if (move) {
                                     moveTask(task, start, move);
                                   }
                                 },
-                                onStart: () => setDragDay(dayKey),
+                                onStart: () =>
+                                  setTaskDrag({
+                                    day: dayKey,
+                                    scrollTop: scrollOffsetRef.current,
+                                  }),
+                                scrollTop: taskDrag?.scrollTop ?? 0,
                                 startMinutes: minutesFromMidnight(
                                   segment.segmentStart
                                 ),
