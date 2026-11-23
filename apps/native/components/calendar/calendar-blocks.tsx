@@ -669,7 +669,6 @@ interface TaskDrag
   extends Omit<Parameters<typeof snapTaskMove>[0], "fingerX" | "translationY"> {
   /** The drag ended: where it moved the task, or null if nowhere. */
   onEnd: (move: TaskMove | null) => void;
-  /** The task is picked up. */
   onStart: () => void;
   /** How far the grid is scrolled, in points from midnight. */
   scrollTop: number;
@@ -839,8 +838,6 @@ export function TaskBlock({
             </View>
           </Pressable>
         </View>
-        {/* Short and narrow blocks leave the time out, so a dragged task
-            names the time it would drop at beside itself. */}
         {move ? (
           <DragTimeTag
             blockHeight={placement.height}
@@ -855,8 +852,9 @@ export function TaskBlock({
 }
 
 /**
- * The time a dragged task would drop at: a tag above the task, or below it
- * at the top of the visible grid, where one above would be cut off.
+ * The time a dragged task would drop at, which short and narrow blocks
+ * leave out: a tag above the task, or below it at the top of the visible
+ * grid, where one above would be cut off.
  */
 function DragTimeTag({
   blockHeight,

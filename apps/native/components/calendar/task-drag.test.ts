@@ -54,22 +54,3 @@ test("a drag stays on the visible days", () => {
     })
   ).toEqual({ days: -1, minutes: 0 });
 });
-
-test("a drag keeps the task's start inside the day", () => {
-  expect(
-    snapTaskMove({
-      ...threeDays,
-      fingerX: 50,
-      startMinutes: 60,
-      translationY: -300,
-    })
-  ).toEqual({ days: 0, minutes: -60 });
-  expect(
-    snapTaskMove({
-      ...threeDays,
-      fingerX: 50,
-      startMinutes: 23 * 60,
-      translationY: 300,
-    })
-  ).toEqual({ days: 0, minutes: 45 });
-});

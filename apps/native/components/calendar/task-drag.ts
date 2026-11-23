@@ -21,10 +21,6 @@ export function moveTime(
   return time.add({ days: move.days }).add({ minutes: move.minutes });
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
 /**
  * Where a dragged task lands: the visible day under the finger, and the
  * 15-minute slot nearest its moved top. The grid is 60pt an hour, so the
@@ -39,7 +35,6 @@ export function snapTaskMove({
   startMinutes,
   translationY,
 }: {
-  /** One day column's width in points. */
   dayWidth: number;
   /** Visible days after the block's day. */
   daysAfter: number;
@@ -51,7 +46,10 @@ export function snapTaskMove({
   startMinutes: number;
   translationY: number;
 }): TaskMove {
-  const days = clamp(Math.floor(fingerX / dayWidth), -daysBefore, daysAfter);
+  const days = Math.min(
+    Math.max(Math.floor(fingerX / dayWidth), -daysBefore),
+    daysAfter
+  );
   const minutes =
     Math.round(translationY / SLOT_MINUTES) === 0
       ? 0
