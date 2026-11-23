@@ -8,7 +8,7 @@ import {
 import * as Haptics from "expo-haptics";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import type { Temporal } from "temporal-polyfill";
@@ -659,13 +659,14 @@ export function EventBlock({
 const DRAG_HOLD_MS = 400;
 /** A dragged task is drawn over every other block in its day. */
 const DRAGGED_Z_INDEX = 1000;
+/** The dragged task's time tag sits this far above it. */
+const DRAG_TIME_TAG_PT = 20;
+/** Room for the tag's longest range, "12:45 AM – 12:45 PM", past a narrow block. */
+const DRAG_TIME_TAG_WIDTH_PT = 160;
 
 /** What a task block needs to be dragged to a new time; see snapTaskMove. */
 interface TaskDrag
-  extends Omit<
-    Parameters<typeof snapTaskMove>[0],
-    "translationX" | "translationY"
-  > {
+  extends Omit<Parameters<typeof snapTaskMove>[0], "fingerX" | "translationY"> {
   /** The drag ended: where it moved the task, or null if nowhere. */
   onEnd: (move: TaskMove | null) => void;
   /** The task is picked up. */
@@ -696,47 +697,44 @@ export function TaskBlock({
   title,
   ...position
 }: TaskBlockProps) {
-  // Where the drag has moved the task so far; null when it isn't dragged.
-  const [move, setMove] = useState<TaskMove | null>(null);
-  // A dragged task takes its day's whole width over everything else, so it
-  // has room to show the time it would drop at.
-  const shownPosition: BlockPosition = move
-    ? {
-        ...position,
-        columnIndex: 0,
-        columnSpan: 1,
-        stackDepth: 0,
-        totalColumns: 1,
-        uncoveredMinutes: undefined,
-      }
-    : position;
   const { drawn, text: textMinutes } = shownMinutes(
     minutes,
-    shownPosition.uncoveredMinutes
+    position.uncoveredMinutes
   );
   const compact = textMinutes < COMPACT_MINUTES;
   const isCovered = textMinutes < drawn;
   const tight = isTight(textMinutes, drawn);
-  const placement = positionStyle(shownPosition);
+  const placement = positionStyle(position);
   const surface = useEventSurface(color);
   const narrow = placement.width < NARROW_BLOCK_PT;
+  // Where the drag has moved the task so far; null when it isn't dragged.
+  const [move, setMove] = useState<TaskMove | null>(null);
+  // Where the finger picked the block up, from the block's left edge.
+  const grabXRef = useRef(0);
+  const snap = (event: { translationX: number; translationY: number }) =>
+    snapTaskMove({
+      ...drag,
+      fingerX: placement.left + grabXRef.current + event.translationX,
+      translationY: event.translationY,
+    });
   const pan = usePanGesture({
     activateAfterLongPress: DRAG_HOLD_MS,
-    onActivate: () => {
+    onActivate: (event) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
         () => undefined
       );
+      grabXRef.current = event.x;
       setMove({ days: 0, minutes: 0 });
       drag.onStart();
     },
     onDeactivate: (event) => {
-      const next = snapTaskMove({ ...drag, ...event });
+      const next = snap(event);
       setMove(null);
       const moved = next.days !== 0 || next.minutes !== 0;
       drag.onEnd(moved && !event.canceled ? next : null);
     },
     onUpdate: (event) => {
-      const next = snapTaskMove({ ...drag, ...event });
+      const next = snap(event);
       if (next.days !== move?.days || next.minutes !== move.minutes) {
         Haptics.selectionAsync().catch(() => undefined);
         setMove(next);
@@ -839,6 +837,25 @@ export function TaskBlock({
             </View>
           </Pressable>
         </View>
+        {/* Short and narrow blocks leave the time out, so a dragged task
+            names the time it would drop at above itself. */}
+        {move ? (
+          <View
+            className="absolute left-0 items-start"
+            pointerEvents="none"
+            style={{ top: -DRAG_TIME_TAG_PT, width: DRAG_TIME_TAG_WIDTH_PT }}
+          >
+            <View className="bg-foreground rounded px-1">
+              <Text
+                className="text-background text-[11px]"
+                maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
+                numberOfLines={1}
+              >
+                {formatTimeRange(shownStart, shownEnd)}
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </Pressable>
     </GestureDetector>
   );

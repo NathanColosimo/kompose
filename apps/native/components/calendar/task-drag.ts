@@ -1,4 +1,5 @@
 import { nearestSlotMinutes } from "@kompose/state/temporal-utils";
+import type { Temporal } from "temporal-polyfill";
 
 /** A dragged task snaps to this many minutes. */
 const SLOT_MINUTES = 15;
@@ -13,9 +14,10 @@ export interface TaskMove {
  * `time` moved by `move`. Days and minutes go on separately: a move right
  * and up mixes signs, which one Temporal duration rejects.
  */
-export function moveTime<
-  T extends { add: (duration: { days?: number; minutes?: number }) => T },
->(time: T, move: TaskMove): T {
+export function moveTime(
+  time: Temporal.ZonedDateTime,
+  move: TaskMove
+): Temporal.ZonedDateTime {
   return time.add({ days: move.days }).add({ minutes: move.minutes });
 }
 
@@ -24,17 +26,17 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Where a dragged task lands. The grid is 60pt an hour, so the finger's
- * vertical travel in points is minutes. The move snaps to whole day
- * columns and lands on a 15-minute slot inside the day, on the visible
- * days. Under half a slot of travel keeps the time as it was.
+ * Where a dragged task lands: the visible day under the finger, and the
+ * 15-minute slot nearest its moved top. The grid is 60pt an hour, so the
+ * finger's vertical travel in points is minutes. Under half a slot of
+ * travel keeps the time as it was.
  */
 export function snapTaskMove({
   dayWidth,
   daysAfter,
   daysBefore,
+  fingerX,
   startMinutes,
-  translationX,
   translationY,
 }: {
   /** One day column's width in points. */
@@ -43,14 +45,13 @@ export function snapTaskMove({
   daysAfter: number;
   /** Visible days before the block's day. */
   daysBefore: number;
+  /** The finger's x in points from the left edge of the block's day. */
+  fingerX: number;
   /** Minutes from midnight to the block's top on its day. */
   startMinutes: number;
-  translationX: number;
   translationY: number;
 }): TaskMove {
-  // `|| 0` turns Math.round's -0 into 0, so an unmoved drag equals no move.
-  const days =
-    clamp(Math.round(translationX / dayWidth), -daysBefore, daysAfter) || 0;
+  const days = clamp(Math.floor(fingerX / dayWidth), -daysBefore, daysAfter);
   const minutes =
     Math.round(translationY / SLOT_MINUTES) === 0
       ? 0
