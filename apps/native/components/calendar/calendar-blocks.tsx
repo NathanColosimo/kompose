@@ -5,10 +5,12 @@ import {
   formatClockRange,
   formatTimeRange,
 } from "@kompose/state/temporal-utils";
+import * as Haptics from "expo-haptics";
 import type { LucideIcon } from "lucide-react-native";
 import { Check, MapPin, Video } from "lucide-react-native";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
+import { GestureDetector, usePanGesture } from "react-native-gesture-handler";
 import type { Temporal } from "temporal-polyfill";
 import { Icon } from "@/components/ui/icon";
 import { Text } from "@/components/ui/text";
@@ -16,6 +18,7 @@ import { mixColor } from "@/lib/color-mix";
 import { useColorScheme } from "@/lib/color-scheme-context";
 import { THEME } from "@/lib/theme";
 import { fitBlockRest } from "./block-fit";
+import { moveTime, snapTaskMove, type TaskMove } from "./task-drag";
 
 /**
  * The calendar's grid text (blocks, day headers, the time gutter) grows
@@ -112,11 +115,6 @@ interface BlockPosition {
   columnIndex?: number;
   columnSpan?: number;
   height: number;
-  /**
-   * Long press, with the pressed point in points from the top of the day.
-   * The calendar offers the block's actions and creating at that time.
-   */
-  onLongPressAt?: (offsetY: number) => void;
   /** Indent level from the collision layout; see ItemLayout.stackDepth. */
   stackDepth?: number;
   top: number;
@@ -230,9 +228,6 @@ function textRoom(
 function isTight(textMinutes: number, minutes: number) {
   return textMinutes < minutes && textMinutes < TIGHT_MINUTES;
 }
-
-/** The block's background ring (p-px), between its edge and its card. */
-const BLOCK_RING_PT = 1;
 
 /** Narrower than this, a block shows its title in place of the time. */
 const NARROW_BLOCK_PT = 72;
@@ -610,7 +605,6 @@ export function EventBlock({
   details,
   end,
   minutes,
-  onLongPressAt,
   onPress,
   start,
   title,
@@ -629,16 +623,12 @@ export function EventBlock({
       // The background ring keeps whatever is underneath from showing
       // through the gap between side-by-side blocks.
       className={`bg-background absolute rounded-md p-px ${onPress ? "active:opacity-80" : ""}`}
-      onLongPress={(event) =>
-        onLongPressAt?.(position.top + event.nativeEvent.locationY)
-      }
       onPress={(event) => {
         event.stopPropagation();
         onPress?.();
       }}
       style={placement}
     >
-      {/* The block itself takes the touch, so locationY is from its top. */}
       <View className="h-full" pointerEvents="none">
         <Surface
           compact={textMinutes < COMPACT_MINUTES}
@@ -665,10 +655,28 @@ export function EventBlock({
   );
 }
 
+/** How long a press on a task waits before it picks the task up to drag. */
+const DRAG_HOLD_MS = 400;
+/** A dragged task is drawn over every other block in its day. */
+const DRAGGED_Z_INDEX = 1000;
+
+/** What a task block needs to be dragged to a new time; see snapTaskMove. */
+export interface TaskDrag
+  extends Omit<
+    Parameters<typeof snapTaskMove>[0],
+    "translationX" | "translationY"
+  > {
+  /** The drag ended: where it moved the task, or null if nowhere. */
+  onEnd: (move: TaskMove | null) => void;
+  /** The task is picked up. */
+  onStart: () => void;
+}
+
 interface TaskBlockProps extends BlockPosition, BlockTextProps {
   /** Its tag's color; without one the task is a plain card. */
   color: string | undefined;
   done: boolean;
+  drag: TaskDrag;
   onPress: () => void;
   onToggleDone: () => void;
 }
@@ -679,9 +687,9 @@ export function TaskBlock({
   description,
   details,
   done,
+  drag,
   end,
   minutes,
-  onLongPressAt,
   onPress,
   onToggleDone,
   start,
@@ -697,95 +705,130 @@ export function TaskBlock({
   const tight = isTight(textMinutes, drawn);
   const placement = positionStyle(position);
   const surface = useEventSurface(color);
-  const bodyTopRef = useRef(0);
   const narrow = placement.width < NARROW_BLOCK_PT;
-  const longPressAt = (offsetInBlock: number) =>
-    onLongPressAt?.(position.top + offsetInBlock);
+  // Where the drag has moved the task so far; null when it isn't dragged.
+  const [move, setMove] = useState<TaskMove | null>(null);
+  const pan = usePanGesture({
+    activateAfterLongPress: DRAG_HOLD_MS,
+    onActivate: () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+        () => undefined
+      );
+      setMove({ days: 0, minutes: 0 });
+      drag.onStart();
+    },
+    onDeactivate: (event) => {
+      const next = snapTaskMove({ ...drag, ...event });
+      setMove(null);
+      const moved = next.days !== 0 || next.minutes !== 0;
+      drag.onEnd(moved && !event.canceled ? next : null);
+    },
+    onUpdate: (event) => {
+      const next = snapTaskMove({ ...drag, ...event });
+      if (next.days !== move?.days || next.minutes !== move.minutes) {
+        Haptics.selectionAsync().catch(() => undefined);
+        setMove(next);
+      }
+    },
+    runOnJS: true,
+  });
+  // While dragged, the block sits and reads where it would drop.
+  const shownStart = move ? moveTime(start, move) : start;
+  const shownEnd = move ? moveTime(end, move) : end;
   // The checkbox and the editor are sibling controls, so VoiceOver reaches
   // both; the outer press area only catches taps on the card's padding.
   return (
-    <Pressable
-      accessible={false}
-      className={`bg-background absolute rounded-md p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
-      onLongPress={(event) => longPressAt(event.nativeEvent.locationY)}
-      onPress={(event) => {
-        event.stopPropagation();
-        onPress();
-      }}
-      style={placement}
-    >
-      <View
-        className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border px-1 ${color ? "" : "border-foreground/20 bg-card"} ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
-        style={
-          color
+    <GestureDetector gesture={pan}>
+      <Pressable
+        accessible={false}
+        className={`bg-background absolute rounded-md p-px active:opacity-80 ${done ? "opacity-60" : ""}`}
+        onPress={(event) => {
+          event.stopPropagation();
+          onPress();
+        }}
+        style={[
+          placement,
+          move
             ? {
-                backgroundColor: surface.fill,
-                borderColor: surface.border,
-                borderLeftColor: surface.bar,
-                borderLeftWidth: 3,
+                opacity: 0.9,
+                transform: [
+                  { translateX: move.days * drag.dayWidth },
+                  { translateY: move.minutes },
+                ],
+                zIndex: DRAGGED_Z_INDEX,
               }
-            : undefined
-        }
+            : null,
+        ]}
       >
-        {/* Narrow blocks give the checkbox's room to the title; done is in
-            the editor and the long-press menu. */}
-        {narrow ? null : (
+        <View
+          className={`h-full flex-row gap-1 overflow-hidden rounded-[5px] border px-1 ${color ? "" : "border-foreground/20 bg-card"} ${compact && !isCovered ? "items-center" : ""} ${compact && isCovered && !tight ? "pt-0.5" : ""} ${blockPadding(compact, narrow)}`}
+          style={
+            color
+              ? {
+                  backgroundColor: surface.fill,
+                  borderColor: surface.border,
+                  borderLeftColor: surface.bar,
+                  borderLeftWidth: 3,
+                }
+              : undefined
+          }
+        >
+          {/* Narrow blocks give the checkbox's room to the title; done is
+              in the editor. */}
+          {narrow ? null : (
+            <Pressable
+              accessibilityLabel={title}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: done }}
+              hitSlop={8}
+              onPress={(event) => {
+                event.stopPropagation();
+                onToggleDone();
+              }}
+            >
+              <View
+                className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
+              >
+                {done ? (
+                  <Icon
+                    as={Check}
+                    className="text-primary-foreground"
+                    size={9}
+                  />
+                ) : null}
+              </View>
+            </Pressable>
+          )}
           <Pressable
-            accessibilityLabel={title}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: done }}
-            hitSlop={8}
+            accessibilityHint="Opens the task"
+            accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
+            accessibilityRole="button"
+            className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
             onPress={(event) => {
               event.stopPropagation();
-              onToggleDone();
+              onPress();
             }}
           >
-            <View
-              className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
-            >
-              {done ? (
-                <Icon as={Check} className="text-primary-foreground" size={9} />
-              ) : null}
+            <View className="min-w-0 flex-1" pointerEvents="none">
+              <BlockText
+                clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
+                description={description}
+                details={details}
+                end={shownEnd}
+                minutes={textMinutes}
+                narrow={narrow}
+                room={textRoom(textMinutes, drawn, placement.height)}
+                sliver={placement.width < SLIVER_BLOCK_PT}
+                start={shownStart}
+                struck={done}
+                tight={tight}
+                title={title}
+              />
             </View>
           </Pressable>
-        )}
-        <Pressable
-          accessibilityHint="Opens the task"
-          accessibilityLabel={`${describeBlock(title, start, end, details)}${done ? ", done" : ""}`}
-          accessibilityRole="button"
-          className={`min-w-0 flex-1 ${compact ? "" : "h-full"}`}
-          // Measured: the text area's top within the block (ring, border,
-          // and padding, or centering in a compact block).
-          onLayout={(event) => {
-            bodyTopRef.current = BLOCK_RING_PT + event.nativeEvent.layout.y;
-          }}
-          onLongPress={(event) =>
-            longPressAt(bodyTopRef.current + event.nativeEvent.locationY)
-          }
-          onPress={(event) => {
-            event.stopPropagation();
-            onPress();
-          }}
-        >
-          <View className="min-w-0 flex-1" pointerEvents="none">
-            <BlockText
-              clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
-              description={description}
-              details={details}
-              end={end}
-              minutes={textMinutes}
-              narrow={narrow}
-              room={textRoom(textMinutes, drawn, placement.height)}
-              sliver={placement.width < SLIVER_BLOCK_PT}
-              start={start}
-              struck={done}
-              tight={tight}
-              title={title}
-            />
-          </View>
-        </Pressable>
-      </View>
-    </Pressable>
+        </View>
+      </Pressable>
+    </GestureDetector>
   );
 }
 
