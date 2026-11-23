@@ -32,6 +32,18 @@ test("a move a day later and two hours earlier lands there", () => {
   );
 });
 
+test("a drag lands on a slot, and a hold without one keeps the time", () => {
+  const offGrid = { ...threeDays, startMinutes: 23 * 60 + 50, translationX: 0 };
+  expect(snapTaskMove({ ...offGrid, translationY: -15 })).toEqual({
+    days: 0,
+    minutes: -20,
+  });
+  expect(snapTaskMove({ ...offGrid, translationY: 3 })).toEqual({
+    days: 0,
+    minutes: 0,
+  });
+});
+
 test("a drag stays on the visible days", () => {
   expect(
     snapTaskMove({

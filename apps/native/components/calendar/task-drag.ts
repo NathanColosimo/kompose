@@ -1,6 +1,7 @@
+import { nearestSlotMinutes } from "@kompose/state/temporal-utils";
+
 /** A dragged task snaps to this many minutes. */
 const SLOT_MINUTES = 15;
-const DAY_MINUTES = 24 * 60;
 
 /** How far a dropped task moves: whole days, and minutes within the day. */
 export interface TaskMove {
@@ -25,8 +26,8 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * Where a dragged task lands. The grid is 60pt an hour, so the finger's
  * vertical travel in points is minutes. The move snaps to whole day
- * columns and 15-minute steps, and keeps the block on the visible days
- * with its top inside the day.
+ * columns and lands on a 15-minute slot inside the day, on the visible
+ * days. Under half a slot of travel keeps the time as it was.
  */
 export function snapTaskMove({
   dayWidth,
@@ -51,10 +52,8 @@ export function snapTaskMove({
   const days =
     clamp(Math.round(translationX / dayWidth), -daysBefore, daysAfter) || 0;
   const minutes =
-    clamp(
-      Math.round(translationY / SLOT_MINUTES) * SLOT_MINUTES,
-      -startMinutes,
-      DAY_MINUTES - SLOT_MINUTES - startMinutes
-    ) || 0;
+    Math.round(translationY / SLOT_MINUTES) === 0
+      ? 0
+      : nearestSlotMinutes(startMinutes + translationY) - startMinutes;
   return { days, minutes };
 }

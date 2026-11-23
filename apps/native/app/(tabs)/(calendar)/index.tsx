@@ -1306,22 +1306,21 @@ export default function CalendarTab() {
   >(null);
   const [taskMoveScope, setTaskMoveScope] = useState<UpdateScope>("this");
 
+  // Only the start changes, so a "This and following" move keeps each
+  // later occurrence's own length.
   const moveTask = useCallback(
-    (task: TaskSelectDecoded, move: TaskMove) => {
-      if (!(task.startDate && task.startTime)) {
-        return;
-      }
-      const start = moveTime(
-        task.startDate.toPlainDateTime(task.startTime),
-        move
-      );
+    (
+      task: TaskSelectDecoded,
+      start: Temporal.ZonedDateTime,
+      move: TaskMove
+    ) => {
+      const target = moveTime(start, move);
       const update = {
         id: task.id,
         scope: "this" as const,
         task: {
-          durationMinutes: task.durationMinutes,
-          startDate: start.toPlainDate(),
-          startTime: start.toPlainTime(),
+          startDate: target.toPlainDate(),
+          startTime: target.toPlainTime(),
         },
       };
       if (task.seriesMasterId) {
@@ -2150,7 +2149,7 @@ export default function CalendarTab() {
                                 onEnd: (move) => {
                                   setDragDay(null);
                                   if (move) {
-                                    moveTask(task, move);
+                                    moveTask(task, start, move);
                                   }
                                 },
                                 onStart: () => setDragDay(dayKey),

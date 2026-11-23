@@ -661,7 +661,7 @@ const DRAG_HOLD_MS = 400;
 const DRAGGED_Z_INDEX = 1000;
 
 /** What a task block needs to be dragged to a new time; see snapTaskMove. */
-export interface TaskDrag
+interface TaskDrag
   extends Omit<
     Parameters<typeof snapTaskMove>[0],
     "translationX" | "translationY"
@@ -696,18 +696,30 @@ export function TaskBlock({
   title,
   ...position
 }: TaskBlockProps) {
+  // Where the drag has moved the task so far; null when it isn't dragged.
+  const [move, setMove] = useState<TaskMove | null>(null);
+  // A dragged task takes its day's whole width over everything else, so it
+  // has room to show the time it would drop at.
+  const shownPosition: BlockPosition = move
+    ? {
+        ...position,
+        columnIndex: 0,
+        columnSpan: 1,
+        stackDepth: 0,
+        totalColumns: 1,
+        uncoveredMinutes: undefined,
+      }
+    : position;
   const { drawn, text: textMinutes } = shownMinutes(
     minutes,
-    position.uncoveredMinutes
+    shownPosition.uncoveredMinutes
   );
   const compact = textMinutes < COMPACT_MINUTES;
   const isCovered = textMinutes < drawn;
   const tight = isTight(textMinutes, drawn);
-  const placement = positionStyle(position);
+  const placement = positionStyle(shownPosition);
   const surface = useEventSurface(color);
   const narrow = placement.width < NARROW_BLOCK_PT;
-  // Where the drag has moved the task so far; null when it isn't dragged.
-  const [move, setMove] = useState<TaskMove | null>(null);
   const pan = usePanGesture({
     activateAfterLongPress: DRAG_HOLD_MS,
     onActivate: () => {
