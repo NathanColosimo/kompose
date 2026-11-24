@@ -3,15 +3,63 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 // Runs against a real Postgres. CI has none, so these skip without
 // DATABASE_URL. Locally, with `bun run db:start`:
-//   DATABASE_URL=postgresql://postgres:password@localhost:5432/kompose bun test src
+//   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kompose bun test src
 const databaseUrl = process.env.DATABASE_URL;
 
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
+const SECRET = "test-secret-that-is-at-least-32-characters";
 
-describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
+/**
+ * A Better Auth instance with a WHOOP provider and `pluginOAuthTokens`, on the
+ * real database. The tests ask it for tokens the way the app does.
+ */
+async function loadModules() {
+  process.env.SKIP_ENV_VALIDATION ??= "1";
+  const [
+    { betterAuth },
+    { drizzleAdapter },
+    { genericOAuth },
+    { db },
+    { eq },
+    { pluginOAuthTokens },
+    schema,
+  ] = await Promise.all([
+    import("better-auth"),
+    import("@better-auth/drizzle-adapter/relations-v2"),
+    import("better-auth/plugins"),
+    import("@kompose/db/legacy"),
+    import("drizzle-orm"),
+    import("./oauth-tokens"),
+    import("@kompose/db/schema/auth"),
+  ]);
+
+  const auth = betterAuth({
+    baseURL: "http://localhost:3000",
+    database: drizzleAdapter(db, { provider: "pg", schema }),
+    plugins: [
+      genericOAuth({
+        config: [
+          {
+            authorizationUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
+            clientId: "test-client",
+            clientSecret: "test-secret",
+            providerId: "whoop",
+            refreshTokenParams: { scope: "offline" },
+            tokenUrl: WHOOP_TOKEN_URL,
+          },
+        ],
+      }),
+      pluginOAuthTokens(),
+    ],
+    secret: SECRET,
+  });
+
+  return { auth, db, eq, schema };
+}
+
+describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
   const userId = `test-user-${crypto.randomUUID()}`;
   const accountId = `test-account-${crypto.randomUUID()}`;
-  const request = { accountId, type: "accessToken", userId } as const;
 
   // A stand-in for WHOOP's token endpoint. Like WHOOP, it rotates the refresh
   // token and rejects one that was already used.
@@ -19,53 +67,59 @@ describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
   let refreshCalls = 0;
   const fetchSpy = spyOn(globalThis, "fetch");
 
-  let modules: {
-    db: typeof import("@kompose/db/legacy")["db"];
-    eq: typeof import("drizzle-orm")["eq"];
-    getWhoopTokens: typeof import("./whoop")["getWhoopTokens"];
-    schema: typeof import("@kompose/db/schema/auth");
-  };
+  let modules: Awaited<ReturnType<typeof loadModules>>;
 
-  const setStoredToken = async (expiresInMs: number) => {
+  const getAccessToken = () =>
+    modules.auth.api.getAccessToken({ body: { accountId, userId } });
+
+  const setStoredTokens = async (
+    expiresInMs: number,
+    tokens: { accessToken: string; refreshToken: string }
+  ) => {
     const { db, eq, schema } = modules;
     await db
       .update(schema.account)
       .set({
-        accessToken: "stored-access",
+        ...tokens,
         accessTokenExpiresAt: new Date(Date.now() + expiresInMs),
-        refreshToken: "stored-refresh",
       })
       .where(eq(schema.account.id, accountId));
   };
 
-  beforeAll(async () => {
-    process.env.SKIP_ENV_VALIDATION ??= "1";
-    process.env.WHOOP_CLIENT_ID ??= "test-client";
-    process.env.WHOOP_CLIENT_SECRET ??= "test-secret";
+  const readStoredRow = async () => {
+    const { db, eq, schema } = modules;
+    const [stored] = await db
+      .select()
+      .from(schema.account)
+      .where(eq(schema.account.id, accountId));
+    return stored;
+  };
 
-    const [{ db }, { eq }, { getWhoopTokens }, schema] = await Promise.all([
-      import("@kompose/db/legacy"),
-      import("drizzle-orm"),
-      import("./whoop"),
-      import("@kompose/db/schema/auth"),
-    ]);
-    modules = { db, eq, getWhoopTokens, schema };
+  beforeAll(async () => {
+    modules = await loadModules();
+    const { db, schema } = modules;
 
     const whoopTokenEndpoint = async (
       input: Parameters<typeof fetch>[0],
       init?: Parameters<typeof fetch>[1]
     ) => {
-      if (String(input) !== WHOOP_TOKEN_URL) {
-        throw new Error(`Unexpected fetch: ${String(input)}`);
+      const url = input instanceof Request ? input.url : String(input);
+      if (url !== WHOOP_TOKEN_URL) {
+        throw new Error(`Unexpected fetch: ${url}`);
       }
       refreshCalls += 1;
       const call = refreshCalls;
-      const refreshToken = new URLSearchParams(String(init?.body)).get(
-        "refresh_token"
+      const body = new URLSearchParams(
+        input instanceof Request ? await input.text() : String(init?.body)
       );
+      const refreshToken = body.get("refresh_token");
       // Hold the refresh open so concurrent callers overlap with it.
       await sleep(100);
-      if (!refreshToken || usedRefreshTokens.has(refreshToken)) {
+      if (
+        !refreshToken ||
+        usedRefreshTokens.has(refreshToken) ||
+        body.get("scope") !== "offline"
+      ) {
         return Response.json({ error: "invalid_grant" }, { status: 400 });
       }
       usedRefreshTokens.add(refreshToken);
@@ -87,7 +141,7 @@ describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
       email: `${userId}@example.com`,
       emailVerified: true,
       id: userId,
-      name: "WHOOP token test",
+      name: "OAuth token test",
       updatedAt: now,
     });
     await db.insert(schema.account).values({
@@ -109,8 +163,11 @@ describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
   });
 
   test("reads a valid token without waiting on the row lock", async () => {
-    const { db, eq, getWhoopTokens, schema } = modules;
-    await setStoredToken(60 * 60 * 1000);
+    const { db, eq, schema } = modules;
+    await setStoredTokens(60 * 60 * 1000, {
+      accessToken: "stored-access",
+      refreshToken: "stored-refresh",
+    });
     refreshCalls = 0;
 
     // Another transaction holds the row lock, as a refresh in flight would.
@@ -121,7 +178,7 @@ describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
         .where(eq(schema.account.id, accountId))
         .for("update");
       return Promise.race([
-        getWhoopTokens(request),
+        getAccessToken(),
         sleep(2000, "blocked on the row lock" as const),
       ]);
     });
@@ -131,23 +188,22 @@ describe.skipIf(!databaseUrl)("getWhoopTokens", () => {
   });
 
   test("refreshes an expiring token once across concurrent callers", async () => {
-    const { db, eq, getWhoopTokens, schema } = modules;
     // Inside the 30 s refresh window.
-    await setStoredToken(10_000);
+    await setStoredTokens(10_000, {
+      accessToken: "stored-access",
+      refreshToken: "stored-refresh",
+    });
     refreshCalls = 0;
 
     const tokens = await Promise.all(
-      Array.from({ length: 5 }, () => getWhoopTokens(request))
+      Array.from({ length: 5 }, () => getAccessToken())
     );
 
     expect(refreshCalls).toBe(1);
     expect(new Set(tokens.map((token) => token.accessToken))).toEqual(
       new Set(["refreshed-access-1"])
     );
-    const [stored] = await db
-      .select()
-      .from(schema.account)
-      .where(eq(schema.account.id, accountId));
+    const stored = await readStoredRow();
     expect(stored?.refreshToken).toBe("refreshed-refresh-1");
     expect(stored?.scope).toBe("offline,read:cycles");
   });

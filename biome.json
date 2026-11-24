@@ -81,7 +81,6 @@
         "packages/api/src/routers/tag/errors.ts",
         "packages/api/src/routers/task/errors.ts",
         "packages/api/src/webhooks/errors.ts",
-        "packages/auth/src/whoop.ts",
         "packages/google-cal/src/client.ts",
         "packages/whoop/src/errors.ts"
       ],
