@@ -1,8 +1,8 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
-import { Effect, Result } from "effect";
+import { Effect } from "effect";
 import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
-import { fetchJson, fetchText } from "../fetch";
+import { fetchJson } from "../fetch";
 import {
   LinkParseError,
   type LinkResolver,
@@ -62,7 +62,7 @@ const postSchema = z.object({
   wordcount: z.number().optional(),
 });
 
-const archiveResponseSchema = z.array(postSchema);
+const postBySlugResponseSchema = z.object({ id: z.number() });
 
 const postByIdResponseSchema = z.object({
   post: postSchema,
@@ -72,12 +72,6 @@ const postByIdResponseSchema = z.object({
 const SUBSTACK_SLUG_PATTERN = /\/p\/(?<slug>[a-z0-9-]+)/u;
 const INBOX_POST_ID_PATTERN = /\/inbox\/post\/(?<postId>\d+)/u;
 const HOME_POST_ID_PATTERN = /\/home\/post\/p-(?<postId>\d+)/u;
-const HTML_POST_ID_PATTERNS = [
-  /\\?"post_id\\?":\s*(?<postId>\d+)/u,
-  /\\?"postId\\?":\s*(?<postId>\d+)/u,
-  /post_preview\/(?<postId>\d+)\//u,
-  /\/i\/(?<postId>\d+)\?img=/u,
-] as const;
 const WORDS_PER_MINUTE = 238;
 
 function extractSlug(url: string): string | null {
@@ -105,26 +99,6 @@ function extractQueryPostId(url: string): string | null {
   }
 }
 
-function extractBaseUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.protocol}//${parsed.host}`;
-  } catch {
-    return null;
-  }
-}
-
-function extractHtmlPostId(html: string): string | null {
-  for (const pattern of HTML_POST_ID_PATTERNS) {
-    const match = html.match(pattern);
-    if (match?.[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
-}
-
 const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   url: string,
   postId: string
@@ -141,56 +115,27 @@ const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   );
 });
 
-const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
+/** The ID of the post at `/p/<slug>` on the publication's own domain. */
+const fetchPostIdBySlug = Effect.fn("Substack.fetchPostIdBySlug")(function* (
   url: string,
-  baseUrl: string,
   slug: string
 ) {
-  const posts = yield* fetchJson(
+  const post = yield* fetchJson(
     {
-      label: "Substack archive API",
+      label: "Substack post-by-slug API",
       link: url,
-      request: HttpClientRequest.get(`${baseUrl}/api/v1/archive`, {
-        urlParams: { limit: 20, offset: 0, search: slug, sort: "top" },
-      }),
+      request: HttpClientRequest.get(
+        `${new URL(url).origin}/api/v1/posts/${slug}`
+      ),
     },
-    archiveResponseSchema
+    postBySlugResponseSchema
   );
-
-  const post = posts.find((p) => p.slug === slug);
-  if (!post) {
-    return yield* new LinkParseError({
-      message: `Post with slug "${slug}" not found in archive results`,
-      url,
-    });
-  }
-
-  return { post };
+  return String(post.id);
 });
-
-const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
-  function* (url: string) {
-    const html = yield* fetchText({
-      label: "Substack post HTML",
-      link: url,
-      request: HttpClientRequest.get(url),
-    });
-
-    const postId = extractHtmlPostId(html);
-    if (!postId) {
-      return yield* new LinkParseError({
-        message: "Could not extract Substack post ID from HTML",
-        url,
-      });
-    }
-
-    return postId;
-  }
-);
 
 function postToLinkMeta(
   post: z.infer<typeof postSchema>,
-  publication?: z.infer<typeof PublicationSchema>
+  publication: z.infer<typeof PublicationSchema>
 ): LinkMeta & { provider: "substack" } {
   const voiceover = post.audio_items?.find((a) => a.type === "voiceover");
   const wordCount = post.wordcount ?? 0;
@@ -205,7 +150,7 @@ function postToLinkMeta(
   }
 
   return {
-    authorName: publication?.name,
+    authorName: publication.name,
     description: post.description,
     durationSeconds,
     fetchedAt: new Date().toISOString(),
@@ -218,44 +163,29 @@ function postToLinkMeta(
 }
 
 /**
- * Try query, inbox and home IDs before slug search. If search fails, extract an
- * ID from the page HTML and retry by ID. See documents/link-parsing.md.
+ * Every link ends at the post-by-id API. The ID comes from the URL (query,
+ * inbox or home path), or from the publication's post-by-slug API.
+ * See documents/link-parsing.md.
  */
 const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
   url: string
 ) {
-  const postId =
+  let postId =
     extractQueryPostId(url) ??
     extractInboxPostId(url) ??
     extractHomePostId(url);
-  if (postId) {
-    const data = yield* fetchPostById(url, postId);
-    return postToLinkMeta(data.post, data.publication);
+  if (!postId) {
+    const slug = extractSlug(url);
+    if (!slug) {
+      return yield* new LinkParseError({
+        message: "Could not extract post slug or ID from Substack URL",
+        url,
+      });
+    }
+    postId = yield* fetchPostIdBySlug(url, slug);
   }
 
-  const slug = extractSlug(url);
-  if (!slug) {
-    return yield* new LinkParseError({
-      message: "Could not extract post slug or ID from Substack URL",
-      url,
-    });
-  }
-
-  const baseUrl = extractBaseUrl(url);
-  if (!baseUrl) {
-    return yield* new LinkParseError({
-      message: "Could not extract base URL from Substack URL",
-      url,
-    });
-  }
-
-  const slugResult = yield* Effect.result(fetchPostBySlug(url, baseUrl, slug));
-  if (Result.isSuccess(slugResult)) {
-    return postToLinkMeta(slugResult.success.post);
-  }
-
-  const htmlPostId = yield* fetchPostIdFromHtml(url);
-  const data = yield* fetchPostById(url, htmlPostId);
+  const data = yield* fetchPostById(url, postId);
   return postToLinkMeta(data.post, data.publication);
 });
 
