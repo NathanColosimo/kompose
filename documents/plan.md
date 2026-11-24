@@ -367,7 +367,7 @@ separate `Kompose Dev` profile.
 - **Architecture**: Three Effect services handle push notifications:
   - `WebhookService` (orchestrator) → `GoogleCalendarWebhookService` (Google-specific watch logic) → `WebhookRepositoryService` (database layer).
 - **Watch types**: Calendar list watch (detects added/removed calendars) and per-calendar event watches (detects event changes).
-- **Notification flow**: Google POST → `/api/webhooks/google-calendar` route → `WebhookService.handleGoogleNotification` → validate headers/token → find subscription → invalidate cache → publish SSE event to user.
+- **Notification flow**: Google POST → `/api/webhooks/google-calendar` → check headers/token and reply 200 → in `after()`: `WebhookService.handleGoogleNotification` → find subscription → invalidate cache → publish SSE event to user.
 - **Refresh**: `WebhookService.refreshAll` discovers linked accounts and ensures all watches are active. Called on SSE connect and as a follow-up after calendar-list webhook notifications.
 - See [`services.md`](./services.md) § Webhook Services for full details.
 
