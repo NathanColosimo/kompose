@@ -3,7 +3,11 @@ import { Effect, Result } from "effect";
 import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
 import { fetchJson, fetchText } from "../fetch";
-import { LinkParseError, roundToNearest15Min } from "../types";
+import {
+  LinkParseError,
+  type LinkResolver,
+  roundToNearest15Min,
+} from "../types";
 
 // ============================================================================
 // Zod schemas for Substack API responses
@@ -94,7 +98,8 @@ function extractHomePostId(url: string): string | null {
 function extractQueryPostId(url: string): string | null {
   try {
     const parsed = new URL(url);
-    return parsed.searchParams.get("post_id");
+    // An empty `post_id=` falls through to the ID in the path.
+    return parsed.searchParams.get("post_id") || null;
   } catch {
     return null;
   }
@@ -216,24 +221,15 @@ function postToLinkMeta(
  * Try query, inbox and home IDs before slug search. If search fails, extract an
  * ID from the page HTML and retry by ID. See documents/link-parsing.md.
  */
-export const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
+const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
   url: string
 ) {
-  const queryPostId = extractQueryPostId(url);
-  if (queryPostId) {
-    const data = yield* fetchPostById(url, queryPostId);
-    return postToLinkMeta(data.post, data.publication);
-  }
-
-  const inboxPostId = extractInboxPostId(url);
-  if (inboxPostId) {
-    const data = yield* fetchPostById(url, inboxPostId);
-    return postToLinkMeta(data.post, data.publication);
-  }
-
-  const homePostId = extractHomePostId(url);
-  if (homePostId) {
-    const data = yield* fetchPostById(url, homePostId);
+  const postId =
+    extractQueryPostId(url) ??
+    extractInboxPostId(url) ??
+    extractHomePostId(url);
+  if (postId) {
+    const data = yield* fetchPostById(url, postId);
     return postToLinkMeta(data.post, data.publication);
   }
 
@@ -258,7 +254,31 @@ export const parseSubstackLink = Effect.fn("Substack.parseLink")(function* (
     return postToLinkMeta(slugResult.success.post);
   }
 
-  const postId = yield* fetchPostIdFromHtml(url);
-  const data = yield* fetchPostById(url, postId);
+  const htmlPostId = yield* fetchPostIdFromHtml(url);
+  const data = yield* fetchPostById(url, htmlPostId);
   return postToLinkMeta(data.post, data.publication);
 });
+
+const SUBSTACK_HOST = /^[a-z0-9-]+\.substack\.com$/u;
+const SUBSTACK_POST_PATH = /^\/(?:inbox\/post\/|home\/post\/p-)/u;
+
+/** Custom domains that host Substack publications. Add hostnames as needed. */
+const SUBSTACK_CUSTOM_DOMAINS = new Set([
+  "blog.ai-futures.org",
+  "blog.redwoodresearch.org",
+  "www.gurwinder.blog",
+  "www.interconnects.ai",
+  "newsletter.forethought.org",
+  "www.normaltech.ai",
+]);
+
+export const substackResolver: LinkResolver = {
+  matches: (url) =>
+    SUBSTACK_HOST.test(url.hostname) ||
+    (url.hostname === "substack.com" &&
+      SUBSTACK_POST_PATH.test(url.pathname)) ||
+    SUBSTACK_CUSTOM_DOMAINS.has(url.hostname) ||
+    // Substack email and share links on any domain carry the post ID
+    url.searchParams.has("post_id"),
+  resolve: parseSubstackLink,
+};

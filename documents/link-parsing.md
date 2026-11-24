@@ -6,8 +6,8 @@ Server-side metadata extraction for URLs attached to tasks. Detects the content 
 
 1. User pastes one or more URLs into the command bar input, web task edit popover, or mobile task editor sheet.
 2. The command bar calls `tasks.parseLink` through `useLinkMetadata`, one in-memory TanStack query per URL. The task editors call it from the add-link handler and await each call's own promise.
-3. `LinkParserService` detects the provider from URL patterns and dispatches to the matching provider parser.
-4. Provider parser fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object. Parsers fetch through `fetchJson(request, schema)` and `fetchText(request)` in `fetch.ts`, which turn a failed request, a non-2xx status, unreadable JSON, or a schema mismatch into a `LinkParseError`.
+3. `LinkParserService` asks each resolver in turn (`linkResolvers` in `service.ts`) and uses the first whose `matches(url)` is true, or the Open Graph fallback when none does.
+4. The resolver fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object. Resolvers fetch through `fetchJson(request, schema)` and `fetchText(request)` in `fetch.ts`, which turn a failed request, a non-2xx status, unreadable JSON, or a schema mismatch into a `LinkParseError`.
 5. Client auto-fills task fields from the **first** link's metadata:
    - **Title** — from `meta.title` (only if the task title is empty)
    - **Duration** — from `meta.durationSeconds` (only if no explicit duration was set)
@@ -15,25 +15,25 @@ Server-side metadata extraction for URLs attached to tasks. Detects the content 
 
 ## Provider detection
 
-`detectProvider(url)` in `detect.ts` checks URL patterns in this order:
+Each provider file in `providers/` exports a `LinkResolver`: `matches(url)` says which URLs it handles, and `resolve(url)` fetches their metadata. So a provider's URL patterns sit beside the code that reads them. They're tried in this order:
 
-| Check | Result |
-|-------|--------|
-| `open.spotify.com/(track\|episode\|show\|album)/` | `spotify` |
-| `youtube.com/watch`, `youtu.be/`, `youtube.com/shorts/` | `youtube` |
-| `*.substack.com/` | `substack` |
-| `substack.com/inbox/post/` | `substack` |
-| `substack.com/home/post/p-{id}` | `substack` |
-| Hostname in `SUBSTACK_CUSTOM_DOMAINS` list | `substack` |
-| URL has `post_id` query param | `substack` |
-| Everything else | `unknown` |
+| Resolver | `matches(url)` |
+|----------|----------------|
+| `spotify` | `open.spotify.com/(track\|episode\|show\|album)/<id>` |
+| `youtube` | `youtube.com/watch?v=<id>`, `youtu.be/<id>`, `youtube.com/shorts/<id>` (11-character ID) |
+| `substack` | `*.substack.com`; `substack.com/inbox/post/` or `/home/post/p-`; a hostname in `SUBSTACK_CUSTOM_DOMAINS`; any URL with a `post_id` param |
+| (none) | Open Graph fallback, `provider: "unknown"` |
+
+A YouTube URL without a valid video ID falls through to Open Graph rather than failing.
+
+These are not plugins (see [`plugins.md`](./plugins.md)): a user links nothing, and they use Kompose's own keys.
 
 ### Substack custom domains
 
 Substack publications can use custom domains (e.g. `blog.ai-futures.org`). Two strategies handle this:
 
 1. **Query param auto-detection** — Substack email/share links always include `post_id` in the query string. Any URL with a `post_id` param is treated as Substack with zero config.
-2. **Known domains list** — `SUBSTACK_CUSTOM_DOMAINS` in `detect.ts` for direct visits without query params. Add new hostnames as needed.
+2. **Known domains list** — `SUBSTACK_CUSTOM_DOMAINS` in `providers/substack.ts` for direct visits without query params. Add new hostnames as needed.
 
 ## Providers
 
@@ -94,7 +94,7 @@ Links are deduplicated by URL at multiple layers:
 
 ## SSRF protection
 
-Links come from users, so every fetch made while parsing one, by a provider parser or the Open Graph fallback, goes through `send` in `packages/api/src/services/link-parser/fetch.ts`. It uses Effect's `HttpClient` (`effect/http`) over Node's `fetch`:
+Links come from users, so every fetch made while parsing one, by a resolver or the Open Graph fallback, goes through `send` in `packages/api/src/services/link-parser/fetch.ts`. It uses Effect's `HttpClient` (`effect/http`) over Node's `fetch`:
 
 - Only `http://` and `https://` URLs whose host passes Better Auth's `isPublicRoutableHost` (`@better-auth/core/utils/host`): no private, loopback, link-local, shared, reserved or multicast IPv4 or IPv6 literal, including IPv6 forms that embed an IPv4 address (mapped, NAT64, 6to4, Teredo), and no `localhost` or cloud metadata names.
 - `fetch` runs with `redirect: "manual"`, and `HttpClient.followRedirects` follows up to 5. The URL check sits inside it (`HttpClient.transform`), so each `Location` gets the same check before it's fetched. When a redirect changes origin, Effect drops `Authorization` and `Cookie`.
@@ -146,13 +146,12 @@ Links come from users, so every fetch made while parsing one, by a provider pars
 |------|---------|
 | `packages/db/src/schema/link.ts` | `linkMetaSchema` Zod discriminated union, `LinkMeta` type |
 | `packages/db/src/schema/task.ts` | `links` JSONB array column definition, task Zod schemas |
-| `packages/api/src/services/link-parser/service.ts` | `LinkParserService` Effect service |
-| `packages/api/src/services/link-parser/types.ts` | `LinkProvider` type alias, `LinkParseError` |
+| `packages/api/src/services/link-parser/service.ts` | `LinkParserService` Effect service: the resolvers in match order, else Open Graph |
+| `packages/api/src/services/link-parser/types.ts` | `LinkResolver`, `LinkParseError`, text helpers |
 | `packages/api/src/services/link-parser/fetch.ts` | SSRF-checked `fetchJson` / `fetchText` |
-| `packages/api/src/services/link-parser/providers/detect.ts` | URL pattern matching, `SUBSTACK_CUSTOM_DOMAINS` |
-| `packages/api/src/services/link-parser/providers/spotify.ts` | Spotify client credentials + metadata fetch |
-| `packages/api/src/services/link-parser/providers/youtube.ts` | YouTube Data API v3 metadata fetch |
-| `packages/api/src/services/link-parser/providers/substack.ts` | Substack archive/by-id API + reading time estimate |
+| `packages/api/src/services/link-parser/providers/spotify.ts` | URL matching, Spotify client credentials + metadata fetch |
+| `packages/api/src/services/link-parser/providers/youtube.ts` | Video ID matching, YouTube Data API v3 metadata fetch |
+| `packages/api/src/services/link-parser/providers/substack.ts` | URL matching (`SUBSTACK_CUSTOM_DOMAINS`), Substack archive/by-id API + reading time estimate |
 | `packages/api/src/services/link-parser/providers/unknown.ts` | OG meta tag fallback |
 | `packages/api/src/routers/task/contract.ts` | `parseLink` oRPC procedure contract |
 | `packages/api/src/routers/task/router.ts` | `parseLink` handler |
