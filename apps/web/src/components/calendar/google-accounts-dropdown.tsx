@@ -14,8 +14,8 @@ import {
   toggleCalendarSelection,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
-import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
 import { useGoogleAccounts } from "@kompose/state/hooks/use-google-accounts";
+import { usePluginConnectionsQuery } from "@kompose/state/hooks/use-plugin-connections";
 import { useAtomValue, useSetAtom } from "jotai";
 import { CalendarRange, ChevronDown, RefreshCw } from "lucide-react";
 import Link from "next/link";
@@ -34,12 +34,6 @@ interface GoogleAccount {
   id: string;
   providerId: string;
 }
-
-type AccountWithInfo = GoogleAccount & {
-  email?: string;
-  name?: string;
-  isLoading?: boolean;
-};
 
 interface GoogleAccountsDropdownProps {
   googleAccounts: GoogleAccount[];
@@ -62,32 +56,8 @@ export function GoogleAccountsDropdown({
     [googleCalendars]
   );
 
-  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles();
   const accountsQuery = useGoogleAccounts();
-  const accountProfilesById = useMemo(
-    () =>
-      new Map(
-        googleAccountProfiles.map((profile) => [
-          profile.account.accountId,
-          profile,
-        ])
-      ),
-    [googleAccountProfiles]
-  );
-
-  const accountsWithInfo: AccountWithInfo[] = useMemo(
-    () =>
-      googleAccounts.map((account) => {
-        const query = accountProfilesById.get(account.accountId);
-        return {
-          ...account,
-          email: query?.profile?.email ?? undefined,
-          isLoading: query?.isLoading,
-          name: query?.profile?.name,
-        };
-      }),
-    [accountProfilesById, googleAccounts]
-  );
+  const connectionsQuery = usePluginConnectionsQuery();
 
   const calendarsByAccount = useMemo(() => {
     const grouped = new Map<string, CalendarWithSource[]>();
@@ -154,26 +124,37 @@ export function GoogleAccountsDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72">
-        {accountsWithInfo.map((account, accountIndex) => (
-          <AccountCalendarsSection
-            account={account}
-            calendars={calendarsByAccount.get(account.accountId) ?? []}
-            isCalendarVisible={isResolvedCalendarVisible}
-            isLastAccount={accountIndex === accountsWithInfo.length - 1}
-            key={account.accountId}
-            toggleCalendar={toggleCalendar}
-          />
-        ))}
+        {googleAccounts.map((account, accountIndex) => {
+          // A connection's `accountId` is the Better Auth account row.
+          const connection = connectionsQuery.data?.find(
+            ({ accountId }) => accountId === account.id
+          );
+          return (
+            <AccountCalendarsSection
+              account={account}
+              calendars={calendarsByAccount.get(account.accountId) ?? []}
+              isCalendarVisible={isResolvedCalendarVisible}
+              isLastAccount={accountIndex === googleAccounts.length - 1}
+              isNameLoading={connectionsQuery.isLoading}
+              key={account.accountId}
+              name={connection?.email || connection?.name}
+              toggleCalendar={toggleCalendar}
+            />
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 
 interface AccountCalendarsSectionProps {
-  account: AccountWithInfo;
+  account: GoogleAccount;
   calendars: CalendarWithSource[];
   isCalendarVisible: (accountId: string, calendarId: string) => boolean;
   isLastAccount: boolean;
+  isNameLoading: boolean;
+  /** The account's email, or its name when it has no email. */
+  name: string | undefined;
   toggleCalendar: (accountId: string, calendarId: string) => void;
 }
 
@@ -183,6 +164,8 @@ function AccountCalendarsSection({
   isCalendarVisible,
   toggleCalendar,
   isLastAccount,
+  isNameLoading,
+  name,
 }: AccountCalendarsSectionProps) {
   const normalizedPalette = useAtomValue(
     normalizedGoogleColorsAtomFamily(account.accountId)
@@ -234,10 +217,10 @@ function AccountCalendarsSection({
       <div className="flex items-center px-2 py-1.5">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-sm font-medium">
-            {account.isLoading ? (
+            {isNameLoading ? (
               <RefreshCw className="inline size-3 animate-spin" />
             ) : (
-              (account.email ?? account.name ?? "Google Account")
+              name || "Google Account"
             )}
           </span>
         </div>

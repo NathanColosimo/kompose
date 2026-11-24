@@ -87,12 +87,6 @@ const storage = createSecureStoreAdapter();
 
 const stateConfig: StateConfig = {
   authClient: {
-    accountInfo: async (accountId: string) => {
-      const result = await authClient.accountInfo({
-        query: { accountId },
-      });
-      return result?.data?.user ?? null;
-    },
     listAccounts: () =>
       authClient.listAccounts({ fetchOptions: { throw: true } }),
     unlinkAccount: async ({ accountId }: { accountId: string }) => {

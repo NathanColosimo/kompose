@@ -2,7 +2,6 @@ import type { AppRouterClient } from "@kompose/api/routers/index";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import { TASKS_QUERY_KEY } from "@kompose/state/atoms/tasks";
 import {
-  GOOGLE_ACCOUNT_INFO_QUERY_KEY,
   GOOGLE_CALENDARS_QUERY_KEY,
   GOOGLE_COLORS_QUERY_KEY,
   GOOGLE_EVENTS_QUERY_KEY,
@@ -77,7 +76,6 @@ export function invalidateAuthenticatedQueries() {
   queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: PLUGIN_CONNECTIONS_QUERY_KEY });
-  queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.invalidateQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });
@@ -87,7 +85,6 @@ export function clearAuthenticatedQueries() {
   queryClient.removeQueries({ queryKey: TASKS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: PLUGIN_CONNECTIONS_QUERY_KEY });
-  queryClient.removeQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_COLORS_QUERY_KEY });
   queryClient.removeQueries({ queryKey: GOOGLE_EVENTS_QUERY_KEY });

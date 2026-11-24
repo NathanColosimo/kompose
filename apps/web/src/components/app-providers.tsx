@@ -69,12 +69,6 @@ export default function AppProviders({
   const storage = useMemo(() => createWebStorageAdapter(), []);
   const stateAuthClient = useMemo(
     () => ({
-      accountInfo: async (accountId: string) => {
-        const result = await authClient.accountInfo({
-          query: { accountId },
-        });
-        return result?.data?.user ?? null;
-      },
       listAccounts: () =>
         authClient.listAccounts({ fetchOptions: { throw: true } }),
       unlinkAccount: async ({ accountId }: { accountId: string }) => {
