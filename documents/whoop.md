@@ -146,4 +146,4 @@ Events spanning midnight (Google events, WHOOP sleep/workouts) are split into pe
 
 ## Settings Page
 
-WHOOP gets the same Settings section as every plugin (see `documents/plugins.md`): name and email from Better Auth's `accountInfo`, and Unlink. The plugin allows one WHOOP account, so Link account is hidden once one is linked.
+WHOOP gets the same Settings section as every plugin (see `documents/plugins.md`): name and email stored on its connection, and Unlink. The plugin allows one WHOOP account, so Link account is hidden once one is linked.
