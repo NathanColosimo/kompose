@@ -35,10 +35,11 @@ export function useCalendarTextScale(): number {
 
 /**
  * A block is drawn at least this many minutes tall (points, at 60pt an
- * hour), so a short one stays readable and tappable. The collision layout
+ * hour), the same as web: one slot, so back-to-back 15-minute blocks sit
+ * side by side in time rather than overlapping. The collision layout
  * measures what covers a block against this drawn length too.
  */
-export const MIN_DRAWN_MINUTES = 24;
+export const MIN_DRAWN_MINUTES = 15;
 
 /**
  * A block's drawn minutes, and the part of them a later block leaves in
@@ -184,15 +185,15 @@ interface BlockTextProps {
   sliver?: boolean;
   start: Temporal.ZonedDateTime;
   struck?: boolean;
-  /** Fit the title on one 12pt line, for a thin strip left above a cover. */
+  /** Fit the title on one 12pt line, for a thin block or strip. */
   tight?: boolean;
   title: string;
 }
 
 /**
- * A covered block showing fewer minutes than this has a strip too thin for
- * a 14pt line plus padding (at 60pt an hour, 15 minutes is 15pt), so its
- * title drops the padding and sits on a 12pt line.
+ * A block, or the strip of one left above a cover, showing fewer minutes
+ * than this is too thin for a 14pt line plus padding (at 60pt an hour, 15
+ * minutes is 15pt), so its title drops the padding and sits on a 12pt line.
  */
 const TIGHT_MINUTES = 20;
 
@@ -218,15 +219,15 @@ function textRoom(
     return;
   }
   if (textMinutes < minutes) {
-    const pad = isTight(textMinutes, minutes) ? 0 : COVERED_PAD_PT;
+    const pad = isTight(textMinutes) ? 0 : COVERED_PAD_PT;
     return textMinutes - BLOCK_FRAME_PT - pad;
   }
   return height - 2 * BLOCK_FRAME_PT;
 }
 
 /** Whether a block's visible strip needs the tight title line. */
-function isTight(textMinutes: number, minutes: number) {
-  return textMinutes < minutes && textMinutes < TIGHT_MINUTES;
+function isTight(textMinutes: number) {
+  return textMinutes < TIGHT_MINUTES;
 }
 
 /** Narrower than this, a block shows its title in place of the time. */
@@ -635,7 +636,7 @@ export function EventBlock({
           covered={textMinutes < drawn}
           narrow={placement.width < NARROW_BLOCK_PT}
           surface={surface}
-          tight={isTight(textMinutes, drawn)}
+          tight={isTight(textMinutes)}
         >
           <BlockText
             clockTime={placement.width < CLOCK_TIME_BLOCK_PT}
@@ -646,7 +647,7 @@ export function EventBlock({
             room={textRoom(textMinutes, drawn, placement.height)}
             sliver={placement.width < SLIVER_BLOCK_PT}
             start={start}
-            tight={isTight(textMinutes, drawn)}
+            tight={isTight(textMinutes)}
             title={title}
           />
         </Surface>
@@ -683,6 +684,46 @@ interface TaskBlockProps extends BlockPosition, BlockTextProps {
   onToggleDone: () => void;
 }
 
+/** A task's done checkbox, smaller on a block too thin for the usual one. */
+function TaskCheckbox({
+  compact,
+  done,
+  onToggle,
+  tight,
+  title,
+}: {
+  compact: boolean;
+  done: boolean;
+  onToggle: () => void;
+  tight: boolean;
+  title: string;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={title}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: done }}
+      hitSlop={8}
+      onPress={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <View
+        className={`items-center justify-center rounded-[3px] border ${tight ? "size-2.5" : "size-3"} ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
+      >
+        {done ? (
+          <Icon
+            as={Check}
+            className="text-primary-foreground"
+            size={tight ? 7 : 9}
+          />
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
 /** A scheduled task: a card with a checkbox, tinted like an event when its tag has a color. */
 export function TaskBlock({
   color,
@@ -704,7 +745,7 @@ export function TaskBlock({
   );
   const compact = textMinutes < COMPACT_MINUTES;
   const isCovered = textMinutes < drawn;
-  const tight = isTight(textMinutes, drawn);
+  const tight = isTight(textMinutes);
   const placement = positionStyle(position);
   const surface = useEventSurface(color);
   const narrow = placement.width < NARROW_BLOCK_PT;
@@ -787,28 +828,13 @@ export function TaskBlock({
           {/* Narrow blocks give the checkbox's room to the title; done is
               in the editor. */}
           {narrow ? null : (
-            <Pressable
-              accessibilityLabel={title}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: done }}
-              hitSlop={8}
-              onPress={(event) => {
-                event.stopPropagation();
-                onToggleDone();
-              }}
-            >
-              <View
-                className={`size-3 items-center justify-center rounded-[3px] border ${compact ? "" : "mt-px"} ${done ? "border-primary bg-primary" : "border-foreground/60"}`}
-              >
-                {done ? (
-                  <Icon
-                    as={Check}
-                    className="text-primary-foreground"
-                    size={9}
-                  />
-                ) : null}
-              </View>
-            </Pressable>
+            <TaskCheckbox
+              compact={compact}
+              done={done}
+              onToggle={onToggleDone}
+              tight={tight}
+              title={title}
+            />
           )}
           <Pressable
             accessibilityHint="Opens the task"
