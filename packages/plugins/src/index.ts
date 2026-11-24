@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Every plugin's ID, declared once. Use `PluginId` wherever code names a
  * plugin, and `pluginIdSchema` to check a string that comes from outside.
- * The `plugin_id` enum in the database is built from this list.
+ * `connection.plugin_id` in the database is typed from this list.
  */
 export const pluginIds = ["google-calendar", "whoop"] as const;
 export const pluginIdSchema = z.enum(pluginIds);
@@ -11,7 +11,7 @@ export type PluginId = z.infer<typeof pluginIdSchema>;
 
 /**
  * Every Better Auth provider whose accounts link a plugin, declared once.
- * The `plugin_provider` enum in the database is built from this list.
+ * `webhook_subscription.provider` in the database is typed from this list.
  */
 export const pluginProviders = ["google", "whoop"] as const;
 export const pluginProviderSchema = z.enum(pluginProviders);
