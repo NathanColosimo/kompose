@@ -7,7 +7,7 @@ Server-side metadata extraction for URLs attached to tasks. Detects the content 
 1. User pastes one or more URLs into the command bar input, web task edit popover, or mobile task editor sheet.
 2. The command bar calls `tasks.parseLink` through `useLinkMetadata`, one in-memory TanStack query per URL. The task editors call it from the add-link handler and await each call's own promise.
 3. `LinkParserService` detects the provider from URL patterns and dispatches to the matching provider parser.
-4. Provider parser fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object.
+4. Provider parser fetches metadata (via API or scraping), validates the response with Zod, and returns a `LinkMeta` object. Parsers fetch through `fetchJson(request, schema)` and `fetchText(request)` in `fetch.ts`, which turn a failed request, a non-2xx status, unreadable JSON, or a schema mismatch into a `LinkParseError`.
 5. Client auto-fills task fields from the **first** link's metadata:
    - **Title** — from `meta.title` (only if the task title is empty)
    - **Duration** — from `meta.durationSeconds` (only if no explicit duration was set)
@@ -94,10 +94,14 @@ Links are deduplicated by URL at multiple layers:
 
 ## SSRF protection
 
-The `LinkParserService` validates target URLs before fetching:
+Links come from users, so every fetch made while parsing one, by a provider parser or the Open Graph fallback, goes through `send` in `packages/api/src/services/link-parser/fetch.ts`. It uses Effect's `HttpClient` (`effect/http`) over Node's `fetch`:
 
-- Only `http://` and `https://` schemes are allowed.
-- Hostnames are resolved via DNS; any address in private/reserved ranges (RFC 1918, loopback, link-local, IPv6 private) is rejected.
+- Only `http://` and `https://` URLs whose host passes Better Auth's `isPublicRoutableHost` (`@better-auth/core/utils/host`): no private, loopback, link-local, shared, reserved or multicast IPv4 or IPv6 literal, including IPv6 forms that embed an IPv4 address (mapped, NAT64, 6to4, Teredo), and no `localhost` or cloud metadata names.
+- `fetch` runs with `redirect: "manual"`, and `HttpClient.followRedirects` follows up to 5. The URL check sits inside it (`HttpClient.transform`), so each `Location` gets the same check before it's fetched. When a redirect changes origin, Effect drops `Authorization` and `Cookie`.
+- Trace headers (`traceparent`, `b3`) are turned off, so they don't reach other people's servers. Each hop still gets a client span. A secret in a query string goes in `urlParams` as `Redacted` (the YouTube key), which keeps it out of spans and error messages.
+- Hostnames are resolved by `publicOnlyLookup`, the `lookup` of the undici `Agent` the fetch uses. It runs when the connection is made, with `dns.lookup(host, { all: true })` (A, AAAA and `/etc/hosts`), and fails unless every address is public. The check is on the addresses the socket connects to, so DNS rebinding between a check and the connect isn't possible. Node only; Bun's fetch ignores the dispatcher, but the app runs on Node.
+
+`fetch.test.ts` covers the lookup, the redirect checks, the dropped `Authorization` and the missing trace headers (with a stubbed `fetch`).
 
 ## Shared utilities
 
@@ -144,6 +148,7 @@ The `LinkParserService` validates target URLs before fetching:
 | `packages/db/src/schema/task.ts` | `links` JSONB array column definition, task Zod schemas |
 | `packages/api/src/services/link-parser/service.ts` | `LinkParserService` Effect service |
 | `packages/api/src/services/link-parser/types.ts` | `LinkProvider` type alias, `LinkParseError` |
+| `packages/api/src/services/link-parser/fetch.ts` | SSRF-checked `fetchJson` / `fetchText` |
 | `packages/api/src/services/link-parser/providers/detect.ts` | URL pattern matching, `SUBSTACK_CUSTOM_DOMAINS` |
 | `packages/api/src/services/link-parser/providers/spotify.ts` | Spotify client credentials + metadata fetch |
 | `packages/api/src/services/link-parser/providers/youtube.ts` | YouTube Data API v3 metadata fetch |

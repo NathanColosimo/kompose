@@ -1,7 +1,9 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
 import { env } from "@kompose/env";
-import { Effect } from "effect";
+import { Effect, Redacted } from "effect";
+import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
+import { fetchJson } from "../fetch";
 import { LinkParseError, roundToNearest15Min } from "../types";
 import { parseYoutubeVideoId } from "./detect";
 
@@ -58,44 +60,26 @@ export const parseYoutubeLink = Effect.fn("YouTube.parseLink")(function* (
     });
   }
 
-  const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=contentDetails,snippet&key=${apiKey}`;
+  const data = yield* fetchJson(
+    {
+      label: "YouTube API",
+      link: url,
+      request: HttpClientRequest.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        {
+          urlParams: {
+            id: videoId,
+            // Redacted, so the key stays out of spans and error messages.
+            key: Redacted.make(apiKey),
+            part: "contentDetails,snippet",
+          },
+        }
+      ),
+    },
+    youtubeVideosResponse
+  );
 
-  const response = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to fetch YouTube metadata",
-        url,
-      }),
-    try: () => fetch(apiUrl),
-  });
-
-  if (!response.ok) {
-    return yield* new LinkParseError({
-      message: `YouTube API returned ${response.status}`,
-      url,
-    });
-  }
-
-  const json = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to parse YouTube response",
-        url,
-      }),
-    try: () => response.json(),
-  });
-
-  const data = youtubeVideosResponse.safeParse(json);
-  if (!data.success) {
-    return yield* new LinkParseError({
-      message: `Invalid YouTube API response: ${data.error.message}`,
-      url,
-    });
-  }
-
-  const item = data.data.items[0];
+  const item = data.items[0];
   if (!item) {
     return yield* new LinkParseError({
       message: "YouTube video not found",

@@ -1,6 +1,8 @@
 import type { LinkMeta } from "@kompose/db/schema/link";
 import { Effect, Result } from "effect";
+import { HttpClientRequest } from "effect/http";
 import { z } from "zod";
+import { fetchJson, fetchText } from "../fetch";
 import { LinkParseError, roundToNearest15Min } from "../types";
 
 // ============================================================================
@@ -122,42 +124,16 @@ const fetchPostById = Effect.fn("Substack.fetchPostById")(function* (
   url: string,
   postId: string
 ) {
-  const response = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to fetch Substack post by ID",
-        url,
-      }),
-    try: () => fetch(`https://substack.com/api/v1/posts/by-id/${postId}`),
-  });
-
-  if (!response.ok) {
-    return yield* new LinkParseError({
-      message: `Substack post-by-id API returned ${response.status}`,
-      url,
-    });
-  }
-
-  const json = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to parse Substack post-by-id response",
-        url,
-      }),
-    try: () => response.json(),
-  });
-
-  const data = postByIdResponseSchema.safeParse(json);
-  if (!data.success) {
-    return yield* new LinkParseError({
-      message: `Invalid Substack post-by-id response: ${data.error.message}`,
-      url,
-    });
-  }
-
-  return data.data;
+  return yield* fetchJson(
+    {
+      label: "Substack post-by-id API",
+      link: url,
+      request: HttpClientRequest.get(
+        `https://substack.com/api/v1/posts/by-id/${postId}`
+      ),
+    },
+    postByIdResponseSchema
+  );
 });
 
 const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
@@ -165,44 +141,18 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
   baseUrl: string,
   slug: string
 ) {
-  const apiUrl = `${baseUrl}/api/v1/archive?sort=top&search=${slug}&offset=0&limit=20`;
-
-  const response = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to fetch Substack archive API",
-        url,
+  const posts = yield* fetchJson(
+    {
+      label: "Substack archive API",
+      link: url,
+      request: HttpClientRequest.get(`${baseUrl}/api/v1/archive`, {
+        urlParams: { limit: 20, offset: 0, search: slug, sort: "top" },
       }),
-    try: () => fetch(apiUrl),
-  });
+    },
+    archiveResponseSchema
+  );
 
-  if (!response.ok) {
-    return yield* new LinkParseError({
-      message: `Substack archive API returned ${response.status}`,
-      url,
-    });
-  }
-
-  const json = yield* Effect.tryPromise({
-    catch: (cause) =>
-      new LinkParseError({
-        cause,
-        message: "Failed to parse Substack archive response",
-        url,
-      }),
-    try: () => response.json(),
-  });
-
-  const data = archiveResponseSchema.safeParse(json);
-  if (!data.success) {
-    return yield* new LinkParseError({
-      message: `Invalid Substack archive response: ${data.error.message}`,
-      url,
-    });
-  }
-
-  const post = data.data.find((p) => p.slug === slug);
+  const post = posts.find((p) => p.slug === slug);
   if (!post) {
     return yield* new LinkParseError({
       message: `Post with slug "${slug}" not found in archive results`,
@@ -215,31 +165,10 @@ const fetchPostBySlug = Effect.fn("Substack.fetchPostBySlug")(function* (
 
 const fetchPostIdFromHtml = Effect.fn("Substack.fetchPostIdFromHtml")(
   function* (url: string) {
-    const response = yield* Effect.tryPromise({
-      catch: (cause) =>
-        new LinkParseError({
-          cause,
-          message: "Failed to fetch Substack post HTML",
-          url,
-        }),
-      try: () => fetch(url),
-    });
-
-    if (!response.ok) {
-      return yield* new LinkParseError({
-        message: `Substack post HTML returned ${response.status}`,
-        url,
-      });
-    }
-
-    const html = yield* Effect.tryPromise({
-      catch: (cause) =>
-        new LinkParseError({
-          cause,
-          message: "Failed to read Substack post HTML",
-          url,
-        }),
-      try: () => response.text(),
+    const html = yield* fetchText({
+      label: "Substack post HTML",
+      link: url,
+      request: HttpClientRequest.get(url),
     });
 
     const postId = extractHtmlPostId(html);
