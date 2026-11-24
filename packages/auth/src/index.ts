@@ -11,6 +11,7 @@ import {
   ELECTRON_AUTH_SCHEME,
 } from "@kompose/desktop";
 import { env } from "@kompose/env";
+import type { PluginProvider } from "@kompose/plugins";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
@@ -118,7 +119,7 @@ export const auth = betterAuth({
                 .trim(),
             };
           },
-          providerId: "whoop",
+          providerId: "whoop" satisfies PluginProvider,
           scopes: [
             "read:profile",
             "read:sleep",

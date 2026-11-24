@@ -1,4 +1,5 @@
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
+import { getPluginForProvider } from "@kompose/plugins";
 import type { Account } from "better-auth";
 import { atom } from "jotai";
 import { atomWithQuery } from "jotai-tanstack-query";
@@ -12,7 +13,7 @@ const EMPTY_SUMMARIES_BY_DAY = new Map<string, WhoopDaySummary>();
 export const whoopAccountDataAtom = atom<Account | null>(
   (get) =>
     get(linkedAccountsDataAtom).find(
-      (account) => account.providerId === "whoop"
+      (account) => getPluginForProvider(account.providerId)?.id === "whoop"
     ) ?? null
 );
 

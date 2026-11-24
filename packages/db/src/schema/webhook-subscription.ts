@@ -1,3 +1,4 @@
+import { pluginProviders } from "@kompose/plugins";
 import {
   boolean,
   index,
@@ -15,8 +16,6 @@ import {
 } from "drizzle-orm/zod";
 import z from "zod";
 import { account, user } from "./auth";
-
-export const webhookSubscriptionProviderSchema = z.enum(["google"]);
 
 const googleCalendarEventsWebhookConfigBaseSchema = z
   .object({
@@ -58,9 +57,6 @@ export const webhookSubscriptionConfigSchema = z.discriminatedUnion("type", [
   googleCalendarListWebhookConfigSchema,
 ]);
 
-export type WebhookSubscriptionProvider = z.infer<
-  typeof webhookSubscriptionProviderSchema
->;
 export type WebhookSubscriptionConfigBase = z.infer<
   typeof webhookSubscriptionConfigBaseSchema
 >;
@@ -88,7 +84,7 @@ export const webhookSubscriptionTable = pgTable(
     expiresAt: timestamp("expires_at", { mode: "string" }),
     id: uuid("id").notNull().primaryKey(),
     lastNotifiedAt: timestamp("last_notified_at", { mode: "string" }),
-    provider: text("provider").$type<WebhookSubscriptionProvider>().notNull(),
+    provider: text("provider", { enum: pluginProviders }).notNull(),
     providerAccountId: text("provider_account_id").notNull(),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()
@@ -121,21 +117,18 @@ export const webhookSubscriptionSelectSchema = createSelectSchema(
   webhookSubscriptionTable
 ).safeExtend({
   config: webhookSubscriptionConfigSchema,
-  provider: webhookSubscriptionProviderSchema,
 });
 
 export const webhookSubscriptionInsertSchema = createInsertSchema(
   webhookSubscriptionTable
 ).safeExtend({
   config: webhookSubscriptionConfigSchema,
-  provider: webhookSubscriptionProviderSchema,
 });
 
 export const webhookSubscriptionUpdateSchema = createUpdateSchema(
   webhookSubscriptionTable
 ).safeExtend({
   config: webhookSubscriptionConfigSchema.optional(),
-  provider: webhookSubscriptionProviderSchema.optional(),
 });
 
 export type WebhookSubscriptionSelect = z.infer<

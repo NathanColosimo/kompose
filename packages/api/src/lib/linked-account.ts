@@ -1,14 +1,16 @@
 import { auth } from "@kompose/auth";
 import { Database } from "@kompose/db";
 import { account } from "@kompose/db/schema/auth";
+import { type PluginProvider, pluginProviderSchema } from "@kompose/plugins";
 import { APIError } from "better-auth/api";
 import { and, eq } from "drizzle-orm";
 import { Effect, Schema } from "effect";
 import type { PublicError } from "../errors";
 
-const PROVIDER_NAMES = { google: "Google", whoop: "WHOOP" } as const;
-
-type LinkedProvider = keyof typeof PROVIDER_NAMES;
+const PROVIDER_NAMES: Record<PluginProvider, string> = {
+  google: "Google",
+  whoop: "WHOOP",
+};
 
 /**
  * The user's provider account isn't linked, or Better Auth couldn't refresh
@@ -19,7 +21,7 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
   {
     accountId: Schema.String,
     cause: Schema.Unknown,
-    providerId: Schema.Literals(["google", "whoop"]),
+    providerId: Schema.Literals(pluginProviderSchema.options),
   }
 ) {
   get publicError(): PublicError {
@@ -40,7 +42,7 @@ export class LinkedAccountError extends Schema.TaggedError<LinkedAccountError>()
 export const getLinkedAccount = Effect.fn("getLinkedAccount")(
   function* (params: {
     accountId: string;
-    providerId: LinkedProvider;
+    providerId: PluginProvider;
     userId: string;
   }) {
     yield* Effect.annotateCurrentSpan("userId", params.userId);

@@ -9,6 +9,9 @@
     "lint": "biome check .",
     "type-check": "tsc --noEmit"
   },
+  "dependencies": {
+    "zod": "catalog:"
+  },
   "devDependencies": {
     "@kompose/config": "workspace:*",
     "@types/node": "catalog:"

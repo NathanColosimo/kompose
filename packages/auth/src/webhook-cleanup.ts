@@ -1,6 +1,7 @@
 import { db } from "@kompose/db/legacy";
 import { webhookSubscriptionTable } from "@kompose/db/schema/webhook-subscription";
 import { makeGoogleCalendarService } from "@kompose/google-cal/client";
+import { getPluginForProvider } from "@kompose/plugins";
 import type { Account } from "better-auth";
 import { eq } from "drizzle-orm";
 import { Effect } from "effect";
@@ -10,7 +11,7 @@ export async function stopAccountWatches(
   account: Account,
   getAccessToken: () => Promise<string>
 ): Promise<void> {
-  if (account.providerId !== "google") {
+  if (getPluginForProvider(account.providerId)?.id !== "google-calendar") {
     return;
   }
   const subscriptions = await db

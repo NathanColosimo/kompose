@@ -1,3 +1,22 @@
+import { z } from "zod";
+
+/**
+ * Every plugin's ID, declared once. Use `PluginId` wherever code names a
+ * plugin, and `pluginIdSchema` to check a string that comes from outside.
+ * The `plugin_id` enum in the database is built from this list.
+ */
+export const pluginIds = ["google-calendar", "whoop"] as const;
+export const pluginIdSchema = z.enum(pluginIds);
+export type PluginId = z.infer<typeof pluginIdSchema>;
+
+/**
+ * Every Better Auth provider whose accounts link a plugin, declared once.
+ * The `plugin_provider` enum in the database is built from this list.
+ */
+export const pluginProviders = ["google", "whoop"] as const;
+export const pluginProviderSchema = z.enum(pluginProviders);
+export type PluginProvider = z.infer<typeof pluginProviderSchema>;
+
 /**
  * An outside service a user links an account to. See documents/plugins.md.
  */
@@ -5,16 +24,16 @@ export interface Plugin {
   /** One sentence for Settings. */
   description: string;
   /** Stored in `connection.plugin_id`, and the last part of the webhook URL. */
-  id: string;
+  id: PluginId;
   /** One user may link several accounts, or only one (WHOOP). */
   multipleAccounts: boolean;
   name: string;
   /** The Better Auth provider whose accounts link this plugin. */
-  provider: string;
+  provider: PluginProvider;
 }
 
 /** Every plugin, in the order Settings lists them. */
-export const plugins = [
+export const plugins: readonly Plugin[] = [
   {
     description: "Events from these accounts show on your calendar.",
     id: "google-calendar",
@@ -30,7 +49,7 @@ export const plugins = [
     name: "WHOOP",
     provider: "whoop",
   },
-] as const satisfies readonly Plugin[];
+];
 
 /** The plugin an account from this Better Auth provider links. */
 export function getPluginForProvider(providerId: string): Plugin | undefined {

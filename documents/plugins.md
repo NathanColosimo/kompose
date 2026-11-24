@@ -34,9 +34,20 @@ A service can be a plugin and also be in one of these lists. When a preview need
 
 ## The list
 
-`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), and `multipleAccounts`. It has no dependencies, so web, native, and the server all import it.
+`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), and `multipleAccounts`. It depends only on zod, so web, native, and the server all import it.
 
-The `id` is stored in `connection.plugin_id` and is the last part of the plugin's webhook URL.
+The `id` is stored in `connection.plugin_id` and is the last part of the plugin's webhook URL. Every ID is declared once, in `pluginIds` at the top of that file, and every provider once, in `pluginProviders`. Nothing else spells them out as plain strings:
+
+| Where | How it is held to the lists |
+| --- | --- |
+| TypeScript, on the server and in both apps | The `PluginId` and `PluginProvider` types. A misspelt ID does not compile |
+| Writes to the database | `connection.plugin_id` and `webhook_subscription.provider` are text columns that Drizzle types from the lists (`text("plugin_id", { enum: pluginIds })`), so a query that writes or filters on any other value does not compile |
+| Strings from outside, such as the webhook URL | `pluginIdSchema` and `pluginProviderSchema` |
+| The API | The connection contract is derived from the table, so `pluginId` is a `PluginId` in the apps too |
+
+The columns stay text on purpose: a new plugin needs no migration. Postgres itself accepts any string, so SQL written by hand is not checked.
+
+Better Auth types an account's `providerId` as a plain string. To ask whether an account belongs to a plugin, use `getPluginForProvider(account.providerId)?.id === "google-calendar"`, which the compiler checks.
 
 Every plugin links by OAuth today. [Other ways to connect](#later-connecting-without-oauth) are planned, not built.
 
@@ -71,7 +82,7 @@ A handler is one function that gets the raw `Request`, checks it, and returns th
 
 ## Adding a plugin
 
-1. Add its entry to `packages/plugins/src/index.ts`.
+1. Add its ID to `pluginIds`, its provider to `pluginProviders`, and its entry to `plugins`, all in `packages/plugins/src/index.ts`.
 2. Add its OAuth provider to Better Auth in `packages/auth/src/index.ts`.
 3. Write its router, state, and components like any other feature.
 

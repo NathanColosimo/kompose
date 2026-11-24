@@ -2,15 +2,13 @@ import { auth } from "@kompose/auth";
 import { Database, DatabaseLive } from "@kompose/db";
 import { account } from "@kompose/db/schema/auth";
 import type { WebhookSubscriptionSelect } from "@kompose/db/schema/webhook-subscription";
-import {
-  type WebhookSubscriptionProvider,
-  webhookSubscriptionTable,
-} from "@kompose/db/schema/webhook-subscription";
+import { webhookSubscriptionTable } from "@kompose/db/schema/webhook-subscription";
 import { env } from "@kompose/env";
 import {
   GoogleCalendar,
   makeGoogleCalendarService,
 } from "@kompose/google-cal/client";
+import type { PluginProvider } from "@kompose/plugins";
 import type { Account } from "better-auth";
 import { and, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
@@ -97,7 +95,7 @@ const getAccountsByProvider = (params: {
   });
 
 const listSubscriptionsForUser = (params: {
-  provider?: WebhookSubscriptionProvider;
+  provider?: PluginProvider;
   userId: string;
 }) =>
   Effect.gen(function* () {
