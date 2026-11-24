@@ -20,6 +20,10 @@
   - Create / edit / delete **Google Calendar** timed events.
   - Create scheduled tasks directly from the calendar tab.
   - Tap-to-edit scheduled tasks (basic edit/delete from calendar).
+  - Hold a scheduled task, then drag it to a new time or another visible
+    day. It snaps to 15 minutes and shows the new time while it moves;
+    a recurring task asks "Only this occurrence" or "This and following"
+    on drop. The grid stops scrolling while a task is held.
 
 - **Settings tab**
   - Theme toggle (Light / Dark / System).

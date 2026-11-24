@@ -1,4 +1,7 @@
-import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import type {
+  TaskSelectDecoded,
+  UpdateScope,
+} from "@kompose/api/routers/task/contract";
 import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import type {
   Event as GoogleEvent,
@@ -76,7 +79,6 @@ import {
   todayPlainDate,
 } from "@kompose/state/temporal-utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import * as Haptics from "expo-haptics";
 import { Stack } from "expo-router/stack";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -88,14 +90,11 @@ import {
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActionSheetIOS,
   Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Platform,
   Pressable,
   RefreshControl,
-  Alert as RNAlert,
   ScrollView,
   type ScrollViewInstance,
   useWindowDimensions,
@@ -123,12 +122,16 @@ import { isEditEventDraft } from "@/components/calendar/calendar-editor-types";
 import { EventEditorSheet } from "@/components/calendar/calendar-event-editor-sheet";
 import { CalendarPickerModal } from "@/components/calendar/calendar-picker-modal";
 import { draftTimes } from "@/components/calendar/event-times";
+import { moveTime, type TaskMove } from "@/components/calendar/task-drag";
 import { tagIconMap } from "@/components/tags/tag-icon-map";
 import {
   type TaskDraft,
   TaskEditorSheet,
 } from "@/components/tasks/task-editor-sheet";
-import { TaskScopeDialogs } from "@/components/tasks/task-scope-dialogs";
+import {
+  TaskSaveScopeDialog,
+  TaskScopeDialogs,
+} from "@/components/tasks/task-scope-dialogs";
 import { AlertDialog } from "@/components/ui/alert-dialog";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { Button } from "@/components/ui/button";
@@ -926,12 +929,12 @@ export default function CalendarTab() {
   const gutterMonths =
     firstMonth === lastMonth ? firstMonth : `${firstMonth}–${lastMonth}`;
   const showWhoopRow = useShowWhoopRow(visibleDays);
-  // Each day's block area, less the time gutter, borders, and create strip.
+  // Each day's column beside the time gutter, and its block area, less the
+  // border and create strip.
   const { width: windowWidth } = useWindowDimensions();
-  const blockAreaWidth =
-    (windowWidth - TIME_GUTTER_WIDTH_PX) / Math.max(visibleDays.length, 1) -
-    1 -
-    createGutterPt(visibleDays.length);
+  const dayWidth =
+    (windowWidth - TIME_GUTTER_WIDTH_PX) / Math.max(visibleDays.length, 1);
+  const blockAreaWidth = dayWidth - 1 - createGutterPt(visibleDays.length);
   // Each workout's part on every visible day it touches, so an overnight
   // workout shows on both days with its real times.
   const workoutsByDay = useMemo(
@@ -1295,64 +1298,43 @@ export default function CalendarTab() {
     [updateTask]
   );
 
-  // A long press on a block offers that block's actions and creating at the
-  // pressed time, so the gesture never does something you can't see coming.
-  const showBlockMenu = useCallback(
-    ({
-      day,
-      done,
-      offsetY,
-      onOpen,
-      onToggleDone,
-      title,
-    }: {
-      day: Temporal.PlainDate;
-      done?: boolean;
-      offsetY: number;
-      onOpen?: () => void;
-      onToggleDone?: () => void;
-      title: string;
-    }) => {
-      Haptics.selectionAsync().catch(() => undefined);
-      const minutes = nearestSlotMinutes((offsetY / PIXELS_PER_HOUR) * 60);
-      const time = Temporal.PlainTime.from({
-        hour: Math.floor(minutes / 60),
-        minute: minutes % 60,
-      }).toLocaleString(undefined, { hour: "numeric", minute: "2-digit" });
-      const actions: { label: string; run: () => void }[] = [];
-      if (onOpen) {
-        actions.push({ label: "Open", run: onOpen });
-      }
-      if (onToggleDone) {
-        actions.push({
-          label: done ? "Mark as not done" : "Mark as done",
-          run: onToggleDone,
-        });
-      }
-      actions.push({
-        label: `New event or task at ${time}`,
-        run: () => openCreateChooserAt(day, minutes),
-      });
-      if (Platform.OS === "ios") {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            cancelButtonIndex: actions.length,
-            options: [...actions.map((action) => action.label), "Cancel"],
-            title,
-          },
-          (index) => actions[index]?.run()
-        );
+  // The day a task is being dragged from, and where the grid was scrolled;
+  // the grid holds still meanwhile.
+  const [taskDrag, setTaskDrag] = useState<{
+    day: string;
+    scrollTop: number;
+  } | null>(null);
+  // A recurring task's drop waits for its scope, as the editor's save does.
+  const [pendingTaskMove, setPendingTaskMove] = useState<
+    Parameters<typeof updateTask.mutate>[0] | null
+  >(null);
+  const [taskMoveScope, setTaskMoveScope] = useState<UpdateScope>("this");
+
+  // Only the start changes, so a "This and following" move keeps each
+  // later occurrence's own length.
+  const moveTask = useCallback(
+    (
+      task: TaskSelectDecoded,
+      start: Temporal.ZonedDateTime,
+      move: TaskMove
+    ) => {
+      const target = moveTime(start, move);
+      const update = {
+        id: task.id,
+        scope: "this" as const,
+        task: {
+          startDate: target.toPlainDate(),
+          startTime: target.toPlainTime(),
+        },
+      };
+      if (task.seriesMasterId) {
+        setTaskMoveScope("this");
+        setPendingTaskMove(update);
         return;
       }
-      RNAlert.alert(title, undefined, [
-        ...actions.map((action) => ({
-          onPress: action.run,
-          text: action.label,
-        })),
-        { style: "cancel" as const, text: "Cancel" },
-      ]);
+      updateTask.mutate(update);
     },
-    [openCreateChooserAt]
+    [updateTask]
   );
 
   const closeCreateChooser = useCallback(() => {
@@ -1963,6 +1945,7 @@ export default function CalendarTab() {
                 tintColor={isDarkColorScheme ? "#fafafa" : "#0a0a0a"}
               />
             }
+            scrollEnabled={taskDrag === null}
             scrollEventThrottle={16}
             // iOS scrolls to the top on taps in the navigation bar, which
             // here would jump the day to midnight whenever a header control
@@ -2002,7 +1985,7 @@ export default function CalendarTab() {
 
               {/* Day columns */}
               <View className="flex-1 flex-row">
-                {visibleDays.map((day) => {
+                {visibleDays.map((day, dayIndex) => {
                   const dayKey = day.toString();
                   const dayEvents = timedEventsByDay.get(dayKey) ?? [];
                   const dayTasks = taskSegmentsByDay.get(dayKey) ?? [];
@@ -2021,7 +2004,11 @@ export default function CalendarTab() {
                         const minutes = (y / PIXELS_PER_HOUR) * 60;
                         openCreateChooserAt(day, minutes);
                       }}
-                      style={{ height: totalHeight }}
+                      // A task dragged out of its day stays over the others.
+                      style={{
+                        height: totalHeight,
+                        zIndex: taskDrag?.day === dayKey ? 1 : 0,
+                      }}
                     >
                       {/* Hour lines */}
                       {HOURS.map((hour) => (
@@ -2075,15 +2062,6 @@ export default function CalendarTab() {
                               height={adjustedHeight}
                               item={evt}
                               key={`${eventId}-${evt.segmentStart.toString()}`}
-                              onLongPressAt={(offsetY) =>
-                                showBlockMenu({
-                                  day,
-                                  offsetY,
-                                  onOpen: () => openEditTimedEvent(evt),
-                                  title:
-                                    evt.source.event.summary || "(No title)",
-                                })
-                              }
                               onPress={() => openEditTimedEvent(evt)}
                               stackDepth={layout?.stackDepth}
                               top={adjustedTop}
@@ -2127,14 +2105,6 @@ export default function CalendarTab() {
                               height={blockHeight(minutes)}
                               key={workout.id}
                               minutes={minutes}
-                              onLongPressAt={(offsetY) =>
-                                showBlockMenu({
-                                  day,
-                                  offsetY,
-                                  onOpen: () => setOpenWorkout(workout),
-                                  title: workout.sportName || "Workout",
-                                })
-                              }
                               onPress={() => setOpenWorkout(workout)}
                               stackDepth={layout?.stackDepth}
                               start={workout.start}
@@ -2176,20 +2146,30 @@ export default function CalendarTab() {
                               description={task.description}
                               details={taskDetails(task)}
                               done={task.status === "done"}
+                              drag={{
+                                dayWidth,
+                                daysAfter: visibleDays.length - 1 - dayIndex,
+                                daysBefore: dayIndex,
+                                onEnd: (move) => {
+                                  setTaskDrag(null);
+                                  if (move) {
+                                    moveTask(task, start, move);
+                                  }
+                                },
+                                onStart: () =>
+                                  setTaskDrag({
+                                    day: dayKey,
+                                    scrollTop: scrollOffsetRef.current,
+                                  }),
+                                scrollTop: taskDrag?.scrollTop ?? 0,
+                                startMinutes: minutesFromMidnight(
+                                  segment.segmentStart
+                                ),
+                              }}
                               end={end}
                               height={adjustedHeight}
                               key={`${task.id}-${segment.segmentStart.toString()}`}
                               minutes={durationMinutes}
-                              onLongPressAt={(offsetY) =>
-                                showBlockMenu({
-                                  day,
-                                  done: task.status === "done",
-                                  offsetY,
-                                  onOpen: () => taskFlow.openEdit(task),
-                                  onToggleDone: () => toggleTaskDone(task),
-                                  title: task.title,
-                                })
-                              }
                               onPress={() => taskFlow.openEdit(task)}
                               onToggleDone={() => toggleTaskDone(task)}
                               stackDepth={layout?.stackDepth}
@@ -2364,6 +2344,19 @@ export default function CalendarTab() {
         overlay={<TaskScopeDialogs flow={taskFlow} />}
         setDraft={taskFlow.updateDraft}
         timeZone={timeZone}
+      />
+
+      <TaskSaveScopeDialog
+        isVisible={pendingTaskMove !== null}
+        onCancel={() => setPendingTaskMove(null)}
+        onConfirm={() => {
+          if (pendingTaskMove) {
+            updateTask.mutate({ ...pendingTaskMove, scope: taskMoveScope });
+          }
+          setPendingTaskMove(null);
+        }}
+        onScopeChange={setTaskMoveScope}
+        scope={taskMoveScope}
       />
     </View>
   );

@@ -15,6 +15,44 @@ import type { TaskEditorFlow } from "@/hooks/use-task-editor-flow";
 /** Each option a 44pt target; the radio itself is 26pt. */
 const SCOPE_OPTION_STYLE = { minHeight: 44 } as const;
 
+/** Which occurrences of a recurring task a save applies to. */
+export function TaskSaveScopeDialog({
+  isVisible,
+  onCancel,
+  onConfirm,
+  onScopeChange,
+  scope,
+}: {
+  isVisible: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onScopeChange: (scope: UpdateScope) => void;
+  scope: UpdateScope;
+}) {
+  return (
+    <AlertDialog
+      // The caller hides it by `isVisible` once the save is sent.
+      closeOnConfirm={false}
+      confirmText="Apply"
+      description={SCOPE_DIALOG_COPY.saveTask.description}
+      isVisible={isVisible}
+      // No onClose: Cancel and a backdrop tap run onCancel.
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      title={SCOPE_DIALOG_COPY.saveTask.title}
+    >
+      <View className="mt-2">
+        <RadioGroup
+          onValueChange={(value) => onScopeChange(value as UpdateScope)}
+          optionStyle={SCOPE_OPTION_STYLE}
+          options={TASK_UPDATE_SCOPE_OPTIONS}
+          value={scope}
+        />
+      </View>
+    </AlertDialog>
+  );
+}
+
 /**
  * Save and delete scope for a recurring task. Render them inside the
  * editor sheet (its `overlay`): iOS presents a modal only from the one
@@ -24,27 +62,13 @@ const SCOPE_OPTION_STYLE = { minHeight: 44 } as const;
 export function TaskScopeDialogs({ flow }: { flow: TaskEditorFlow }) {
   return (
     <>
-      <AlertDialog
-        // Saving closes the editor and its scope dialog immediately.
-        closeOnConfirm={false}
-        confirmText="Apply"
-        description={SCOPE_DIALOG_COPY.saveTask.description}
+      <TaskSaveScopeDialog
         isVisible={flow.scopeDialog === "save"}
-        // No onClose: Cancel and a backdrop tap run onCancel, and the flow
-        // hides the dialog by `isVisible`.
         onCancel={flow.cancelScopeDialog}
         onConfirm={flow.confirmScopedSave}
-        title={SCOPE_DIALOG_COPY.saveTask.title}
-      >
-        <View className="mt-2">
-          <RadioGroup
-            onValueChange={(value) => flow.setSaveScope(value as UpdateScope)}
-            optionStyle={SCOPE_OPTION_STYLE}
-            options={TASK_UPDATE_SCOPE_OPTIONS}
-            value={flow.saveScope}
-          />
-        </View>
-      </AlertDialog>
+        onScopeChange={flow.setSaveScope}
+        scope={flow.saveScope}
+      />
 
       <AlertDialog
         // Delete closes the editor, and this dialog with it.
