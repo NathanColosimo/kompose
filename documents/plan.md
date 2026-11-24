@@ -44,7 +44,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 - **Auth**: Better Auth + Drizzle (Postgres only).
 - **Redis**: Caching (Google Calendar data), rate limiting, pub/sub (SSE realtime events).
 - **Observability**: OpenTelemetry (server-side only) → Axiom / Jaeger. See [`otel.md`](./otel.md).
-- **Background jobs**: worker(s) for sync and integrations (planned).
+- **Background jobs**: none. Sync runs on webhooks and on reads; see 4.7.
 - **Search index**: server-side search engine (e.g., Meilisearch/Typesense or Postgres FTS) (planned).
 
 ---
@@ -147,12 +147,11 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - These Zod schemas are used for runtime validation in the API and type inference throughout the app.
 - **Schemas**:
   - `auth` schema (Better Auth generated; Postgres-only).
-  - `app` schema:
-    - `eventsPG`
-    - `tasksPG` (includes `link` text, `linkMeta` jsonb — Zod discriminated union on `provider`: spotify, youtube, substack, unknown)
-    - `calendarsPG`
-    - `task_sourcesPG` (e.g., "kompose", "notion", "linear")
-    - `integration_accountsPG` (per-user OAuth tokens & metadata)
+  - App tables:
+    - `task` (includes `links` jsonb: link metadata, a Zod discriminated union on `provider`: spotify, youtube, substack, unknown), `tag`, `task_tag`
+    - `connection` (one row per account linked to a plugin) and `webhook_subscription`
+    - Calendar events and health data have no tables yet; see 4.7.
+
 ### 4.5 Auth & Security
 
 - **Auth provider**: Better Auth
@@ -170,25 +169,23 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 
 ---
 
-### 4.7 Integrations (Notion, Linear, etc.) (planned)
+### 4.7 Plugins (Google Calendar, WHOOP, and what's next)
 
-- **Integration Accounts**:
-  - `integration_accountsPG` with:
-    - `userId`
-    - `provider` ("notion", "linear", …)
-    - access/refresh tokens
-    - scopes, metadata
-- **Sync Model**:
-  - Periodic background jobs (cron or queue-based) that:
-    - fetch tasks/issues from each provider
-    - normalise into Kompose's internal `Task` model with `source="linear"` or `source="notion"`
-  - Webhooks where possible (e.g. Linear) to reduce polling.
-- **Direction**:
-  - v1: **one-way import** (external → Kompose).
-  - v2: Two-way sync with conflict handling.
-- **User Experience**:
-  - In UI, tasks show their origin (icon + label).
-  - Some operations (like "close Linear issue") call provider APIs as part of the mutation.
+A plugin is an outside service a user links an account to. The design and its rules are in [`plugins.md`](./plugins.md).
+
+- **Built:** the plugin list, one `connection` row per linked account, encrypted tokens with a locked refresh, one webhook route, and a Settings section per plugin on web and mobile. Google Calendar and WHOOP use all of it.
+- **Not built: stored data.** Google Calendar events and WHOOP days are fetched when a screen asks and cached in Redis. A second provider of the same kind of data, search (4.8), and local-first all need that data in Kompose tables.
+- **Sync has no background jobs or cron.** It runs on webhooks, when the app connects, and when a screen reads a range that is missing or stale.
+
+Order of work:
+
+1. **Account profiles on the connection, and one query per token read** ([#160](https://github.com/NathanColosimo/kompose/issues/160)). The cost grows with every plugin, so it comes before adding one.
+2. **WHOOP webhooks.** The second handler on the shared route, and the first that checks a signature.
+3. **Apple Health.** The first plugin that doesn't link by OAuth: the iPhone reads HealthKit and sends the data. It is the second health provider, so it brings the `day_metric` and `activity` tables, and WHOOP moves onto them. It needs a new native build.
+4. **Calendar tables** (`calendar`, `calendar_event`), with Google Calendar moved onto them, then Outlook.
+5. **Search and local-first**, reading those tables.
+
+Not planned for now: plugins that bring tasks (Linear, Notion). When one is built it writes rows into `task`, which first needs columns for the connection and the outside ID, and it starts as a one-way import.
 
 ---
 
