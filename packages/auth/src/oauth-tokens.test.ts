@@ -31,6 +31,7 @@ async function loadModules() {
     { eq },
     { pluginOAuthTokens },
     schema,
+    { connectionTable },
   ] = await Promise.all([
     import("better-auth"),
     import("@better-auth/drizzle-adapter/relations-v2"),
@@ -40,6 +41,7 @@ async function loadModules() {
     import("drizzle-orm"),
     import("./oauth-tokens"),
     import("@kompose/db/schema/auth"),
+    import("@kompose/db/schema/connection"),
   ]);
 
   const auth = betterAuth({
@@ -66,6 +68,7 @@ async function loadModules() {
 
   return {
     auth,
+    connectionTable,
     db,
     decrypt: (token: string) => decryptOAuthToken(token, encryptionContext),
     encrypt: async (token: string) =>
@@ -115,7 +118,7 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
 
   beforeAll(async () => {
     modules = await loadModules();
-    const { db, schema } = modules;
+    const { connectionTable, db, schema } = modules;
 
     const whoopTokenEndpoint = async (
       input: Parameters<typeof fetch>[0],
@@ -173,6 +176,12 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
       providerId: "whoop",
       scope: "offline,read:cycles",
       updatedAt: now,
+      userId,
+    });
+    await db.insert(connectionTable).values({
+      accountId,
+      id: crypto.randomUUID(),
+      pluginId: "whoop",
       userId,
     });
   });
@@ -250,5 +259,25 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
     // The provider sent no new refresh token; the old one is kept, encrypted.
     expect(stored?.refreshToken).not.toBe("kept-refresh");
     expect(await decrypt(stored?.refreshToken ?? "")).toBe("kept-refresh");
+  });
+
+  test("marks the connection needs-reauth when the grant is revoked", async () => {
+    const { connectionTable, db, encrypt, eq } = modules;
+    usedRefreshTokens.add("revoked-refresh");
+    await setStoredTokens(10_000, {
+      accessToken: await encrypt("stored-access"),
+      refreshToken: await encrypt("revoked-refresh"),
+    });
+
+    await expect(getAccessToken()).rejects.toThrow(
+      "The provider revoked access"
+    );
+
+    // Committed with the refresh's transaction, not rolled back with it.
+    const [connection] = await db
+      .select()
+      .from(connectionTable)
+      .where(eq(connectionTable.accountId, accountId));
+    expect(connection?.status).toBe("needs-reauth");
   });
 });

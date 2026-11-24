@@ -1,5 +1,6 @@
 import { Database, DatabaseLive, runtimeMemoMap } from "@kompose/db";
 import { account as accountTable } from "@kompose/db/schema/auth";
+import { connectionTable } from "@kompose/db/schema/connection";
 import { getPluginForProvider } from "@kompose/plugins";
 import type { AuthContext, BetterAuthPlugin } from "better-auth";
 import {
@@ -14,15 +15,18 @@ import { Effect, ManagedRuntime } from "effect";
 import { z } from "zod";
 
 /**
- * Better Auth refreshes a plugin account's tokens itself, but takes no lock,
- * so two requests can spend the same refresh token. WHOOP refresh tokens work
- * once, so WHOOP refuses the second request as if the user had revoked access
- * (better-auth/better-auth#11561).
+ * Better Auth refreshes a plugin account's tokens itself, with two gaps:
  *
- * `pluginOAuthTokens` closes that gap. Before Better Auth answers a request
- * for a token, it refreshes an expiring one under a row lock, with Better
- * Auth's own provider code. Better Auth then finds a valid token and only
- * reads it. Delete this file when the issue is fixed upstream.
+ * - It takes no lock, so two requests can spend the same refresh token. WHOOP
+ *   refresh tokens work once, so WHOOP refuses the second request as if the
+ *   user had revoked access (better-auth/better-auth#11561).
+ * - It drops the provider's error, so a revoked grant looks like any other
+ *   failure (better-auth/better-auth#12453).
+ *
+ * `pluginOAuthTokens` closes both. Before Better Auth answers a request for a
+ * token, it refreshes an expiring one under a row lock, with Better Auth's own
+ * provider code. Better Auth then finds a valid token and only reads it.
+ * Delete this file when both issues are fixed upstream.
  * See documents/plugins.md.
  */
 
@@ -31,6 +35,9 @@ import { z } from "zod";
  * expiry, so it never runs for a token this code keeps valid.
  */
 const REFRESH_WINDOW_MS = 30_000;
+
+/** Better Auth's `refreshAccessToken` throws the provider's JSON error body. */
+const revokedGrantSchema = z.object({ error: z.literal("invalid_grant") });
 
 /**
  * Every token failure. No caller tells them apart: `getLinkedAccessToken` in
@@ -79,7 +86,7 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
     return;
   }
 
-  yield* db.transaction((tx) =>
+  const outcome = yield* db.transaction((tx) =>
     Effect.gen(function* () {
       const [account] = yield* tx
         .select()
@@ -103,7 +110,22 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
       const tokens = yield* Effect.tryPromise({
         catch: (cause) => tokenError("Token refresh failed", cause),
         try: async () => provider.refreshAccessToken?.(refreshToken),
-      });
+      }).pipe(
+        Effect.catchIf(
+          (error) => revokedGrantSchema.safeParse(error.cause).success,
+          () => Effect.succeed("revoked" as const)
+        )
+      );
+      if (tokens === "revoked") {
+        // Only signing in again fixes a revoked grant. Write the status with
+        // the lock held: a reconnect waiting on this row then reactivates the
+        // connection after it, not before.
+        yield* tx
+          .update(connectionTable)
+          .set({ status: "needs-reauth" })
+          .where(eq(connectionTable.accountId, account.id));
+        return tokens;
+      }
       if (!tokens?.accessToken) {
         return yield* Effect.fail(
           tokenError("Token refresh returned no token")
@@ -131,6 +153,12 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
         .where(eq(accountTable.id, account.id));
     })
   );
+  // Fail only now: failing inside the transaction would roll the status back.
+  if (outcome === "revoked") {
+    return yield* Effect.fail(
+      tokenError("The provider revoked access; reconnect the account")
+    );
+  }
 });
 
 // Shares the API runtime's Postgres pool through the memo map.

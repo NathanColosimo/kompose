@@ -48,30 +48,45 @@ export function PluginConnectionsSections() {
         ) : null}
         {connections.map((connection, index) => {
           const name = connection.name || `${plugin.name} account`;
+          const needsReauth = connection.status === "needs-reauth";
           return (
             <SettingsRow
               action={
-                <RowAction
-                  accessibilityLabel={`Unlink ${connection.email || name}`}
-                  disabled={unlink.isPending || link.isPending}
-                  label={
-                    unlink.isPending &&
-                    unlink.variables === connection.accountId
-                      ? "Unlinking…"
-                      : "Unlink"
-                  }
-                  onPress={() =>
-                    unlink.mutate(connection.accountId, {
-                      onError: (error) =>
-                        RNAlert.alert(
-                          "Failed to unlink account",
-                          error.message
-                        ),
-                    })
-                  }
-                />
+                <View>
+                  {needsReauth ? (
+                    <RowAction
+                      accessibilityLabel={`Reconnect ${connection.email || name}`}
+                      disabled={link.isPending}
+                      label="Reconnect"
+                      onPress={() => link.mutate(plugin)}
+                    />
+                  ) : null}
+                  <RowAction
+                    accessibilityLabel={`Unlink ${connection.email || name}`}
+                    disabled={unlink.isPending || link.isPending}
+                    label={
+                      unlink.isPending &&
+                      unlink.variables === connection.accountId
+                        ? "Unlinking…"
+                        : "Unlink"
+                    }
+                    onPress={() =>
+                      unlink.mutate(connection.accountId, {
+                        onError: (error) =>
+                          RNAlert.alert(
+                            "Failed to unlink account",
+                            error.message
+                          ),
+                      })
+                    }
+                  />
+                </View>
               }
-              detail={connection.email}
+              detail={
+                needsReauth
+                  ? "Kompose lost access. Reconnect to keep syncing."
+                  : connection.email
+              }
               first={index === 0 && !connectionsQuery.isError}
               image={connection.image}
               key={connection.id}
