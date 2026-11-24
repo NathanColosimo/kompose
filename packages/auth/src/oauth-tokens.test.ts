@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { AuthContext } from "better-auth";
 
 // Runs against a real Postgres. CI has none, so these skip without
 // DATABASE_URL. Locally, with `bun run db:start`:
@@ -8,6 +9,12 @@ const databaseUrl = process.env.DATABASE_URL;
 
 const WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token";
 const SECRET = "test-secret-that-is-at-least-32-characters";
+
+// The two fields Better Auth's token encryption reads.
+const encryptionContext = {
+  options: { account: { encryptOAuthTokens: true } },
+  secretConfig: SECRET,
+} as unknown as AuthContext;
 
 /**
  * A Better Auth instance with a WHOOP provider and `pluginOAuthTokens`, on the
@@ -19,6 +26,7 @@ async function loadModules() {
     { betterAuth },
     { drizzleAdapter },
     { genericOAuth },
+    { decryptOAuthToken, setTokenUtil },
     { db },
     { eq },
     { pluginOAuthTokens },
@@ -27,6 +35,7 @@ async function loadModules() {
     import("better-auth"),
     import("@better-auth/drizzle-adapter/relations-v2"),
     import("better-auth/plugins"),
+    import("better-auth/oauth2"),
     import("@kompose/db/legacy"),
     import("drizzle-orm"),
     import("./oauth-tokens"),
@@ -34,6 +43,7 @@ async function loadModules() {
   ]);
 
   const auth = betterAuth({
+    account: { encryptOAuthTokens: true },
     baseURL: "http://localhost:3000",
     database: drizzleAdapter(db, { provider: "pg", schema }),
     plugins: [
@@ -54,7 +64,15 @@ async function loadModules() {
     secret: SECRET,
   });
 
-  return { auth, db, eq, schema };
+  return {
+    auth,
+    db,
+    decrypt: (token: string) => decryptOAuthToken(token, encryptionContext),
+    encrypt: async (token: string) =>
+      String(await setTokenUtil(token, encryptionContext)),
+    eq,
+    schema,
+  };
 }
 
 describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
@@ -126,7 +144,11 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
       return Response.json({
         access_token: `refreshed-access-${call}`,
         expires_in: 3600,
-        refresh_token: `refreshed-refresh-${call}`,
+        // Google sends no new refresh token; "kept-refresh" stands in for that.
+        refresh_token:
+          refreshToken === "kept-refresh"
+            ? undefined
+            : `refreshed-refresh-${call}`,
         scope: "offline read:cycles",
         token_type: "bearer",
       });
@@ -163,10 +185,10 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
   });
 
   test("reads a valid token without waiting on the row lock", async () => {
-    const { db, eq, schema } = modules;
+    const { db, encrypt, eq, schema } = modules;
     await setStoredTokens(60 * 60 * 1000, {
-      accessToken: "stored-access",
-      refreshToken: "stored-refresh",
+      accessToken: await encrypt("stored-access"),
+      refreshToken: await encrypt("stored-refresh"),
     });
     refreshCalls = 0;
 
@@ -188,10 +210,11 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
   });
 
   test("refreshes an expiring token once across concurrent callers", async () => {
+    const { decrypt, encrypt } = modules;
     // Inside the 30 s refresh window.
     await setStoredTokens(10_000, {
-      accessToken: "stored-access",
-      refreshToken: "stored-refresh",
+      accessToken: await encrypt("stored-access"),
+      refreshToken: await encrypt("stored-refresh"),
     });
     refreshCalls = 0;
 
@@ -204,7 +227,28 @@ describe.skipIf(!databaseUrl)("pluginOAuthTokens", () => {
       new Set(["refreshed-access-1"])
     );
     const stored = await readStoredRow();
-    expect(stored?.refreshToken).toBe("refreshed-refresh-1");
+    expect(stored?.refreshToken).not.toBe("refreshed-refresh-1");
+    expect(await decrypt(stored?.refreshToken ?? "")).toBe(
+      "refreshed-refresh-1"
+    );
     expect(stored?.scope).toBe("offline,read:cycles");
+  });
+
+  test("encrypts plaintext tokens when it refreshes them", async () => {
+    const { decrypt } = modules;
+    await setStoredTokens(10_000, {
+      accessToken: "plain-access",
+      refreshToken: "kept-refresh",
+    });
+    refreshCalls = 0;
+
+    const result = await getAccessToken();
+
+    expect(result.accessToken).toBe("refreshed-access-1");
+    const stored = await readStoredRow();
+    expect(stored?.accessToken).not.toBe("refreshed-access-1");
+    // The provider sent no new refresh token; the old one is kept, encrypted.
+    expect(stored?.refreshToken).not.toBe("kept-refresh");
+    expect(await decrypt(stored?.refreshToken ?? "")).toBe("kept-refresh");
   });
 });

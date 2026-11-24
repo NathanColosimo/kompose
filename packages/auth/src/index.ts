@@ -23,6 +23,8 @@ import { stopAccountWatches } from "./webhook-cleanup";
 
 export const auth = betterAuth({
   account: {
+    // Plaintext tokens from before this still read; the next refresh encrypts them.
+    encryptOAuthTokens: true,
     accountLinking: {
       // Support linking additional Google accounts that may use different emails.
       allowDifferentEmails: true,
