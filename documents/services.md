@@ -224,6 +224,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 |------|---------|---------|
 | `google-calendar` | `{ accountId, calendarId }` | Calendar data changed |
 | `tasks` | `{}` | Task data changed |
+| `whoop` | `{}` | WHOOP data changed |
 | `reconnect` | `{}` | Server requests client to reconnect |
 
 ### How it works
@@ -237,7 +238,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 Client note:
 
-- The server sends an initial keepalive after Redis subscribes. Clients leave the first connection quiet and refresh task/calendar queries on the first event of each replacement stream, covering changes missed during a disconnect. Browser blur/visibility loss and native backgrounding share the 30 s disconnect timer; returning reconnects. Closing a stream aborts its RPC request so a pending read cannot hold the connection open.
+- The server sends an initial keepalive after Redis subscribes. Clients leave the first connection quiet and refresh task, calendar and WHOOP queries on the first event of each replacement stream, covering changes missed during a disconnect. Browser blur/visibility loss and native backgrounding share the 30 s disconnect timer; returning reconnects. Closing a stream aborts its RPC request so a pending read cannot hold the connection open.
 
 ### Redis pub/sub functions
 
@@ -394,6 +395,7 @@ Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
 | Method | Purpose |
 |--------|---------|
 | `listDaySummaries` | Fetch cycles, recoveries, sleeps, workouts for a date range; group by day; cache per-day payloads |
+| `dataChanged` | For a WHOOP webhook: drop the cached days the changed record can be on, for the account linked to that WHOOP user, and publish a `whoop` sync event |
 
 ### Caching
 

@@ -2,6 +2,7 @@ import { type PluginId, pluginIdSchema } from "@kompose/plugins";
 import { Effect } from "effect";
 import type { AppServices } from "../runtime";
 import { handleGoogleCalendarWebhook } from "./google-cal/notification";
+import { handleWhoopWebhook } from "./whoop";
 
 /** What a handler decides about one call from an outside service. */
 interface WebhookResult {
@@ -21,9 +22,10 @@ type WebhookHandler = (
 ) => WebhookResult | Promise<WebhookResult>;
 
 /** The handler behind `/api/webhooks/<plugin ID>`, for each plugin that sends webhooks. */
-const webhookHandlers: Partial<Record<PluginId, WebhookHandler>> = {
-  "google-calendar": handleGoogleCalendarWebhook,
-};
+const webhookHandlers = new Map<PluginId, WebhookHandler>([
+  ["google-calendar", handleGoogleCalendarWebhook],
+  ["whoop", handleWhoopWebhook],
+]);
 
 /**
  * Answers a call to `/api/webhooks/<source>`. The caller sends `response`,
@@ -32,7 +34,9 @@ const webhookHandlers: Partial<Record<PluginId, WebhookHandler>> = {
  */
 export async function receiveWebhook(source: string, request: Request) {
   const pluginId = pluginIdSchema.safeParse(source);
-  const handler = pluginId.success ? webhookHandlers[pluginId.data] : undefined;
+  const handler = pluginId.success
+    ? webhookHandlers.get(pluginId.data)
+    : undefined;
   if (!handler) {
     return { response: new Response("Unknown webhook", { status: 404 }) };
   }

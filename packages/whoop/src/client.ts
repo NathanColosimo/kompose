@@ -9,7 +9,9 @@ import {
   whoopCycleCollectionSchema,
   whoopRecoveryCollectionSchema,
   whoopSleepCollectionSchema,
+  whoopSleepSchema,
   whoopWorkoutCollectionSchema,
+  whoopWorkoutSchema,
 } from "./schema";
 
 const WHOOP_API_BASE_URL = "https://api.prod.whoop.com";
@@ -128,6 +130,28 @@ function fetchCollection<T>(
 
 export function createWhoopClient(accessToken: string) {
   return {
+    getSleep: (
+      id: string
+    ): Effect.Effect<WhoopSleep, WhoopApiError | WhoopParseError> =>
+      fetchPage(
+        accessToken,
+        `/developer/v2/activity/sleep/${id}`,
+        {},
+        whoopSleepSchema,
+        "getSleep"
+      ),
+
+    getWorkout: (
+      id: string
+    ): Effect.Effect<WhoopWorkout, WhoopApiError | WhoopParseError> =>
+      fetchPage(
+        accessToken,
+        `/developer/v2/activity/workout/${id}`,
+        {},
+        whoopWorkoutSchema,
+        "getWorkout"
+      ),
+
     listCycles: (
       params: WhoopListParams
     ): Effect.Effect<WhoopCycle[], WhoopApiError | WhoopParseError> =>

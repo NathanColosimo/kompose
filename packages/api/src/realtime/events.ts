@@ -17,6 +17,11 @@ export const tasksSyncEventSchema = z.object({
   type: z.literal("tasks"),
 });
 
+export const whoopSyncEventSchema = z.object({
+  payload: z.object({}).strict(),
+  type: z.literal("whoop"),
+});
+
 export const reconnectSyncEventSchema = z.object({
   payload: z.object({}).strict(),
   type: z.literal("reconnect"),
@@ -30,6 +35,7 @@ export const keepaliveSyncEventSchema = z.object({
 export const syncEventSchema = z.discriminatedUnion("type", [
   googleCalendarSyncEventSchema,
   tasksSyncEventSchema,
+  whoopSyncEventSchema,
   reconnectSyncEventSchema,
   keepaliveSyncEventSchema,
 ]);
