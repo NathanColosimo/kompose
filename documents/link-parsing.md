@@ -56,10 +56,11 @@ Substack publications can use custom domains (e.g. `blog.ai-futures.org`). Two s
 ### Substack
 
 - **API**: Substack's internal REST API (no auth needed)
-- **Fetch strategies** (in priority order):
-  1. `post_id` query param → `GET /api/v1/posts/by-id/{id}` (direct, most reliable)
-  2. `/inbox/post/{id}` path → `GET /api/v1/posts/by-id/{id}`
-  3. `/p/{slug}` path → `GET {baseUrl}/api/v1/archive?search={slug}` (archive search)
+- **Every link ends at `GET https://substack.com/api/v1/posts/by-id/{id}`**, which returns the post and its publication. The ID comes from, in order:
+  1. the `post_id` query param
+  2. an `/inbox/post/{id}` or `/home/post/p-{id}` path
+  3. for a `/p/{slug}` path, `GET {origin}/api/v1/posts/{slug}` on the publication's own domain
+- The archive search (`/api/v1/archive?search=`) is no longer used: Substack rejects its `offset` parameter. Reading a post ID out of the page HTML is gone too, because the first ID on a page can belong to another post.
 - **Metadata**: title, description, word count, cover image, estimated reading duration
 - **Duration logic**: if the post has an `audio_items` entry with `type === "voiceover"`, its duration (rounded to nearest 15 minutes) overrides the word-count-based reading time estimate (238 WPM)
 - **Response validation**: `postSchema` and `archiveResponseSchema` / `postByIdResponseSchema` Zod schemas
@@ -151,7 +152,7 @@ Links come from users, so every fetch made while parsing one, by a resolver or t
 | `packages/api/src/services/link-parser/fetch.ts` | SSRF-checked `fetchJson` / `fetchText` |
 | `packages/api/src/services/link-parser/providers/spotify.ts` | URL matching, Spotify client credentials + metadata fetch |
 | `packages/api/src/services/link-parser/providers/youtube.ts` | Video ID matching, YouTube Data API v3 metadata fetch |
-| `packages/api/src/services/link-parser/providers/substack.ts` | URL matching (`SUBSTACK_CUSTOM_DOMAINS`), Substack archive/by-id API + reading time estimate |
+| `packages/api/src/services/link-parser/providers/substack.ts` | URL matching (`SUBSTACK_CUSTOM_DOMAINS`), Substack by-slug/by-id API + reading time estimate |
 | `packages/api/src/services/link-parser/providers/unknown.ts` | OG meta tag fallback |
 | `packages/api/src/routers/task/contract.ts` | `parseLink` oRPC procedure contract |
 | `packages/api/src/routers/task/router.ts` | `parseLink` handler |
