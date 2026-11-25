@@ -23,6 +23,7 @@ Configured in `packages/auth/src/index.ts`; constants in `packages/auth/src/mcp.
 - Refresh tokens: Better Auth only issues one when the request includes `offline_access`. `mcp()` keeps that scope out of the protected resource metadata and the `401` challenge (SEP-2207), but it is listed in the authorization server metadata, and MCP clients append it from there (the TypeScript SDK's `determineScope` and Claude Code both do). Keep `offline_access` in the `scopes` list, or agents will have to reconnect every 15 minutes.
 - `session.storeSessionInDatabase: true`: the OAuth provider links grants to session rows, so sessions are written to Postgres as well as Redis. Sessions created before this change exist only in Redis; the provider treats those users as signed out and sends them to `/login`, which shows the sign-in form during an OAuth flow (a `sig` query param) even when the app sees a session.
 - `disabledPaths: ["/token"]` turns off `jwt()`'s session-to-JWT endpoint, which nothing uses.
+- `jwt({ disableSettingJwtHeader: true })` stops `jwt()` from signing a session JWT into a `set-auth-jwt` header on every `/get-session` response, which nothing reads. It doesn't change access-token signing or `/api/auth/jwks`.
 
 ### Discovery routes
 
