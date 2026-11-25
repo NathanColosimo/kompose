@@ -78,7 +78,6 @@ function createHarness() {
   store.set(timezoneAtom, "America/New_York");
   store.set(stateConfigAtom, {
     authClient: {
-      accountInfo: () => Promise.resolve(null),
       listAccounts: () =>
         Promise.resolve(
           queryClient.getQueryData<Account[]>(LINKED_ACCOUNTS_QUERY_KEY) ?? []

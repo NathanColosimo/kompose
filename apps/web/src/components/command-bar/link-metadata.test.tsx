@@ -39,7 +39,6 @@ test("two link previews settle independently when the second finishes first", as
   } as StateConfig["orpc"];
   store.set(stateConfigAtom, {
     authClient: {
-      accountInfo: async () => null,
       listAccounts: async () => [],
       unlinkAccount: async () => undefined,
     },

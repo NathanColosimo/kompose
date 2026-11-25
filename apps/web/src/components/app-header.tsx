@@ -159,8 +159,6 @@ function UserMenu({ user }: { user: User }) {
     }
   };
 
-  // Keep the header independent from linked-account profile fetches so
-  // accountInfo only affects surfaces that actually render linked accounts.
   const avatarSrc = user.image || "";
 
   const initials = user.name

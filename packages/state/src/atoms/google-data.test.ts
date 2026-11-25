@@ -32,7 +32,6 @@ test("a failed calendar list keeps saved IDs while successful lists filter missi
   store.set(queryClientAtom, client);
   store.set(stateConfigAtom, {
     authClient: {
-      accountInfo: async () => null,
       listAccounts: () => pendingRequest,
       unlinkAccount: () => Promise.reject(new Error("Unexpected unlink")),
     },

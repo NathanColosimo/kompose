@@ -3,7 +3,6 @@ import { type Plugin, plugins } from "@kompose/plugins";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "../account-query-keys";
 import { useStateConfig } from "../config";
-import { GOOGLE_ACCOUNT_INFO_QUERY_KEY } from "../google-calendar-query-keys";
 
 export const PLUGIN_CONNECTIONS_QUERY_KEY = ["plugin-connections"] as const;
 
@@ -15,6 +14,17 @@ export interface PluginSection {
   plugin: Plugin;
 }
 
+/** Every account the user linked to a plugin, with its name and email. */
+export function usePluginConnectionsQuery() {
+  const { orpc } = useStateConfig();
+  return useQuery({
+    queryFn: () => orpc.plugins.connections(),
+    queryKey: PLUGIN_CONNECTIONS_QUERY_KEY,
+    // Like the linked accounts list. Linking and unlinking refetch at once.
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 /**
  * The accounts the user linked to each plugin, linking one through
  * `linkAccount`, and unlinking one. See documents/plugins.md.
@@ -24,12 +34,8 @@ export function usePluginConnections(
   linkAccount: (plugin: Plugin) => Promise<unknown>
 ) {
   const queryClient = useQueryClient();
-  const { authClient, orpc } = useStateConfig();
-
-  const connectionsQuery = useQuery({
-    queryFn: () => orpc.plugins.connections(),
-    queryKey: PLUGIN_CONNECTIONS_QUERY_KEY,
-  });
+  const { authClient } = useStateConfig();
+  const connectionsQuery = usePluginConnectionsQuery();
 
   const sections: PluginSection[] = plugins.map((plugin) => {
     const connections = (connectionsQuery.data ?? []).filter(
@@ -47,7 +53,6 @@ export function usePluginConnections(
     queryClient.invalidateQueries({ queryKey: PLUGIN_CONNECTIONS_QUERY_KEY });
     // The calendar and WHOOP views read linked accounts directly.
     queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY });
-    queryClient.invalidateQueries({ queryKey: GOOGLE_ACCOUNT_INFO_QUERY_KEY });
   };
 
   const link = useMutation({ mutationFn: linkAccount, onSuccess: refresh });

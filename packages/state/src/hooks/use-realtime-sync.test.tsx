@@ -75,7 +75,6 @@ async function setup() {
   const store = createStore();
   store.set(stateConfigAtom, {
     authClient: {
-      accountInfo: async () => null,
       listAccounts: async () => [],
       unlinkAccount: async () => undefined,
     },

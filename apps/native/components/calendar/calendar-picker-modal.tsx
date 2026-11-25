@@ -11,8 +11,8 @@ import {
   type VisibleCalendars,
   visibleCalendarsAtom,
 } from "@kompose/state/atoms/visible-calendars";
-import { useGoogleAccountProfiles } from "@kompose/state/hooks/use-google-account-profiles";
-import type { Account, OAuth2UserInfo } from "better-auth";
+import { usePluginConnectionsQuery } from "@kompose/state/hooks/use-plugin-connections";
+import type { Account } from "better-auth";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Check } from "lucide-react-native";
 import { useMemo } from "react";
@@ -47,9 +47,7 @@ export function CalendarPickerModal({
   const primaryColor = useColor("primary");
   const primaryForegroundColor = useColor("primaryForeground");
   const borderColor = useColor("border");
-  const { profiles: googleAccountProfiles } = useGoogleAccountProfiles({
-    enabled: open,
-  });
+  const connectionsQuery = usePluginConnectionsQuery();
 
   const calendarsByAccount = useMemo(() => {
     const map = new Map<string, CalendarWithSource[]>();
@@ -73,20 +71,6 @@ export function CalendarPickerModal({
       })),
     [googleCalendars]
   );
-
-  const accountProfilesById = useMemo(() => {
-    const map = new Map<
-      string,
-      { profile: OAuth2UserInfo | null; isLoading: boolean }
-    >();
-    for (const accountProfile of googleAccountProfiles) {
-      map.set(accountProfile.account.accountId, {
-        isLoading: accountProfile.isLoading,
-        profile: accountProfile.profile,
-      });
-    }
-    return map;
-  }, [googleAccountProfiles]);
 
   return (
     <BottomSheet
@@ -116,7 +100,10 @@ export function CalendarPickerModal({
           googleAccounts.map((account) => {
             const accountCalendars =
               calendarsByAccount.get(account.accountId) ?? [];
-            const accountProfile = accountProfilesById.get(account.accountId);
+            // A connection's `accountId` is the Better Auth account row.
+            const connection = connectionsQuery.data?.find(
+              ({ accountId }) => accountId === account.id
+            );
 
             return (
               <CalendarAccountSection
@@ -124,11 +111,12 @@ export function CalendarPickerModal({
                 accountCalendars={accountCalendars}
                 allCalendarIds={allCalendarIds}
                 borderColor={borderColor}
-                isProfileLoading={accountProfile?.isLoading ?? false}
+                email={connection?.email}
+                isProfileLoading={connectionsQuery.isLoading}
                 key={account.accountId}
+                name={connection?.name}
                 primaryColor={primaryColor}
                 primaryForegroundColor={primaryForegroundColor}
-                profile={accountProfile?.profile}
                 setVisibleCalendars={setVisibleCalendars}
                 visibleCalendars={visibleCalendars}
               />
@@ -145,10 +133,11 @@ interface CalendarAccountSectionProps {
   accountCalendars: CalendarWithSource[];
   allCalendarIds: CalendarId[];
   borderColor: string;
+  email: string | undefined;
   isProfileLoading: boolean;
+  name: string | undefined;
   primaryColor: string;
   primaryForegroundColor: string;
-  profile?: OAuth2UserInfo | null;
   setVisibleCalendars: (
     next: VisibleCalendars | ((prev: VisibleCalendars) => VisibleCalendars)
   ) => void;
@@ -164,7 +153,8 @@ function CalendarAccountSection({
   primaryColor,
   primaryForegroundColor,
   borderColor,
-  profile,
+  email,
+  name,
   isProfileLoading,
 }: CalendarAccountSectionProps) {
   const normalizedPalette = useAtomValue(
@@ -173,16 +163,13 @@ function CalendarAccountSection({
 
   const accountTitle = isProfileLoading
     ? "Loading Google account..."
-    : (profile?.email ??
-      profile?.name ??
-      account.accountId ??
-      "Google account");
+    : email || name || account.accountId;
 
   let accountSubtitle: string | null;
   if (isProfileLoading) {
     accountSubtitle = null;
-  } else if (profile?.name && profile.name !== profile.email) {
-    accountSubtitle = profile.name;
+  } else if (name && name !== email) {
+    accountSubtitle = name;
   } else {
     accountSubtitle = account.accountId;
   }

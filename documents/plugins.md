@@ -68,6 +68,7 @@ Better Auth doesn't store a linked account's name, email, or picture. `accountIn
 - **After a day:** the request still answers from the row. It then fetches the profile again after the reply is sent (`waitUntil`), in its own `Plugins.refreshProfiles` trace, so the next read has it.
 - **`profile_updated_at` is when the profile was last written.** A failed lookup keeps what is stored and leaves the time alone, so the next read tries again.
 - **A `needs-reauth` connection isn't asked,** because its token no longer works. It is fetched again once the user reconnects it.
+- **The calendar account menus read the same request** (`usePluginConnectionsQuery` in `@kompose/state`), so every account's name costs one request shared with Settings. Clients keep the answer for five minutes, and refetch at once after linking or unlinking. The apps no longer call Better Auth's `/account-info`; the route stays on for app versions that still do.
 
 ## Settings
 
