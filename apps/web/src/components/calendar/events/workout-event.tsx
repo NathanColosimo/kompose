@@ -18,34 +18,38 @@ import {
 } from "../event-position";
 import { BlockContent, eventColor } from "./block-content";
 
-const WORKOUT_COLOR = eventColor("var(--whoop-workout)");
+const WORKOUT_COLOR = eventColor("var(--workout)");
 
-interface WhoopWorkoutEventProps {
+interface WorkoutEventProps {
   /** Calendar date this column represents — used for clamping cross-day workouts */
   columnDate: Temporal.PlainDate;
   end: string;
   id: string;
   layout?: ItemLayout;
-  sportName: string | null;
+  /** The name of the plugin that recorded it, such as "WHOOP". */
+  source: string;
   start: string;
-  strainScore: number | null;
+  strain: number | null;
   timeZone: string;
+  /** The provider's name for it, such as its sport. */
+  title: string | null;
 }
 
 /**
- * Renders a WHOOP workout as a timed event block on the calendar grid.
+ * Renders a workout as a timed event block on the calendar grid.
  * Clamps to the column's day boundaries so cross-midnight workouts render
  * correctly in both day columns.
  */
-export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
-  sportName,
-  strainScore,
+export const WorkoutEvent = memo(function WorkoutEventInner({
+  source,
+  strain,
+  title,
   start,
   end,
   timeZone,
   columnDate,
   layout,
-}: WhoopWorkoutEventProps) {
+}: WorkoutEventProps) {
   const workoutStart = isoStringToZonedDateTime(start, timeZone);
   const workoutEnd = isoStringToZonedDateTime(end, timeZone);
 
@@ -73,7 +77,7 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
   const top = (startMinutes / 60) * PIXELS_PER_HOUR;
   const height = Math.max(20, (durationMinutes / 60) * PIXELS_PER_HOUR);
 
-  const label = sportName || "Workout";
+  const label = title || "Workout";
 
   return (
     <div
@@ -85,9 +89,9 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
         ...blockStackStyle(layout?.zIndex),
       }}
       title={[
-        `WHOOP workout: ${label}`,
+        `${source} workout: ${label}`,
         formatTimeRange(workoutStart, workoutEnd),
-        strainScore === null ? null : `strain ${strainScore.toFixed(1)}`,
+        strain === null ? null : `strain ${strain.toFixed(1)}`,
       ]
         .filter(Boolean)
         .join(" · ")}
@@ -106,13 +110,13 @@ export const WhoopWorkoutEvent = memo(function WhoopWorkoutEventInner({
       >
         <BlockContent
           details={
-            strainScore === null
+            strain === null
               ? []
               : [
                   {
                     icon: Activity,
-                    label: `Strain ${strainScore.toFixed(1)}`,
-                    short: strainScore.toFixed(1),
+                    label: `Strain ${strain.toFixed(1)}`,
+                    short: strain.toFixed(1),
                   },
                 ]
           }

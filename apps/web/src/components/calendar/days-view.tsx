@@ -1,10 +1,18 @@
 "use client";
 
 import type { TaskSelectDecoded } from "@kompose/api/routers/task/contract";
+import { pluginName } from "@kompose/plugins";
 import {
   currentDateAtom,
   timezoneAtom,
 } from "@kompose/state/atoms/current-date";
+import {
+  dayMetricsByDayAtom,
+  hasDayDataAtom,
+  shouldShowDayStatsRow,
+  sleepsAtom,
+  workoutsAtom,
+} from "@kompose/state/atoms/day-data";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -13,11 +21,6 @@ import {
   type GoogleEventWithSource,
   googleCalendarsDataAtom,
 } from "@kompose/state/atoms/google-data";
-import {
-  shouldShowWhoopRow,
-  whoopAccountIdAtom,
-  whoopSummariesByDayAtom,
-} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -67,9 +70,9 @@ import { eventColor } from "./events/block-content";
 import { EventEditPopover } from "./events/event-edit-popover";
 import { GoogleCalendarEvent } from "./events/google-event";
 import { RecurringDeleteDialog } from "./events/recurring-delete-dialog";
+import { SleepBand } from "./events/sleep-band";
 import { TaskEvent } from "./events/task-event";
-import { WhoopSleepBand } from "./events/whoop-sleep-band";
-import { WhoopWorkoutEvent } from "./events/whoop-workout-event";
+import { WorkoutEvent } from "./events/workout-event";
 import { keyboardCreateStart } from "./keyboard-create-start";
 import { COLUMN_FREE_STRIP, DayColumn } from "./time-grid/day-column";
 import { DayHeader } from "./time-grid/day-header";
@@ -339,7 +342,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
   googleEvents = EMPTY_GOOGLE_EVENTS,
 }: DaysViewProps) {
   const visibleDays = useAtomValue(effectiveVisibleDaysAtom);
-  const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
+  const metricsByDay = useAtomValue(dayMetricsByDayAtom);
   const timeZone = useAtomValue(timezoneAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollToNowRequested, setScrollToNowRequested] = useAtom(
@@ -487,73 +490,21 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     () => (firstDay ? timeZoneLabel(timeZone, firstDay) : ""),
     [timeZone, firstDay]
   );
-  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
-  const showWhoopRow = shouldShowWhoopRow(
-    whoopAccountId,
+  const hasDayData = useAtomValue(hasDayDataAtom);
+  const showStatsRow = shouldShowDayStatsRow(
+    hasDayData,
     visibleDays.map((day) => day.toString()),
-    whoopSummaries
+    metricsByDay
   );
 
-  // Collect all sleep blocks across visible WHOOP summaries so each
-  // day column can render bands for sleeps that cross midnight.
-  // WhoopSleepBand handles overlap/clamp per column internally.
-  const allSleepBlocks = useMemo(() => {
-    const blocks: {
-      id: string;
-      isNap: boolean;
-      start: string;
-      end: string;
-      totalSleepMilliseconds: number;
-    }[] = [];
-    for (const summary of whoopSummaries.values()) {
-      if (summary.sleep) {
-        blocks.push({
-          end: summary.sleep.end,
-          id: summary.sleep.id,
-          isNap: false,
-          start: summary.sleep.start,
-          totalSleepMilliseconds: summary.sleep.totalSleepMilliseconds,
-        });
-      }
-      for (const nap of summary.naps) {
-        blocks.push({
-          end: nap.end,
-          id: nap.id,
-          isNap: true,
-          start: nap.start,
-          totalSleepMilliseconds: nap.totalSleepMilliseconds,
-        });
-      }
-    }
-    return blocks;
-  }, [whoopSummaries]);
-
-  // Collect all workouts across visible summaries so late-night workouts
-  // that cross midnight can render in both the start and end day columns.
-  const allWorkouts = useMemo(() => {
-    const workouts: {
-      id: string;
-      sportName: string | null;
-      strainScore: number | null;
-      start: string;
-      end: string;
-    }[] = [];
-    for (const summary of whoopSummaries.values()) {
-      for (const workout of summary.workouts) {
-        workouts.push({
-          end: workout.end,
-          id: workout.id,
-          sportName: workout.sportName,
-          start: workout.start,
-          strainScore: workout.strainScore,
-        });
-      }
-    }
-    return workouts;
-  }, [whoopSummaries]);
+  // Every loaded sleep and workout, not only the visible days': one that
+  // crosses midnight shows on both days, and SleepBand and WorkoutEvent clamp
+  // it to their column.
+  const sleeps = useAtomValue(sleepsAtom);
+  const workouts = useAtomValue(workoutsAtom);
 
   // Calculate collision layouts for all visible days
-  // Combines tasks, google events, and whoop workouts into unified collision groups
+  // Combines tasks, google events, and workouts into unified collision groups
   const collisionLayoutsByDay = useMemo(() => {
     const layoutsByDay = new Map<string, Map<string, ItemLayout>>();
 
@@ -583,15 +534,13 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         };
       });
 
-      // Convert WHOOP workouts to PositionedItems, clamped to this day.
-      // Uses allWorkouts (collected from all summaries) so workouts that
-      // cross midnight appear in both day columns.
+      // Convert workouts to PositionedItems, clamped to this day.
       const { dayStart, dayEnd } = getDayBoundsZoned(day, timeZone);
 
       const { compare } = Temporal.ZonedDateTime;
-      const whoopItems: PositionedItem[] = allWorkouts.flatMap((workout) => {
-        const wStart = isoStringToZonedDateTime(workout.start, timeZone);
-        const wEnd = isoStringToZonedDateTime(workout.end, timeZone);
+      const workoutItems: PositionedItem[] = workouts.flatMap((workout) => {
+        const wStart = isoStringToZonedDateTime(workout.startAt, timeZone);
+        const wEnd = isoStringToZonedDateTime(workout.endAt, timeZone);
         if (compare(wEnd, dayStart) <= 0 || compare(wStart, dayEnd) >= 0) {
           return [];
         }
@@ -603,14 +552,14 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
         );
         return {
           endMinutes: Math.max(endMinutes, startMinutes + 15),
-          id: `whoop-workout-${workout.id}`,
+          id: `workout-${workout.id}`,
           startMinutes,
-          type: "whoop-workout" as const,
+          type: "workout" as const,
         };
       });
 
       // Calculate layout for all items on this day
-      const allItems = [...taskItems, ...googleItems, ...whoopItems];
+      const allItems = [...taskItems, ...googleItems, ...workoutItems];
       // Blocks are at least 20px tall, a 15-minute slot (event-position.ts).
       const layout = calculateCollisionLayout(allItems, {
         minDrawnMinutes: 15,
@@ -619,7 +568,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
     }
 
     return layoutsByDay;
-  }, [visibleDays, taskSegmentsByDay, timedEventsByDay, allWorkouts, timeZone]);
+  }, [visibleDays, taskSegmentsByDay, timedEventsByDay, workouts, timeZone]);
 
   // Each day column width as percentage of the parent container
   const dayColumnWidth = `${100 / visibleDays.length}%`;
@@ -637,7 +586,7 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
           <span
             className={cn(
               "flex shrink-0 items-center justify-end pr-2",
-              showWhoopRow ? "h-[3.75rem]" : "h-12"
+              showStatsRow ? "h-[3.75rem]" : "h-12"
             )}
             title={timeZone}
           >
@@ -671,8 +620,8 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   <DayHeader
                     date={day}
                     key={dayKey}
-                    showWhoopRow={showWhoopRow}
-                    whoopSummary={whoopSummaries.get(dayKey)}
+                    metrics={metricsByDay.get(dayKey)}
+                    showStatsRow={showStatsRow}
                     width={dayColumnWidth}
                   />
                 );
@@ -742,24 +691,20 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                   timeZone={timeZone}
                   width={dayColumnWidth}
                 >
-                  {/* WHOOP sleep background bands — check all summaries
-                      since sleep blocks often cross midnight into an
-                      adjacent day that doesn't "own" the sleep cycle. */}
-                  {allSleepBlocks.map((sleep) => (
-                    <WhoopSleepBand
+                  {sleeps.map((sleep) => (
+                    <SleepBand
+                      asleepMinutes={sleep.details.asleepMinutes}
                       columnDate={day}
-                      end={sleep.end}
-                      isNap={sleep.isNap}
+                      end={sleep.endAt}
+                      isNap={sleep.details.nap}
                       key={sleep.id}
-                      start={sleep.start}
+                      start={sleep.startAt}
                       timeZone={timeZone}
-                      totalSleepMilliseconds={sleep.totalSleepMilliseconds}
                     />
                   ))}
                   {/* One list in start order (the layout's z order), so
                       Tab moves through the day's events and tasks in time
-                      order. WHOOP workouts come from all collected workouts
-                      so cross-midnight ones appear in both day columns. */}
+                      order. */}
                   {[
                     ...(hasGoogleEvents
                       ? dayGoogleEvents.map(
@@ -809,26 +754,25 @@ const DaysViewInner = memo(function DaysViewInnerComponent({
                         order: layout?.zIndex ?? 0,
                       };
                     }),
-                    ...allWorkouts.flatMap((workout) => {
-                      const layout = dayLayouts?.get(
-                        `whoop-workout-${workout.id}`
-                      );
+                    ...workouts.flatMap((workout) => {
+                      const layout = dayLayouts?.get(`workout-${workout.id}`);
                       if (!layout) {
                         return [];
                       }
                       return [
                         {
                           node: (
-                            <WhoopWorkoutEvent
+                            <WorkoutEvent
                               columnDate={day}
-                              end={workout.end}
+                              end={workout.endAt}
                               id={workout.id}
                               key={workout.id}
                               layout={layout}
-                              sportName={workout.sportName}
-                              start={workout.start}
-                              strainScore={workout.strainScore}
+                              source={pluginName(workout.pluginId)}
+                              start={workout.startAt}
+                              strain={workout.details.strain}
                               timeZone={timeZone}
+                              title={workout.title}
                             />
                           ),
                           order: layout.zIndex,

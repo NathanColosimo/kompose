@@ -6,12 +6,13 @@ All backend services live in `packages/api/src/`. Routers are aggregated in `pac
 
 ```
 appRouter
+├── days        → Day metrics and activities from every plugin
 ├── googleCal   → Google Calendar CRUD
 ├── maps        → Google Places autocomplete
 ├── sync        → SSE realtime event stream
 ├── tags        → Tag CRUD
 ├── tasks       → Task CRUD (with recurrence)
-└── whoop       → WHOOP day summaries
+└── whoop       → WHOOP day summaries, for app versions from before `days`
 ```
 
 Supporting systems sit alongside routers:
@@ -238,7 +239,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 
 Client note:
 
-- The server sends an initial keepalive after Redis subscribes. Clients leave the first connection quiet and refresh task, calendar and WHOOP queries on the first event of each replacement stream, covering changes missed during a disconnect. Browser blur/visibility loss and native backgrounding share the 30 s disconnect timer; returning reconnects. Closing a stream aborts its RPC request so a pending read cannot hold the connection open.
+- The server sends an initial keepalive after Redis subscribes. Clients leave the first connection quiet and refresh task, calendar and day data queries on the first event of each replacement stream, covering changes missed during a disconnect. Browser blur/visibility loss and native backgrounding share the 30 s disconnect timer; returning reconnects. Closing a stream aborts its RPC request so a pending read cannot hold the connection open.
 
 ### Redis pub/sub functions
 
@@ -395,6 +396,7 @@ Uses `Effect.Service`. Its methods need `Database`.
 |--------|---------|
 | `listDaySummaries` | Day summaries for a date range, read from `day_metric` and `activity`. Fetches from WHOOP first only for days the connection never stored |
 | `dataChanged` | For a WHOOP webhook: fetch and store the days the changed record can be on, for the connection of that WHOOP user, and publish a `whoop` sync event |
+| `syncMissing` | For `days.list`: fetch and store the days of a read that the user's WHOOP connections never stored |
 | `syncRecent` | When a user's client connects: fetch and store their last three days, at most once in 10 minutes, and publish a `whoop` sync event |
 
 ### Storage

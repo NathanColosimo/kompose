@@ -10,7 +10,9 @@ import {
 } from "@/lib/temporal-utils";
 import { PIXELS_PER_HOUR } from "../constants";
 
-interface WhoopSleepBandProps {
+interface SleepBandProps {
+  /** Time asleep, for the label; null until the provider scores the sleep. */
+  asleepMinutes: number | null;
   columnDate: Temporal.PlainDate;
   /** ISO datetime string with offset for sleep end */
   end: string;
@@ -18,19 +20,17 @@ interface WhoopSleepBandProps {
   /** ISO datetime string with offset for sleep start */
   start: string;
   timeZone: string;
-  /** Total actual sleep time (light + deep + REM) for the label */
-  totalSleepMilliseconds: number;
 }
 
-/** Sleep stays behind collision-positioned events. See documents/whoop.md. */
-export const WhoopSleepBand = memo(function WhoopSleepBandInner({
+/** Sleep stays behind collision-positioned events. */
+export const SleepBand = memo(function SleepBandInner({
+  asleepMinutes,
   start,
   end,
   columnDate,
   isNap,
   timeZone,
-  totalSleepMilliseconds,
-}: WhoopSleepBandProps) {
+}: SleepBandProps) {
   const sleepStart = isoStringToZonedDateTime(start, timeZone);
   const sleepEnd = isoStringToZonedDateTime(end, timeZone);
 
@@ -79,7 +79,7 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
 
   return (
     <div
-      className="bg-whoop-sleep/8 dark:bg-whoop-sleep/15 pointer-events-none absolute inset-x-0 rounded-sm"
+      className="bg-sleep/8 dark:bg-sleep/15 pointer-events-none absolute inset-x-0 rounded-sm"
       style={{
         height: `${height}px`,
         top: `${top}px`,
@@ -88,15 +88,11 @@ export const WhoopSleepBand = memo(function WhoopSleepBandInner({
     >
       {isLargerSegment ? (
         <div className="@container flex h-full items-center justify-center overflow-hidden p-1.5">
-          <div className="bg-background/75 text-whoop-sleep-foreground flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] leading-[14px] backdrop-blur-sm">
+          <div className="bg-background/75 text-sleep-foreground flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] leading-[14px] backdrop-blur-sm">
             <Moon aria-hidden className="size-3 shrink-0" />
             <span className="truncate">
               <span className="font-medium">
-                {formatDuration(
-                  totalSleepMilliseconds > 0
-                    ? Math.round(totalSleepMilliseconds / 60_000)
-                    : totalInBedMinutes
-                )}
+                {formatDuration(asleepMinutes ?? totalInBedMinutes)}
               </span>{" "}
               {isNap ? "nap" : "asleep"}
               <span className="@max-[13rem]:hidden">

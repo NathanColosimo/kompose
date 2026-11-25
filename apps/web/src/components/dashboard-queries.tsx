@@ -1,10 +1,10 @@
 "use client";
 
 import { eventWindowsAtom } from "@kompose/state/atoms/current-date";
+import { dayMetricsByDayAtom } from "@kompose/state/atoms/day-data";
 import { resolvedVisibleCalendarIdsAtom } from "@kompose/state/atoms/google-data";
 import { tagsQueryAtom } from "@kompose/state/atoms/tags";
 import { tasksQueryAtom } from "@kompose/state/atoms/tasks";
-import { whoopSummariesByDayAtom } from "@kompose/state/atoms/whoop-data";
 import { useGoogleEvents } from "@kompose/state/hooks/use-google-events";
 import { useAtomValue } from "jotai";
 
@@ -17,7 +17,7 @@ export function DashboardQueries() {
   const windows = useAtomValue(eventWindowsAtom);
   useAtomValue(tasksQueryAtom);
   useAtomValue(tagsQueryAtom);
-  useAtomValue(whoopSummariesByDayAtom);
+  useAtomValue(dayMetricsByDayAtom);
   useGoogleEvents({ visibleCalendars, windows });
   return null;
 }

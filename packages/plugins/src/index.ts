@@ -21,6 +21,11 @@ export type PluginProvider = z.infer<typeof pluginProviderSchema>;
  * An outside service a user links an account to. See documents/plugins.md.
  */
 export interface Plugin {
+  /**
+   * It writes day metrics and activities, which the calendar reads with
+   * `days.list`. See "Data tables" in documents/plugins.md.
+   */
+  dayData: boolean;
   /** One sentence for Settings. */
   description: string;
   /** Stored in `connection.plugin_id`, and the last part of the webhook URL. */
@@ -35,6 +40,7 @@ export interface Plugin {
 /** Every plugin, in the order Settings lists them. */
 export const plugins: readonly Plugin[] = [
   {
+    dayData: false,
     description: "Events from these accounts show on your calendar.",
     id: "google-calendar",
     multipleAccounts: true,
@@ -42,6 +48,7 @@ export const plugins: readonly Plugin[] = [
     provider: "google",
   },
   {
+    dayData: true,
     description:
       "Sleep, recovery, and workouts from one WHOOP account show on your calendar.",
     id: "whoop",
@@ -50,6 +57,11 @@ export const plugins: readonly Plugin[] = [
     provider: "whoop",
   },
 ];
+
+/** A plugin's name, as Settings shows it. */
+export function pluginName(id: PluginId): string {
+  return plugins.find((plugin) => plugin.id === id)?.name ?? id;
+}
 
 /** The plugin an account from this Better Auth provider links. */
 export function getPluginForProvider(providerId: string): Plugin | undefined {

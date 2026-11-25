@@ -33,7 +33,7 @@ export interface PositionedItem {
   id: string;
   /** Start time in minutes from midnight */
   startMinutes: number;
-  type: "task" | "google-event" | "whoop-workout";
+  type: "task" | "google-event" | "workout";
 }
 
 export interface ItemLayout {

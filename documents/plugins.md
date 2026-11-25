@@ -35,7 +35,7 @@ A service can be a plugin and also be in one of these lists. When a preview need
 
 ## The list
 
-`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), and `multipleAccounts`. It depends only on zod, so web, native, and the server all import it.
+`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), `multipleAccounts`, and `dayData` (it writes [day metrics and activities](#day-metrics-and-activities)). It depends only on zod, so web, native, and the server all import it.
 
 The `id` is stored in `connection.plugin_id` and is the last part of the plugin's webhook URL. Every ID is declared once, in `pluginIds` at the top of that file, and every provider once, in `pluginProviders`. Nothing else spells them out as plain strings:
 
@@ -189,7 +189,7 @@ Work today:
 3. If the service sends webhooks, write a handler and add it to `webhookHandlers`.
 4. If the service should be told when a user unlinks, add its cleanup to `unlinkCleanups`.
 5. If it has work to do when a user's client connects, add it to `connectWork`.
-6. If it brings a kind of data that has [tables](#data-tables), write rows into them. Otherwise write its router, state, and components like any other feature.
+6. If it brings a kind of data that has [tables](#data-tables), write rows into them and set `dayData` in its list entry; the calendar then shows them with no screen changes. If it fetches that data, add its `readSyncs` entry. Otherwise write its router, state, and components like any other feature.
 
 Settings, connections, encryption, token refresh, the webhook route, the unlink hook, and the realtime route need no changes.
 
@@ -239,6 +239,15 @@ Activity kinds:
 | `sleep` | `asleepMinutes` (null until the provider scores it), `nap` | A sleep record. `nap` is WHOOP's own flag | The `sleepAnalysis` samples of one sleep, merged. Apple has no nap flag |
 | `workout` | `strain` (WHOOP's scale; null from anyone else) | A workout record, with its `sport_name` as the title | An `HKWorkout`, with its activity type as the title |
 
+### Reading the tables
+
+One request reads them for every plugin: `days.list` (`packages/api/src/routers/days/`). It takes a range of days, at most 62, and returns `{ activities, metrics }` for all of the user's connections. Each row carries the `pluginId` that recorded it, and nothing else about its source.
+
+- **A screen never asks a plugin.** The calendar draws a recovery score, a sleep band or a workout from the rows, the same way for any plugin.
+- **The apps fetch it only when it can have rows:** when the user linked a plugin whose list entry has `dayData`. The state is `packages/state/src/atoms/day-data.ts`: `dayMetricsByDayAtom`, `sleepsAtom` and `workoutsAtom`, over one query for the visible month with a week on each side.
+- **A plugin that fetches its data** has an entry in `readSyncs` in the router, keyed by `PluginId`. `days.list` runs it before reading, so the plugin can store days it never stored. If it fails, that is logged as `PLUGIN_READ_SYNC_FAILED` and the read answers from what is stored.
+- **Realtime:** a plugin publishes its own event after it writes, and the apps then refetch `days.list`. WHOOP's is `whoop`.
+
 ### Keeping the rows current
 
 A plugin that fetches its data writes rows at three moments. There is no cron.
@@ -247,7 +256,7 @@ A plugin that fetches its data writes rows at three moments. There is no cron.
 | --- | --- |
 | Its webhook says a record changed | The days that record can be on |
 | One of the user's clients connects (see [When a client connects](#when-a-client-connects)) | The last few days, at most once in 10 minutes per connection |
-| A read asks for days it has never stored | Those days. The connection's first read stores the last 90 days |
+| A read asks for days it has never stored (its `readSyncs` entry) | Those days. The connection's first read stores the last 90 days |
 
 - **A read answers from the tables.** It waits for the provider only when it asks for days never stored.
 - **`connection.synced_from` is the day the stored history starts,** and null before the first sync. A read that starts before it fetches its own days first, and moves `synced_from` back when those days reach it.

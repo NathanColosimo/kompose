@@ -4,8 +4,8 @@ import { GOOGLE_CALENDAR_LIST_SYNC_CALENDAR_ID } from "@kompose/api/realtime/eve
 import type { SyncEvent } from "@kompose/api/routers/sync/contract";
 import { useQueryClient } from "@tanstack/react-query";
 import React from "react";
+import { DAY_DATA_QUERY_KEY } from "../atoms/day-data";
 import { TASKS_QUERY_KEY } from "../atoms/tasks";
-import { WHOOP_DAYS_QUERY_KEY } from "../atoms/whoop-data";
 import { useStateConfig } from "../config";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
@@ -120,7 +120,7 @@ export function useRealtimeSync({
       queryClient.invalidateQueries({
         queryKey: GOOGLE_EVENT_MASTER_QUERY_KEY,
       }),
-      queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: DAY_DATA_QUERY_KEY }),
     ]);
   }, [invalidateTaskQueries, queryClient]);
 
@@ -136,7 +136,7 @@ export function useRealtimeSync({
           return;
         }
         case "whoop": {
-          queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY });
+          queryClient.invalidateQueries({ queryKey: DAY_DATA_QUERY_KEY });
           return;
         }
         default: {
