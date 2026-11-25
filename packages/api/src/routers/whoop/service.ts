@@ -607,10 +607,10 @@ export class WhoopService extends Context.Service<WhoopService>()(
           endDate: string
         ) {
           const db = yield* Database;
-          const setSyncedFrom = (syncedFrom: string) =>
+          const setSyncedFrom = (day: string) =>
             db
               .update(connectionTable)
-              .set({ syncedFrom })
+              .set({ syncedFrom: day })
               .where(eq(connectionTable.id, connection.id))
               .pipe(Effect.orDie);
 
