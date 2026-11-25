@@ -209,6 +209,7 @@
         "@kompose/google-cal": "workspace:*",
         "@kompose/plugins": "workspace:*",
         "@kompose/redis": "workspace:*",
+        "@kompose/whoop": "workspace:*",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",

@@ -19,7 +19,7 @@ import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
 import { redisSecondaryStorage } from "./redis-storage";
-import { stopAccountWatches } from "./webhook-cleanup";
+import { cleanUpBeforeUnlink } from "./unlink-cleanup";
 
 export const auth = betterAuth({
   account: {
@@ -47,14 +47,13 @@ export const auth = betterAuth({
     account: {
       create: { after: connectLinkedAccount },
       delete: {
-        before: async (account): Promise<void> => {
-          await stopAccountWatches(account, async () => {
+        before: (account): Promise<void> =>
+          cleanUpBeforeUnlink(account, async () => {
             const result = await auth.api.getAccessToken({
               body: { accountId: account.id, userId: account.userId },
             });
             return result.accessToken;
-          });
-        },
+          }),
       },
       update: { after: reactivateConnection },
     },

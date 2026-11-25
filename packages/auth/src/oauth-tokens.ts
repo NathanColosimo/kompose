@@ -1,4 +1,4 @@
-import { Database, DatabaseLive, runtimeMemoMap } from "@kompose/db";
+import { Database } from "@kompose/db";
 import { account as accountTable } from "@kompose/db/schema/auth";
 import { connectionTable } from "@kompose/db/schema/connection";
 import { getPluginForProvider } from "@kompose/plugins";
@@ -11,8 +11,9 @@ import {
 } from "better-auth/api";
 import { decryptOAuthToken, setTokenUtil } from "better-auth/oauth2";
 import { and, eq } from "drizzle-orm";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect } from "effect";
 import { z } from "zod";
+import { authRuntime } from "./runtime";
 
 /**
  * Better Auth refreshes a plugin account's tokens itself, with two gaps:
@@ -161,11 +162,6 @@ const refreshExpiring = Effect.fn("OAuthTokens.refreshExpiring")(function* (
   }
 });
 
-// Shares the API runtime's Postgres pool through the memo map.
-const tokenRuntime = ManagedRuntime.make(DatabaseLive, {
-  memoMap: runtimeMemoMap,
-});
-
 const accountSelectionSchema = z.object({
   accountId: z.string(),
   userId: z.string().optional(),
@@ -202,7 +198,7 @@ export function pluginOAuthTokens(): BetterAuthPlugin {
               return;
             }
             // Rejects with an `APIError` when the refresh fails.
-            await tokenRuntime.runPromise(
+            await authRuntime.runPromise(
               refreshExpiring({
                 accountId: selection.data.accountId,
                 authContext: ctx.context,
