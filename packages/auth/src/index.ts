@@ -63,9 +63,6 @@ export const auth = betterAuth({
     "/token",
     // Forces a provider token refresh without the lock in oauth-tokens.ts. Nothing calls it.
     "/refresh-token",
-    // Returns a linked account's provider access token to any signed-in
-    // client. No app calls it. This only closes the HTTP route: the server
-    // still reads tokens with `auth.api.getAccessToken`.
     "/get-access-token",
   ],
   emailAndPassword: {
@@ -194,16 +191,11 @@ export const auth = betterAuth({
       scope: ["https://www.googleapis.com/auth/calendar"],
     },
   },
-  // Origins a request may come from and a sign-in may redirect back to. A
-  // redirect to an app scheme carries the new session, so list only schemes
-  // Kompose owns. expo() trusts Expo Go's `exp://` itself, and only when
-  // NODE_ENV is development.
   trustedOrigins: [
     env.NEXT_PUBLIC_WEB_URL,
     "kompose://",
     `${ELECTRON_AUTH_SCHEME}:/`,
     "https://appleid.apple.com",
-    // The dev server opened by port instead of through Portless.
     ...(env.NEXT_PUBLIC_DEPLOYMENT_ENV === "local"
       ? ["http://localhost:3000"]
       : []),

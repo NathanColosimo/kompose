@@ -120,7 +120,6 @@ Better Auth stores each account's tokens and refreshes them when a caller asks f
 Better Auth then answers the request. It refreshes only within 5 seconds of expiry, so it finds a valid token and returns it.
 
 - **`/refresh-token` is in `disabledPaths`.** It always refreshes, without the lock. Don't call `auth.api.refreshToken` on the server either.
-- **`/get-access-token` is in `disabledPaths` too.** No app asks for a provider token over HTTP, so the route answers 404. `disabledPaths` only closes the HTTP route: `auth.api.getAccessToken` on the server still works and still runs `pluginOAuthTokens` first. `/account-info` stays on for app versions that still call it.
 - **A failed refresh is a `BAD_REQUEST` `APIError`.** `getLinkedAccessToken` turns any of them into the same "reconnect it in Settings" error.
 - **Reconnecting** updates the account, and the `account.update.after` hook sets the connection back to `active`.
 - **When both Better Auth issues are fixed,** delete `oauth-tokens.ts` and mark `needs-reauth` from the error Better Auth then reports.
