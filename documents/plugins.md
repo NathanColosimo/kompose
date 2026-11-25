@@ -55,6 +55,7 @@ Every plugin links by OAuth today. [Other ways to connect](#later-connecting-wit
 One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), `status` (`active` or `needs-reauth`), and the account's profile (`email`, `name`, `image`, `profile_updated_at`).
 
 - **Linking:** `connectLinkedAccount` in `packages/auth/src/connections.ts` is a Better Auth `account.create.after` hook. It adds a row whenever an account from a plugin's provider is linked.
+- **One account:** a plugin with `multipleAccounts: false` (WHOOP) keeps the user's first account. `refuseExtraAccount` (`packages/auth/src/account-rules.ts`) is the `account.create.before` hook: a link that would add a second account fails with `unable_to_link_account`. Reconnect updates the account the user already has. It doesn't order two links that finish at the same moment, and a user with several accounts from before this rule keeps them until they unlink the extras.
 - **Unlinking:** deletes the account row, and the connection with it. The plugin's [unlink cleanup](#unlinking) runs first.
 - **Existing accounts:** the migration that creates the table adds rows for the Google and WHOOP accounts linked before it.
 
@@ -82,6 +83,13 @@ Cleanups today:
 | --- | --- |
 | `google-calendar` | Stops the account's watch channels, so Google stops calling for its calendars |
 | `whoop` | Revokes the user's access at WHOOP, which also stops WHOOP's calls for that user |
+
+## Sign-in providers
+
+A user signs in to Kompose with Google or Apple only (`signInProviders` in `packages/auth/src/account-rules.ts`). An account from any other provider only connects a plugin, and so does a new plugin's provider unless it is added to that list.
+
+- **It can't sign in.** Better Auth asks `validateSignInProvider` (its `user.validateUserInfo` option) on the OAuth callback, before an account signs in, signs up, or is linked. A plugin-only account passes only when a signed-in user started the link. So a WHOOP account never opens a session, and one with a Kompose user's email isn't linked to that user.
+- **It doesn't count as a way back in.** Better Auth refuses to unlink a user's last account. `keepSignInAccount` also refuses to unlink the last account they can sign in with (`FAILED_TO_UNLINK_LAST_SIGN_IN_ACCOUNT`).
 
 ## Profiles
 

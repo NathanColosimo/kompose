@@ -13,7 +13,8 @@ Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar w
 
 - Provider ID: `whoop`
 - Scopes: `read:profile`, `read:sleep`, `read:workout`, `read:recovery`, `read:cycles`, `offline`
-- Limited to one WHOOP account per user (`disableSignUp: true` prevents WHOOP from creating new Kompose accounts)
+- WHOOP only links. It can't sign anyone in or create a Kompose user; see [Sign-in providers in `plugins.md`](./plugins.md#sign-in-providers)
+- One WHOOP account per user, which the server enforces; see [Connections in `plugins.md`](./plugins.md#connections)
 - `getUserInfo` callback fetches `/developer/v1/user/profile/basic` during the OAuth flow to populate the user's name and email
 - Configured in `packages/auth/src/index.ts` under `genericOAuth`
 

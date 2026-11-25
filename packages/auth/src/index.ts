@@ -17,6 +17,11 @@ import { redis } from "@kompose/redis";
 import { betterAuth } from "better-auth/minimal";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
+import {
+  keepSignInAccount,
+  refuseExtraAccount,
+  validateSignInProvider,
+} from "./account-rules";
 import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
@@ -47,7 +52,7 @@ export const auth = betterAuth({
   }),
   databaseHooks: {
     account: {
-      create: { after: connectLinkedAccount },
+      create: { after: connectLinkedAccount, before: refuseExtraAccount },
       delete: {
         before: (account): Promise<void> =>
           cleanUpBeforeUnlink(account, async () => {
@@ -144,6 +149,7 @@ export const auth = betterAuth({
       ],
     }),
     pluginOAuthTokens(),
+    keepSignInAccount(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
     // Without this, jwt() also signs a JWT into a `set-auth-jwt` header on
     // every session read. Nothing reads that header.
@@ -202,4 +208,5 @@ export const auth = betterAuth({
       ? ["http://localhost:3000"]
       : []),
   ],
+  user: { validateUserInfo: validateSignInProvider },
 });
