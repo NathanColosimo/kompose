@@ -181,9 +181,10 @@ Order of work:
 
 1. **Account profiles on the connection, and one query per token read** ([#160](https://github.com/NathanColosimo/kompose/issues/160)). The cost grows with every plugin, so it comes before adding one.
 2. **WHOOP webhooks.** The second handler on the shared route, and the first that checks a signature.
-3. **Apple Health.** The first plugin that doesn't link by OAuth: the iPhone reads HealthKit and sends the data. It is the second health provider, so it brings the `day_metric` and `activity` tables, and WHOOP moves onto them. It needs a new native build.
-4. **Calendar tables** (`calendar`, `calendar_event`), with Google Calendar moved onto them, then Outlook.
-5. **Search and local-first**, reading those tables.
+3. **Stored day data.** The `day_metric` and `activity` tables hold what a plugin records about a day. WHOOP moves onto them, and the calendar reads them instead of asking WHOOP.
+4. **Apple Health.** The first plugin that doesn't link by OAuth: the iPhone reads HealthKit and sends the data. It writes the same two tables, so screens need no changes for it. It needs a new native build.
+5. **Calendar tables** (`calendar`, `calendar_event`), with Google Calendar moved onto them, then Outlook.
+6. **Search and local-first**, reading those tables.
 
 Not planned for now: plugins that bring tasks (Linear, Notion). When one is built it writes rows into `task`, which first needs columns for the connection and the outside ID, and it starts as a one-way import.
 
