@@ -142,7 +142,9 @@ export const auth = betterAuth({
     }),
     pluginOAuthTokens(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
-    jwt(),
+    // Without this, jwt() also signs a JWT into a `set-auth-jwt` header on
+    // every session read. Nothing reads that header.
+    jwt({ disableSettingJwtHeader: true }),
     mcp({
       accessTokenExpiresIn: 15 * 60, // seconds; revoking still takes effect at once
       consentPage: "/oauth/consent",
