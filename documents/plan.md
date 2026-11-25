@@ -88,6 +88,12 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - Last-login-method plugin enabled via client cookie/storage tracking.
   - Tab-based sign-in / sign-up UI on `/login`.
   - Redirect to `/dashboard` post-auth via Better Auth callback URLs.
+  - A sign-in can only return to a trusted origin (`trustedOrigins` in
+    `packages/auth/src/index.ts`): the web URL, the mobile and desktop app
+    schemes, and Apple. `http://localhost:3000` is trusted only when
+    `NEXT_PUBLIC_DEPLOYMENT_ENV` is `local`. Expo Go's `exp://` is trusted
+    only by a server running with `NODE_ENV=development` (`next dev`); the
+    Expo plugin adds it. A deployed preview trusts neither.
 
 ### 4.2 Frontend – Mobile (Expo)
 
