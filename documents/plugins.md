@@ -14,6 +14,7 @@ The plugin system is only the part every such service needs:
 | Webhooks | One route that receives calls from outside services |
 | Unlinking | One hook that runs a plugin's cleanup at its provider |
 | Data tables | One table per kind of data, which every plugin of that kind writes and screens read |
+| Client connects | One list of what each plugin does when a user's client connects |
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
@@ -53,7 +54,7 @@ Every plugin links by OAuth today. [Other ways to connect](#later-connecting-wit
 
 ## Connections
 
-One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), `status` (`active` or `needs-reauth`), and the account's profile (`email`, `name`, `image`, `profile_updated_at`).
+One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), `status` (`active` or `needs-reauth`), the account's profile (`email`, `name`, `image`, `profile_updated_at`), and how far its stored data goes (`synced_from`, `synced_at`; see [Keeping the rows current](#keeping-the-rows-current)).
 
 - **Linking:** `connectLinkedAccount` in `packages/auth/src/connections.ts` is a Better Auth `account.create.after` hook. It adds a row whenever an account from a plugin's provider is linked.
 - **Unlinking:** deletes the account row, and the connection with it. The plugin's [unlink cleanup](#unlinking) runs first.
@@ -154,11 +155,32 @@ Handlers today:
 | Source | Checks | Work |
 | --- | --- | --- |
 | `google-calendar` | The channel token header | Finds the watched calendar, clears its cache, and tells the user's clients to refetch |
-| `whoop` | WHOOP's signature over the raw body | Reads the changed record from WHOOP, clears the cached days it can be on for the account linked to that WHOOP user, and tells the user's clients to refetch. See [`whoop.md`](./whoop.md#webhooks) |
+| `whoop` | WHOOP's signature over the raw body | Reads the changed record from WHOOP, fetches and stores the days it can be on for the connection of that WHOOP user, and tells the user's clients to refetch. See [`whoop.md`](./whoop.md#webhooks) |
 
 Work usually ends with `publishToUser`, which sends a realtime event to the user's open clients. Each kind of data has its own event type in `packages/api/src/realtime/events.ts`.
 
 Not built, because nothing needs them yet: a shared signature check (WHOOP's is the only one, so it lives in its handler; share it when a second service signs the same way), and a per-connection URL (Google, Microsoft and WHOOP name the subscription or user in the call itself).
+
+## When a client connects
+
+A client opens a realtime stream when the app starts and when the user comes back to it (`sync.events`, `packages/api/src/routers/sync/router.ts`). Some plugins have work to do then. Each one's is a function in `connectWork` in that file, keyed by `PluginId`:
+
+```ts
+const connectWork = new Map<
+  PluginId,
+  (userId: string) => Effect.Effect<void, unknown, AppServices>
+>([...]);
+```
+
+- **The stream doesn't wait for it.** Each plugin's work is forked, and the work decides whether the user has anything of that plugin.
+- **A failure is logged** as `PLUGIN_CONNECT_WORK_FAILED` with the plugin's ID, and stops nothing else.
+
+Work today:
+
+| Plugin | What it does |
+| --- | --- |
+| `google-calendar` | Renews the user's watch channels, so Google keeps calling for their calendars |
+| `whoop` | Fetches the user's last few WHOOP days again, because WHOOP sends no webhook for a day's strain and energy |
 
 ## Adding a plugin
 
@@ -166,9 +188,10 @@ Not built, because nothing needs them yet: a shared signature check (WHOOP's is 
 2. Add its OAuth provider to Better Auth in `packages/auth/src/index.ts`.
 3. If the service sends webhooks, write a handler and add it to `webhookHandlers`.
 4. If the service should be told when a user unlinks, add its cleanup to `unlinkCleanups`.
-5. Write its router, state, and components like any other feature.
+5. If it has work to do when a user's client connects, add it to `connectWork`.
+6. If it brings a kind of data that has [tables](#data-tables), write rows into them. Otherwise write its router, state, and components like any other feature.
 
-Settings, connections, encryption, token refresh, the webhook route, and the unlink hook need no changes.
+Settings, connections, encryption, token refresh, the webhook route, the unlink hook, and the realtime route need no changes.
 
 ## Data tables
 
@@ -215,6 +238,23 @@ Activity kinds:
 | --- | --- | --- | --- |
 | `sleep` | `asleepMinutes` (null until the provider scores it), `nap` | A sleep record. `nap` is WHOOP's own flag | The `sleepAnalysis` samples of one sleep, merged. Apple has no nap flag |
 | `workout` | `strain` (WHOOP's scale; null from anyone else) | A workout record, with its `sport_name` as the title | An `HKWorkout`, with its activity type as the title |
+
+### Keeping the rows current
+
+A plugin that fetches its data writes rows at three moments. There is no cron.
+
+| When | What it fetches |
+| --- | --- |
+| Its webhook says a record changed | The days that record can be on |
+| One of the user's clients connects (see [When a client connects](#when-a-client-connects)) | The last few days, at most once in 10 minutes per connection |
+| A read asks for days it has never stored | Those days. The connection's first read also stores the last 90 days |
+
+- **A read answers from the tables.** It waits for the provider only when it asks for days never stored.
+- **`connection.synced_from` is the earliest day stored,** and null before the first sync. A read that starts before it fetches the days in between first.
+- **`connection.synced_at` is when the recent days were last fetched.** It is what limits the fetch on connect.
+- **After a webhook or a connect fetch,** the plugin publishes its realtime event, and the user's open clients read the tables again.
+
+WHOOP is the one plugin that does this today; see [`whoop.md`](./whoop.md#storage-and-sync).
 
 ### Two plugins that report the same thing
 

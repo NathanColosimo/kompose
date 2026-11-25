@@ -13,14 +13,12 @@ export const whoopSleepSummarySchema = z.object({
 export const whoopWorkoutSummarySchema = z.object({
   end: z.iso.datetime({ offset: true }),
   id: z.uuid(),
-  sportId: z.number().int().nullable(),
   sportName: z.string().nullable(),
   start: z.iso.datetime({ offset: true }),
   strainScore: z.number().nullable(),
 });
 
 export const whoopDaySummarySchema = z.object({
-  cycleId: z.number().int().nullable(),
   day: plainDateSchema,
   kilojoule: z.number().nullable(),
   naps: z.array(whoopSleepSummarySchema),
@@ -35,7 +33,8 @@ export const whoopDaysListInputSchema = z.object({
   accountId: z.string().min(1),
   endDate: plainDateSchema,
   startDate: plainDateSchema,
-  timeZone: z.string().min(1),
+  /** Unused: a record's day comes from its own UTC offset. Clients send it. */
+  timeZone: z.string().optional(),
 });
 
 export const whoopContract = {

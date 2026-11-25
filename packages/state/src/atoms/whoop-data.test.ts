@@ -29,7 +29,6 @@ function account(accountId: string): Account {
 
 function summary(day: string, recoveryScore = 80): WhoopDaySummary {
   return {
-    cycleId: 1,
     day,
     kilojoule: null,
     naps: [],
@@ -300,7 +299,6 @@ describe("WHOOP summaries atoms", () => {
 });
 
 const rowSummary: WhoopDaySummary = {
-  cycleId: 1,
   day: "2026-11-07",
   kilojoule: null,
   naps: [],
