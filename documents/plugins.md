@@ -129,10 +129,11 @@ Handlers today:
 | Source | Checks | Work |
 | --- | --- | --- |
 | `google-calendar` | The channel token header | Finds the watched calendar, clears its cache, and tells the user's clients to refetch |
+| `whoop` | WHOOP's signature over the raw body | Reads the changed record from WHOOP, clears the cached days it can be on for the account linked to that WHOOP user, and tells the user's clients to refetch. See [`whoop.md`](./whoop.md#webhooks) |
 
 Work usually ends with `publishToUser`, which sends a realtime event to the user's open clients. Each kind of data has its own event type in `packages/api/src/realtime/events.ts`.
 
-Not built, because nothing needs them yet: a shared signature check (add it beside the first handler that verifies one), and a per-connection URL (Google and Microsoft name the subscription in the call itself).
+Not built, because nothing needs them yet: a shared signature check (WHOOP's is the only one, so it lives in its handler; share it when a second service signs the same way), and a per-connection URL (Google, Microsoft and WHOOP name the subscription or user in the call itself).
 
 ## Adding a plugin
 

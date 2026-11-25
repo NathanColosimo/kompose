@@ -1,3 +1,6 @@
+import { Database } from "@kompose/db";
+import { account } from "@kompose/db/schema/auth";
+import type { PluginProvider } from "@kompose/plugins";
 import { createWhoopClient } from "@kompose/whoop/client";
 import type {
   WhoopCachedDayRaw,
@@ -6,12 +9,15 @@ import type {
   WhoopSleep,
   WhoopWorkout,
 } from "@kompose/whoop/schema";
+import { and, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
 import {
   getLinkedAccessToken,
   getLinkedAccount,
+  type LinkedAccount,
 } from "../../lib/linked-account";
+import { publishToUser } from "../../realtime/sync";
 import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary } from "./contract";
 import { whoopDaySummarySchema } from "./contract";
@@ -19,6 +25,32 @@ import { ttlForDay } from "./day-policy";
 import { WhoopInvalidRangeError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
+const WHOOP_PROVIDER = "whoop" satisfies PluginProvider;
+
+/** One WHOOP webhook: a record of a WHOOP user was updated or deleted. */
+export interface WhoopChange {
+  /** The workout's or sleep's ID. A recovery event carries its sleep's ID. */
+  id: string;
+  /** `workout.updated`, `sleep.deleted`, `recovery.updated`, and so on. */
+  type: string;
+  whoopUserId: string;
+}
+
+/**
+ * The client call that reads the record an event names. A deleted record
+ * can't be read, and a recovery event carries its sleep's ID.
+ */
+function recordLookup(type: string) {
+  switch (type) {
+    case "workout.updated":
+      return "getWorkout";
+    case "sleep.updated":
+    case "recovery.updated":
+      return "getSleep";
+    default:
+      return;
+  }
+}
 
 function dateFromOffset(dateTime: string, offset: string): string {
   return Temporal.Instant.from(dateTime)
@@ -462,7 +494,81 @@ export class WhoopService extends Context.Service<WhoopService>()(
         }
       );
 
-      return { listDaySummaries };
+      /**
+       * The cached days a changed record can be on, or `undefined` when that
+       * can't be known: WHOOP names the record, not its day, so this asks
+       * WHOOP for it. A deleted record is gone, and a lookup can fail.
+       *
+       * A record lands on its cycle's wake-up day (see `groupRawDataByDay`),
+       * which is the day it starts or the day before. A new sleep also closes
+       * the cycle before it, so its days run from the day before it starts to
+       * the day it ends.
+       */
+      const changedDays = Effect.fn("WhoopService.changedDays")(
+        function* (link: LinkedAccount, change: WhoopChange) {
+          const lookup = recordLookup(change.type);
+          if (!lookup) {
+            return;
+          }
+          const client = createWhoopClient(yield* getLinkedAccessToken(link));
+          const record = yield* client[lookup](change.id);
+          return inclusiveDays(
+            Temporal.PlainDate.from(
+              dateFromOffset(record.start, record.timezone_offset)
+            )
+              .subtract({ days: 1 })
+              .toString(),
+            dateFromOffset(record.end, record.timezone_offset)
+          );
+        },
+        Effect.catch((error) =>
+          Effect.logWarning("WHOOP_CHANGED_RECORD_LOOKUP_FAILED", {
+            error,
+          }).pipe(Effect.as(undefined))
+        )
+      );
+
+      /**
+       * WHOOP says a record of a user changed (a webhook). Drops the cached
+       * days it can be on, or every day when those aren't known, for the
+       * account linked to that WHOOP user, and tells its owner's open clients
+       * to refetch. A WHOOP user nobody has linked changes nothing.
+       */
+      const dataChanged = Effect.fn("WhoopService.dataChanged")(function* (
+        change: WhoopChange
+      ) {
+        yield* Effect.annotateCurrentSpan("whoopUserId", change.whoopUserId);
+        yield* Effect.annotateCurrentSpan("type", change.type);
+        const db = yield* Database;
+        const linked = yield* db
+          .select({ id: account.id, userId: account.userId })
+          .from(account)
+          .where(
+            and(
+              eq(account.providerId, WHOOP_PROVIDER),
+              eq(account.accountId, change.whoopUserId)
+            )
+          );
+        yield* Effect.forEach(
+          linked,
+          Effect.fnUntraced(function* ({ id, userId }) {
+            const days = yield* changedDays(
+              {
+                accountId: change.whoopUserId,
+                id,
+                providerId: WHOOP_PROVIDER,
+                userId,
+              },
+              change
+            );
+            yield* cache.removeDays(userId, id, days);
+            yield* publishToUser(userId, { payload: {}, type: "whoop" });
+          }),
+          { discard: true }
+        );
+      });
+
+      return { dataChanged, listDaySummaries };
     }),
   }
 ) {

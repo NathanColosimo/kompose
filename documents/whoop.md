@@ -66,6 +66,8 @@ packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
 | `listRecoveries(params)` | `WhoopRecovery[]` | `WhoopApiError \| WhoopParseError` |
 | `listSleeps(params)` | `WhoopSleep[]` | `WhoopApiError \| WhoopParseError` |
 | `listWorkouts(params)` | `WhoopWorkout[]` | `WhoopApiError \| WhoopParseError` |
+| `getSleep(id)` | `WhoopSleep` | `WhoopApiError \| WhoopParseError` |
+| `getWorkout(id)` | `WhoopWorkout` | `WhoopApiError \| WhoopParseError` |
 
 - Pagination: follows `next_token` with `limit: 25` (API max) per page
 - All response bodies are validated against Zod schemas with `.loose()` for forward compatibility
@@ -99,6 +101,18 @@ Cycles start when you fall asleep (~11pm), which is the **previous** calendar da
 - Cache writes only target days that were actually missing. Cached days are never overwritten by data from an adjacent day's fetch.
 - Fetch window starts 6 hours before midnight local time to capture cycles/sleeps that begin in the late evening.
 - Cache failures are logged as `WHOOP_CACHE_ERROR` and degrade to API fetches; they never fail requests.
+
+## Webhooks
+
+WHOOP calls `POST /api/webhooks/whoop` when a workout, sleep or recovery of a linked user is updated or deleted (`packages/api/src/webhooks/whoop.ts`). Without it, new data shows up only when a cached day expires (15 minutes) and the client's copy goes stale (10 minutes).
+
+- **Setup:** add `https://kompose.dev/api/webhooks/whoop` under Webhooks in the [WHOOP Developer Dashboard](https://developer-dashboard.whoop.com/), with model version `v2`. One URL covers every user who linked WHOOP. There is no call to register or renew it.
+- **Check:** WHOOP signs each call with the app's client secret: `base64(HMAC-SHA256(X-WHOOP-Signature-Timestamp + raw body))` in `X-WHOOP-Signature`. A call that doesn't match gets a 401.
+- **Work:** the call carries the WHOOP user ID, the event type, and the ID of the record that changed, not its day. `WhoopService.dataChanged` finds the account linked to that WHOOP user, drops the cached days the record can be on, and publishes a `whoop` sync event. Clients then refetch their WHOOP days; the server answers the untouched days from the cache.
+- **Which days:** for an `updated` event it reads the record from WHOOP (`getWorkout`, or `getSleep` for a sleep or recovery event, since a recovery event carries its sleep's ID) and drops from the day before the record starts to the day it ends, in the record's own time zone. A workout this afternoon drops yesterday and today. A record lands on its cycle's wake-up day, which is the day it starts or the day before, and a new sleep also closes the cycle before it.
+- **When the days aren't known,** every cached day of the account is dropped: a `deleted` event (the record is gone), or a lookup that fails (logged as `WHOOP_CHANGED_RECORD_LOOKUP_FAILED`).
+- **Missed and repeated calls:** WHOOP doesn't promise delivery, and can send a call twice. WHOOP recommends a reconciliation job for missed calls; here the cache expiry does that job on the next read: 15 minutes for today and unfinished days, 7 days for a complete past day. A repeat only clears the cache again, so `trace_id` isn't checked.
+- **Unlinking doesn't revoke the grant at WHOOP yet.** WHOOP keeps sending calls for a user until their access is revoked (`DELETE /v2/user/access`). A call for a WHOOP user nobody has linked does nothing.
 
 ## oRPC Endpoints
 

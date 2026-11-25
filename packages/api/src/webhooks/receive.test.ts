@@ -5,6 +5,7 @@ mock.module("@kompose/env", () => ({
 }));
 // The work isn't run here, so the service it would use is never touched.
 mock.module("./webhook-service", () => ({ WebhookService: {} }));
+mock.module("../routers/whoop/service", () => ({ WhoopService: {} }));
 const { receiveWebhook } = await import("./receive");
 
 function googleCall(token: string) {
@@ -18,19 +19,16 @@ function googleCall(token: string) {
   });
 }
 
-// "constructor" is not a plugin ID; "whoop" is one with no handler.
-test.each(["constructor", "whoop"])(
-  "the source %p has no handler and gets a 404",
-  async (source) => {
-    const result = await receiveWebhook(
-      source,
-      new Request(`https://kompose.test/api/webhooks/${source}`)
-    );
+// "constructor" is on every object, so it would pass a plain key lookup.
+test("a source that isn't a plugin ID gets a 404", async () => {
+  const result = await receiveWebhook(
+    "constructor",
+    new Request("https://kompose.test/api/webhooks/constructor")
+  );
 
-    expect(result.response.status).toBe(404);
-    expect(result.work).toBeUndefined();
-  }
-);
+  expect(result.response.status).toBe(404);
+  expect(result.work).toBeUndefined();
+});
 
 test("a call the handler rejects does no work", async () => {
   const result = await receiveWebhook(

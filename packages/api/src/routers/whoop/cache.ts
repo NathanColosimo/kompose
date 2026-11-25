@@ -75,7 +75,29 @@ export class WhoopCacheService extends Context.Service<WhoopCacheService>()(
         }
       );
 
-      return { getCachedDays, setCachedDay };
+      /**
+       * Drops an account's cached days, so the next read asks WHOOP for them:
+       * the given days, or every day when `days` is left out.
+       */
+      const removeDays = Effect.fn("WhoopCacheService.removeDays")(function* (
+        userId: string,
+        accountId: string,
+        days?: string[]
+      ) {
+        yield* Effect.annotateCurrentSpan("accountId", accountId);
+        yield* Effect.annotateCurrentSpan(
+          "days",
+          JSON.stringify(days ?? "all")
+        );
+        yield* cache.remove(
+          "removeDays",
+          days
+            ? { keys: days.map((day) => dayKey(userId, accountId, day)) }
+            : { prefixes: [dayKey(userId, accountId, "")] }
+        );
+      });
+
+      return { getCachedDays, removeDays, setCachedDay };
     }),
   }
 ) {
