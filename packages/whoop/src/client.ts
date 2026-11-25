@@ -31,13 +31,13 @@ function buildUrl(path: string, params: Record<string, string | undefined>) {
   return url;
 }
 
-function fetchPage<T>(
+/** Sends one request as the user. Fails unless WHOOP answers with a 2xx. */
+function send(
   accessToken: string,
-  path: string,
-  params: Record<string, string | undefined>,
-  schema: z.ZodType<T>,
-  operation: string
-): Effect.Effect<T, WhoopApiError | WhoopParseError> {
+  url: URL,
+  operation: string,
+  method = "GET"
+): Effect.Effect<Response, WhoopApiError> {
   return Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
       catch: (cause) =>
@@ -48,8 +48,9 @@ function fetchPage<T>(
           status: null,
         }),
       try: () =>
-        fetch(buildUrl(path, params), {
+        fetch(url, {
           headers: { Authorization: `Bearer ${accessToken}` },
+          method,
         }),
     });
 
@@ -71,6 +72,24 @@ function fetchPage<T>(
         status: response.status,
       });
     }
+
+    return response;
+  });
+}
+
+function fetchPage<T>(
+  accessToken: string,
+  path: string,
+  params: Record<string, string | undefined>,
+  schema: z.ZodType<T>,
+  operation: string
+): Effect.Effect<T, WhoopApiError | WhoopParseError> {
+  return Effect.gen(function* () {
+    const response = yield* send(
+      accessToken,
+      buildUrl(path, params),
+      operation
+    );
 
     const json = yield* Effect.tryPromise({
       catch: (cause) =>
@@ -195,5 +214,17 @@ export function createWhoopClient(accessToken: string) {
         whoopWorkoutCollectionSchema,
         "listWorkouts"
       ),
+
+    /**
+     * Revokes the access the user granted. WHOOP then sends no more webhook
+     * calls for the user.
+     */
+    revokeAccess: (): Effect.Effect<void, WhoopApiError> =>
+      send(
+        accessToken,
+        buildUrl("/developer/v2/user/access", {}),
+        "revokeAccess",
+        "DELETE"
+      ).pipe(Effect.asVoid),
   };
 }

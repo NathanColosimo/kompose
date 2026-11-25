@@ -12,6 +12,7 @@ The plugin system is only the part every such service needs:
 | Connections | One row per linked account, with its status |
 | Tokens | Encrypts each account's tokens and refreshes them safely |
 | Webhooks | One route that receives calls from outside services |
+| Unlinking | One hook that runs a plugin's cleanup at its provider |
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
@@ -54,10 +55,33 @@ Every plugin links by OAuth today. [Other ways to connect](#later-connecting-wit
 One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), `status` (`active` or `needs-reauth`), and the account's profile (`email`, `name`, `image`, `profile_updated_at`).
 
 - **Linking:** `connectLinkedAccount` in `packages/auth/src/connections.ts` is a Better Auth `account.create.after` hook. It adds a row whenever an account from a plugin's provider is linked.
-- **Unlinking:** deletes the account row, and the connection with it.
+- **Unlinking:** deletes the account row, and the connection with it. The plugin's [unlink cleanup](#unlinking) runs first.
 - **Existing accounts:** the migration that creates the table adds rows for the Google and WHOOP accounts linked before it.
 
 Columns are added by the first plugin that needs them.
+
+### Unlinking
+
+Some services should be told when a user unlinks: to stop sending webhooks, or to end the access the user granted. A plugin does that in an **unlink cleanup**, one function listed in `unlinkCleanups` in `packages/auth/src/unlink-cleanup.ts`, keyed by `PluginId`:
+
+```ts
+type UnlinkCleanup = (
+  account: Account,
+  accessToken: Effect.Effect<string, unknown>
+) => Effect.Effect<void, unknown, Database>;
+```
+
+- **It runs before the account row is deleted,** from Better Auth's `account.delete.before` hook, so the account's token still exists. `accessToken` fetches it only when the cleanup uses it.
+- **A cleanup that fails, or takes over 10 seconds, doesn't stop the unlink.** It is logged as `PLUGIN_UNLINK_CLEANUP_FAILED` with the plugin's ID.
+- **It runs on `authRuntime`** (`packages/auth/src/runtime.ts`), which has the `Database` service and shares the API's Postgres pool. Better Auth serves the unlink route itself, so the API's `appRuntime` and its services aren't there, and `@kompose/api` imports `@kompose/auth`, not the other way round.
+- **A plugin with nothing to tell its provider has no entry.**
+
+Cleanups today:
+
+| Plugin | What it does |
+| --- | --- |
+| `google-calendar` | Stops the account's watch channels, so Google stops calling for its calendars |
+| `whoop` | Revokes the user's access at WHOOP, which also stops WHOOP's calls for that user |
 
 ## Profiles
 
@@ -140,9 +164,10 @@ Not built, because nothing needs them yet: a shared signature check (WHOOP's is 
 1. Add its ID to `pluginIds`, its provider to `pluginProviders`, and its entry to `plugins`, all in `packages/plugins/src/index.ts`.
 2. Add its OAuth provider to Better Auth in `packages/auth/src/index.ts`.
 3. If the service sends webhooks, write a handler and add it to `webhookHandlers`.
-4. Write its router, state, and components like any other feature.
+4. If the service should be told when a user unlinks, add its cleanup to `unlinkCleanups`.
+5. Write its router, state, and components like any other feature.
 
-Settings, connections, encryption, token refresh, and the webhook route need no changes.
+Settings, connections, encryption, token refresh, the webhook route, and the unlink hook need no changes.
 
 ## Later: one table per kind of data
 

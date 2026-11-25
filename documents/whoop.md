@@ -112,7 +112,7 @@ WHOOP calls `POST /api/webhooks/whoop` when a workout, sleep or recovery of a li
 - **Which days:** for an `updated` event it reads the record from WHOOP (`getWorkout`, or `getSleep` for a sleep or recovery event, since a recovery event carries its sleep's ID) and drops from the day before the record starts to the day it ends, in the record's own time zone. A workout this afternoon drops yesterday and today. A record lands on its cycle's wake-up day, which is the day it starts or the day before, and a new sleep also closes the cycle before it.
 - **When the days aren't known,** every cached day of the account is dropped: a `deleted` event (the record is gone), or a lookup that fails (logged as `WHOOP_CHANGED_RECORD_LOOKUP_FAILED`).
 - **Missed and repeated calls:** WHOOP doesn't promise delivery, and can send a call twice. WHOOP recommends a reconciliation job for missed calls; here the cache expiry does that job on the next read: 15 minutes for today and unfinished days, 7 days for a complete past day. A repeat only clears the cache again, so `trace_id` isn't checked.
-- **Unlinking doesn't revoke the grant at WHOOP yet.** WHOOP keeps sending calls for a user until their access is revoked (`DELETE /v2/user/access`). A call for a WHOOP user nobody has linked does nothing.
+- **Unlinking revokes the user's access at WHOOP** (`DELETE /developer/v2/user/access`), as WHOOP asks apps to do. WHOOP then stops sending calls for that user. It is WHOOP's [unlink cleanup](./plugins.md#unlinking): if the revoke fails, it is logged as `PLUGIN_UNLINK_CLEANUP_FAILED` and the unlink goes on; a call for a WHOOP user nobody has linked does nothing.
 
 ## oRPC Endpoints
 
