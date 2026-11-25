@@ -63,6 +63,7 @@ export const auth = betterAuth({
     "/token",
     // Forces a provider token refresh without the lock in oauth-tokens.ts. Nothing calls it.
     "/refresh-token",
+    "/get-access-token",
   ],
   emailAndPassword: {
     enabled: false,
@@ -193,9 +194,10 @@ export const auth = betterAuth({
   trustedOrigins: [
     env.NEXT_PUBLIC_WEB_URL,
     "kompose://",
-    "exp://",
-    "http://localhost:3000",
     `${ELECTRON_AUTH_SCHEME}:/`,
     "https://appleid.apple.com",
+    ...(env.NEXT_PUBLIC_DEPLOYMENT_ENV === "local"
+      ? ["http://localhost:3000"]
+      : []),
   ],
 });
