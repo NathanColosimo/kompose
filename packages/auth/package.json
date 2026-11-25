@@ -21,6 +21,7 @@
     "@better-auth/expo": "catalog:",
     "@better-auth/mcp": "catalog:",
     "@better-auth/oauth-provider": "catalog:",
+    "@better-auth/redis-storage": "catalog:",
     "@kompose/db": "workspace:*",
     "@kompose/desktop": "workspace:*",
     "@kompose/env": "workspace:*",
