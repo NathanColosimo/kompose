@@ -1,7 +1,7 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { clientEnv } from "@kompose/env/client";
-import { errorMessage } from "@kompose/state/errors";
-import { createORPCClient, ORPCError } from "@orpc/client";
+import { errorMessage, isUnauthorized } from "@kompose/state/errors";
+import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import { RetryAfterLinkPlugin } from "@orpc/client/plugins";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
@@ -12,24 +12,14 @@ interface CreateAppQueryClientOptions {
   suppressToasts: boolean;
 }
 
-/**
- * The dashboard's queries start before its session check returns, so a
- * signed-out visitor gets these; the layout redirects to /login.
- */
-function isUnauthorized(error: Error) {
-  if (error instanceof ORPCError) {
-    return error.code === "UNAUTHORIZED";
-  }
-  // Better Auth's BetterFetchError (not exported at runtime) carries the status.
-  return "status" in error && error.status === 401;
-}
-
 export function createAppQueryClient({
   suppressToasts,
 }: CreateAppQueryClientOptions) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
+        // The dashboard's queries start before its session check returns, so
+        // a signed-out visitor gets a 401; the layout redirects to /login.
         retry: (failureCount, error) =>
           !isUnauthorized(error) && failureCount < 3,
       },

@@ -1,6 +1,7 @@
 import type { AppRouterClient } from "@kompose/api/routers/index";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import { TASKS_QUERY_KEY } from "@kompose/state/atoms/tasks";
+import { isUnauthorized } from "@kompose/state/errors";
 import {
   GOOGLE_CALENDARS_QUERY_KEY,
   GOOGLE_COLORS_QUERY_KEY,
@@ -31,13 +32,25 @@ export const queryClient = new QueryClient({
     queries: {
       refetchOnMount: true,
       refetchOnWindowFocus: true,
-      retry: 1,
+      retry: (failureCount, error) =>
+        !isUnauthorized(error) && failureCount < 1,
       staleTime: 1000 * 60,
     },
   },
   queryCache: new QueryCache({
     onError: (error) => {
       console.log(error);
+      if (!isUnauthorized(error)) {
+        return;
+      }
+      // The session ended on the server while the app still shows it, so
+      // check it now instead of on the next return to the foreground. Each
+      // open query fails this way, and refetch cancels a check in flight to
+      // start another, so only the first failure starts one.
+      const session = authClient.$store.atoms.session.get();
+      if (session.data && !session.isRefetching) {
+        session.refetch();
+      }
     },
   }),
 });
