@@ -214,18 +214,28 @@ describe.skipIf(!process.env.DATABASE_URL)("WHOOP sync", () => {
       expect(await readDay()).toEqual(first);
       expect(fetches).toHaveLength(4);
 
-      // A read before the stored history fetches only the days before it.
-      const earlier = today.subtract({ days: 120 }).toString();
-      await run((service) =>
-        service.listDaySummaries({
-          accountId: whoopUserId,
-          endDate: today.subtract({ days: 100 }).toString(),
-          startDate: earlier,
-          userId,
-        })
-      );
-      expect(fetches).toHaveLength(8);
-      expect(await syncedFrom()).toBe(earlier);
+      // A jump to days long before the stored history fetches those days
+      // alone, on every read, and leaves the history where it was.
+      const daysAgo = (days: number) => today.subtract({ days }).toString();
+      const readRange = (startDate: string, endDate: string) =>
+        run((service) =>
+          service.listDaySummaries({
+            accountId: whoopUserId,
+            endDate,
+            startDate,
+            userId,
+          })
+        );
+      await readRange(daysAgo(200), daysAgo(180));
+      await readRange(daysAgo(200), daysAgo(180));
+      expect(fetches).toHaveLength(12);
+      expect(await syncedFrom()).toBe(daysAgo(90));
+
+      // A read that reaches the stored history extends it.
+      await readRange(daysAgo(120), daysAgo(85));
+      await readRange(daysAgo(120), daysAgo(85));
+      expect(fetches).toHaveLength(16);
+      expect(await syncedFrom()).toBe(daysAgo(120));
 
       // A webhook for a changed workout fetches its days again and tells
       // the owner's clients.

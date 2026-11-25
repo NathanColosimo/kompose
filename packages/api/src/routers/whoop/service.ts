@@ -591,30 +591,49 @@ export class WhoopService extends Context.Service<WhoopService>()(
       });
 
       /**
-       * Stores the days from `startDate` on that a connection has never
-       * synced. Its first sync also stores the last 90 days.
+       * Stores the days of a read that a connection has never synced.
+       *
+       * A connection's first read stores the last 90 days. After that, a
+       * read that starts before `syncedFrom` fetches its own days, and never
+       * the whole gap up to `syncedFrom`: a jump years back would otherwise
+       * fetch years of records in one request. `syncedFrom` moves back only
+       * when the read's days reach it, so days that were jumped to are
+       * fetched on each read until the history reaches them.
        */
       const syncMissingDays = Effect.fn("WhoopService.syncMissingDays")(
-        function* (connection: WhoopConnection, startDate: string) {
-          const { syncedFrom } = connection;
-          if (syncedFrom !== null && startDate >= syncedFrom) {
+        function* (
+          connection: WhoopConnection,
+          startDate: string,
+          endDate: string
+        ) {
+          const db = yield* Database;
+          const setSyncedFrom = (syncedFrom: string) =>
+            db
+              .update(connectionTable)
+              .set({ syncedFrom })
+              .where(eq(connectionTable.id, connection.id))
+              .pipe(Effect.orDie);
+
+          let { syncedFrom } = connection;
+          if (syncedFrom === null) {
+            const today = Temporal.Now.plainDateISO("UTC").toString();
+            syncedFrom = addDays(today, -BACKFILL_DAYS);
+            // Tomorrow in UTC, because east of UTC it can already be today.
+            yield* sync(connection, syncedFrom, addDays(today, 1));
+            yield* setSyncedFrom(syncedFrom);
+          }
+          if (startDate >= syncedFrom) {
             return;
           }
-          const today = Temporal.Now.plainDateISO("UTC").toString();
-          const backfillFrom = addDays(today, -BACKFILL_DAYS);
-          const from =
-            syncedFrom === null && backfillFrom < startDate
-              ? backfillFrom
-              : startDate;
-          // Tomorrow in UTC, because east of UTC it can already be today.
-          yield* sync(connection, from, syncedFrom ?? addDays(today, 1));
-
-          const db = yield* Database;
-          yield* db
-            .update(connectionTable)
-            .set({ syncedFrom: from })
-            .where(eq(connectionTable.id, connection.id))
-            .pipe(Effect.orDie);
+          const reachesHistory = endDate >= addDays(syncedFrom, -1);
+          yield* sync(
+            connection,
+            startDate,
+            reachesHistory ? syncedFrom : endDate
+          );
+          if (reachesHistory) {
+            yield* setSyncedFrom(startDate);
+          }
         }
       );
 
@@ -645,7 +664,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
               providerId: WHOOP_PROVIDER,
             });
           }
-          yield* syncMissingDays(connection, params.startDate);
+          yield* syncMissingDays(connection, params.startDate, params.endDate);
 
           const db = yield* Database;
           const [metrics, activities] = yield* Effect.all(

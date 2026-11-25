@@ -109,11 +109,13 @@ Every row's `date` is the display day from the grouping above. A number WHOOP ha
 
 | When | Days |
 | --- | --- |
-| A read asks for days before `connection.synced_from` | From the read's first day to `synced_from`. A connection's first read stores the last 90 days too |
+| A connection's first read | The last 90 days |
+| A read asks for days before `connection.synced_from` | The read's own days |
 | A [webhook](#webhooks) says a record changed | The days that record can be on |
 | One of the user's clients connects (`syncRecent`) | The last three days, at most once in 10 minutes per connection |
 
 - **A read of stored days asks WHOOP nothing.** Only a read before `synced_from` waits for WHOOP.
+- **`synced_from` moves back only when a read's days reach it.** Paging back month by month does that, because the calendar's windows overlap. A jump to a date years back fetches that window alone, and fetches it again on each read, until the history reaches it. Filling the whole gap in one request could mean years of records.
 - **The fetch on connect is the catch-up.** WHOOP sends no webhook for a cycle, so a day's strain and energy only change here, and a skipped webhook is made up here. The app reconnects when the user comes back to it, and every 11 minutes while it stays open.
 - **The 10-minute limit** is `connection.synced_at`. WHOOP limits the requests an app makes in a day, and a user switching windows would spend them.
 - **The fetch window is a day wider than the days asked for,** on both sides: a cycle starts the evening before its day, and the user can be east or west of UTC. Days at the edges of the window come back incomplete, so only the days asked for are stored.

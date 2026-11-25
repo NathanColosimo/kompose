@@ -49,7 +49,7 @@ export const connectionTable = pgTable(
      * that stores data (see "Data tables" in documents/plugins.md).
      */
     syncedAt: timestamp("synced_at", { mode: "string" }),
-    /** The earliest day whose data is stored; null before the first sync. */
+    /** The day the stored history starts; null before the first sync. */
     syncedFrom: date("synced_from", { mode: "string" }),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()

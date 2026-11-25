@@ -247,10 +247,10 @@ A plugin that fetches its data writes rows at three moments. There is no cron.
 | --- | --- |
 | Its webhook says a record changed | The days that record can be on |
 | One of the user's clients connects (see [When a client connects](#when-a-client-connects)) | The last few days, at most once in 10 minutes per connection |
-| A read asks for days it has never stored | Those days. The connection's first read also stores the last 90 days |
+| A read asks for days it has never stored | Those days. The connection's first read stores the last 90 days |
 
 - **A read answers from the tables.** It waits for the provider only when it asks for days never stored.
-- **`connection.synced_from` is the earliest day stored,** and null before the first sync. A read that starts before it fetches the days in between first.
+- **`connection.synced_from` is the day the stored history starts,** and null before the first sync. A read that starts before it fetches its own days first, and moves `synced_from` back when those days reach it.
 - **`connection.synced_at` is when the recent days were last fetched.** It is what limits the fetch on connect.
 - **After a webhook or a connect fetch,** the plugin publishes its realtime event, and the user's open clients read the tables again.
 
