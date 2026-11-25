@@ -45,6 +45,14 @@
     with `disableRefresh`. Otherwise an RPC call extends the session on the
     server while the app's saved cookie keeps its old expiry and the app
     signs out.
+  - The app opens on the session saved on the phone while it checks that
+    session with the server. When the check fails and no session is saved,
+    the app shows "Couldn't check your sign-in" with **Try again**, not the
+    sign-in screen. Better Auth also checks again when the app returns to the
+    foreground or the network comes back.
+  - A request the server answers with 401 is not retried. It checks the
+    session, unless a check is already running, so a session that ended on
+    the server signs the app out without waiting for the next foreground.
   - A network error while checking the session keeps the signed-in state;
     only a missing or expired session signs the app out.
 - **Date/time inputs**: BNA UI `DatePicker` (bottom-sheet based).

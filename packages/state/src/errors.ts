@@ -22,3 +22,12 @@ export function errorMessage(error: unknown): string {
     ? error.message
     : UNEXPECTED_MESSAGE;
 }
+
+/** Whether the server rejected a request as signed out. */
+export function isUnauthorized(error: Error): boolean {
+  if (error instanceof ORPCError) {
+    return error.code === "UNAUTHORIZED";
+  }
+  // Better Auth's BetterFetchError (not exported at runtime) carries the status.
+  return "status" in error && error.status === 401;
+}
