@@ -27,12 +27,9 @@ export function createAppQueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
         if (isUnauthorized(error)) {
-          // With a session loaded, the session ended (revoked or expired), and
-          // Better Auth only rechecks on focus. Refetching shows no session and
-          // the layout redirects. Without one, the initial check is in flight
-          // and a refetch would restart it.
+          // Refetch cancels the current check, so a burst of 401s must share one.
           const session = authClient.$store.atoms.session.get();
-          if (session.data) {
+          if (session.data && !session.isRefetching) {
             session.refetch();
           }
           return;
