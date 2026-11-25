@@ -51,7 +51,7 @@ Every plugin links by OAuth today. [Other ways to connect](#later-connecting-wit
 
 ## Connections
 
-One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), and `status` (`active` or `needs-reauth`).
+One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId` (the Better Auth `account` row; unique, cascades on unlink), `status` (`active` or `needs-reauth`), and the account's profile (`email`, `name`, `image`, `profile_updated_at`).
 
 - **Linking:** `connectLinkedAccount` in `packages/auth/src/connections.ts` is a Better Auth `account.create.after` hook. It adds a row whenever an account from a plugin's provider is linked.
 - **Unlinking:** deletes the account row, and the connection with it.
@@ -59,11 +59,21 @@ One `connection` table for every plugin: `id`, `userId`, `pluginId`, `accountId`
 
 Columns are added by the first plugin that needs them.
 
+## Profiles
+
+Better Auth doesn't store a linked account's name, email, or picture. `accountInfo` works them out on every call: for Google from the ID token the last token refresh returned, and for WHOOP with a request to WHOOP. So the profile is copied onto the connection, and `plugins.connections` (`packages/api/src/routers/plugins/router.ts`) keeps it fresh:
+
+- **First read:** a connection with no `profile_updated_at` has never been fetched. The request asks the provider once, through `accountInfo`, and stores the answer.
+- **Every later read** answers from the row and asks no provider.
+- **After a day:** the request still answers from the row. It then fetches the profile again after the reply is sent (`waitUntil`), in its own `Plugins.refreshProfiles` trace, so the next read has it.
+- **`profile_updated_at` is when the profile was last written.** A failed lookup keeps what is stored and leaves the time alone, so the next read tries again.
+- **A `needs-reauth` connection isn't asked,** because its token no longer works. It is fetched again once the user reconnects it.
+
 ## Settings
 
 Web (`plugin-connections-settings.tsx`) and native (`plugin-connections-section.tsx`) draw one section per plugin from the list, with the accounts linked to it. Both use `usePluginConnections` in `@kompose/state`.
 
-- `plugins.connections` returns each connection with the account's name, email, and picture from Better Auth's `accountInfo`.
+- `plugins.connections` returns each connection with the account's name, email, and picture, read from the `connection` row in one query. See [Profiles](#profiles).
 - **Link account** calls `linkSocial` with the plugin's provider. A plugin that allows one account hides it once it has one.
 - **Unlink** unlinks the Better Auth account.
 - **Reconnect** shows on a connection that is `needs-reauth`, and links the same account again.

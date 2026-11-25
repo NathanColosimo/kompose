@@ -30,9 +30,18 @@ export const connectionTable = pgTable(
     createdAt: timestamp("created_at", { mode: "string" })
       .notNull()
       .defaultNow(),
+    /**
+     * `email`, `image` and `name` are the provider account's profile, copied
+     * here so listing connections asks no provider. See documents/plugins.md.
+     */
+    email: text("email"),
     id: uuid("id").primaryKey(),
+    image: text("image"),
+    name: text("name"),
     /** Text, not a Postgres enum, so a new plugin needs no migration. */
     pluginId: text("plugin_id", { enum: pluginIds }).notNull(),
+    /** When the profile was last written; null until it is first fetched. */
+    profileUpdatedAt: timestamp("profile_updated_at", { mode: "string" }),
     status: connectionStatusEnum("status").notNull().default("active"),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()

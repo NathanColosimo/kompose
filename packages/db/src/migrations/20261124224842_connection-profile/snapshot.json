@@ -1,0 +1,149 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "a56fb61e-07bf-4f5d-a2b2-65462313e089",
+  "prevIds": [
+    "3714e20e-0626-4704-91d3-6133f0ec4ddb"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "email"
+      ],
+      "writes": [
+        "s|col|public.connection.email",
+        "n|col|public.connection.email",
+        "e|col|public.connection.email"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "image"
+      ],
+      "writes": [
+        "s|col|public.connection.image",
+        "n|col|public.connection.image",
+        "e|col|public.connection.image"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "name"
+      ],
+      "writes": [
+        "s|col|public.connection.name",
+        "n|col|public.connection.name",
+        "e|col|public.connection.name"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "profile_updated_at"
+      ],
+      "writes": [
+        "s|col|public.connection.profile_updated_at",
+        "n|col|public.connection.profile_updated_at",
+        "e|col|public.connection.profile_updated_at"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "email",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "image",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "profile_updated_at",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}
