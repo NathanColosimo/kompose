@@ -203,6 +203,7 @@
         "@better-auth/expo": "catalog:",
         "@better-auth/mcp": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
+        "@better-auth/redis-storage": "catalog:",
         "@kompose/db": "workspace:*",
         "@kompose/desktop": "workspace:*",
         "@kompose/env": "workspace:*",
@@ -355,6 +356,7 @@
     "@effect/sql-pg": "4.1.4",
     "effect": "4.1.4",
     "expo-constants": "58.0.16",
+    "ioredis": "^6.0.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-native": "0.88.1",
@@ -368,6 +370,7 @@
     "@better-auth/expo": "1.7.28",
     "@better-auth/mcp": "1.7.28",
     "@better-auth/oauth-provider": "1.7.28",
+    "@better-auth/redis-storage": "1.7.28",
     "@effect/opentelemetry": "4.1.4",
     "@effect/sql-pg": "4.1.4",
     "@modelcontextprotocol/server": "2.4.0",
@@ -588,6 +591,8 @@
     "@better-auth/oauth-provider": ["@better-auth/oauth-provider@1.7.28", "", { "dependencies": { "jose": "^6.2.3", "zod": "^4.5.4" }, "peerDependencies": { "@better-auth/core": "^1.7.28", "@better-auth/utils": "^0.4.2 || ^0.5.0", "@better-fetch/fetch": "1.3.3", "better-auth": "^1.7.28", "better-call": "~1.4.5" } }, "sha512-kED0jIJSs1sjm4cVkPVzSIYIqJXDYsfPaqMpKyVQgG+A85tCpMucBkhjvgjs2xtn5KBycF+nw34OZO4sahNBeg=="],
 
     "@better-auth/prisma-adapter": ["@better-auth/prisma-adapter@1.7.28", "", { "peerDependencies": { "@better-auth/core": "^1.7.28", "@better-auth/utils": "^0.4.2 || ^0.5.0", "@prisma/client": "^5.0.0 || ^6.0.0 || ^7.0.0", "prisma": "^5.0.0 || ^6.0.0 || ^7.0.0" }, "optionalPeers": ["@prisma/client", "prisma"] }, "sha512-30Q/+HMqwsFQ+HeLLUwZ01F52Dh6F65Syl4o88QoNDn1VN9CFDvhPl2lojHr2dREzQoRlov6VMZBE/PMrFoB+w=="],
+
+    "@better-auth/redis-storage": ["@better-auth/redis-storage@1.7.28", "", { "peerDependencies": { "@better-auth/core": "^1.7.28", "ioredis": "^5.0.0" } }, "sha512-LPMTyB3usPS6Z6NfeOsLqLwXV2NAUKqN7icvfYHXR8MDLiINjbU0U3oZOGMbqf+VxRmN0DMroppWrGwj+kQ5LQ=="],
 
     "@better-auth/telemetry": ["@better-auth/telemetry@1.7.28", "", { "peerDependencies": { "@better-auth/core": "^1.7.28", "@better-auth/utils": "^0.4.2 || ^0.5.0", "@better-fetch/fetch": "1.3.3" } }, "sha512-a798mVvOqvUHEikjggFDLnxgm+1MJI7f03eslJc4zp/vElsNw9TC2gnT4Flg/BeLuemMe8liD5SRJmM3TaG9XQ=="],
 

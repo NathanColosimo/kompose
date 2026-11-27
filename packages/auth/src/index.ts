@@ -4,6 +4,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import { electron } from "@better-auth/electron";
 import { expo } from "@better-auth/expo";
 import { mcp } from "@better-auth/mcp";
+import { redisStorage } from "@better-auth/redis-storage";
 import { db } from "@kompose/db/legacy";
 import * as schema from "@kompose/db/schema/auth";
 import {
@@ -12,13 +13,13 @@ import {
 } from "@kompose/desktop";
 import { env } from "@kompose/env";
 import type { PluginProvider } from "@kompose/plugins";
-import { betterAuth } from "better-auth";
+import { redis } from "@kompose/redis";
+import { betterAuth } from "better-auth/minimal";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
 import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
-import { redisSecondaryStorage } from "./redis-storage";
 import { cleanUpBeforeUnlink } from "./unlink-cleanup";
 
 export const auth = betterAuth({
@@ -168,7 +169,7 @@ export const auth = betterAuth({
     window: 60,
   },
   /** Redis-backed storage for sessions and rate limit counters. */
-  secondaryStorage: redisSecondaryStorage,
+  secondaryStorage: redisStorage({ client: redis }),
   session: {
     // Stay signed in like other apps: the session lasts 60 days and slides
     // forward (at most once a day, the default updateAge) whenever the app
