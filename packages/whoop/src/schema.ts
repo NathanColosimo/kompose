@@ -1,6 +1,5 @@
 import z from "zod";
 
-const whoopDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u);
 const whoopDateTimeSchema = z.iso.datetime({ offset: true });
 /**
  * SCORED means the cycle was scored and the measurement values will be present.
@@ -166,18 +165,7 @@ export const whoopSleepCollectionSchema =
 export const whoopWorkoutCollectionSchema =
   whoopCollectionResponseSchema(whoopWorkoutSchema);
 
-export const whoopCachedDayRawSchema = z.object({
-  cycle: whoopCycleSchema.nullable(),
-  day: whoopDateSchema,
-  recovery: whoopRecoverySchema.nullable(),
-  sleeps: z.array(whoopSleepSchema),
-  workouts: z.array(whoopWorkoutSchema),
-});
-
-export const whoopCachedDayRawArraySchema = z.array(whoopCachedDayRawSchema);
-
 export type WhoopCycle = z.infer<typeof whoopCycleSchema>;
 export type WhoopRecovery = z.infer<typeof whoopRecoverySchema>;
 export type WhoopSleep = z.infer<typeof whoopSleepSchema>;
 export type WhoopWorkout = z.infer<typeof whoopWorkoutSchema>;
-export type WhoopCachedDayRaw = z.infer<typeof whoopCachedDayRawSchema>;

@@ -230,7 +230,7 @@ Single `search` endpoint — Google Places autocomplete. No Effect services; use
 ### How it works
 
 1. Client opens SSE connection via `sync.events` endpoint
-2. Router fires-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active
+2. Router fires-and-forgets each plugin's connect work (`connectWork`; see [`plugins.md`](./plugins.md#when-a-client-connects)): `WebhookService.refreshAll` to ensure Google push notifications are active, and `WhoopService.syncRecent`
 3. `createUserSyncEventIterator` subscribes to the Redis channel `user:{userId}` and yields events as they arrive. Each stream opens its own subscriber connection (`createSubscriber()` in `@kompose/redis`), since a subscribed connection can't run other commands; if that connection drops, the stream ends so the client reconnects instead of silently missing events
 4. After 11 minutes, a `reconnect` event is pushed and the iterator closes (prevents stale connections)
 5. Mutations across other routers (task create/update/delete, calendar CRUD) call `publishToUser` to push events to the channel
@@ -378,8 +378,7 @@ No client-side OTel SDK. Network latency is measured via `x-request-start` heade
 |------|---------|
 | `routers/whoop/contract.ts` | oRPC contract (day summaries) |
 | `routers/whoop/router.ts` | oRPC handler implementations |
-| `routers/whoop/service.ts` | `WhoopService` (Effect.Service) — day summary aggregation |
-| `routers/whoop/cache.ts` | `WhoopCacheService` — Redis caching for per-day raw data |
+| `routers/whoop/service.ts` | `WhoopService` (Effect.Service): grouping, sync into Postgres, day summaries |
 | `routers/whoop/errors.ts` | `Schema.TaggedError` error types |
 
 The actual WHOOP API client lives in `packages/whoop/src/client.ts` — the service resolves an OAuth access token per-request via Better Auth's generic OAuth plugin.
@@ -390,18 +389,18 @@ The actual WHOOP API client lives in `packages/whoop/src/client.ts` — the serv
 
 ### WhoopService
 
-Uses `Effect.Service` with `accessors: true`. Depends on `WhoopCacheService`.
+Uses `Effect.Service`. Its methods need `Database`.
 
 | Method | Purpose |
 |--------|---------|
-| `listDaySummaries` | Fetch cycles, recoveries, sleeps, workouts for a date range; group by day; cache per-day payloads |
-| `dataChanged` | For a WHOOP webhook: drop the cached days the changed record can be on, for the account linked to that WHOOP user, and publish a `whoop` sync event |
+| `listDaySummaries` | Day summaries for a date range, read from `day_metric` and `activity`. Fetches from WHOOP first only for days the connection never stored |
+| `dataChanged` | For a WHOOP webhook: fetch and store the days the changed record can be on, for the connection of that WHOOP user, and publish a `whoop` sync event |
+| `syncRecent` | When a user's client connects: fetch and store their last three days, at most once in 10 minutes, and publish a `whoop` sync event |
 
-### Caching
+### Storage
 
-- Per-day raw data cached in Redis via `WhoopCacheService`.
-- Today, empty days, and unfinished WHOOP days: 15-minute TTL. Complete past days: 7-day TTL.
-- Cache failures are logged as `WHOOP_CACHE_ERROR` and never fail the request (degrade to API fetch).
+- WHOOP days are rows in `day_metric` and `activity`, not a cache. See "Storage and sync" in [`whoop.md`](./whoop.md#storage-and-sync).
+- `connection.synced_from` is the earliest day stored; `connection.synced_at` limits the fetch on connect.
 
 ### Errors (`Schema.TaggedError`)
 
@@ -530,5 +529,5 @@ export class TagConflictError extends Schema.TaggedError<TagConflictError>()(
 | Entry point | File | Behavior |
 |-------------|------|----------|
 | oRPC handler | `apps/web/src/app/api/rpc/[[...rest]]/route.ts` | All oRPC routes — tasks, tags, google-cal, maps, sync |
-| SSE connect | `routers/sync/router.ts` | Fire-and-forget `refreshAll` then return Redis iterator |
+| SSE connect | `routers/sync/router.ts` | Fire-and-forget each plugin's connect work (`refreshAll`, `syncRecent`), then return Redis iterator |
 | Webhooks | `apps/web/src/app/api/webhooks/[source]/route.ts` | The source's handler checks the call and replies; its work (for Google Calendar: `handleGoogleNotification`, then `refreshAll` if the calendar list changed) runs in `after()` through `appRuntime` |

@@ -22,14 +22,14 @@ async function deleteKeysWithPrefix(prefix: string) {
 }
 
 /**
- * Cache failures must not fail requests: log them as `logEvent`, treat failed
+ * Cache failures must not fail requests: log them as `CACHE_ERROR`, treat failed
  * reads as misses and ignore failed writes/deletes. See documents/caching.md.
  */
-export function makeRedisJsonCache(logEvent: string) {
+export function makeRedisJsonCache() {
   const logAndReturn =
     <A>(operation: string, fallback: A) =>
     (message: string) =>
-      Effect.logError(logEvent, { message, operation }).pipe(
+      Effect.logError("CACHE_ERROR", { message, operation }).pipe(
         Effect.as(fallback)
       );
 

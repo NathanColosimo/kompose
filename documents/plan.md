@@ -150,7 +150,8 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
   - App tables:
     - `task` (includes `links` jsonb: link metadata, a Zod discriminated union on `provider`: spotify, youtube, substack, unknown), `tag`, `task_tag`
     - `connection` (one row per account linked to a plugin) and `webhook_subscription`
-    - Calendar events and health data have no tables yet; see 4.7.
+    - `day_metric` and `activity` (what a plugin records about a day; WHOOP writes them)
+    - Calendar events have no tables yet; see 4.7.
 
 ### 4.5 Auth & Security
 
@@ -174,7 +175,7 @@ Tagline (draft): *"Compose your time, tasks, and tools into one schedule."*
 A plugin is an outside service a user links an account to. The design and its rules are in [`plugins.md`](./plugins.md).
 
 - **Built:** the plugin list, one `connection` row per linked account, encrypted tokens with a locked refresh, one webhook route, and a Settings section per plugin on web and mobile. Google Calendar and WHOOP use all of it.
-- **Not built: stored data.** Google Calendar events and WHOOP days are fetched when a screen asks and cached in Redis. A second provider of the same kind of data, search (4.8), and local-first all need that data in Kompose tables.
+- **Partly built: stored data.** WHOOP days are stored in `day_metric` and `activity`. Google Calendar events are still fetched when a screen asks and cached in Redis. A second provider of the same kind of data, search (4.8), and local-first all need that data in Kompose tables.
 - **Sync has no background jobs or cron.** It runs on webhooks, when the app connects, and when a screen reads a range that is missing or stale.
 
 Order of work:
@@ -375,7 +376,7 @@ separate `Kompose Dev` profile.
 - **Event types**: `google-calendar` (calendar data changed), `tasks` (task data changed), `reconnect` (server requests reconnect), `keepalive` (heartbeat ping).
 - **Connection lifecycle**: Auto-closes after 11 minutes with a `reconnect` event to prevent stale connections.
 - **Keepalive**: Server sends `keepalive` events every 10 seconds. Client resets an inactivity timer (30s) on every event; if the timer fires (no events received), the connection is assumed dead and force-closed to trigger a reconnect.
-- **On connect**: Fire-and-forgets `WebhookService.refreshAll` to ensure Google push notifications are active.
+- **On connect**: Fire-and-forgets each plugin's connect work: `WebhookService.refreshAll` to ensure Google push notifications are active, and `WhoopService.syncRecent`.
 
 ### 6.13 Rate Limiting
 - **Implementation**: Redis-backed via `@orpc/ratelimit` with Lua script evaluation (`EVAL`) on the shared `@kompose/redis` (ioredis) connection.

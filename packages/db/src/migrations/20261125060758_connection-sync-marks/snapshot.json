@@ -1,0 +1,81 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "4fd2e60a-3074-4b7d-9795-af73d3382ace",
+  "prevIds": [
+    "3176dabb-d822-4185-9484-a60ee7d89813"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "synced_at"
+      ],
+      "writes": [
+        "s|col|public.connection.synced_at",
+        "n|col|public.connection.synced_at",
+        "e|col|public.connection.synced_at"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "connection",
+        "synced_from"
+      ],
+      "writes": [
+        "s|col|public.connection.synced_from",
+        "n|col|public.connection.synced_from",
+        "e|col|public.connection.synced_from"
+      ],
+      "reads": [
+        "n|tbl|public.connection",
+        "n|sch|public"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "synced_at",
+        "type": "timestamp",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "connection",
+        "name": "synced_from",
+        "type": "date",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    }
+  ]
+}

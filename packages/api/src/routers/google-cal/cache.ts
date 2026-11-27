@@ -78,7 +78,7 @@ export class GoogleCalendarCacheService extends Context.Service<GoogleCalendarCa
   "GoogleCalendarCacheService",
   {
     make: Effect.sync(() => {
-      const cache = makeRedisJsonCache("CACHE_ERROR");
+      const cache = makeRedisJsonCache();
 
       // ── Calendars ───────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 import { pluginIds } from "@kompose/plugins";
 import {
+  date,
   index,
   pgEnum,
   pgTable,
@@ -43,6 +44,13 @@ export const connectionTable = pgTable(
     /** When the profile was last written; null until it is first fetched. */
     profileUpdatedAt: timestamp("profile_updated_at", { mode: "string" }),
     status: connectionStatusEnum("status").notNull().default("active"),
+    /**
+     * When the plugin last fetched the connection's recent data, for a plugin
+     * that stores data (see "Data tables" in documents/plugins.md).
+     */
+    syncedAt: timestamp("synced_at", { mode: "string" }),
+    /** The day the stored history starts; null before the first sync. */
+    syncedFrom: date("synced_from", { mode: "string" }),
     updatedAt: timestamp("updated_at", { mode: "string" })
       .notNull()
       .defaultNow()

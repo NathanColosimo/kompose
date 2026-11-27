@@ -21,9 +21,9 @@ Cache lookup (Redis GET, key scoped to the user and local account row)
 
 **Service:** `GoogleCalendarCacheService` (`packages/api/src/routers/google-cal/cache.ts`)
 
-A `Context.Service` with a `Layer.effect` layer. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility. The methods build keys and call the shared best-effort JSON cache, `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`), which `WhoopCacheService` uses too.
+A `Context.Service` with a `Layer.effect` layer. Each method is wrapped in `Effect.fn` for automatic tracing spans and annotated with relevant IDs (`accountId`, `calendarId`, `eventId`, etc.) for OTel visibility. The methods build keys and call the shared best-effort JSON cache, `makeRedisJsonCache` (`packages/api/src/lib/redis-cache.ts`).
 
-**Redis client:** the shared `redis` connection from `@kompose/redis` (ioredis, `REDIS_URL`), which Better Auth, the rate limiters, the WHOOP cache and sync publishes use too.
+**Redis client:** the shared `redis` connection from `@kompose/redis` (ioredis, `REDIS_URL`), which Better Auth, the rate limiters and sync publishes use too.
 
 **Errors:** none. No cache method can fail; see [Error Handling](#error-handling).
 
@@ -111,11 +111,11 @@ For `events.update`, `events.move` and `events.delete`, `invalidateEvent` clears
 
 ## Error Handling
 
-Cache failures never fail a request. `makeRedisJsonCache(logEvent)` handles them in one place:
+Cache failures never fail a request. `makeRedisJsonCache()` handles them in one place:
 
 - A read that fails (Redis error, invalid JSON, or a payload the Zod schema rejects) returns `Option.none()`, a miss.
 - A write or delete that fails does nothing.
-- Each failure is logged as `logEvent` (`CACHE_ERROR` for Google Calendar, `WHOOP_CACHE_ERROR` for WHOOP) with `{ message, operation }`, so it appears on the request's trace.
+- Each failure is logged as `CACHE_ERROR` with `{ message, operation }`, so it appears on the request's trace.
 
 Handlers call cache methods directly, with nothing to catch:
 
@@ -161,8 +161,8 @@ expire by TTL.
 ## Account ID Invariant
 
 Google Calendar inputs, preferences, bootstrap fields and realtime events use
-the Google provider account ID (`account.account_id`). Google and WHOOP cache
-methods instead receive the owned local row ID (`account.id`). In the key and
+the Google provider account ID (`account.account_id`). Cache methods instead
+receive the owned local row ID (`account.id`). In the key and
 method tables above, `{accountId}` denotes that local row ID.
 
 `getLinkedAccount` resolves the provider ID to the user's local row, then

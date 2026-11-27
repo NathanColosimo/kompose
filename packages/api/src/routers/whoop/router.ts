@@ -18,7 +18,6 @@ export const whoopRouter = os.router({
           accountId: input.accountId,
           endDate: input.endDate,
           startDate: input.startDate,
-          timeZone: input.timeZone,
           userId: context.user.id,
         })
       );

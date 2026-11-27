@@ -1,31 +1,58 @@
 import { Database } from "@kompose/db";
+import {
+  type Activity,
+  activitySelectSchema,
+  activityTable,
+} from "@kompose/db/schema/activity";
 import { account } from "@kompose/db/schema/auth";
-import type { PluginProvider } from "@kompose/plugins";
+import { connectionTable } from "@kompose/db/schema/connection";
+import {
+  type DayMetric,
+  dayMetrics,
+  dayMetricTable,
+} from "@kompose/db/schema/day-metric";
+import type { PluginId, PluginProvider } from "@kompose/plugins";
 import { createWhoopClient } from "@kompose/whoop/client";
 import type {
-  WhoopCachedDayRaw,
   WhoopCycle,
   WhoopRecovery,
   WhoopSleep,
   WhoopWorkout,
 } from "@kompose/whoop/schema";
-import { and, eq } from "drizzle-orm";
+import {
+  and,
+  between,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { Temporal } from "temporal-polyfill";
+import { uuidv7 } from "uuidv7";
+import z from "zod";
 import {
   getLinkedAccessToken,
-  getLinkedAccount,
   type LinkedAccount,
+  LinkedAccountError,
 } from "../../lib/linked-account";
 import { publishToUser } from "../../realtime/sync";
-import { WhoopCacheService } from "./cache";
 import type { WhoopDaySummary } from "./contract";
-import { whoopDaySummarySchema } from "./contract";
-import { ttlForDay } from "./day-policy";
 import { WhoopInvalidRangeError } from "./errors";
 
 const MAX_RANGE_DAYS = 62;
+const WHOOP_PLUGIN = "whoop" satisfies PluginId;
 const WHOOP_PROVIDER = "whoop" satisfies PluginProvider;
+/** How many days of history a connection's first sync stores. */
+const BACKFILL_DAYS = 90;
+/** The least time between two fetches of a connection's recent days. */
+const RECENT_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+const KILOCALORIES_PER_KILOJOULE = 0.239_006;
 
 /** One WHOOP webhook: a record of a WHOOP user was updated or deleted. */
 export interface WhoopChange {
@@ -34,6 +61,23 @@ export interface WhoopChange {
   /** `workout.updated`, `sleep.deleted`, `recovery.updated`, and so on. */
   type: string;
   whoopUserId: string;
+}
+
+/** A WHOOP connection, with the account a sync fetches as. */
+interface WhoopConnection {
+  id: string;
+  link: LinkedAccount;
+  /** The earliest day stored; null before the first sync. */
+  syncedFrom: string | null;
+}
+
+/** One day's WHOOP records, as `groupRawDataByDay` assigns them. */
+interface WhoopDay {
+  cycle: WhoopCycle | null;
+  day: string;
+  recovery: WhoopRecovery | null;
+  sleeps: WhoopSleep[];
+  workouts: WhoopWorkout[];
 }
 
 /**
@@ -59,26 +103,21 @@ function dateFromOffset(dateTime: string, offset: string): string {
     .toString();
 }
 
+function addDays(date: string, days: number): string {
+  return Temporal.PlainDate.from(date).add({ days }).toString();
+}
+
 function inclusiveDays(startDate: string, endDate: string): string[] {
-  const start = Temporal.PlainDate.from(startDate);
-  const end = Temporal.PlainDate.from(endDate);
   const days: string[] = [];
-
-  for (
-    let current = start;
-    Temporal.PlainDate.compare(current, end) <= 0;
-    current = current.add({ days: 1 })
-  ) {
-    days.push(current.toString());
+  for (let day = startDate; day <= endDate; day = addDays(day, 1)) {
+    days.push(day);
   }
-
   return days;
 }
 
 const validateRange = Effect.fn("WhoopService.validateRange")(function* (
   startDate: string,
-  endDate: string,
-  timeZone: string
+  endDate: string
 ) {
   const start = Temporal.PlainDate.from(startDate);
   const end = Temporal.PlainDate.from(endDate);
@@ -95,11 +134,9 @@ const validateRange = Effect.fn("WhoopService.validateRange")(function* (
       message: `WHOOP day range cannot exceed ${MAX_RANGE_DAYS} days`,
     });
   }
-
-  Temporal.Now.zonedDateTimeISO(timeZone);
 });
 
-function selectPrimarySleep(payload: WhoopCachedDayRaw): WhoopSleep | null {
+function selectPrimarySleep(payload: WhoopDay): WhoopSleep | null {
   if (payload.sleeps.length === 0) {
     return null;
   }
@@ -131,69 +168,121 @@ function selectPrimarySleep(payload: WhoopCachedDayRaw): WhoopSleep | null {
   return sortedSleeps[0] ?? null;
 }
 
-function totalSleepMilliseconds(sleep: WhoopSleep): number {
-  const summary = sleep.score?.stage_summary;
-  if (summary) {
-    const total =
-      (summary.total_light_sleep_time_milli ?? 0) +
-      (summary.total_slow_wave_sleep_time_milli ?? 0) +
-      (summary.total_rem_sleep_time_milli ?? 0);
-    if (total > 0) {
-      return total;
-    }
-
-    if ((summary.total_in_bed_time_milli ?? 0) > 0) {
-      return summary.total_in_bed_time_milli ?? 0;
-    }
-  }
-
-  return Math.max(
-    0,
-    Temporal.Instant.from(sleep.end).epochMilliseconds -
-      Temporal.Instant.from(sleep.start).epochMilliseconds
-  );
+/** Time asleep, from WHOOP's sleep stages; null until WHOOP scores them. */
+function asleepMinutes(sleep: WhoopSleep): number | null {
+  const stages = sleep.score?.stage_summary;
+  const asleep =
+    (stages?.total_light_sleep_time_milli ?? 0) +
+    (stages?.total_slow_wave_sleep_time_milli ?? 0) +
+    (stages?.total_rem_sleep_time_milli ?? 0);
+  return asleep > 0 ? Math.round(asleep / 60_000) : null;
 }
 
-function toSummary(payload: WhoopCachedDayRaw): WhoopDaySummary {
-  const primarySleep = selectPrimarySleep(payload);
+/** A WHOOP day as the rows Kompose stores. See documents/whoop.md. */
+function toRows(connectionId: string, day: WhoopDay) {
+  const primarySleep = selectPrimarySleep(day);
+  const kilojoule = day.cycle?.score?.kilojoule;
+  const values: Record<DayMetric, number | null | undefined> = {
+    energy_burned_kcal:
+      kilojoule == null ? null : kilojoule * KILOCALORIES_PER_KILOJOULE,
+    recovery_score: day.recovery?.score?.recovery_score,
+    sleep_duration_min: primarySleep && asleepMinutes(primarySleep),
+    sleep_performance: primarySleep?.score?.sleep_performance_percentage,
+    strain: day.cycle?.score?.strain,
+  };
+  const shared = { connectionId, date: day.day };
 
-  return whoopDaySummarySchema.parse({
-    cycleId: payload.cycle?.id ?? null,
-    day: payload.day,
-    kilojoule: payload.cycle?.score?.kilojoule ?? null,
-    naps: payload.sleeps
-      .filter((sleep) => sleep.nap)
-      .map((nap) => ({
-        end: nap.end,
-        id: nap.id,
-        start: nap.start,
-        totalSleepMilliseconds: totalSleepMilliseconds(nap),
+  return {
+    activities: [
+      ...day.sleeps.map((sleep) => ({
+        ...shared,
+        details: { asleepMinutes: asleepMinutes(sleep), nap: sleep.nap },
+        endAt: new Date(sleep.end),
+        externalId: sleep.id,
+        id: uuidv7(),
+        kind: "sleep" as const,
+        startAt: new Date(sleep.start),
+        title: null,
       })),
-    recoveryScore: payload.recovery?.score?.recovery_score ?? null,
-    sleep: primarySleep
-      ? {
-          end: primarySleep.end,
-          id: primarySleep.id,
-          start: primarySleep.start,
-          totalSleepMilliseconds: totalSleepMilliseconds(primarySleep),
-        }
-      : null,
-    sleepPerformance: primarySleep?.score?.sleep_performance_percentage ?? null,
-    strainScore: payload.cycle?.score?.strain ?? null,
-    workouts: [...payload.workouts]
-      .sort((left, right) => left.start.localeCompare(right.start))
-      .map((workout) => ({
-        end: workout.end,
-        id: workout.id,
-        sportId: workout.sport_id ?? null,
-        sportName: workout.sport_name || null,
-        start: workout.start,
-        strainScore: workout.score?.strain ?? null,
+      ...day.workouts.map((workout) => ({
+        ...shared,
+        details: { strain: workout.score?.strain ?? null },
+        endAt: new Date(workout.end),
+        externalId: workout.id,
+        id: uuidv7(),
+        kind: "workout" as const,
+        startAt: new Date(workout.start),
+        title: workout.sport_name || null,
       })),
+    ],
+    metrics: dayMetrics.flatMap((metric) => {
+      const value = values[metric];
+      return value == null ? [] : [{ ...shared, metric, value }];
+    }),
+  };
+}
+
+/** Stored rows as the day summaries `whoop.days.list` has always returned. */
+function toSummaries(
+  metrics: (typeof dayMetricTable.$inferSelect)[],
+  activities: Activity[]
+): WhoopDaySummary[] {
+  const values = new Map(
+    metrics.map(({ date, metric, value }) => [`${date} ${metric}`, value])
+  );
+  const sleepSummary = (sleep: Activity & { kind: "sleep" }) => ({
+    end: sleep.endAt.toISOString(),
+    id: sleep.externalId,
+    start: sleep.startAt.toISOString(),
+    totalSleepMilliseconds:
+      sleep.details.asleepMinutes === null
+        ? sleep.endAt.getTime() - sleep.startAt.getTime()
+        : sleep.details.asleepMinutes * 60_000,
+  });
+  const days = new Set([
+    ...metrics.map(({ date }) => date),
+    ...activities.map(({ date }) => date),
+  ]);
+  const allSleeps = activities.filter((activity) => activity.kind === "sleep");
+  const allWorkouts = activities.filter(
+    (activity) => activity.kind === "workout"
+  );
+
+  return [...days].sort().map((day) => {
+    const value = (metric: DayMetric) => values.get(`${day} ${metric}`) ?? null;
+    const sleeps = allSleeps.filter((sleep) => sleep.date === day);
+    const [longestNight] = sleeps
+      .filter((sleep) => !sleep.details.nap)
+      .sort(
+        (left, right) =>
+          right.endAt.getTime() -
+          right.startAt.getTime() -
+          (left.endAt.getTime() - left.startAt.getTime())
+      );
+    const energy = value("energy_burned_kcal");
+
+    return {
+      day,
+      kilojoule: energy === null ? null : energy / KILOCALORIES_PER_KILOJOULE,
+      naps: sleeps.filter((sleep) => sleep.details.nap).map(sleepSummary),
+      recoveryScore: value("recovery_score"),
+      sleep: longestNight ? sleepSummary(longestNight) : null,
+      sleepPerformance: value("sleep_performance"),
+      strainScore: value("strain"),
+      workouts: allWorkouts
+        .filter((workout) => workout.date === day)
+        .map((workout) => ({
+          end: workout.endAt.toISOString(),
+          id: workout.externalId,
+          sportName: workout.title,
+          start: workout.startAt.toISOString(),
+          strainScore: workout.details.strain,
+        })),
+    };
   });
 }
 
-function initializeDay(day: string): WhoopCachedDayRaw {
+function initializeDay(day: string): WhoopDay {
   return {
     cycle: null,
     day,
@@ -201,21 +290,6 @@ function initializeDay(day: string): WhoopCachedDayRaw {
     sleeps: [],
     workouts: [],
   };
-}
-
-function hasData(
-  payload: WhoopCachedDayRaw | undefined
-): payload is WhoopCachedDayRaw {
-  if (!payload) {
-    return false;
-  }
-
-  return (
-    payload.cycle !== null ||
-    payload.recovery !== null ||
-    payload.sleeps.length > 0 ||
-    payload.workouts.length > 0
-  );
 }
 
 function chooseMoreRecent<
@@ -279,8 +353,8 @@ function groupRawDataByDay(params: {
   recoveries: WhoopRecovery[];
   sleeps: WhoopSleep[];
   workouts: WhoopWorkout[];
-}): Map<string, WhoopCachedDayRaw> {
-  const byDay = new Map<string, WhoopCachedDayRaw>();
+}): Map<string, WhoopDay> {
+  const byDay = new Map<string, WhoopDay>();
 
   const ensureDay = (day: string) => {
     const existing = byDay.get(day);
@@ -312,8 +386,10 @@ function groupRawDataByDay(params: {
   for (const cycle of params.cycles) {
     const recovery = recoveryByCycleId.get(cycle.id);
     const cycleSleeps = sleepsByCycleId.get(cycle.id) ?? [];
-    const cycleWorkouts = params.workouts.filter((w) =>
-      workoutBelongsToCycle(w, cycle)
+    // A stored record has one day, so the first cycle to claim a workout
+    // keeps it.
+    const cycleWorkouts = params.workouts.filter(
+      (w) => !assignedWorkoutIds.has(w.id) && workoutBelongsToCycle(w, cycle)
     );
     for (const w of cycleWorkouts) {
       assignedWorkoutIds.add(w.id);
@@ -371,208 +447,409 @@ function groupRawDataByDay(params: {
 export class WhoopService extends Context.Service<WhoopService>()(
   "WhoopService",
   {
-    make: Effect.gen(function* () {
-      const cache = yield* WhoopCacheService;
+    make: Effect.sync(() => {
+      const findConnections = Effect.fn("WhoopService.findConnections")(
+        function* (where: SQL | undefined) {
+          const db = yield* Database;
+          const rows = yield* db
+            .select({
+              accountRowId: account.id,
+              id: connectionTable.id,
+              syncedFrom: connectionTable.syncedFrom,
+              userId: account.userId,
+              whoopUserId: account.accountId,
+            })
+            .from(connectionTable)
+            .innerJoin(account, eq(connectionTable.accountId, account.id))
+            .where(and(eq(connectionTable.pluginId, WHOOP_PLUGIN), where))
+            .pipe(Effect.orDie);
+          return rows.map(
+            ({
+              accountRowId,
+              id,
+              syncedFrom,
+              userId,
+              whoopUserId,
+            }): WhoopConnection => ({
+              id,
+              link: {
+                accountId: whoopUserId,
+                id: accountRowId,
+                providerId: WHOOP_PROVIDER,
+                userId,
+              },
+              syncedFrom,
+            })
+          );
+        }
+      );
+
+      /**
+       * Fetches a connection's days from WHOOP and stores them in place of
+       * what was stored for those days, so a record WHOOP no longer has goes.
+       */
+      const sync = Effect.fn("WhoopService.sync")(function* (
+        connection: WhoopConnection,
+        startDate: string,
+        endDate: string
+      ) {
+        yield* Effect.annotateCurrentSpan("connectionId", connection.id);
+        yield* Effect.annotateCurrentSpan("startDate", startDate);
+        yield* Effect.annotateCurrentSpan("endDate", endDate);
+
+        const client = createWhoopClient(
+          yield* getLinkedAccessToken(connection.link)
+        );
+        // A day's records start up to a day before it in UTC (its cycle
+        // begins the evening before, and the user can be east of UTC) and
+        // up to a day after it ends. Days at the edges of the window come
+        // back incomplete, so only the days asked for are stored.
+        const fetchParams = {
+          end: `${addDays(endDate, 2)}T00:00:00Z`,
+          start: `${addDays(startDate, -1)}T00:00:00Z`,
+        };
+        const [cycles, recoveries, sleeps, workouts] = yield* Effect.all(
+          [
+            client.listCycles(fetchParams),
+            client.listRecoveries(fetchParams),
+            client.listSleeps(fetchParams),
+            client.listWorkouts(fetchParams),
+          ],
+          { concurrency: "unbounded" }
+        );
+        const grouped = groupRawDataByDay({
+          cycles,
+          recoveries,
+          sleeps,
+          workouts,
+        });
+        const rows = inclusiveDays(startDate, endDate).map((day) =>
+          toRows(connection.id, grouped.get(day) ?? initializeDay(day))
+        );
+        const metrics = rows.flatMap((day) => day.metrics);
+        const activities = rows.flatMap((day) => day.activities);
+
+        const db = yield* Database;
+        yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              yield* tx
+                .delete(dayMetricTable)
+                .where(
+                  and(
+                    eq(dayMetricTable.connectionId, connection.id),
+                    between(dayMetricTable.date, startDate, endDate)
+                  )
+                );
+              yield* tx.delete(activityTable).where(
+                and(
+                  eq(activityTable.connectionId, connection.id),
+                  between(activityTable.date, startDate, endDate),
+                  notInArray(
+                    activityTable.externalId,
+                    activities.map(({ externalId }) => externalId)
+                  )
+                )
+              );
+              // WHOOP sends a sleep's and its recovery's webhooks together,
+              // so two syncs of the same days run at once: both writes are
+              // upserts.
+              if (metrics.length > 0) {
+                yield* tx
+                  .insert(dayMetricTable)
+                  .values(metrics)
+                  .onConflictDoUpdate({
+                    set: { value: sql`excluded.value` },
+                    target: [
+                      dayMetricTable.connectionId,
+                      dayMetricTable.date,
+                      dayMetricTable.metric,
+                    ],
+                  });
+              }
+              if (activities.length > 0) {
+                yield* tx
+                  .insert(activityTable)
+                  .values(activities)
+                  .onConflictDoUpdate({
+                    set: {
+                      date: sql`excluded.date`,
+                      details: sql`excluded.details`,
+                      endAt: sql`excluded.end_at`,
+                      startAt: sql`excluded.start_at`,
+                      title: sql`excluded.title`,
+                    },
+                    target: [
+                      activityTable.connectionId,
+                      activityTable.externalId,
+                    ],
+                  });
+              }
+            })
+          )
+          .pipe(Effect.orDie);
+      });
+
+      /**
+       * Stores the days of a read that a connection has never synced.
+       *
+       * A connection's first read stores the last 90 days. After that, a
+       * read that starts before `syncedFrom` fetches its own days, and never
+       * the whole gap up to `syncedFrom`: a jump years back would otherwise
+       * fetch years of records in one request. `syncedFrom` moves back only
+       * when the read's days reach it, so days that were jumped to are
+       * fetched on each read until the history reaches them.
+       */
+      const syncMissingDays = Effect.fn("WhoopService.syncMissingDays")(
+        function* (
+          connection: WhoopConnection,
+          startDate: string,
+          endDate: string
+        ) {
+          const db = yield* Database;
+          const setSyncedFrom = (day: string) =>
+            db
+              .update(connectionTable)
+              .set({ syncedFrom: day })
+              .where(eq(connectionTable.id, connection.id))
+              .pipe(Effect.orDie);
+
+          let { syncedFrom } = connection;
+          if (syncedFrom === null) {
+            const today = Temporal.Now.plainDateISO("UTC").toString();
+            syncedFrom = addDays(today, -BACKFILL_DAYS);
+            // Tomorrow in UTC, because east of UTC it can already be today.
+            yield* sync(connection, syncedFrom, addDays(today, 1));
+            yield* setSyncedFrom(syncedFrom);
+          }
+          if (startDate >= syncedFrom) {
+            return;
+          }
+          const reachesHistory = endDate >= addDays(syncedFrom, -1);
+          yield* sync(
+            connection,
+            startDate,
+            reachesHistory ? syncedFrom : endDate
+          );
+          if (reachesHistory) {
+            yield* setSyncedFrom(startDate);
+          }
+        }
+      );
 
       const listDaySummaries = Effect.fn("WhoopService.listDaySummaries")(
         function* (params: {
           accountId: string;
           endDate: string;
           startDate: string;
-          timeZone: string;
           userId: string;
         }) {
           yield* Effect.annotateCurrentSpan("accountId", params.accountId);
           yield* Effect.annotateCurrentSpan("userId", params.userId);
           yield* Effect.annotateCurrentSpan("startDate", params.startDate);
           yield* Effect.annotateCurrentSpan("endDate", params.endDate);
-          yield* Effect.annotateCurrentSpan("timeZone", params.timeZone);
 
-          yield* validateRange(
-            params.startDate,
-            params.endDate,
-            params.timeZone
+          yield* validateRange(params.startDate, params.endDate);
+
+          const [connection] = yield* findConnections(
+            and(
+              eq(account.accountId, params.accountId),
+              eq(account.userId, params.userId)
+            )
           );
-
-          const link = yield* getLinkedAccount({
-            accountId: params.accountId,
-            providerId: "whoop",
-            userId: params.userId,
-          });
-          const requestedDays = inclusiveDays(params.startDate, params.endDate);
-          const cachedDays = yield* cache.getCachedDays(
-            params.userId,
-            link.id,
-            requestedDays
-          );
-
-          const missingDays = requestedDays.filter(
-            (day) => !cachedDays.has(day)
-          );
-          const allDays = new Map(cachedDays);
-
-          const [missingStart] = missingDays;
-          const missingEnd = missingDays.at(-1);
-
-          if (missingStart && missingEnd) {
-            const accessToken = yield* getLinkedAccessToken(link);
-            const client = createWhoopClient(accessToken);
-
-            // Start 6 hours before midnight so WHOOP cycles/sleeps that
-            // begin in the late evening (typically ~11pm when the user
-            // falls asleep) are captured. Without this buffer, a sleep
-            // starting at 11:54pm falls outside the next day's midnight
-            // boundary and is excluded from narrow refetches.
-            const fetchStart = Temporal.PlainDate.from(missingStart)
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from("00:00"),
-                timeZone: params.timeZone,
-              })
-              .subtract({ hours: 6 })
-              .toInstant()
-              .toString();
-            const fetchEnd = Temporal.PlainDate.from(missingEnd)
-              .toZonedDateTime({
-                plainTime: Temporal.PlainTime.from("00:00"),
-                timeZone: params.timeZone,
-              })
-              .add({ days: 1 })
-              .toInstant()
-              .toString();
-
-            const fetchParams = {
-              end: fetchEnd,
-              start: fetchStart,
-            };
-
-            const [cycles, recoveries, sleeps, workouts] = yield* Effect.all(
-              [
-                client.listCycles(fetchParams),
-                client.listRecoveries(fetchParams),
-                client.listSleeps(fetchParams),
-                client.listWorkouts(fetchParams),
-              ],
-              { concurrency: "unbounded" }
-            );
-
-            const groupedDays = groupRawDataByDay({
-              cycles,
-              recoveries,
-              sleeps,
-              workouts,
+          if (!connection) {
+            return yield* new LinkedAccountError({
+              accountId: params.accountId,
+              cause: new Error("No WHOOP connection for the account"),
+              providerId: WHOOP_PROVIDER,
             });
-
-            // Only write days that were actually missing from cache. A cycle
-            // fetched for a missing day can get grouped to an adjacent CACHED
-            // day (e.g., the active cycle starts on day N but its sleep ends
-            // on day N+1), which would overwrite that day's complete cached
-            // data with an incomplete grouping.
-            const fetchedDays = missingDays.map(
-              (day) => groupedDays.get(day) ?? initializeDay(day)
-            );
-            for (const payload of fetchedDays) {
-              allDays.set(payload.day, payload);
-            }
-            yield* Effect.forEach(
-              fetchedDays,
-              (payload) =>
-                cache.setCachedDay(
-                  params.userId,
-                  link.id,
-                  payload.day,
-                  payload,
-                  ttlForDay(payload, params.timeZone)
-                ),
-              { concurrency: "unbounded", discard: true }
-            );
           }
+          yield* syncMissingDays(connection, params.startDate, params.endDate);
 
-          return requestedDays
-            .map((day) => allDays.get(day))
-            .filter(hasData)
-            .map(toSummary);
+          const db = yield* Database;
+          const [metrics, activities] = yield* Effect.all(
+            [
+              db
+                .select()
+                .from(dayMetricTable)
+                .where(
+                  and(
+                    eq(dayMetricTable.connectionId, connection.id),
+                    between(
+                      dayMetricTable.date,
+                      params.startDate,
+                      params.endDate
+                    )
+                  )
+                ),
+              db
+                .select()
+                .from(activityTable)
+                .where(
+                  and(
+                    eq(activityTable.connectionId, connection.id),
+                    between(
+                      activityTable.date,
+                      params.startDate,
+                      params.endDate
+                    )
+                  )
+                )
+                .orderBy(activityTable.startAt),
+            ],
+            { concurrency: "unbounded" }
+          ).pipe(Effect.orDie);
+
+          return toSummaries(
+            metrics,
+            z.array(activitySelectSchema).parse(activities)
+          );
         }
       );
 
       /**
-       * The cached days a changed record can be on, or `undefined` when that
-       * can't be known: WHOOP names the record, not its day, so this asks
-       * WHOOP for it. A deleted record is gone, and a lookup can fail.
-       *
-       * A record lands on its cycle's wake-up day (see `groupRawDataByDay`),
-       * which is the day it starts or the day before. A new sleep also closes
-       * the cycle before it, so its days run from the day before it starts to
-       * the day it ends.
+       * Fetches a user's last few WHOOP days again, when one of their clients
+       * connects, and tells the clients to refetch. WHOOP sends no webhook
+       * for a day's strain and energy, and may skip one for anything else.
+       * A connection is fetched at most once in 10 minutes, because WHOOP
+       * limits the requests an app makes in a day.
        */
-      const changedDays = Effect.fn("WhoopService.changedDays")(
-        function* (link: LinkedAccount, change: WhoopChange) {
-          const lookup = recordLookup(change.type);
-          if (!lookup) {
-            return;
-          }
-          const client = createWhoopClient(yield* getLinkedAccessToken(link));
-          const record = yield* client[lookup](change.id);
-          return inclusiveDays(
-            Temporal.PlainDate.from(
-              dateFromOffset(record.start, record.timezone_offset)
+      const syncRecent = Effect.fn("WhoopService.syncRecent")(function* (
+        userId: string
+      ) {
+        yield* Effect.annotateCurrentSpan("userId", userId);
+        const db = yield* Database;
+        // Claim the sync first, so clients that connect together fetch once.
+        const claimed = yield* db
+          .update(connectionTable)
+          .set({ syncedAt: new Date().toISOString() })
+          .where(
+            and(
+              eq(connectionTable.userId, userId),
+              eq(connectionTable.pluginId, WHOOP_PLUGIN),
+              eq(connectionTable.status, "active"),
+              // The first read stores a connection's history.
+              isNotNull(connectionTable.syncedFrom),
+              or(
+                isNull(connectionTable.syncedAt),
+                lt(
+                  connectionTable.syncedAt,
+                  new Date(Date.now() - RECENT_SYNC_INTERVAL_MS).toISOString()
+                )
+              )
             )
-              .subtract({ days: 1 })
-              .toString(),
-            dateFromOffset(record.end, record.timezone_offset)
-          );
-        },
-        Effect.catch((error) =>
-          Effect.logWarning("WHOOP_CHANGED_RECORD_LOOKUP_FAILED", {
-            error,
-          }).pipe(Effect.as(undefined))
-        )
-      );
+          )
+          .returning({ id: connectionTable.id })
+          .pipe(Effect.orDie);
+        if (claimed.length === 0) {
+          return;
+        }
+
+        const connections = yield* findConnections(
+          inArray(
+            connectionTable.id,
+            claimed.map(({ id }) => id)
+          )
+        );
+        const today = Temporal.Now.plainDateISO("UTC").toString();
+        yield* Effect.forEach(
+          connections,
+          (connection) =>
+            sync(connection, addDays(today, -2), addDays(today, 1)),
+          { discard: true }
+        );
+        yield* publishToUser(userId, { payload: {}, type: "whoop" });
+      });
 
       /**
-       * WHOOP says a record of a user changed (a webhook). Drops the cached
-       * days it can be on, or every day when those aren't known, for the
-       * account linked to that WHOOP user, and tells its owner's open clients
-       * to refetch. A WHOOP user nobody has linked changes nothing.
+       * The days a changed record can be on, or `undefined` when that can't
+       * be known. WHOOP names the record, not its day.
+       *
+       * An updated record is read from WHOOP. It lands on its cycle's
+       * wake-up day (see `groupRawDataByDay`), which is the day it starts or
+       * the day before, and a new sleep also closes the cycle before it, so
+       * its days run from the day before it starts to the day it ends.
+       *
+       * A deleted record can't be read, and a read can fail. Then the days
+       * come from the stored row, if the record was stored.
+       */
+      const changedDays = Effect.fn("WhoopService.changedDays")(function* (
+        connection: WhoopConnection,
+        change: WhoopChange
+      ) {
+        const lookup = recordLookup(change.type);
+        if (lookup) {
+          const record = yield* Effect.gen(function* () {
+            const client = createWhoopClient(
+              yield* getLinkedAccessToken(connection.link)
+            );
+            return yield* client[lookup](change.id);
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning("WHOOP_CHANGED_RECORD_LOOKUP_FAILED", {
+                error,
+              }).pipe(Effect.as(undefined))
+            )
+          );
+          if (record) {
+            return {
+              end: dateFromOffset(record.end, record.timezone_offset),
+              start: addDays(
+                dateFromOffset(record.start, record.timezone_offset),
+                -1
+              ),
+            };
+          }
+        }
+
+        const db = yield* Database;
+        const [stored] = yield* db
+          .select({ date: activityTable.date })
+          .from(activityTable)
+          .where(
+            and(
+              eq(activityTable.connectionId, connection.id),
+              eq(activityTable.externalId, change.id)
+            )
+          )
+          .pipe(Effect.orDie);
+        return stored && { end: stored.date, start: addDays(stored.date, -1) };
+      });
+
+      /**
+       * WHOOP says a record of a user changed (a webhook). Fetches the days
+       * it can be on again, for the connection of that WHOOP user, and tells
+       * its owner's open clients to refetch. A WHOOP user nobody has linked,
+       * or a record whose days aren't known, changes nothing.
        */
       const dataChanged = Effect.fn("WhoopService.dataChanged")(function* (
         change: WhoopChange
       ) {
         yield* Effect.annotateCurrentSpan("whoopUserId", change.whoopUserId);
         yield* Effect.annotateCurrentSpan("type", change.type);
-        const db = yield* Database;
-        const linked = yield* db
-          .select({ id: account.id, userId: account.userId })
-          .from(account)
-          .where(
-            and(
-              eq(account.providerId, WHOOP_PROVIDER),
-              eq(account.accountId, change.whoopUserId)
-            )
-          );
+        const connections = yield* findConnections(
+          eq(account.accountId, change.whoopUserId)
+        );
         yield* Effect.forEach(
-          linked,
-          Effect.fnUntraced(function* ({ id, userId }) {
-            const days = yield* changedDays(
-              {
-                accountId: change.whoopUserId,
-                id,
-                providerId: WHOOP_PROVIDER,
-                userId,
-              },
-              change
-            );
-            yield* cache.removeDays(userId, id, days);
-            yield* publishToUser(userId, { payload: {}, type: "whoop" });
+          connections,
+          Effect.fnUntraced(function* (connection) {
+            const days = yield* changedDays(connection, change);
+            if (!days) {
+              return;
+            }
+            yield* sync(connection, days.start, days.end);
+            yield* publishToUser(connection.link.userId, {
+              payload: {},
+              type: "whoop",
+            });
           }),
           { discard: true }
         );
       });
 
-      return { dataChanged, listDaySummaries };
+      return { dataChanged, listDaySummaries, syncRecent };
     }),
   }
 ) {
-  static readonly layer = Layer.effect(this, this.make).pipe(
-    Layer.provide(WhoopCacheService.layer)
-  );
+  static readonly layer = Layer.effect(this, this.make);
 }
