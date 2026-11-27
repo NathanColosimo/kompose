@@ -5,7 +5,7 @@ Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar w
 ## How it works
 
 1. User links their WHOOP account on the settings page via OAuth (Better Auth `genericOAuth` plugin).
-2. On the dashboard, Jotai atoms fetch the linked account and day summaries for the visible month window.
+2. On the dashboard, Jotai atoms fetch the day metrics and activities for the visible month window (`days.list`).
 3. The server fetches cycles, recoveries, sleeps, and workouts from the WHOOP Developer API v2, groups them by calendar day using a cycle-centric model, and stores them in Postgres. Reads answer from the stored rows.
 4. The frontend renders daily stats as header badges, sleep/naps as background bands, and workouts as timed event blocks.
 
@@ -53,7 +53,8 @@ packages/api/src/routers/whoop/   — oRPC router + Effect service
 ├── service.ts           — WhoopService (grouping, sync into day_metric and activity, day summaries)
 └── errors.ts            — Service-level errors (InvalidRange)
 
-packages/state/src/atoms/whoop-data.ts   — Jotai atoms for frontend state
+packages/api/src/routers/days/           — `days.list`, the request the apps read every plugin's day data with
+packages/state/src/atoms/day-data.ts     — Jotai atoms for frontend state
 ```
 
 ## API Client
@@ -137,49 +138,38 @@ WHOOP calls `POST /api/webhooks/whoop` when a workout, sleep or recovery of a li
 
 ## oRPC Endpoints
 
+The apps read WHOOP data with `days.list`, the request for every plugin that records day data (see [Reading the tables in `plugins.md`](./plugins.md#reading-the-tables)).
+
 | Endpoint | Input | Output |
 |----------|-------|--------|
 | `whoop.days.list` | `{ accountId, startDate, endDate, timeZone }` | `WhoopDaySummary[]` |
 
-`timeZone` is still accepted and no longer used: a record's day comes from its own UTC offset.
+`whoop.days.list` stays for app versions installed before `days.list`. It builds the same day summaries as before from the stored rows. `timeZone` is still accepted and no longer used: a record's day comes from its own UTC offset.
 
 `WhoopDaySummary` contains: `day`, `recoveryScore`, `strainScore`, `kilojoule`, `sleepPerformance`, `sleep` (primary overnight sleep), `naps` (array), `workouts` (array).
 
-## Frontend State
-
-WHOOP data uses the same `atomWithQuery` pattern as Google Calendar data. Components read atoms directly via `useAtomValue` — no prop drilling.
-
-| Atom | Purpose |
-|------|---------|
-| `whoopAccountDataAtom` | Linked WHOOP account (`Account \| null`) |
-| `whoopAccountIdAtom` | Derived account ID for query gating |
-| `whoopSummariesByDayAtom` | `Map<string, WhoopDaySummary>` keyed by `YYYY-MM-DD` |
-
-- Month-anchored query window with ±7 day padding (stable key for intra-month navigation)
-- Previous month data stays visible only for the same account and time zone; unlinking clears the day map immediately. Account ID and time zone are part of the query key.
-- 10-minute client `staleTime`
-
 ## Calendar UI
 
-### Day Header Badges
+Nothing on the calendar is specific to WHOOP. The components below draw day metrics and activities from any plugin; state is in `packages/state/src/atoms/day-data.ts`.
 
-Recovery (color-coded dot), strain, sleep %, and calories shown as compact `text-[10px]` badges below the date number. Recovery dot: green (67-100), yellow (34-66), red (0-33). Calories converted from kilojoule client-side.
+### Day Header Stats
+
+Recovery (color-coded dot), strain, and time asleep shown as compact badges below the date number; the tooltip adds sleep performance and calories. Recovery dot: green (67-100), yellow (34-66), red (0-33). Each is a day metric, and one that has no row isn't drawn.
 
 ### Sleep & Nap Bands
 
-Translucent indigo background bands behind all events. Do not participate in collision layout. Each band is clamped to the column's day boundaries so overnight sleep renders on both the evening and morning columns. A frosted-glass pill in the center of the larger segment shows:
-- "Sleep" or "Nap" label
+`SleepBand`: translucent indigo background bands behind all events, one per `sleep` activity. They do not participate in collision layout. Each band is clamped to the column's day boundaries so overnight sleep renders on both the evening and morning columns. A frosted-glass pill in the center of the larger segment shows:
+- time asleep, or time in bed until the provider scores the sleep
+- "asleep" or "nap"
 - Time range (full, unclamped)
-- Duration in bed
-- Duration asleep (actual light + deep + REM)
 
 ### Workout Blocks
 
-Teal-styled event blocks (`border-teal-600/30`, `bg-teal-500/15`). Participate in collision layout alongside Google events and tasks. Show: strain score, sport name, and time range. Cross-midnight workouts render in both day columns (clamped).
+`WorkoutEvent`: teal event blocks, one per `workout` activity. They participate in collision layout alongside Google events and tasks. Show: strain, the workout's title (its sport), and time range. The tooltip names the plugin that recorded it. Cross-midnight workouts render in both day columns (clamped).
 
 ### Cross-Day Rendering
 
-Events spanning midnight (Google events, WHOOP sleep/workouts) are split into per-day segments clamped to midnight boundaries. Google events use `clampEventToDay`. Sleep/workout bands check all visible summaries per column. Tasks stay on their start day with collision layout clamped to 1440 minutes.
+Events spanning midnight (Google events, sleeps, workouts) are split into per-day segments clamped to midnight boundaries. Google events use `clampEventToDay`. Every column checks every loaded sleep and workout. Tasks stay on their start day with collision layout clamped to 1440 minutes.
 
 ## Settings Page
 

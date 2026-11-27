@@ -2,11 +2,11 @@ import type {
   TaskSelectDecoded,
   UpdateScope,
 } from "@kompose/api/routers/task/contract";
-import type { WhoopDaySummary } from "@kompose/api/routers/whoop/contract";
 import type {
   Event as GoogleEvent,
   RecurrenceScope,
 } from "@kompose/google-cal/schema";
+import { pluginName } from "@kompose/plugins";
 import { LINKED_ACCOUNTS_QUERY_KEY } from "@kompose/state/account-query-keys";
 import {
   currentDateAtom,
@@ -15,6 +15,16 @@ import {
   mobileVisibleDaysCountAtom,
   timezoneAtom,
 } from "@kompose/state/atoms/current-date";
+import {
+  DAY_DATA_QUERY_KEY,
+  type DayMetrics,
+  dayMetricsByDayAtom,
+  hasDayDataAtom,
+  hasDayStats,
+  shouldShowDayStatsRow,
+  type WorkoutActivity,
+  workoutsAtom,
+} from "@kompose/state/atoms/day-data";
 import {
   normalizedGoogleColorsAtomFamily,
   resolveGoogleEventColors,
@@ -26,13 +36,6 @@ import {
   resolvedVisibleCalendarIdsAtom,
 } from "@kompose/state/atoms/google-data";
 import { isCalendarVisible } from "@kompose/state/atoms/visible-calendars";
-import {
-  hasWhoopStats,
-  shouldShowWhoopRow,
-  WHOOP_DAYS_QUERY_KEY,
-  whoopAccountIdAtom,
-  whoopSummariesByDayAtom,
-} from "@kompose/state/atoms/whoop-data";
 import {
   calculateCollisionLayout,
   type ItemLayout,
@@ -394,7 +397,7 @@ function blockHeight(minutes: number): number {
   return (drawn / 60) * PIXELS_PER_HOUR - EVENT_BLOCK_INSET_PX;
 }
 
-/** WHOOP workouts use one teal, matching the web's --whoop-workout. */
+/** Workouts use one teal, matching the web's --workout. */
 const WORKOUT_COLOR = {
   dark: "hsl(176, 45%, 50%)",
   light: "hsl(178, 45%, 38%)",
@@ -404,46 +407,48 @@ interface PositionedWorkout extends DaySegment {
   /** The whole workout's end, for its time text. */
   end: Temporal.ZonedDateTime;
   id: string;
-  sportName: string | null;
+  /** The name of the plugin that recorded it, such as "WHOOP". */
+  source: string;
   start: Temporal.ZonedDateTime;
-  strainScore: number | null;
+  strain: number | null;
+  /** The provider's name for it, such as its sport. */
+  title: string | null;
 }
 
 /** Each workout's part on `day`, keeping its real start and end for text. */
 function workoutSegmentsForDay(
   day: Temporal.PlainDate,
-  summaries: Iterable<WhoopDaySummary>,
+  workouts: WorkoutActivity[],
   timeZone: string
 ): PositionedWorkout[] {
-  const segments: PositionedWorkout[] = [];
-  for (const summary of summaries) {
-    for (const workout of summary.workouts) {
-      const start = isoStringToZonedDateTime(workout.start, timeZone);
-      const end = isoStringToZonedDateTime(workout.end, timeZone);
-      const segment = daySegment(start, end, day, timeZone);
-      if (segment) {
-        segments.push({
-          ...segment,
-          end,
-          id: workout.id,
-          sportName: workout.sportName,
-          start,
-          strainScore: workout.strainScore,
-        });
-      }
-    }
-  }
-  return segments;
+  return workouts.flatMap((workout) => {
+    const start = isoStringToZonedDateTime(workout.startAt, timeZone);
+    const end = isoStringToZonedDateTime(workout.endAt, timeZone);
+    const segment = daySegment(start, end, day, timeZone);
+    return segment
+      ? [
+          {
+            ...segment,
+            end,
+            id: workout.id,
+            source: pluginName(workout.pluginId),
+            start,
+            strain: workout.details.strain,
+            title: workout.title,
+          },
+        ]
+      : [];
+  });
 }
 
-/** Whether day headers keep a WHOOP row; see shouldShowWhoopRow. */
-function useShowWhoopRow(days: Temporal.PlainDate[]): boolean {
-  const whoopAccountId = useAtomValue(whoopAccountIdAtom);
-  const summaries = useAtomValue(whoopSummariesByDayAtom);
-  return shouldShowWhoopRow(
-    whoopAccountId,
+/** Whether day headers keep a stats row; see shouldShowDayStatsRow. */
+function useShowStatsRow(days: Temporal.PlainDate[]): boolean {
+  const hasDayData = useAtomValue(hasDayDataAtom);
+  const metricsByDay = useAtomValue(dayMetricsByDayAtom);
+  return shouldShowDayStatsRow(
+    hasDayData,
     days.map((day) => day.toString()),
-    summaries
+    metricsByDay
   );
 }
 
@@ -455,10 +460,10 @@ function recoveryColor(score: number): string {
   return score >= 34 ? "bg-amber-400" : "bg-red-500";
 }
 
-/** The date and any WHOOP numbers, as VoiceOver reads a day header. */
+/** The date and the day's numbers, as VoiceOver reads a day header. */
 function dayHeaderLabel(
   day: Temporal.PlainDate,
-  summary: WhoopDaySummary | undefined,
+  metrics: DayMetrics | undefined,
   isTodayDay: boolean
 ): string {
   return [
@@ -468,21 +473,21 @@ function dayHeaderLabel(
       month: "long",
       weekday: "long",
     }),
-    summary?.recoveryScore == null
+    metrics?.recovery_score === undefined
       ? null
-      : `recovery ${summary.recoveryScore}%`,
-    summary?.strainScore == null
+      : `recovery ${metrics.recovery_score}%`,
+    metrics?.strain === undefined
       ? null
-      : `strain ${summary.strainScore.toFixed(1)}`,
+      : `strain ${metrics.strain.toFixed(1)}`,
   ]
     .filter(Boolean)
     .join(", ");
 }
 
 /** Recovery and strain under a day's date. */
-function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
+function DayStats({ metrics }: { metrics: DayMetrics | undefined }) {
   const scale = useCalendarTextScale();
-  if (!(summary && hasWhoopStats(summary))) {
+  if (!(metrics && hasDayStats(metrics))) {
     // Keep every header the same height.
     return <View style={{ height: 14 * scale }} />;
   }
@@ -492,27 +497,27 @@ function WhoopDayStats({ summary }: { summary: WhoopDaySummary | undefined }) {
       className="flex-row items-center gap-2"
       style={{ height: 14 * scale }}
     >
-      {summary.recoveryScore === null ? null : (
+      {metrics.recovery_score === undefined ? null : (
         <View className="flex-row items-center gap-1">
           <View
-            className={`size-1.5 rounded-full ${recoveryColor(summary.recoveryScore)}`}
+            className={`size-1.5 rounded-full ${recoveryColor(metrics.recovery_score)}`}
           />
           <Text
             className="text-muted-foreground text-[10px]"
             maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           >
-            {summary.recoveryScore}%
+            {metrics.recovery_score}%
           </Text>
         </View>
       )}
-      {summary.strainScore === null ? null : (
+      {metrics.strain === undefined ? null : (
         <View className="flex-row items-center gap-0.5">
           <Icon as={Activity} className="text-muted-foreground" size={10} />
           <Text
             className="text-muted-foreground text-[10px]"
             maxFontSizeMultiplier={MAX_CALENDAR_TEXT_SCALE}
           >
-            {summary.strainScore.toFixed(1)}
+            {metrics.strain.toFixed(1)}
           </Text>
         </View>
       )}
@@ -677,7 +682,7 @@ function AllDayListSheet({
   );
 }
 
-/** A WHOOP workout's details; workouts are read-only in Kompose. */
+/** A workout's details; workouts are read-only in Kompose. */
 function WorkoutSheet({
   onClose,
   workout,
@@ -690,20 +695,20 @@ function WorkoutSheet({
       isVisible={workout !== null}
       onClose={onClose}
       snapPoints={[0.3]}
-      title={workout?.sportName || "Workout"}
+      title={workout?.title || "Workout"}
     >
       {workout ? (
         <View className="gap-1.5">
           <Text className="text-foreground">
             {formatTimeRange(workout.start, workout.end)}
           </Text>
-          {workout.strainScore === null ? null : (
+          {workout.strain === null ? null : (
             <Text className="text-foreground">
-              Strain {workout.strainScore.toFixed(1)}
+              Strain {workout.strain.toFixed(1)}
             </Text>
           )}
           <Text className="text-muted-foreground text-sm">
-            From WHOOP. Edit workouts in the WHOOP app.
+            From {workout.source}. Edit workouts in the {workout.source} app.
           </Text>
         </View>
       ) : null}
@@ -918,7 +923,8 @@ export default function CalendarTab() {
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
 
-  const whoopSummaries = useAtomValue(whoopSummariesByDayAtom);
+  const metricsByDay = useAtomValue(dayMetricsByDayAtom);
+  const workouts = useAtomValue(workoutsAtom);
   // "Nov", or "Oct–Nov" when the visible days cross a month.
   const firstMonth = visibleDays[0]?.toLocaleString(undefined, {
     month: "short",
@@ -928,7 +934,7 @@ export default function CalendarTab() {
   });
   const gutterMonths =
     firstMonth === lastMonth ? firstMonth : `${firstMonth}–${lastMonth}`;
-  const showWhoopRow = useShowWhoopRow(visibleDays);
+  const showStatsRow = useShowStatsRow(visibleDays);
   // Each day's column beside the time gutter, and its block area, less the
   // border and create strip.
   const { width: windowWidth } = useWindowDimensions();
@@ -942,10 +948,10 @@ export default function CalendarTab() {
       new Map(
         visibleDays.map((day) => [
           day.toString(),
-          workoutSegmentsForDay(day, whoopSummaries.values(), timeZone),
+          workoutSegmentsForDay(day, workouts, timeZone),
         ])
       ),
-    [visibleDays, whoopSummaries, timeZone]
+    [visibleDays, workouts, timeZone]
   );
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: MVP grouping logic kept inline for now.
@@ -1074,9 +1080,9 @@ export default function CalendarTab() {
         workoutsByDay.get(dayKey) ?? []
       ).map((workout) => ({
         endMinutes: segmentEndMinutes(workout),
-        id: `whoop-${workout.id}`,
+        id: `workout-${workout.id}`,
         startMinutes: minutesFromMidnight(workout.segmentStart),
-        type: "whoop-workout" as const,
+        type: "workout" as const,
       }));
 
       const allItems = [...taskItems, ...googleItems, ...workoutItems];
@@ -1131,7 +1137,7 @@ export default function CalendarTab() {
   const [allDayListDay, setAllDayListDay] = useState<Temporal.PlainDate | null>(
     null
   );
-  // The WHOOP workout whose details are open; workouts are read-only.
+  // The workout whose details are open; workouts are read-only.
   const [openWorkout, setOpenWorkout] = useState<PositionedWorkout | null>(
     null
   );
@@ -1711,7 +1717,7 @@ export default function CalendarTab() {
         tasksQuery.refetch(),
         queryClient.invalidateQueries({ queryKey: LINKED_ACCOUNTS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: GOOGLE_CALENDARS_QUERY_KEY }),
-        queryClient.invalidateQueries({ queryKey: WHOOP_DAYS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: DAY_DATA_QUERY_KEY }),
         ...visibleCalendarIds.map((calendar) =>
           queryClient.invalidateQueries({
             queryKey: getGoogleEventsByCalendarQueryKey(calendar),
@@ -1831,7 +1837,7 @@ export default function CalendarTab() {
                 const isTodayHighlight = isToday(day, timeZone);
                 const { weekday, dayNumber } = formatDayHeader(day);
 
-                const whoop = whoopSummaries.get(day.toString());
+                const metrics = metricsByDay.get(day.toString());
 
                 return (
                   <View
@@ -1841,7 +1847,7 @@ export default function CalendarTab() {
                     accessibilityHint="Creates an event or task on this day"
                     accessibilityLabel={dayHeaderLabel(
                       day,
-                      whoop,
+                      metrics,
                       isTodayHighlight
                     )}
                     accessibilityRole="button"
@@ -1881,7 +1887,7 @@ export default function CalendarTab() {
                         </Text>
                       </View>
                     </View>
-                    {showWhoopRow ? <WhoopDayStats summary={whoop} /> : null}
+                    {showStatsRow ? <DayStats metrics={metrics} /> : null}
                   </View>
                 );
               })}
@@ -2072,9 +2078,11 @@ export default function CalendarTab() {
                           );
                         })}
 
-                        {/* WHOOP workouts */}
+                        {/* Workouts */}
                         {(workoutsByDay.get(dayKey) ?? []).map((workout) => {
-                          const layout = dayLayouts?.get(`whoop-${workout.id}`);
+                          const layout = dayLayouts?.get(
+                            `workout-${workout.id}`
+                          );
                           const minutes = Math.round(
                             workout.segmentEnd
                               .since(workout.segmentStart)
@@ -2091,13 +2099,13 @@ export default function CalendarTab() {
                               columnIndex={layout?.columnIndex}
                               columnSpan={layout?.columnSpan}
                               details={
-                                workout.strainScore === null
+                                workout.strain === null
                                   ? []
                                   : [
                                       {
                                         icon: Activity,
-                                        label: `Strain ${workout.strainScore.toFixed(1)}`,
-                                        short: workout.strainScore.toFixed(1),
+                                        label: `Strain ${workout.strain.toFixed(1)}`,
+                                        short: workout.strain.toFixed(1),
                                       },
                                     ]
                               }
@@ -2108,7 +2116,7 @@ export default function CalendarTab() {
                               onPress={() => setOpenWorkout(workout)}
                               stackDepth={layout?.stackDepth}
                               start={workout.start}
-                              title={workout.sportName || "Workout"}
+                              title={workout.title || "Workout"}
                               top={
                                 (minutesFromMidnight(workout.segmentStart) /
                                   60) *

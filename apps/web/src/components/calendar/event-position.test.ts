@@ -20,7 +20,7 @@ const pixels = (value: string | number | undefined) =>
     )
   );
 
-for (const type of ["google-event", "task", "whoop-workout"] as const) {
+for (const type of ["google-event", "task", "workout"] as const) {
   test(`a later ${type} leaves an exposed strip for the earlier end-resize handle`, () => {
     const items: PositionedItem[] = [
       {

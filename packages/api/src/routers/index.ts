@@ -2,6 +2,7 @@ import { implement, type RouterClient } from "@orpc/server";
 import type { Context } from "../context";
 import { sendPublicErrors } from "../errors";
 import { agentsContract } from "./agents/contract";
+import { daysContract } from "./days/contract";
 import { googleCalContract } from "./google-cal/contract";
 import { mapsContract } from "./maps/contract";
 import { pluginsContract } from "./plugins/contract";
@@ -12,6 +13,7 @@ import { whoopContract } from "./whoop/contract";
 
 const appContract = {
   agents: agentsContract,
+  days: daysContract,
   googleCal: googleCalContract,
   maps: mapsContract,
   plugins: pluginsContract,
@@ -26,6 +28,9 @@ const app = implement(appContract).$context<Context>().use(sendPublicErrors);
 export const appRouter = app.router({
   agents: app.agents.lazy(async () => ({
     default: (await import("./agents/router")).agentsRouter,
+  })),
+  days: app.days.lazy(async () => ({
+    default: (await import("./days/router")).daysRouter,
   })),
   googleCal: app.googleCal.lazy(async () => ({
     default: (await import("./google-cal/router")).googleCalRouter,

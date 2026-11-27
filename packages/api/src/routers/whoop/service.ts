@@ -637,6 +637,22 @@ export class WhoopService extends Context.Service<WhoopService>()(
         }
       );
 
+      /** `syncMissingDays` for each of a user's WHOOP connections. */
+      const syncMissing = Effect.fn("WhoopService.syncMissing")(function* (
+        userId: string,
+        startDate: string,
+        endDate: string
+      ) {
+        const connections = yield* findConnections(
+          eq(connectionTable.userId, userId)
+        );
+        yield* Effect.forEach(
+          connections,
+          (connection) => syncMissingDays(connection, startDate, endDate),
+          { discard: true }
+        );
+      });
+
       const listDaySummaries = Effect.fn("WhoopService.listDaySummaries")(
         function* (params: {
           accountId: string;
@@ -847,7 +863,7 @@ export class WhoopService extends Context.Service<WhoopService>()(
         );
       });
 
-      return { dataChanged, listDaySummaries, syncRecent };
+      return { dataChanged, listDaySummaries, syncMissing, syncRecent };
     }),
   }
 ) {

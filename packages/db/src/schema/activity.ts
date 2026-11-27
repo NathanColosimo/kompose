@@ -17,7 +17,7 @@ export const activityKinds = ["sleep", "workout"] as const;
 export type ActivityKind = (typeof activityKinds)[number];
 
 /** What each kind of activity carries besides its times. */
-const activityDetailsSchemas = {
+export const activityDetailsSchemas = {
   sleep: z.object({
     /** Time asleep, which is less than the time in bed. */
     asleepMinutes: z.number().int().nonnegative().nullable(),
