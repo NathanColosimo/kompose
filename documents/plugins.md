@@ -13,6 +13,7 @@ The plugin system is only the part every such service needs:
 | Tokens | Encrypts each account's tokens and refreshes them safely |
 | Webhooks | One route that receives calls from outside services |
 | Unlinking | One hook that runs a plugin's cleanup at its provider |
+| Data tables | One table per kind of data, which every plugin of that kind writes and screens read |
 
 Everything else about a service is ordinary code that belongs to it: the router that fetches its data, its state, and the components that draw it.
 
@@ -169,15 +170,69 @@ Not built, because nothing needs them yet: a shared signature check (WHOOP's is 
 
 Settings, connections, encryption, token refresh, the webhook route, and the unlink hook need no changes.
 
-## Later: one table per kind of data
+## Data tables
 
-When two plugins bring the same kind of data, both write it into one Kompose table, and screens read the table. The table is the whole contract: a screen never calls a plugin, and adding a second calendar provider changes no screen.
+When two plugins bring the same kind of data, both write it into one Kompose table, and screens read the table. The table is the whole contract: a screen never calls a plugin, and a second provider of that kind changes no screen.
 
 Tasks already work this way: a task is a row in `task` wherever it came from. A Linear or Notion plugin writes tasks; it doesn't get its own task list.
 
-Calendar events and health numbers don't yet. Google Calendar and WHOOP each serve their own data through their own router, cached in Redis. They move to shared tables when the second provider of that kind is built, in this order:
+What a plugin records about a user's day has its tables, below. Calendar events don't yet: see [Later: calendar tables](#later-calendar-tables).
 
-1. Build the table and move the existing plugin onto it.
+### Day metrics and activities
+
+| Table | One row is | Columns | Key |
+| --- | --- | --- | --- |
+| `day_metric` | One number about one day | `connectionId`, `date`, `metric`, `value` | `(connectionId, date, metric)` |
+| `activity` | Something that happened over a stretch of time and can't be edited in Kompose | `id`, `connectionId`, `externalId`, `kind`, `date`, `title`, `startAt`, `endAt`, `details` | `id`, with `(connectionId, externalId)` unique |
+
+The schemas are `packages/db/src/schema/day-metric.ts` and `activity.ts`.
+
+- **Neither table names a plugin.** A row says what happened. Its connection says who measured it.
+- **Rows belong to a connection** and are deleted with it, so unlinking removes the data.
+- **`metric` and `kind` are text columns typed from a list** in the schema file (`dayMetrics`, `activityKinds`), like plugin IDs. A new one needs no migration, and a misspelt one does not compile.
+- **A metric has one unit,** fixed by its name, so two plugins' rows for it compare directly. There is no unit column.
+- **`date` is the day the provider counts the row toward.** For an activity the times alone don't give it: a sleep counts toward the day the user woke up. A sync replaces a connection's rows a whole day at a time.
+- **`externalId` is the provider's ID** for the activity. A sync updates the row it already stored, so the Kompose `id` stays the same.
+- **`title` is the provider's name for it,** such as a workout's sport.
+- **`details` holds what only that kind has,** checked against the kind by `activitySelectSchema`.
+- **How a number or an activity is drawn** (label, color, icon) is client code, not a table.
+
+Metrics:
+
+| `metric` | Unit | From WHOOP | From Apple Health (planned) |
+| --- | --- | --- | --- |
+| `energy_burned_kcal` | Kilocalories used over the whole day, resting and active | The cycle's `kilojoule` | `activeEnergyBurned` plus `basalEnergyBurned` |
+| `recovery_score` | 0 to 100 | The recovery's `recovery_score` | None |
+| `sleep_duration_min` | Minutes asleep in the day's main sleep | Light, slow-wave and REM time of the main sleep | The asleep stages of the night's `sleepAnalysis` samples |
+| `sleep_performance` | 0 to 100: sleep against the sleep needed | The main sleep's `sleep_performance_percentage` | None |
+| `strain` | WHOOP's 0 to 21 scale | The cycle's `strain` | None |
+
+Apple Health will add metrics WHOOP's API doesn't have, such as `steps`. Heart rate variability needs one metric per method: WHOOP reports RMSSD and Apple reports SDNN, and the two numbers don't compare.
+
+Activity kinds:
+
+| `kind` | `details` | From WHOOP | From Apple Health (planned) |
+| --- | --- | --- | --- |
+| `sleep` | `asleepMinutes` (null until the provider scores it), `nap` | A sleep record. `nap` is WHOOP's own flag | The `sleepAnalysis` samples of one sleep, merged. Apple has no nap flag |
+| `workout` | `strain` (WHOOP's scale; null from anyone else) | A workout record, with its `sport_name` as the title | An `HKWorkout`, with its activity type as the title |
+
+### Two plugins that report the same thing
+
+Planned with Apple Health; only WHOOP writes these tables today.
+
+A user with WHOOP and Apple Health has two rows for last night's sleep, and two for the day's energy. The server picks one when it answers a read, so screens never see both:
+
+- **Plugins have a fixed order:** WHOOP, then Apple Health.
+- **A day metric:** for one date and metric, the row of the first plugin in that order.
+- **An activity:** of two with the same kind and overlapping times, the one of the first plugin in that order.
+
+Both rows stay stored. Unlinking the first plugin shows the other's.
+
+## Later: calendar tables
+
+Google Calendar serves its events through its own router, cached in Redis. They move to shared tables when the second calendar provider is built, in this order:
+
+1. Build the tables and move Google Calendar onto them.
 2. Add the second plugin, which only has to write rows.
 
 The sketch below records what was already decided. Check it against the real second provider before building.
@@ -185,12 +240,8 @@ The sketch below records what was already decided. Check it against the real sec
 - **Every row:** a Kompose `uuidv7` ID, its `connectionId`, a unique `(connectionId, externalId)`, and `providerData` that only the owning plugin reads, for writing back without losing fields.
 - **`calendar`:** `name`, `color`, `isPrimary`, `canEdit`, `visible`, `syncCursor`.
 - **`calendar_event`:** `title`, `description` (sanitized HTML), `location`, start and end (UTC with a time zone, or dates for all-day), `status`, `showAs`, `color`, `conference`, `attendees`, `recurrence` as RFC 5545 strings, `canEdit`, `externalUrl`.
-- **`day_metric`:** `date`, `metric`, `value`, `unit`, with metric names Kompose owns (`recovery_score`, `sleep_duration_min`, `steps`).
-- **`activity`:** things that happened and can't be edited (sleep, workout): `kind`, `title`, `startAt`, `endAt`.
 - **Edits** go to the provider first, and the row is updated from the provider's answer.
 - **Syncs** run on webhooks, when the app connects, and when a screen reads a range that is missing or stale. There is no cron.
-
-How a stat is drawn (label, color, icon) is client code, not a table.
 
 ## Later: connecting without OAuth
 
@@ -212,5 +263,5 @@ Planned next. Apple has no server API for health data: it lives on the iPhone, t
 - **Connections:** `account_id` becomes nullable, because there is no Better Auth account. The phone creates the row through the API once the user grants permission. Unlinking deletes the row and the stored data.
 - **Tokens and webhooks:** none. The phone sends data through the signed-in API, and HealthKit wakes the app in the background when there is new data.
 - **Status:** HealthKit doesn't tell an app that read access was refused, so there is no `needs-reauth`. Settings shows when data last arrived.
-- **Storage:** WHOOP's data can be fetched again, so it is only cached. Apple Health's can't, so it must be stored. It is also the second health provider, so this is when `day_metric` and `activity` above are built and WHOOP moves onto them.
+- **Storage:** Apple Health's data can't be fetched again, so it must be stored. The phone writes `day_metric` and `activity` rows (see [Data tables](#data-tables)), and the server picks between its rows and WHOOP's.
 - **The app:** HealthKit needs a native module and an entitlement, so it ships in a new native build.
