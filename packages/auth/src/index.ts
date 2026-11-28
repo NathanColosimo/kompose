@@ -68,6 +68,8 @@ export const auth = betterAuth({
     // Forces a provider token refresh without the lock in oauth-tokens.ts. Nothing calls it.
     "/refresh-token",
     "/get-access-token",
+    // No app lists a user's sessions.
+    "/list-sessions",
   ],
   emailAndPassword: {
     enabled: false,
@@ -89,7 +91,6 @@ export const auth = betterAuth({
           authorizationUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
           clientId: env.WHOOP_CLIENT_ID ?? "",
           clientSecret: env.WHOOP_CLIENT_SECRET ?? "",
-          disableSignUp: true,
 
           getUserInfo: async (tokens) => {
             const response = await fetch(

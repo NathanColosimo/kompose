@@ -1,6 +1,6 @@
 # WHOOP Integration
 
-Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar week view. One WHOOP account per user, linked via OAuth.
+Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar week view. A user links their WHOOP account via OAuth. Settings offers Link for one account; the server doesn't refuse a second.
 
 ## How it works
 
