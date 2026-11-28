@@ -13,6 +13,7 @@ import {
   AlwaysOnSampler,
   BatchSpanProcessor,
   type ReadableSpan,
+  type Span,
   TracerProvider,
 } from "@opentelemetry/sdk-trace";
 import { ORPCInstrumentation } from "@orpc/opentelemetry";
@@ -60,14 +61,38 @@ function logFlushError(error: unknown): void {
   console.error("OTEL_FLUSH_FAILED", error);
 }
 
+/** A request, or work that runs after its response (a CONSUMER span). */
+function isWorkRoot(span: ReadableSpan): boolean {
+  const parent = span.parentSpanContext;
+  return (
+    (span.kind === SpanKind.SERVER || span.kind === SpanKind.CONSUMER) &&
+    (parent === undefined || parent.isRemote === true)
+  );
+}
+
 class ExportSpanProcessor extends BatchSpanProcessor {
   readonly #exporter: OTLPTraceExporter;
+  /** For each open work root, by span ID: tells Vercel its spans are exported. */
+  readonly #exported = new Map<string, () => void>();
   #lastFlush: Promise<void> = Promise.resolve();
   #queued: Promise<void> | undefined;
 
   constructor(exporter: OTLPTraceExporter) {
     super({ exporter });
     this.#exporter = exporter;
+  }
+
+  override onStart(span: Span): void {
+    if (flushAtRequestEnd && isWorkRoot(span)) {
+      // Keep Vercel alive until this span's export finishes. Vercel has to be
+      // asked before the response is sent, and Next ends the request span
+      // after it. See documents/otel.md.
+      waitUntil(
+        new Promise<void>((exported) => {
+          this.#exported.set(span.spanContext().spanId, exported);
+        })
+      );
+    }
   }
 
   override onEnd(span: ReadableSpan): void {
@@ -78,15 +103,11 @@ class ExportSpanProcessor extends BatchSpanProcessor {
     }
     super.onEnd(span);
 
-    // A request, or work that runs after its response (a CONSUMER span).
-    const parent = span.parentSpanContext;
-    const isWorkRoot =
-      (span.kind === SpanKind.SERVER || span.kind === SpanKind.CONSUMER) &&
-      (parent === undefined || parent.isRemote === true);
-    if (flushAtRequestEnd && isWorkRoot) {
-      // Keep Vercel alive until buffered spans export; the batch timer can freeze.
-      // See documents/otel.md for why waitUntil is needed here.
-      waitUntil(this.#flush());
+    const { spanId } = span.spanContext();
+    const exported = this.#exported.get(spanId);
+    if (exported) {
+      this.#exported.delete(spanId);
+      this.#flush().then(exported);
     }
   }
 
