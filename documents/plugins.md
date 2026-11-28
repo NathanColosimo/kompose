@@ -89,6 +89,8 @@ A user signs in to Kompose with Google or Apple. Each plugin says whether its pr
 
 Better Auth asks `validateSignInProvider` (`packages/auth/src/sign-in-providers.ts`, its `user.validateUserInfo` option) on the OAuth callback, before an account signs in, signs up, or is linked. An account that can't sign in passes only when a signed-in user started the link. So a WHOOP account never opens a session, and one with a Kompose user's email isn't linked to that user.
 
+Such an account doesn't count as a way back in. Better Auth refuses to unlink a user's last account; `keepSignInAccount` also refuses to unlink the last account they can sign in with (`FAILED_TO_UNLINK_LAST_SIGN_IN_ACCOUNT`).
+
 ## Profiles
 
 Better Auth doesn't store a linked account's name, email, or picture. `accountInfo` works them out on every call: for Google from the ID token the last token refresh returned, and for WHOOP with a request to WHOOP. So the profile is copied onto the connection, and `plugins.connections` (`packages/api/src/routers/plugins/router.ts`) keeps it fresh:

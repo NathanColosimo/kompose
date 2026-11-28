@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { betterAuth } from "better-auth";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { genericOAuth, testUtils } from "better-auth/plugins";
-import { validateSignInProvider } from "./sign-in-providers";
+import { keepSignInAccount, validateSignInProvider } from "./sign-in-providers";
 
 const BASE_URL = "http://localhost:3000";
 const SETTINGS_URL = `${BASE_URL}/dashboard/settings`;
@@ -47,7 +47,7 @@ beforeEach(() => {
 /** Who WHOOP says came back from its consent screen. */
 let whoopProfile = { email: "ada@example.com", id: "whoop-ada" };
 
-/** Better Auth with Kompose's sign-in rule and WHOOP, on an in-memory database. */
+/** Better Auth with Kompose's sign-in rules and WHOOP, on an in-memory database. */
 const auth = betterAuth({
   account: {
     accountLinking: {
@@ -74,6 +74,7 @@ const auth = betterAuth({
         },
       ],
     }),
+    keepSignInAccount(),
     testUtils(),
   ],
   secret: "test-secret-that-is-at-least-32-characters",
@@ -160,4 +161,28 @@ test("a signed-in user links WHOOP", async () => {
     { providerId: "google" },
     { accountId: "whoop-ada", providerId: "whoop", userId: ada.id },
   ]);
+});
+
+test("with WHOOP linked, the last sign-in account can't be unlinked", async () => {
+  const whoop = linkedAccount("whoop", "whoop-ada");
+  database.account.push(whoop);
+  const headers = await signedInAsAda();
+
+  const unlinkGoogle = await post(
+    "/unlink-account",
+    { accountId: "google-google-ada" },
+    headers
+  );
+  expect(unlinkGoogle.status).toBe(400);
+  expect(await unlinkGoogle.json()).toMatchObject({
+    code: "FAILED_TO_UNLINK_LAST_SIGN_IN_ACCOUNT",
+  });
+
+  const unlinkWhoop = await post(
+    "/unlink-account",
+    { accountId: whoop.id },
+    headers
+  );
+  expect(unlinkWhoop.status).toBe(200);
+  expect(database.account).toMatchObject([{ providerId: "google" }]);
 });
