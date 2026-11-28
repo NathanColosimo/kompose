@@ -42,6 +42,9 @@ lerna-debug.log*
 # Turbo
 .turbo
 
+# Worktrees that agent tools create for their subagents
+.claude/worktrees/
+
 # Better-T-Stack
 .alchemy
 
