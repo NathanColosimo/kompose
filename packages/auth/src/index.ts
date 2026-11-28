@@ -177,6 +177,10 @@ export const auth = betterAuth({
     // forward (at most once a day, the default updateAge) whenever the app
     // checks it, so only 60 days without opening the app signs you out.
     expiresIn: 60 * 24 * 60 * 60,
+    // Better Auth only unlinks an account for a session created within
+    // `freshAge` (a day by default), and using the app never renews that. 0
+    // turns the check off, so Unlink works without signing in again.
+    freshAge: 0,
     // The MCP OAuth provider links grants to session rows, so sessions are
     // also written to Postgres. Reads still hit Redis first.
     storeSessionInDatabase: true,
