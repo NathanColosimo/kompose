@@ -65,7 +65,6 @@ const auth = betterAuth({
           authorizationUrl: "https://api.prod.whoop.com/oauth/oauth2/auth",
           clientId: "test-client",
           clientSecret: "test-secret",
-          disableSignUp: true,
           // Stands in for WHOOP's token and profile endpoints.
           getToken: () => Promise.resolve({ accessToken: "whoop-access" }),
           getUserInfo: () =>
@@ -149,6 +148,17 @@ test("a WHOOP account with a user's email isn't linked to that user", async () =
   );
   expect(database.session).toEqual([]);
   expect(database.account).toMatchObject([{ providerId: "google" }]);
+});
+
+test("a WHOOP account can't create a Kompose user", async () => {
+  whoopProfile = { email: "grace@example.com", id: "whoop-grace" };
+
+  const callback = await returnFromWhoop("/sign-in/social");
+
+  expect(callback.headers.get("location")).toContain(
+    "error=provider_cannot_sign_in"
+  );
+  expect(database.user).toEqual([ada]);
 });
 
 test("a signed-in user links WHOOP", async () => {
