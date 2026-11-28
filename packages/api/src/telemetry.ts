@@ -10,6 +10,7 @@ import {
   resourceFromAttributes,
 } from "@opentelemetry/resources";
 import {
+  AlwaysOnSampler,
   BatchSpanProcessor,
   type ReadableSpan,
   TracerProvider,
@@ -117,6 +118,9 @@ if (exporterConfig) {
       resource: defaultResource().merge(
         resourceFromAttributes({ "service.name": "kompose-api" })
       ),
+      // The default follows a caller's `traceparent`, so a caller that sends
+      // "not sampled" leaves no request span. WHOOP's webhook calls left none.
+      sampler: new AlwaysOnSampler(),
       spanProcessors: [
         new ExportSpanProcessor(
           new OTLPTraceExporter({
