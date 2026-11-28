@@ -61,9 +61,17 @@ export const account = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
   },
-  // As Better Auth generates it. A user has a few accounts, so this also serves
-  // the user + provider lookups on every Google and WHOOP call.
-  (table) => [index("account_userId_idx").on(table.userId)]
+  (table) => [
+    // As Better Auth generates it. A user has a few accounts, so this also
+    // serves the user + provider lookups on every Google and WHOOP call.
+    index("account_userId_idx").on(table.userId),
+    // Sign-in finds the account by these two columns. Unique, so two links
+    // that finish together can't give one provider account to two rows.
+    uniqueIndex("account_providerId_accountId_uidx").on(
+      table.providerId,
+      table.accountId
+    ),
+  ]
 );
 
 export const verification = pgTable("verification", {
