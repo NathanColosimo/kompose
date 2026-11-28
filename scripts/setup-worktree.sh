@@ -1,7 +1,8 @@
 #!/bin/sh
 # Prepare a new git worktree for work: copy the git-ignored .env files from the
-# main checkout, then install dependencies. T3 Code runs this when it creates a
-# worktree (see t3.json); it also works run by hand from any worktree.
+# main checkout, then install dependencies. T3 Code runs the main checkout's
+# copy of this when it creates a worktree (see t3.json), so it also covers a
+# branch that predates this file. By hand, run it from inside the worktree.
 set -eu
 
 main=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
@@ -14,6 +15,7 @@ if [ "$main" != "$here" ]; then
         -o -name '.env*' ! -name '*.example' -type f -print) |
         while read -r file; do
             [ -e "$here/$file" ] && continue
+            git -C "$main" check-ignore -q "$file" || continue
             mkdir -p "$here/$(dirname "$file")"
             cp "$main/$file" "$here/$file"
         done

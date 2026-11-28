@@ -78,6 +78,18 @@ The native app uses an Expo development client rather than Expo Go. Build and
 install it with `bun run --cwd apps/native ios`, then start Metro with
 `bun run dev:native`.
 
+## Worktrees
+
+`scripts/setup-worktree.sh` prepares a new git worktree: it copies the
+git-ignored `.env` files from the main checkout and runs `bun install`. Run it
+from inside the worktree.
+
+[T3 Code](https://t3.codes) can run it for every worktree it creates. `t3.json`
+declares the action, but each machine has to import it once: open **Settings →
+Projects → Actions** for this project and choose **Import scripts**. If the
+machine already has its own action named "Set up worktree", delete that one
+first, or the import is not offered.
+
 ## Project Structure
 
 ```

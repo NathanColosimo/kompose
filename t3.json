@@ -1,10 +1,9 @@
 {
   "$schema": "https://t3.codes/schema/t3.json",
-  "defaultThreadEnvMode": "worktree",
   "scripts": [
     {
       "name": "Set up worktree",
-      "command": "sh scripts/setup-worktree.sh",
+      "command": "sh \"$T3CODE_PROJECT_ROOT/scripts/setup-worktree.sh\"",
       "icon": "configure",
       "runOnWorktreeCreate": true,
       "async": false
