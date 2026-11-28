@@ -1,6 +1,6 @@
 # WHOOP Integration
 
-Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar week view. A user links their WHOOP account via OAuth. Settings offers Link for one account; the server doesn't refuse a second.
+Surfaces WHOOP health data (recovery, strain, sleep, workouts) on the calendar week view. Users link their WHOOP account via OAuth.
 
 ## How it works
 
@@ -160,4 +160,4 @@ Events spanning midnight (Google events, WHOOP sleep/workouts) are split into pe
 
 ## Settings Page
 
-WHOOP gets the same Settings section as every plugin (see `documents/plugins.md`): name and email stored on its connection, and Unlink. The plugin allows one WHOOP account, so Link account is hidden once one is linked.
+WHOOP gets the same Settings section as every plugin (see `documents/plugins.md`): name and email stored on its connection, and Unlink. Settings hides Link account after the first WHOOP account is linked. The server accepts additional WHOOP accounts.
