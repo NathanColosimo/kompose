@@ -175,6 +175,9 @@ export const auth = betterAuth({
   },
   /** Redis-backed storage for sessions and rate limit counters. */
   secondaryStorage: redisStorage({ client: redis }),
+  // Keep the old key for encrypted data written before Better Auth tagged keys by version.
+  secret: env.BETTER_AUTH_SECRET,
+  secrets: [{ value: env.BETTER_AUTH_SECRET_V2, version: 2 }],
   session: {
     // Stay signed in like other apps: the session lasts 60 days and slides
     // forward (at most once a day, the default updateAge) whenever the app

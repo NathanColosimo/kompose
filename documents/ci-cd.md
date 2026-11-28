@@ -234,6 +234,10 @@ gh variable set TURBO_TEAM --body nathan-colosimo
   Deployment), which used to run `db:migrate`. `vercel.json`'s `buildCommand`
   overrides it anyway; clearing it avoids confusion.
 - Keep Git deployments disabled until preview environments exist.
+- Set `BETTER_AUTH_SECRET_V2` in Production before deploying the key rotation.
+  Users will need to sign in again. After the first V2 write, recovery builds
+  need V2 configured and must retain the legacy key until legacy ciphertext
+  has been re-encrypted.
 
 ### EAS
 

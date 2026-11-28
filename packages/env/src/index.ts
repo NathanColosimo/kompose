@@ -20,6 +20,7 @@ export const env = createEnv({
     AXIOM_API_TOKEN: z.string().min(1).optional(),
     AXIOM_DATASET: z.string().min(1).optional(),
     BETTER_AUTH_SECRET: z.string().min(1),
+    BETTER_AUTH_SECRET_V2: z.string().min(32),
     DATABASE_URL: z.string().min(1),
     GOOGLE_CLIENT_ID: z.string().min(1),
     GOOGLE_CLIENT_SECRET: z.string().min(1),
