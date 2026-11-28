@@ -103,6 +103,20 @@ Web (`plugin-connections-settings.tsx`) and native (`plugin-connections-section.
 - **Unlink** unlinks the Better Auth account.
 - **Reconnect** shows on a connection that is `needs-reauth`, and links the same account again.
 
+### What Google asks the user
+
+Google sends a refresh token only with its consent screen, and shows that screen by itself only the first time a user grants access.
+
+| Flow | `prompt` sent to Google | What the user sees |
+| --- | --- | --- |
+| Sign-in (`/sign-in/social`) | None | Consent the first time. After that nothing, or Google's account chooser when several accounts are signed in |
+| Link account and Reconnect (`/link-social`) | `select_account consent` | The account chooser, then consent, every time |
+
+- **Linking always asks.** The chooser is how a user links a second Google account, and consent is how Reconnect gets a new refresh token. `googleLinkConsent` (`packages/auth/src/google-oauth.ts`) is a Better Auth hook on the server, so app versions that are already installed link this way too.
+- **A sign-in that returns no refresh token keeps the stored one.** Better Auth writes only the tokens Google returns.
+- **A new account with no refresh token starts as `needs-reauth`** (`connectLinkedAccount`). This happens when Google already has the user's consent but Kompose no longer has the account, for example after an unlink.
+- **Only linking clears `needs-reauth`** (`reactivateConnection`). A sign-in also updates the account, but it can leave the refresh token that stopped working.
+
 ## Tokens
 
 Better Auth stores each account's tokens and refreshes them when a caller asks for one with `auth.api.getAccessToken`. Kompose adds three things:

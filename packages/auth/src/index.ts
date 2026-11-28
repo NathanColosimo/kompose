@@ -18,6 +18,7 @@ import { betterAuth } from "better-auth/minimal";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, jwt, lastLoginMethod } from "better-auth/plugins";
 import { connectLinkedAccount, reactivateConnection } from "./connections";
+import { googleLinkConsent } from "./google-oauth";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
 import { cleanUpBeforeUnlink } from "./unlink-cleanup";
@@ -144,6 +145,7 @@ export const auth = betterAuth({
       ],
     }),
     pluginOAuthTokens(),
+    googleLinkConsent(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
     // Without this, jwt() also signs a JWT into a `set-auth-jwt` header on
     // every session read. Nothing reads that header.
@@ -186,10 +188,11 @@ export const auth = betterAuth({
       clientSecret: env.APPLE_CLIENT_SECRET,
     },
     google: {
+      // No `prompt`, so a returning user isn't asked to consent at every
+      // sign-in. Linking asks: see googleLinkConsent.
       accessType: "offline",
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
-      prompt: "select_account consent",
       scope: ["https://www.googleapis.com/auth/calendar"],
     },
   },
