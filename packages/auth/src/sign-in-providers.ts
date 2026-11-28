@@ -1,11 +1,6 @@
+import { getPluginForProvider } from "@kompose/plugins";
 import type { BetterAuthOptions } from "better-auth";
 import { getOAuthState } from "better-auth/api";
-
-/**
- * A user signs in to Kompose with these providers. An account from any other
- * provider (WHOOP) only connects a plugin. See documents/plugins.md.
- */
-const signInProviders: readonly string[] = ["apple", "google"];
 
 type ValidateUserInfo = NonNullable<
   NonNullable<BetterAuthOptions["user"]>["validateUserInfo"]
@@ -13,14 +8,13 @@ type ValidateUserInfo = NonNullable<
 
 /**
  * Better Auth's `user.validateUserInfo`, asked on the OAuth callback before a
- * provider's account signs in, signs up, or is linked. An account that can't
- * sign in passes only when a signed-in user started the link.
+ * provider's account signs in, signs up, or is linked. An account from a
+ * plugin that can't sign in (WHOOP) passes only when a signed-in user started
+ * the link. See documents/plugins.md.
  */
 export const validateSignInProvider: ValidateUserInfo = async ({ source }) => {
-  if (
-    source.method !== "oauth" ||
-    signInProviders.includes(source.oauth?.providerId ?? "")
-  ) {
+  const plugin = getPluginForProvider(source.oauth?.providerId ?? "");
+  if (!plugin || plugin.canSignIn) {
     return;
   }
   const oauthState = await getOAuthState();

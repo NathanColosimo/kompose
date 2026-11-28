@@ -33,7 +33,7 @@ A service can be a plugin and also be in one of these lists. When a preview need
 
 ## The list
 
-`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), and `multipleAccounts`. It depends only on zod, so web, native, and the server all import it.
+`packages/plugins/src/index.ts` (`@kompose/plugins`) holds one object per plugin: `id`, `name`, `description`, `provider` (the Better Auth provider whose accounts link it), `multipleAccounts`, and `canSignIn`. It depends only on zod, so web, native, and the server all import it.
 
 The `id` is stored in `connection.plugin_id` and is the last part of the plugin's webhook URL. Every ID is declared once, in `pluginIds` at the top of that file, and every provider once, in `pluginProviders`. Nothing else spells them out as plain strings:
 
@@ -85,9 +85,9 @@ Cleanups today:
 
 ## Sign-in providers
 
-A user signs in to Kompose with Google or Apple only (`signInProviders` in `packages/auth/src/sign-in-providers.ts`). An account from any other provider only connects a plugin, and so does a new plugin's provider unless it is added to that list.
+A user signs in to Kompose with Google or Apple. Each plugin says whether its provider's accounts can also sign in (`canSignIn`): Google's can, WHOOP's only connect the plugin. The field is required, so a new plugin has to choose.
 
-Better Auth asks `validateSignInProvider` (its `user.validateUserInfo` option) on the OAuth callback, before an account signs in, signs up, or is linked. A plugin-only account passes only when a signed-in user started the link. So a WHOOP account never opens a session, and one with a Kompose user's email isn't linked to that user.
+Better Auth asks `validateSignInProvider` (`packages/auth/src/sign-in-providers.ts`, its `user.validateUserInfo` option) on the OAuth callback, before an account signs in, signs up, or is linked. An account that can't sign in passes only when a signed-in user started the link. So a WHOOP account never opens a session, and one with a Kompose user's email isn't linked to that user.
 
 ## Profiles
 
