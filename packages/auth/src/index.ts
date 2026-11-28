@@ -21,6 +21,7 @@ import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { googleLinkConsent } from "./google-oauth";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
+import { validateSignInProvider } from "./sign-in-providers";
 import { cleanUpBeforeUnlink } from "./unlink-cleanup";
 
 export const auth = betterAuth({
@@ -209,4 +210,5 @@ export const auth = betterAuth({
       ? ["http://localhost:3000"]
       : []),
   ],
+  user: { validateUserInfo: validateSignInProvider },
 });

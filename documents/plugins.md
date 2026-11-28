@@ -83,6 +83,12 @@ Cleanups today:
 | `google-calendar` | Stops the account's watch channels, so Google stops calling for its calendars |
 | `whoop` | Revokes the user's access at WHOOP, which also stops WHOOP's calls for that user |
 
+## Sign-in providers
+
+A user signs in to Kompose with Google or Apple only (`signInProviders` in `packages/auth/src/sign-in-providers.ts`). An account from any other provider only connects a plugin, and so does a new plugin's provider unless it is added to that list.
+
+Better Auth asks `validateSignInProvider` (its `user.validateUserInfo` option) on the OAuth callback, before an account signs in, signs up, or is linked. A plugin-only account passes only when a signed-in user started the link. So a WHOOP account never opens a session, and one with a Kompose user's email isn't linked to that user.
+
 ## Profiles
 
 Better Auth doesn't store a linked account's name, email, or picture. `accountInfo` works them out on every call: for Google from the ID token the last token refresh returned, and for WHOOP with a request to WHOOP. So the profile is copied onto the connection, and `plugins.connections` (`packages/api/src/routers/plugins/router.ts`) keeps it fresh:
