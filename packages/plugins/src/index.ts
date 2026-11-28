@@ -21,6 +21,11 @@ export type PluginProvider = z.infer<typeof pluginProviderSchema>;
  * An outside service a user links an account to. See documents/plugins.md.
  */
 export interface Plugin {
+  /**
+   * The provider's accounts also sign in to Kompose (Google), or only link
+   * this plugin (WHOOP). See documents/plugins.md.
+   */
+  canSignIn: boolean;
   /** One sentence for Settings. */
   description: string;
   /** Stored in `connection.plugin_id`, and the last part of the webhook URL. */
@@ -35,6 +40,7 @@ export interface Plugin {
 /** Every plugin, in the order Settings lists them. */
 export const plugins: readonly Plugin[] = [
   {
+    canSignIn: true,
     description: "Events from these accounts show on your calendar.",
     id: "google-calendar",
     multipleAccounts: true,
@@ -42,6 +48,7 @@ export const plugins: readonly Plugin[] = [
     provider: "google",
   },
   {
+    canSignIn: false,
     description:
       "Sleep, recovery, and workouts from one WHOOP account show on your calendar.",
     id: "whoop",
