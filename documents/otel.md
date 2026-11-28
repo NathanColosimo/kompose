@@ -31,7 +31,7 @@ ExportSpanProcessor (a BatchSpanProcessor) → OTLPTraceExporter → Axiom (or J
 
 ### Components
 
-1. **`TracerProvider`** (`@opentelemetry/sdk-trace`) — the single global provider, with a `BatchSpanProcessor` and `OTLPTraceExporter`. `telemetry.ts` also registers the async-hooks context manager, W3C `traceparent` propagation, and `ORPCInstrumentation` for automatic oRPC handler/middleware spans.
+1. **`TracerProvider`** (`@opentelemetry/sdk-trace`) — the single global provider, with a `BatchSpanProcessor` and `OTLPTraceExporter`. `telemetry.ts` also registers the async-hooks context manager, W3C `traceparent` propagation, and `ORPCInstrumentation` for automatic oRPC handler/middleware spans. It records every span (`AlwaysOnSampler`). The SDK's default follows the caller's `traceparent`, and an outside caller can send one marked "not sampled", which leaves no request span. WHOOP's webhook calls left none in Axiom while their `Webhook.work` traces arrived.
 2. **Effect `layerGlobal` from `@effect/opentelemetry/OtelTracer`** — bridges `Effect.fn` spans into the same global `TracerProvider` so oRPC and Effect spans share parent-child links.
 3. **`ExportSpanProcessor`** — a `BatchSpanProcessor` subclass that strips noisy Next.js internal attributes (`next.span_name`, `next.span_type`) and, on Vercel, flushes when a request's root span (or an `after()` job's `CONSUMER` root) ends (see [Flushing before Vercel freezes the instance](#flushing-before-vercel-freezes-the-instance)).
 
