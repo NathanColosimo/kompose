@@ -21,7 +21,7 @@ import { connectLinkedAccount, reactivateConnection } from "./connections";
 import { googleLinkConsent } from "./google-oauth";
 import { MCP_RESOURCE, MCP_SCOPE } from "./mcp";
 import { pluginOAuthTokens } from "./oauth-tokens";
-import { validateSignInProvider } from "./sign-in-providers";
+import { keepSignInAccount, validateSignInProvider } from "./sign-in-providers";
 import { cleanUpBeforeUnlink } from "./unlink-cleanup";
 
 export const auth = betterAuth({
@@ -146,6 +146,7 @@ export const auth = betterAuth({
       ],
     }),
     pluginOAuthTokens(),
+    keepSignInAccount(),
     googleLinkConsent(),
     // OAuth 2.1 provider for MCP clients (ChatGPT, Claude). See documents/mcp.md.
     // Without this, jwt() also signs a JWT into a `set-auth-jwt` header on
