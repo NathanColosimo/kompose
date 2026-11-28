@@ -6,6 +6,7 @@
         "DATABASE_URL",
         "REDIS_URL",
         "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_SECRET_V2",
         "NEXT_PUBLIC_WEB_URL",
         "GOOGLE_CLIENT_ID",
         "GOOGLE_CLIENT_SECRET",

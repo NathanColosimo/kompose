@@ -129,7 +129,7 @@ Google sends a refresh token only with its consent screen, and shows that screen
 
 Better Auth stores each account's tokens and refreshes them when a caller asks for one with `auth.api.getAccessToken`. Kompose adds three things:
 
-- **Encryption:** `account.encryptOAuthTokens` is on. Better Auth encrypts with `BETTER_AUTH_SECRET` and still reads plaintext rows. A row stored before encryption is encrypted at its next refresh, so there is no backfill to run. An account nobody uses again stays plaintext. Better Auth treats any even-length hex string as encrypted, so a provider whose tokens are pure hex can't have plaintext rows.
+- **Encryption:** `account.encryptOAuthTokens` is on. New token writes use `BETTER_AUTH_SECRET_V2`. The original `BETTER_AUTH_SECRET` still decrypts records written before ciphertext had a version tag. An account's tokens are rewritten when a refresh or reconnect writes them, and unused accounts can keep legacy ciphertext indefinitely. Retire the fallback after rewriting legacy ciphertext in both provider tokens and JWT signing keys. Better Auth still reads plaintext tokens and treats any even-length hex string as encrypted.
 - **A lock on refresh:** Better Auth's refresh takes no lock ([better-auth#11561](https://github.com/better-auth/better-auth/issues/11561)). Two requests that find an expired token both refresh with the same refresh token. WHOOP's refresh tokens work once, so it refuses the second request.
 - **`needs-reauth`:** Better Auth's refresh drops the provider's error ([better-auth#12453](https://github.com/better-auth/better-auth/issues/12453)), so a revoked grant looks like any other failure.
 
